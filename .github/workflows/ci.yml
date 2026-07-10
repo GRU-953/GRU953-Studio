@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate JSON files parse
+        run: |
+          for f in .claude-plugin/marketplace.json \
+                   plugins/gru953-studio/.claude-plugin/plugin.json \
+                   plugins/gru953-studio/hooks/hooks.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$f','utf8')); console.log('$f OK')"
+          done
+      - name: Syntax-check every hook script
+        run: |
+          for f in plugins/gru953-studio/hooks/*.mjs; do
+            node --check "$f" && echo "$f OK"
+          done
+      - name: Smoke-test the licence scanner
+        run: node plugins/gru953-studio/hooks/licence-scan.mjs .
+      - name: Required files present
+        run: |
+          for f in governance/LICENSE governance/NOTICE governance/SECURITY.md \
+                   governance/CODE_OF_CONDUCT.md governance/CONTRIBUTING.md \
+                   governance/TRADEMARKS.md governance/LOGO-USAGE.md governance/GOVERNANCE.md \
+                   README.md; do
+            test -f "$f" || (echo "Missing required file: $f" && exit 1)
+          done
+      - name: Every commit carries a DCO sign-off
+        run: |
+          git log --format='%H %B' | grep -q . || true
+          MISSING=$(git log --format='%H' | while read -r sha; do
+            git log -1 --format='%B' "$sha" | grep -q '^Signed-off-by:' || echo "$sha"
+          done)
+          if [ -n "$MISSING" ]; then
+            echo "Commits missing a Signed-off-by (DCO) trailer:"; echo "$MISSING"; exit 1
+          fi

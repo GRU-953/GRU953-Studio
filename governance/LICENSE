@@ -1,0 +1,85 @@
+GRU953 COMMUNITY LICENCE
+Version 1.0 — 8 July 2026
+
+Copyright 2026 Aninda Sundar Howlader (GRU-953) <aninda.sh15@gmail.com>
+
+This licence governs GRU953-Studio and all code, content, and
+documentation distributed with it (together, the "Work").
+
+1. DEFINITIONS
+
+   "Personal Use" means use by an individual for private, domestic,
+   educational, research, or hobby purposes, with no direct or indirect
+   commercial advantage or monetary compensation.
+
+   "Non-Commercial Use" means use by an individual or organisation that
+   is not intended for, or directed towards, commercial advantage or
+   monetary compensation. Use inside a for-profit business, or in a
+   product or service that is sold, licensed, monetised, or used to
+   deliver paid work, is Commercial Use.
+
+   "Commercial Use" means any use that is not Personal or Non-Commercial
+   Use, including copying any part of the code into commercial software,
+   products, services, or client work — including apps GRU953-Studio
+   itself builds for you that you go on to sell or use commercially.
+
+2. GRANT — PERSONAL AND NON-COMMERCIAL USE (FREE)
+
+   Subject to the conditions below, the author grants you a worldwide,
+   royalty-free, non-exclusive, non-transferable licence to:
+
+   a. use, run, and privately study the Work;
+   b. copy and redistribute the Work in unmodified form;
+   c. modify the Work and share your modifications;
+
+   in each case for Personal or Non-Commercial Use only, and provided
+   that every copy or substantial portion retains (i) this licence text
+   or a link to it, (ii) the copyright notice above, and (iii) a clear
+   statement of any changes you made.
+
+3. COMMERCIAL USE — PAID LICENCE REQUIRED
+
+   Commercial Use of the Work, in whole or in part — including copying
+   code or documentation into a commercial product, service, or
+   engagement — requires a separate, paid commercial licence granted in
+   writing by the author.
+
+   To obtain a commercial licence, contact:
+   Aninda Sundar Howlader (GRU-953) <aninda.sh15@gmail.com>
+
+4. WHAT THIS LICENCE DOES NOT COVER
+
+   a. Brand marks. The GRU953 name as an identifier of origin, the
+      Soaring Bird logo, and any lockup of them are NOT licensed by this
+      document. See governance/TRADEMARKS.md and governance/LOGO-USAGE.md.
+   b. Third-party works. Any third-party dependency this project uses
+      keeps its own licence terms (checked by `hooks/licence-scan.mjs`
+      before every publish).
+
+5. CONTRIBUTIONS
+
+   Unless agreed otherwise in writing, any contribution intentionally
+   submitted for inclusion in the Work is accepted under the terms of
+   this licence (inbound = outbound), with a Developer Certificate of
+   Origin 1.1 sign-off.
+
+6. NO WARRANTY; LIMITATION OF LIABILITY
+
+   THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHOR
+   BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE
+   WORK OR ITS USE.
+
+7. TERMINATION
+
+   Your rights under Section 2 end automatically if you breach this
+   licence. They are reinstated if you cure the breach within 30 days of
+   becoming aware of it, unless the author has terminated them in writing.
+
+8. GOVERNING TERMS
+
+   This is a source-available licence. It deliberately does not meet the
+   Open Source Definition, because commercial use requires payment.
+   Nothing in it limits rights that cannot be limited by law (such as
+   fair use / fair dealing).

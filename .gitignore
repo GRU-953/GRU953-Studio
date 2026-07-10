@@ -1,0 +1,7 @@
+Dev-Memory/
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+plugins/*.zip
