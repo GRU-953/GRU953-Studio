@@ -110,10 +110,21 @@ export function isPushCapable(c) {
   if (/(^|[^A-Za-z0-9_])git[ \t]+send-pack([ \t]|$)/.test(c)) return true;
   // gh's own alias mechanism, same shape of risk as git aliases.
   if (/(^|[^A-Za-z0-9_])gh[ \t]+alias[ \t]+set/.test(c)) return true;
-  if (/(&&|\|\||;|\||`|\$\(|eval[ \t])/.test(c)) {
-    if (/(push|(^|[^A-Za-z0-9_])gh([ \t]|$))/.test(c)) return true;
-  }
-  // Indirection: running a script file, a Makefile target, or a
+  // 2026-07-11 fix (found live, in real use, not just review): there used
+  // to be a blanket fallback here — "if the command has any compound
+  // operator (&&, ;, |, etc.) AND contains the bare substring 'gh', treat
+  // it as push-capable." It was meant to catch obfuscated pushes hidden
+  // behind chaining, but every regex above is UNANCHORED, so `.test()`
+  // already finds a real `git push`/`gh repo create`/etc. anywhere in the
+  // string, compound or not — the fallback added no real detection power.
+  // What it DID do: block nearly every ordinary `cd <dir> && gh <anything>`
+  // command — including harmless reads like `gh repo view`/`gh auth
+  // status`/`gh api user` — because this environment's Bash tool doesn't
+  // reliably persist a working directory, so "cd X && gh Y" is the normal
+  // way to run almost any gh command here. Removed: it failed at stopping
+  // real obfuscation (the `$(...)`-construction bypass below defeats it
+  // just the same as everything else) while blocking completely ordinary,
+  // safe usage. Indirection: running a script file, a Makefile target, or a
   // package-manager task can contain a push with no "push"/"gh" text in
   // THIS command. Fail closed rather than assume it's safe.
   if (/(^|[^A-Za-z0-9_])(\.\/|bash[ \t]+|sh[ \t]+|node[ \t]+)?[^ \t]*\.(sh|mjs|js|py)([ \t]|$)/.test(c) &&

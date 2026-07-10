@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1 — 2026-07-11
+
+Found while archiving old repos using the freshly-published v1.0.0: the
+`isPushCapable()` compound-command fallback treated ANY `gh` command
+chained after a `cd` (e.g. `cd <dir> && gh repo view ...`) as push-capable
+— including harmless reads (`gh repo view`, `gh auth status`, `gh api
+user`). Since this environment's Bash tool doesn't reliably persist a
+working directory, `cd <dir> && gh <command>` is the normal way to run
+almost any `gh` command here, so this blocked ordinary use constantly.
+Removed the fallback: every specific push-pattern regex already matches
+anywhere in a compound string (unanchored `.test()`), so it added no real
+detection power while causing this false-positive class.
+
 ## 0.1.0 — 2026-07-10
 
 Initial plugin scaffold: 16 specialist agent roles (project-lead,
