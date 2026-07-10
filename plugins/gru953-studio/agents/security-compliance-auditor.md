@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash
 
 Nothing ships with a known secret, a serious known vulnerability, or a
 dependency licence that conflicts with the project's licensing model
-(the GRU953 Community Licence 1.0 — see `governance/LICENSE`) — checked as fact, not
+(the Polyform Noncommercial License 1.0.0 plus a commercial-use path — see `governance/LICENSE`) — checked as fact, not
 asked as a favour.
 
 ## The four blocking checks (all must pass before Publish)

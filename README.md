@@ -47,7 +47,49 @@ in one short sentence the first time it comes up.
    week later, and pick up exactly where you left off, in the same session
    or a brand new one.
 
+## The specialists (16 AI roles)
+
+You never talk to these directly — the Project Lead is your one point of
+contact, and brings in whichever of these your project actually needs:
+
+| Role | What it does |
+| :-- | :-- |
+| **Project Lead** | The one voice you talk to; runs the whole build and reports back in plain English |
+| **Interviewer** | Asks your pop-up questions — as many as needed, never more |
+| **Architect** | Proposes 2-3 ways to build your idea, explains the trade-offs, you choose |
+| **Scope Guardian** | Stops the team quietly adding things you didn't ask for |
+| **Builder** | Writes the actual code, one small piece at a time |
+| **Reviewer** | Checks the code independently and trims anything unnecessary before publishing |
+| **Tester** | Proves each piece actually works, with real evidence — never just a claim |
+| **Security & Compliance Auditor** | Scans for leaked secrets, known vulnerabilities, and licence conflicts before anything ships |
+| **Brand Guardian** | Keeps your own branding consistent across everything visible |
+| **AI Developer** | Builds in AI features safely, only if your idea genuinely needs one |
+| **Fixer** | The smallest, precise repair when something gets stuck |
+| **Cut-Recorder** | Keeps a permanent note of ideas deliberately not built, so they're never silently re-proposed |
+| **Cost Monitor** | Keeps spending on the cheaper side, warns you before anything pricier |
+| **Publisher** | Ships your finished app privately to your own GitHub, under your own name |
+| **Memory Keeper** | Remembers everything about your project between sessions, safely |
+| **Maintenance Agent** | Comes back later for fixes and new features on an already-published project |
+
+## The skills (how it all runs)
+
+| Skill | What it does |
+| :-- | :-- |
+| `studio` | The main coordinator — runs the whole process end to end |
+| `first-run` | A short, one-off "getting to know you" setup, the very first time you ever use it |
+| `dev-memory` | The plain-text memory system that makes every project resumable, in a new session or the same one |
+| `cost-guard` | The spending rules that keep costs predictable and on the cheaper side |
+| `yagni-rules` | The lean-coding rules every Builder follows — nothing gets built that wasn't actually needed |
+| `publish-github` | The exact, safety-checked steps for publishing to your GitHub |
+
 ## Installing
+
+**Requires Claude Code.** GRU953-Studio is a Claude Code plugin — it needs
+Claude Code's specific abilities (spawning specialist sub-agents, running
+safety checks before every action) that the Claude Desktop app doesn't
+have. It does **not** work inside Claude Desktop.
+
+### Option 1 — from the marketplace (recommended, always up to date)
 
 These are two small, one-time installs — click the links below and follow
 the on-screen instructions, then run the two lines shown.
@@ -57,7 +99,23 @@ the on-screen instructions, then run the two lines shown.
 /plugin install gru953-studio
 ```
 
-You'll need [Node.js](https://nodejs.org) installed (it powers the
+### Option 2 — from a downloaded zip file
+
+Every release has a ready-to-download zip attached to it — useful if you'd
+rather not type the marketplace command, or want a specific version.
+
+1. Go to the [Releases page](https://github.com/GRU-953/GRU953-Studio/releases)
+   and download the `.zip` file under the version you want (the newest one
+   is at the top).
+2. Unzip it anywhere on your computer.
+3. In Claude Code, add it as a local marketplace, pointing at the folder
+   you just unzipped (replace the path with wherever you put it):
+   ```
+   /plugin marketplace add /path/to/the/unzipped/folder
+   /plugin install gru953-studio
+   ```
+
+Either option needs [Node.js](https://nodejs.org) installed (it powers the
 plugin's safety checks — the secret scanner, the publish gate, and the
 licence scanner) and, only when you're ready to publish, the free [GitHub
 CLI](https://cli.github.com) signed in (`gh auth login`).
@@ -66,11 +124,14 @@ CLI](https://cli.github.com) signed in (`gh auth login`).
 
 Free for any noncommercial purpose — personal use, research, hobby
 projects, and use by charities, schools and public-benefit organisations —
-under the [GRU953 Community Licence 1.0](governance/LICENSE). Commercial
-use, including apps GRU953-Studio builds for you that you go on to sell,
-requires a separate paid licence — see Section 3 of the licence, or email
-aninda.sh15@gmail.com. The GRU953 name and logo are governed separately —
-see [governance/TRADEMARKS.md](governance/TRADEMARKS.md) and
+under the [Polyform Noncommercial License 1.0.0](governance/LICENSE), a
+professionally drafted, independently reviewed licence template recognised
+by GitHub and by dependency-compliance tooling. Commercial use, including
+apps GRU953-Studio builds for you that you go on to sell, requires a
+separate paid licence — see the "Commercial use" section at the end of the
+licence, or email aninda.sh15@gmail.com. The GRU953 name and logo are
+governed separately — see
+[governance/TRADEMARKS.md](governance/TRADEMARKS.md) and
 [governance/LOGO-USAGE.md](governance/LOGO-USAGE.md).
 
 ## Community

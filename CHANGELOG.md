@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.2 — 2026-07-11
+
+- **Licence changed again, from the GRU953 Community Licence 1.0 to the
+  Polyform Noncommercial License 1.0.0**, following a critical audit
+  requested by the user: a custom licence text, however well-intentioned,
+  isn't machine-readable by GitHub's licence detector or dependency
+  scanning tools, and creates a real adoption barrier. Same
+  free-noncommercial/paid-commercial intent; `governance/` structure
+  unchanged.
+- README: added a full table of the 16 specialist roles and 6 skills;
+  added a clear, honest statement that GRU953-Studio requires Claude Code
+  and does not work in Claude Desktop (verified, not assumed — Desktop's
+  only extension mechanism is MCP servers, with no equivalent to Claude
+  Code's sub-agent spawning or hook system); added install-from-a-
+  downloaded-zip instructions as an alternative to the marketplace command.
+- Every GitHub Release now gets a downloadable `.zip` asset attached
+  automatically as part of the publish protocol (`publish-github` skill),
+  so non-technical users can install without typing marketplace commands.
+  Retroactively attached to v1.0.0 and v1.0.1 as well.
+
 ## 1.0.1 — 2026-07-11
 
 Found while archiving old repos using the freshly-published v1.0.0: the

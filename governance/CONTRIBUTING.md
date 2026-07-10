@@ -77,7 +77,7 @@ Signed-off-by: Your Name <your.email@example.com>
 ## Licensing (inbound = outbound)
 
 Contributions are accepted under the same licence as the project itself
-(**inbound = outbound**): the GRU953 Community Licence 1.0 (see
+(**inbound = outbound**): the Polyform Noncommercial License 1.0.0 (see
 `governance/LICENSE`). By contributing, you agree your work is provided
 under these terms, with a DCO 1.1 sign-off.
 

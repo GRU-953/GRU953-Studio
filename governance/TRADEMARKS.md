@@ -4,7 +4,7 @@
 
 The word mark **GRU953**, the **Soaring Bird** logo, and any lockup
 combining them (the "Marks") identify the origin of GRU953 work. The
-Marks are *not* covered by the GRU953 Community Licence — copying
+Marks are *not* covered by GRU953-Studio's code/content licence — copying
 GRU953-Studio's code or documentation never grants a right to present
 work as GRU953's.
 

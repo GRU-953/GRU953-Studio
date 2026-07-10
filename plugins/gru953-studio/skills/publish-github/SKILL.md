@@ -112,11 +112,16 @@ already had the order right).
    visibility` — must be `private` before any push.
 6. Ensure the full `governance/` folder (LICENSE, NOTICE, CODE_OF_CONDUCT.md,
    CONTRIBUTING.md, SECURITY.md, TRADEMARKS.md, LOGO-USAGE.md, GOVERNANCE.md)
-   is present in the published tree — 2026-07-11 brand-alignment update: the
-   licence is the **GRU953 Community Licence 1.0**, the same source-available,
-   free-noncommercial/paid-commercial licence used across every GRU953
-   product, kept in `governance/` to match the established GRU953 repo
-   structure rather than at the repository root.
+   is present in the published tree, kept in `governance/` to match the
+   established GRU953 repo structure rather than at the repository root.
+   Licence: **Polyform Noncommercial License 1.0.0** plus a commercial-use
+   contact path — a professionally drafted, independently reviewed licence
+   template (2026-07-11: chosen over a GRU953-branded custom licence
+   specifically because it's recognised by GitHub's licence detector and
+   dependency-compliance tooling, which matters for a publicly-distributed
+   developer tool).
+7. Attach a downloadable zip of the release tree as a GitHub Release asset
+   (2026-07-11 addition) — see step 6 below (Tag and Release).
 7. Push: `git -C <temp-clone-path> push -u origin main`
 
 ## 6. Tag and create a REAL GitHub Release (2026-07-10 audit addition)
@@ -133,7 +138,16 @@ gh release create v1.0.0 --repo <login>/<project-name> --title "v1.0.0" --notes 
 gh release view v1.0.0 --repo <login>/<project-name> --json tagName,isDraft
 ```
 
-The last command must show `"isDraft": false` before this step is
+**Attach a downloadable zip (2026-07-11 addition)** — every release gets a
+zip of the release tree as a downloadable asset, so non-technical users
+can install from a direct download without using git at all:
+
+```
+cd <temp-clone-path> && zip -rq /tmp/<project-name>-v1.0.0.zip . -x ".git/*"
+gh release upload v1.0.0 /tmp/<project-name>-v1.0.0.zip --repo <login>/<project-name>
+```
+
+The last `gh release view` command must show `"isDraft": false` before this step is
 considered done. If it shows `true`, or the release command fails, this is
 not yet published — report the failure plainly, do not report success.
 

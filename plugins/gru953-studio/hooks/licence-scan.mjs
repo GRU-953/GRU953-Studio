@@ -26,9 +26,9 @@ const ALLOWED = new Set([
   'Unlicense', 'CC0-1.0', 'Python-2.0', 'BlueOak-1.0.0', 'WTFPL'
 ]);
 // Licences that require sharing your own source back ("copyleft") — these
-// conflict with this project's own licence (the GRU953 Community Licence
-// 1.0 — free noncommercial, paid commercial) and are always flagged,
-// never allow-listed.
+// conflict with this project's own licence (Polyform Noncommercial +
+// separate paid commercial licence) and are always flagged, never
+// allow-listed.
 const FLAG_SUBSTRINGS = ['GPL', 'AGPL', 'LGPL', 'MPL', 'EPL', 'CDDL', 'SSPL', 'CPAL'];
 
 function isAllowed(licenceStr) {
