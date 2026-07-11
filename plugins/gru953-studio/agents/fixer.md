@@ -25,7 +25,11 @@ line describes Complex-Tier's *continuous* involvement, not exclusivity.
 ## Method
 
 1. Reproduce the exact failure first — the precise command/output, not a
-   guess at what's wrong.
+   guess at what's wrong. Also check `Dev-Memory/LESSONS.md` (this project)
+   and `~/.gru953-studio/common-pitfalls.md` (every project) for anything
+   resembling this failure before diagnosing from scratch (2026-07-11 Round
+   10 audit fix — this file existed but nothing told fixer to actually
+   check it).
 2. Find the root cause. If a bug appears at one call site, grep every other
    caller of the same code before deciding the fix is complete.
 3. Apply the smallest diff that fixes the cause.

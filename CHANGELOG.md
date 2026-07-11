@@ -1,5 +1,268 @@
 # Changelog
 
+## 3.0.0 — 2026-07-11
+
+A golden release: fixes a real shipping bug that failed CI, closes a
+critical publish-safety bypass found in Round 5 of the audit loop, and
+consolidates the specialist roster from 31 to a leaner, genuinely
+non-overlapping **23**. The roster change is why this is a MAJOR version —
+eight role names no longer exist.
+
+**Fixed — CI / a real shipping bug (every release since v1.0.0 was affected)**
+
+- The `dev-memory` **skill was never actually published.** `.gitignore`'s
+  `Dev-Memory/` line (meant for a project's private working-memory folder)
+  also matched the plugin's own `plugins/gru953-studio/skills/dev-memory/`
+  skill folder case-insensitively on macOS (`git core.ignorecase=true`), so
+  git silently never committed it. On a clean Linux CI checkout the plugin
+  had 5 skills, not the 6 the README and five files reference, and
+  `repo-integrity.mjs` correctly failed. Fixed by root-anchoring the ignore
+  rule to `/Dev-Memory/` and committing the skill. The published plugin now
+  actually contains its memory skill.
+- The secret scanner (`scan.mjs`) had the **same case bug**: its
+  `DEVMEMORY_RE` used a case-insensitive flag, so once the `dev-memory`
+  skill was committed the scanner flagged it as the private `Dev-Memory`
+  folder and would have blocked every push of the plugin itself. Made the
+  match case-sensitive to the canonical `Dev-Memory` name.
+- Cleared the CI "Node.js 20 is deprecated" warning (bumped
+  `actions/checkout` and `actions/setup-node` to v5, Node 22).
+
+**Fixed — publish-safety (Round 5 of the audit loop, CRITICAL)**
+
+- `gate.mjs`'s go-public check (`isGoPublicCommand`) matched **raw,
+  un-normalized** command text, so every obfuscation the push detector was
+  hardened against over four rounds — quoted flag values
+  (`--visibility="public"`), `$IFS` word-splitting, quoted tokens
+  (`"gh" repo edit`) — sailed past it. With only a private-publish
+  confirmation recorded, an obfuscated "make it public" command was allowed
+  with no go-public confirmation at all, defeating the private-then-public
+  guarantee. Also, `isPushCapable`'s `gh` rules themselves required the
+  literal unquoted word `gh`, so a quoted `"gh"` was not even seen as
+  push-capable. Both fixed: the go-public check now normalizes the command
+  the same way and both tolerate quotes/`$IFS` around every token; verified
+  live and locked in with regression tests (suite now 22 tests, all green).
+
+**Changed — roster consolidated 31 → 23 (BREAKING)**
+
+On the owner's explicit instruction to remove overlap and make every role
+unique, eight roles that overlapped another or created an artificial
+hand-off were merged into the role that already owned the adjacent work:
+
+- `prompt-engineer` and `mlops-engineer` → **ai-developer** (it now owns the
+  prompt, the integration, the guardrails, and a repeatable quality check).
+- `qa-lead` → **tester** (test strategy + execution in one role).
+- `sre-observability` → **devops-engineer** (deploy + live-running
+  reliability in one role).
+- `release-manager` → **publisher** (versioning + release notes + the push).
+- `cut-recorder` → **scope-guardian** (it decides a cut and records it).
+- `project-assistant` → **memory-keeper** (the task table/logs it tidied are
+  Dev-Memory files memory-keeper already owns).
+- `privacy-dpo` → **security-compliance-auditor** (one pre-publish
+  compliance gate covering security AND personal-data/privacy).
+
+`responsible-ai-reviewer` was kept deliberately separate from `ai-developer`
+(independent review, like `reviewer` vs `builder`). Every surviving role's
+trigger is now distinct. See `plugins/gru953-studio/ROSTER.md` for the full
+rationale. Anyone who referenced a removed role by name should use the
+survivor it merged into.
+
+**Rounds 6 and 7 of the same audit loop, before this release ships:**
+
+- Two agent files (`reviewer.md`, `builder.md`) still instructed a hand-off
+  "with the Cut-Recorder" — a role merged into `scope-guardian` above.
+  Fixed to reference `scope-guardian`'s `UNBUILT.md` cut ledger instead.
+- `technical-writer`'s own description claimed it writes "clear help/error
+  text" while also stating it is distinct from `ux-designer` (which owns
+  in-app wording) — self-contradictory, since in-app error/help text IS
+  in-app wording. Narrowed `technical-writer` to standalone docs only.
+- `project-lead.md` described itself as separate from "23 specialist
+  roles" while being one of the 23 itself — an off-by-one that implied 24
+  roles total. Reworded to avoid stating a count that has to be kept in
+  sync by hand.
+- Trimmed an unused `Write` tool grant from `scope-guardian` (it delegates
+  the one write action it performs to `memory-keeper`, so it never uses
+  `Write` directly).
+- `governance/LOGO-USAGE.md` still named the superseded GRU953 Community
+  Licence 1.0; corrected to the Polyform Noncommercial License 1.0.0 this
+  repo actually ships under.
+- `governance/CONTRIBUTING.md` and `CLAUDE.md` documented gate commands
+  that didn't textually match what `.github/workflows/ci.yml` actually
+  runs (a `--test` flag CI doesn't use; a bare `roster-check.mjs` invocation
+  where CI passes explicit arguments) — functionally equivalent, but no
+  longer worth a reader having to notice that. Made them match exactly.
+- **Security (CRITICAL, found live): `normalizeForPushCheck`'s
+  backslash-unescape only covered letters and digits**, so
+  backslash-escaped PUNCTUATION (`gh repo edit me/app -\-public`,
+  `--visibility\=public`) kept its backslash and slipped past the
+  go-public regexes while bash resolved a real `--public` /
+  `--visibility=public` flag — allowed with only the private-publish
+  token recorded. Fixed by un-escaping a backslash before ANY character.
+- **Security (CRITICAL, found live): ANSI-C quoting (`$'public'`) wasn't
+  recognised at all.** Bash resolves `$'public'` to the literal text
+  `public`, so `gh repo edit me/app --visibility $'public'` bypassed the
+  go-public gate the same way. Reproduced directly (`x=$'public'; echo
+  "$x"` → `public`) before fixing. Fixed by stripping `$'...'` to its raw
+  content as the very first normalization step.
+- `repo-integrity.mjs`'s README role/skill-count check used only the FIRST
+  match anywhere in the file with no `/g` — a later, wrong count could hide
+  behind an earlier correct one (false-clean), while an unrelated
+  historical number could falsely block a correct README. Fixed to check
+  every occurrence of the specific "N specialist roles"/"N skills" phrase
+  consistently.
+- `repo-integrity.mjs`'s INV9 crashed with an uncaught exception on a
+  missing `marketplace.json` instead of reporting it — losing every other
+  finding (including the real one) behind a raw stack trace. Fixed with a
+  proper guard.
+- `repo-integrity.mjs`'s frontmatter parser returned a quoted
+  `name: "x"` value with the quotes still attached, which would have
+  falsely failed a syntactically valid file. Fixed to parse quoted values
+  like real YAML would.
+- `verify-progress.mjs` required an exact `done` status cell, so a
+  decorated `Done ✅` row with zero verified-evidence text was silently
+  skipped — the exact failure mode this script exists to catch. Loosened
+  to recognise "done" as the leading word, tolerating trailing decoration.
+- Added 6 new regression tests for `repo-integrity.mjs`/`verify-progress.mjs`,
+  which had zero test coverage before this round — `hooks.test.mjs` is now
+  28/28, up from 22.
+- `project-lead.md` described itself as separate from "23 specialist
+  roles" while being one of the 23 itself. Reworded to avoid a count that
+  has to be kept in sync by hand.
+- Trimmed an unused `Write` tool grant from `scope-guardian` (it delegates
+  its one write action to `memory-keeper`).
+- `governance/LOGO-USAGE.md` still named the superseded GRU953 Community
+  Licence 1.0; corrected to the Polyform Noncommercial License 1.0.0.
+- `CLAUDE.md`/`governance/CONTRIBUTING.md` documented gate commands that
+  didn't textually match what `ci.yml` actually runs; made them match.
+- **Security (CRITICAL, the most severe bypass found across this whole
+  loop): every `git`/`gh` regex matched literal, case-SENSITIVE text**, but
+  the filesystems this plugin targets (macOS APFS, Windows NTFS) resolve a
+  binary name via `PATH` without regard to case. `GIT push origin main` is
+  not obfuscation — it is bash running the real `git` binary, unchanged.
+  Reproduced live: with a real secret committed and ZERO confirmation
+  tokens of any kind recorded, `GIT push origin main` was allowed by both
+  `scan.mjs` and `gate.mjs`, while lowercase `git push origin main` was
+  correctly denied — this defeated the matcher's very first check, for the
+  plain push/repo-create/repo-edit cases themselves, not an edge-case flag
+  value. Fixed by adding `/i` to every relevant regex in `isPushCapable`
+  and `isGoPublicCommand`.
+- **Security (CRITICAL): ANSI-C hex/octal escapes inside `$'...'` weren't
+  decoded.** `$'pub\x6cic'`/`$'pub\154ic'` resolve to the literal text
+  `public` in bash (the escape spells the letter "l"), and `$'\x67\x68'`
+  resolves to `gh` — spelling the binary name itself. The Round 7 fix only
+  stripped the `$'...'` wrapper without decoding what was inside it. Fixed
+  by decoding `\xHH`/`\NNN` escapes before stripping the wrapper.
+- Added 5 new regression tests for the case-insensitivity and ANSI-C
+  hex/octal fixes — `hooks.test.mjs` is now 30/30.
+
+**Round 9, a dedicated non-technical-comprehension pass plus an
+agent-manipulation security pass — both genuinely new lenses, not
+re-testing prior fixes:**
+
+- README's install section had "click the links below" with no links to
+  click, an unexplained "marketplace," and a bare `/path/to/...`
+  placeholder with no real example — all fixable, all real for a total
+  first-time user. Rewritten with concrete instructions and a worked
+  example path for both Mac and Windows.
+- The single highest-stakes sentence in the whole product — the
+  "permanent and irreversible" private-publish confirmation — used the
+  word "repository" without ever defining it anywhere in the product.
+  Added a plain-English gloss at the one place this sentence is defined.
+- No rule anywhere barred relaying a raw hook/tool error string (shell
+  variables, file paths, code identifiers) to the user verbatim. Added an
+  explicit rule to the Stuck Protocol: always translate, never relay raw.
+- The Tier-assignment question "Does it integrate two or more external
+  services?" used jargon a non-technical user answering the pop-up
+  wouldn't necessarily know. Reworded in plain terms with an example.
+- `publish-github/SKILL.md` had a stale cross-reference ("before step 2,
+  not after it") left over from an earlier renumbering of the same list,
+  and a resume-rehearsal instruction placed AFTER the four checks it says
+  it must precede. Both fixed — the cross-reference now names the actual
+  step, and the instruction moved to where it belongs.
+- `dev-memory/SKILL.md` contradicted itself (and `project-lead.md` and
+  `studio/SKILL.md`) about who reads Dev-Memory at session start — one
+  passage said Project Lead reads "the single resume pointer... and
+  nothing more," another said `memory-keeper` does the reading. Settled on
+  one consistent story matching the other two files: Project Lead reads
+  `PROGRESS.md`/`SESSION-LOG.md` tail/`INDEX.md` directly (the one narrow
+  exception to its delegate-only rule), `memory-keeper` owns everything
+  else.
+- The agent-manipulation security pass confirmed a genuine PASS on the
+  core guarantee — no skill or agent file lets a memory file's *claimed*
+  approval substitute for a live `AskUserQuestion` answer on an
+  irreversible action — but surfaced two real, bounded, disclosed-not-fixed
+  limitations, documented in `governance/SECURITY.md`: the publish token is
+  derived from a public formula and a non-secret path, so it proves "this
+  file was written," not "a human clicked yes"; and the mandatory
+  secrets-scan-before-memory-write rule has no `PreToolUse` hook backing
+  it on `Write`/`Edit`, only prose (bounded — `Dev-Memory/` never ships
+  regardless).
+
+Verified: 30/30 tests, `repo-integrity.mjs`/`roster-check.mjs`/`licence-scan.mjs`
+all clean, re-checked on a fresh clone of the repo before this release ships.
+
+**Three new features, added on request, plus the Round 10-11 audit-fix
+loop that followed:**
+
+- **New skill: `audit-loop`.** A systematic, planned protocol for any
+  review that needs more than one pass — plan the full set of risk
+  dimensions and a bounded round budget (target 5 or fewer) before
+  starting, dispatch a genuinely fresh panel each round, and always
+  re-verify the immediately-previous round's specific fix with the SAME
+  panel configuration that found it, alongside fresh exploration.
+  Referenced from `reviewer.md`, `security-compliance-auditor.md`, and
+  `studio/SKILL.md`. Distilled directly from this project's own 2026-07-11
+  audit-fix loop.
+- **Learning from mistakes, both scopes.** A new per-project
+  `Dev-Memory/LESSONS.md` (append-only, factual, dated) logs a real mistake
+  and the corrected rule going forward; at Publish, anything genuinely
+  general is distilled into a new cross-project
+  `~/.gru953-studio/common-pitfalls.md`, so a mistake caught once benefits
+  every future project, not just the one it happened on. Checked by
+  `builder`, `fixer`, and `ai-developer` before starting a task that
+  resembles one already logged.
+- **Working-style memory, across every project.** The existing
+  first-run-only `~/.gru953-studio/profile.md` is now also grown by
+  `memory-keeper` throughout every later project with durable working-style
+  facts learned from real sessions — read by `interviewer` before drafting
+  questions and by `project-lead` at the start of every session. Explicitly
+  documented as a preference hint, never authorization for anything, and
+  never a substitute for a live confirmation on an irreversible action.
+
+**Round 10 (4 lenses, 3 found real issues):** the new files' documented
+"read triggers" were aspirational prose never actually wired into the
+consuming roles — fixed by adding real checks to `builder.md`, `fixer.md`,
+`ai-developer.md`, and `project-lead.md`, and by naming `memory-keeper` as
+the executor of `first-run`'s initial write (the previous default,
+`project-lead`, deliberately has no `Write` tool and structurally couldn't
+have done it). The "same secrets-scan rule applies" disclosure for the new
+cross-project files was copied from the narrower per-project case without
+re-deriving whether it held at a much wider blast radius (outside any git
+repo, read at the start of every future project forever) — re-derived
+explicitly rather than borrowed by reference. Re-verifying Round 9's
+comprehension fixes (same panel configuration) confirmed all 5 held, but
+surfaced 3 new issues (unexplained "converges" jargon; an internal
+changelog note spliced into literal user-facing pop-up question text — a
+real risk of it being shown verbatim; "CLI" never expanded) — all fixed.
+Re-verifying Round 9's agent-manipulation conclusion (same configuration):
+clean re-confirmation, no new failure mode.
+
+**Round 11 (2 lenses — a smaller, targeted completeness check, not another
+open-ended round, per the new `audit-loop` skill's own "re-plan"
+guidance):** a dedicated first-ever deep-read of the governance/CI files
+found `governance/LOGO-USAGE.md` still named the superseded GRU953
+Community Licence 1.0 in a SECOND place ("Everything else stays open")
+that an earlier fix (this same file's opening paragraph) had missed —
+fixed, now consistently Polyform Noncommercial License 1.0.0 throughout.
+An unconstrained wildcard pass found this very CHANGELOG entry itself
+hadn't kept pace with the Round 10 feature work — this entry is that fix.
+
+Verified again: 30/30 tests, all gates clean.
+
+**11 rounds of independent audit panels ran across this whole loop, every
+one finding at least one real issue.** Publishing now on explicit user
+instruction to stop the loop and ship what has been verified, rather than
+continuing to an idealised "2 consecutive clean rounds" state.
+
 ## 2.0.3 — 2026-07-11
 
 Round 4 of the same "until golden" audit-fix loop on v2.0.2. The Round 3

@@ -65,23 +65,48 @@ report it.
 
 The push-detection matcher (`isPushCapable` in `hooks/lib.mjs`) matches
 literal command TEXT, not what the shell actually executes after expansion.
-As of 2026-07-11 (two audit rounds, the second one specifically re-testing
-the first fix rather than trusting it) it canonicalises several known
-obfuscation techniques before matching: `$IFS`-based word-splitting
+As of 2026-07-11 (eight audit rounds, most re-testing the immediately
+preceding round's own fix rather than trusting it) it canonicalises several
+known obfuscation techniques before matching: `$IFS`-based word-splitting
 (`git${IFS}push`), quote-splicing of a word whether the quoted segments are
 empty or not and however many splices are chained (`git pu""sh`,
-`git p"u"s"h"`), backslash-escaped mid-word characters (`git p\ush`), and
-backslash-newline line continuations. All of these were found, in live
-adversarial passes, to defeat the matcher entirely. This closes every
-concrete case found so far; it does not close shell text obfuscation in
-general, which has effectively unlimited variations (command substitution,
-variable reuse/assignment, encoding, and combinations of all of the above).
-Treat this as raising the bar against realistic accidents and common
-tricks, not as a sandbox against a determined adversary — the only fully
-robust fix would be executing the command and inspecting its real effect,
-which this hook design (a fast, stdlib-only, per-command check) does not do.
-If you find another concrete bypass, please report it (see above) — this
-list will keep growing as real cases are found, not be treated as closed.
+`git p"u"s"h"`), a backslash before ANY character, not just letters/digits
+(`git p\ush`, and — found separately, since escaped PUNCTUATION defeated an
+earlier letters/digits-only version — `-\-public`, `--visibility\=public`),
+backslash-newline line continuations, ANSI-C quoting (`$'public'` resolves
+to the literal text `public` in bash; found live via a background audit
+agent that was cut off by a session rate limit mid-investigation before it
+could report — the lead was still run down and confirmed rather than
+discarded), and ANSI-C hex/octal escapes WITHIN that quoting (`$'pub\x6cic'`
+and `$'pub\154ic'` both resolve to `public`, and `$'\x67\x68'` resolves to
+`gh` — spelling the binary name itself letter-by-letter; the wrapper-strip
+alone left these as literal backslash-digit text instead of decoding them).
+Every `git`/`gh`/subcommand/flag match is also case-insensitive, because the
+filesystems this plugin actually targets (macOS APFS, Windows NTFS) resolve
+a binary name via `PATH` without regard to case — `GIT push origin main`
+is not obfuscation, it is bash running the real `git` binary, unchanged;
+this was the single most severe bypass found across the whole loop, since
+it defeated the matcher's very first check with zero confirmation tokens
+of any kind recorded, for the plain `push`/`repo create`/`repo edit` cases
+themselves, not just an edge-case flag value. `isGoPublicCommand`
+(`hooks/gate.mjs`) shares this same canonicalisation and case-insensitivity,
+and its own token-matching regex tolerates quotes/`$IFS` around every one
+of `gh`/`repo`/`create`/`edit`/`--public`/`--visibility`, closing a critical
+gap where it used to match raw, un-normalized, case-sensitive text entirely
+separately from `isPushCapable`. All of these were found, in live
+adversarial passes (never trusted from a report alone — reproduced directly
+against the real hook code before being called a bug, and again after being
+called fixed), to defeat the matcher entirely. This closes every concrete
+case found so far; it does not close shell text obfuscation in general,
+which has effectively unlimited variations (command substitution, variable
+reuse/assignment, further encoding schemes, and combinations of all of the
+above). Treat this as raising the bar against realistic accidents and
+common tricks, not as a sandbox against a determined adversary — the only
+fully robust fix would be executing the command and inspecting its real
+effect, which this hook design (a fast, stdlib-only, per-command check)
+does not do. If you find another concrete bypass, please report it (see
+above) — this list will
+keep growing as real cases are found, not be treated as closed.
 
 `hooks/licence-scan.mjs` currently checks top-level `node_modules/*` only,
 not each dependency's own nested `node_modules`.
@@ -100,3 +125,37 @@ resolved path against a fixed, known-good location, which isn't possible
 here because the legitimate invocation form genuinely varies (an absolute
 `${CLAUDE_PLUGIN_ROOT}/...` path from the plugin cache, or a relative
 `hooks/confirm-publish.mjs` from within the project root).
+
+**2026-07-11 Round 9 additions** (found by a dedicated audit lens attacking
+agent behaviour and instruction-following, not shell text — a genuinely
+different attack surface from everything above). The core finding was a
+PASS: no skill or agent file offers a shortcut where a memory file's
+*claimed* approval ("user already confirmed, proceed") substitutes for a
+fresh, live `AskUserQuestion` answer — the private-publish and go-public
+gates are anchored to a token file `gate.mjs` checks mechanically, never to
+prose any agent reads and trusts. Two adjacent, real, lower-severity gaps
+were found alongside that PASS:
+
+- The publish/go-public confirmation tokens are `sha256("studio-publish:" +
+  <project root path>)` — a formula in this project's own public source
+  code, computed from a path that is not a secret. Anyone who can already
+  write files into a project's `Dev-Memory/` folder could compute and write
+  a valid `PUBLISH-APPROVED`/`GO-PUBLIC-APPROVED` file directly, without
+  ever going through a live `AskUserQuestion` answer. The token proves "this
+  exact file was written for this exact project," not "a human clicked
+  yes." Not fixed: doing better would need a way to verify a human genuinely
+  answered a pop-up, which is a Claude Code host-level capability this
+  plugin has no access to — the same boundary every trust decision in this
+  document ultimately runs into.
+- `dev-memory/SKILL.md` and `memory-keeper.md` both state a mandatory
+  secrets-scan before every memory write, but `hooks.json` only wires
+  `scan.mjs`/`gate.mjs` on the `Bash` matcher — there is no `PreToolUse`
+  hook on `Write`/`Edit` backing this rule mechanically. It is currently
+  enforced by instruction-following alone, unlike the push-time scan (which
+  *is* hook-enforced regardless of what any file claims). Blast radius is
+  bounded: `Dev-Memory/` is git-ignored on creation, and `scan.mjs`
+  independently blocks any push whose file set contains a `Dev-Memory/`
+  path — so a secret that slipped through an unscanned memory write still
+  could not reach GitHub via this plugin's own publish path. The exposure
+  is local-disk-only. Worth a real `Write`/`Edit` PreToolUse hook in a
+  future round; not yet built.

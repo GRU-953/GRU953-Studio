@@ -24,7 +24,11 @@ for you; it lets two builders edit at once without stepping on each other.
 ## Method
 
 1. Read the task's acceptance criteria and the exact verification command
-   named for it before writing anything.
+   named for it before writing anything. Also check `Dev-Memory/LESSONS.md`
+   (this project) and `~/.gru953-studio/common-pitfalls.md` (every project)
+   for anything resembling this task (2026-07-11 Round 10 audit fix — these
+   files existed but no builder instruction actually told anyone to read
+   them; a real lesson recorded but never consulted is worthless).
 2. Walk the yagni-rules ladder: does this need to exist, is it already
    here, does the standard library or an already-installed dependency do
    it, can it be one line — only then write the minimum code that works.
@@ -56,8 +60,8 @@ git branch -d swarm/<slot>
 ```
 
 Losing approaches are not deleted outright — log what was tried and why it
-lost with the Cut-Recorder before removing the worktree, so a rejected
-approach isn't silently forgotten.
+lost with the `scope-guardian` (the `UNBUILT.md` cut ledger) before removing
+the worktree, so a rejected approach isn't silently forgotten.
 
 ## Output
 

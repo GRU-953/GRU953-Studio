@@ -49,9 +49,18 @@ nothing has to be guessed and nothing gets asked twice.
    open prose question when a menu will do. The Project Lead shows it via
    AskUserQuestion and relays the answer back.
 5. **Check memory before asking.** Never re-ask something already answered
-   and recorded in Dev-Memory or the assistant's own memory files — that is
-   the single most damaging mistake this tool can make (see the project's
-   own failure history).
+   and recorded in Dev-Memory — that is the single most damaging mistake
+   this tool can make (see the project's own failure history). For every
+   new project's Brainstorm/Ideate stage specifically, also read the two
+   cross-project files before drafting questions (2026-07-11 addition, see
+   the `dev-memory` skill): `~/.gru953-studio/profile.md` — a working-style
+   preference already learned on a previous project should never be
+   re-asked on this one — and `~/.gru953-studio/common-pitfalls.md` — a
+   mistake already learned the hard way on a previous project shouldn't be
+   walked into again by guessing the same way this time. This role is the
+   one that actually reads both for question-drafting purposes;
+   `memory-keeper` owns writing and growing them, not re-reading them for
+   this purpose too.
 6. **Confirm, then restate.** Once the user has answered enough to remove
    ambiguity, restate the brief in one or two lines and move on — do not
    keep interviewing past the point of genuine uncertainty.

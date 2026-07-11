@@ -36,7 +36,16 @@ function main() {
   for (const line of lines) {
     if (!/^\|/.test(line)) continue; // only table rows
     const cells = line.split('|').map((c) => c.trim());
-    const statusCell = cells.find((c) => /^(done)$/i.test(c));
+    // 2026-07-11 Round 7 audit fix (real, found by execution): the exact
+    // `/^(done)$/i` match required the status cell to be the literal string
+    // "done" and nothing else. A perfectly plausible real edit — "Done ✅",
+    // "Done.", "DONE!" — no longer equals "done" exactly, so the row was
+    // silently skipped even with zero verified-evidence text: the exact
+    // failure mode this whole script exists to catch. Loosened to "starts
+    // with the word done", tolerating trailing decoration, while still
+    // rejecting a genuinely different word like "undone" (doesn't start
+    // with "done") or "donee" (the word-boundary after "done" isn't met).
+    const statusCell = cells.find((c) => /^done\b/i.test(c));
     if (!statusCell) continue;
     if (!VERIFIED_RE.test(line)) {
       problems.push(line.trim());

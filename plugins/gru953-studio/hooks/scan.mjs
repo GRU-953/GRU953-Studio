@@ -123,7 +123,18 @@ function main() {
   // security review used a quoted literal).
   const SECRETVAR_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
   const KEYFILE_RE = /(^|\/)(\.env(\..+)?|.+\.env|id_rsa|.+\.pem|.+\.key)$/;
-  const DEVMEMORY_RE = /(^|\/)Dev-Memory(\/|$)/i;
+  // 2026-07-11 Round 5 audit fix (case-sensitive ON PURPOSE — the `/i` flag
+  // was removed): the studio always creates a project's private working
+  // memory as `Dev-Memory` (capital D, capital M — see findStudioRoot,
+  // confirm-publish.mjs, every skill). With `/i`, this ALSO matched the
+  // plugin's OWN `plugins/gru953-studio/skills/dev-memory/` skill directory,
+  // so once that skill was correctly committed (it had been silently
+  // gitignored by the same case confusion), the scanner flagged the
+  // plugin's own legitimate skill as if it were the forbidden private-memory
+  // folder — which would block every push of GRU953-Studio itself. Matching
+  // the exact canonical `Dev-Memory` casing protects the real target (a
+  // built project's private memory) without catching the lowercase skill.
+  const DEVMEMORY_RE = /(^|\/)Dev-Memory(\/|$)/;
 
   const findings = [];
   const addFinding = (type, file, line) => {

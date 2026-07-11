@@ -37,10 +37,19 @@ Keep this short — three or four questions at most:
 
 ## After first-run
 
-1. Record the answers in a durable memory location (not per-project
-   Dev-Memory, since this applies across all future projects) — a small
-   `~/.gru953-studio/profile.md`-style file, or the assistant's own memory
-   system if the surface provides one.
+1. Hand the four answers to `memory-keeper`, which records them in
+   `~/.gru953-studio/profile.md` — a durable location outside any single
+   project, since this applies across all future projects (2026-07-11
+   Round 10 audit fix: earlier wording never named who actually performs
+   this write; `project-lead`, the obvious default, deliberately has no
+   `Write` tool, so it structurally couldn't have been the one doing it —
+   `memory-keeper` already owns this file going forward, so it writes the
+   seed too). This is the same file `memory-keeper` goes on to grow
+   throughout every later project with real working-style preferences
+   learned from actual sessions, not just these four one-off answers — see
+   the `dev-memory` skill's "Cross-project memory" section. First-run seeds
+   the initial version; it is never recreated or overwritten wholesale
+   after that, only added to.
 2. Tell the user, in one or two lines, that this is done and won't be asked
    again, then move straight into their actual project's Brainstorm
    interview — no extra ceremony.

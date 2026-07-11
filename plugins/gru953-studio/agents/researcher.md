@@ -31,7 +31,7 @@ reinvents something that already exists.
    time-sensitive.
 3. For AI features, confirm current model names/pricing by live search
    rather than memory — a stale model name is a shipped bug (hand the
-   finding to `ai-developer`/`prompt-engineer`).
+   finding to `ai-developer`, which owns the prompt and integration).
 4. Report findings as short, sourced bullets: the fact, the source, the
    date — and a one-line "so what" for the decision at hand.
 5. Flag clearly anything that could not be verified rather than presenting a

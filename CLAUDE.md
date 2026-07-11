@@ -17,9 +17,9 @@ Run the same gates CI runs, and keep them all green:
 
 ```
 for f in plugins/gru953-studio/hooks/*.mjs; do node --check "$f"; done
+node plugins/gru953-studio/hooks/hooks.test.mjs
 node plugins/gru953-studio/hooks/repo-integrity.mjs .
-node plugins/gru953-studio/hooks/roster-check.mjs
-node --test plugins/gru953-studio/hooks/hooks.test.mjs
+node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 node plugins/gru953-studio/hooks/licence-scan.mjs .
 ```
 

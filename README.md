@@ -51,7 +51,7 @@ in one short sentence the first time it comes up.
 
 You never talk to any of these directly — the Project Lead is your one
 point of contact, and brings in only the ones your project actually needs.
-The full list below (31 specialist roles in total) is here for anyone curious how it
+The full list below (23 specialist roles in total) is here for anyone curious how it
 works — you'll never need to remember it. A tiny one-page website wakes a
 handful; a bigger app with logins, data and an AI feature wakes more. A
 specialist your project doesn't need never runs.
@@ -63,64 +63,63 @@ specialist your project doesn't need never runs.
 | **Project Lead** | The one voice you talk to; runs the whole build and reports back in plain English |
 | **Interviewer** | Asks your pop-up questions — as many as needed, never more |
 | **Architect** | Proposes 2-3 ways to build your idea, explains the trade-offs, you choose |
-| **Scope Guardian** | Stops the team quietly adding things you didn't ask for |
+| **Scope Guardian** | Stops the team quietly adding things you didn't ask for, and keeps a permanent note of anything deliberately not built |
 | **Builder** | Writes the actual code, one small piece at a time |
 | **Reviewer** | Checks the code independently and trims anything unnecessary before publishing |
-| **Tester** | Proves each piece actually works, with real evidence — never just a claim |
-| **Security & Compliance Auditor** | Scans for leaked secrets, known vulnerabilities, and licence conflicts before anything ships |
+| **Tester** | Plans what needs testing, then proves each piece actually works with real evidence — never just a claim |
+| **Security & Compliance Auditor** | Scans for leaked secrets, known vulnerabilities and licence conflicts, and checks personal data is handled minimally and honestly, before anything ships |
 | **Brand Guardian** | Keeps your own branding consistent across everything visible |
-| **AI Developer** | Builds in AI features safely, only if your idea genuinely needs one |
+| **AI Developer** | Builds in AI features safely, only if your idea genuinely needs one — the prompt, the wiring, the safety rails and a quality check |
 | **Fixer** | The smallest, precise repair when something gets stuck |
-| **Cut-Recorder** | Keeps a permanent note of ideas deliberately not built, so they're never silently re-proposed |
 | **Cost Monitor** | Keeps spending on the cheaper side, warns you before anything pricier |
-| **Publisher** | Ships your finished app privately to your own GitHub, under your own name |
-| **Memory Keeper** | Remembers everything about your project between sessions, safely |
+| **Publisher** | Sets the version and writes the "what changed" notes, then ships your finished app privately to your own GitHub, under your own name |
+| **Memory Keeper** | Remembers everything about your project between sessions and keeps the task list tidy, safely |
 | **Maintenance Agent** | Comes back later for fixes and new features on an already-published project |
 
 **Brought in only when your project needs them** (an AI feature, a user
-interface, stored data, more than one language, and so on) — added in
-v2.0.0 to cover the full range of professional software and AI work:
+interface, stored data, more than one language, and so on) — so the full
+range of professional software and AI work is covered without a specialist
+your project doesn't need ever running:
 
 | Role | What it does | Turns up when… |
 | :-- | :-- | :-- |
-| **QA Lead** | Decides what "tested enough" means and plans the testing, before any test is run | your project is Standard-sized or bigger |
-| **Release Manager** | Sets the version number and writes the plain-English "what changed" notes | it's time to publish something bigger than tiny |
-| **DevOps Engineer** | Sets up a repeatable way to build and put your app online | your app needs to be hosted or packaged |
-| **SRE / Observability** | Makes a running app's problems visible instead of silent | your app runs as a live, always-on service |
-| **Prompt Engineer** | Writes and fine-tunes the instructions behind any AI feature | your idea includes an AI feature |
-| **MLOps Engineer** | Keeps measuring an AI feature's quality over time | an AI feature needs to keep working well |
-| **Responsible-AI Reviewer** | Checks an AI feature for fairness, harm and honesty | your idea includes an AI feature |
+| **DevOps Engineer** | Sets up a repeatable way to build and put your app online, and makes a running app's problems visible instead of silent | your app needs hosting/packaging, or runs as a live service |
+| **Responsible-AI Reviewer** | Independently checks an AI feature for fairness, harm and honesty | an AI feature makes a real decision about a person |
 | **UX Designer** | Makes the app easy and pleasant to move through | your app has a screen people use |
 | **Accessibility Specialist** | Makes sure people with disabilities can use it | your app has any user interface |
 | **Technical Writer** | Writes the plain-English guide for *your* finished app | your app needs its own instructions |
 | **Data Engineer** | Designs how your app stores data so it's safe to change | your app keeps data between uses |
-| **Privacy Officer** | Checks personal data is collected minimally and honestly | your app handles personal data |
 | **Localisation Specialist** | Makes the app work in more than one language (e.g. English + Bangla) | your app needs more than one language |
 | **Researcher** | Finds current, real facts so decisions aren't guesswork | a choice depends on an up-to-date fact |
-| **Project Assistant** | Keeps the task list, checklists and logs tidy behind the scenes | any project; always-on for the biggest ones |
 
-## The skills (6 skills — how it all runs)
+## The skills (7 skills — how it all runs)
 
 | Skill | What it does |
 | :-- | :-- |
 | `studio` | The main coordinator — runs the whole process end to end |
 | `first-run` | A short, one-off "getting to know you" setup, the very first time you ever use it |
-| `dev-memory` | The plain-text memory system that makes every project resumable, in a new session or the same one |
+| `dev-memory` | The plain-text memory system that makes every project resumable, in a new session or the same one — and remembers real lessons and your working style between projects, not just within one |
 | `cost-guard` | The spending rules that keep costs predictable and on the cheaper side |
 | `yagni-rules` | The lean-coding rules every Builder follows — nothing gets built that wasn't actually needed |
 | `publish-github` | The exact, safety-checked steps for publishing to your GitHub |
+| `audit-loop` | The planned protocol used whenever a review needs more than one pass, so it reaches a clean result quickly instead of dragging on |
 
 ## Installing
 
-**Requires Claude Code.** GRU953-Studio is a Claude Code plugin — it needs
-Claude Code's specific abilities (spawning specialist sub-agents, running
-safety checks before every action) that the Claude Desktop app doesn't
-have. It does **not** work inside Claude Desktop.
+**Step 1 — install Claude Code first, if you haven't already.** GRU953-Studio
+is a Claude Code plugin — an add-on for [Claude Code](https://claude.com/claude-code)
+itself, not something that runs on its own. It needs Claude Code's specific
+abilities (spawning specialist sub-agents, running safety checks before every
+action) that the separate Claude Desktop app doesn't have. It does **not**
+work inside Claude Desktop.
+
+**Step 2 — install GRU953-Studio.** Pick one of the two options below.
 
 ### Option 1 — from the marketplace (recommended, always up to date)
 
-These are two small, one-time installs — click the links below and follow
-the on-screen instructions, then run the two lines shown.
+A "marketplace" here just means the list Claude Code checks when installing
+an add-on like this one. Type these two lines into the Claude Code chat box,
+one at a time, pressing Enter after each:
 
 ```
 /plugin marketplace add GRU-953/GRU953-Studio
@@ -136,8 +135,11 @@ rather not type the marketplace command, or want a specific version.
    and download the `.zip` file under the version you want (the newest one
    is at the top).
 2. Unzip it anywhere on your computer.
-3. In Claude Code, add it as a local marketplace, pointing at the folder
-   you just unzipped (replace the path with wherever you put it):
+3. In the Claude Code chat box, type the two lines below — but first,
+   replace `/path/to/the/unzipped/folder` with the real location of the
+   folder you just unzipped (for example, on a Mac that might look like
+   `/Users/yourname/Downloads/GRU953-Studio`, or on Windows something like
+   `C:\Users\YourName\Downloads\GRU953-Studio`):
    ```
    /plugin marketplace add /path/to/the/unzipped/folder
    /plugin install gru953-studio
@@ -146,7 +148,8 @@ rather not type the marketplace command, or want a specific version.
 Either option needs [Node.js](https://nodejs.org) installed (it powers the
 plugin's safety checks — the secret scanner, the publish gate, and the
 licence scanner) and, only when you're ready to publish, the free [GitHub
-CLI](https://cli.github.com) signed in (`gh auth login`).
+CLI](https://cli.github.com) (CLI = command-line interface, a small
+program you install once) signed in (`gh auth login`).
 
 ## Licence
 

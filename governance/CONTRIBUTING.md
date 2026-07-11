@@ -20,12 +20,12 @@ Before opening a pull request, please run the project's checks:
 ```
 # 1. every hook parses
 for f in plugins/gru953-studio/hooks/*.mjs; do node --check "$f"; done
-# 2. the repository is internally consistent (references, counts, versions)
+# 2. the security hooks behave correctly
+node plugins/gru953-studio/hooks/hooks.test.mjs
+# 3. the repository is internally consistent (references, counts, versions)
 node plugins/gru953-studio/hooks/repo-integrity.mjs .
-# 3. the roster is within its committed baseline
-node plugins/gru953-studio/hooks/roster-check.mjs
-# 4. the security hooks behave correctly
-node --test plugins/gru953-studio/hooks/hooks.test.mjs
+# 4. the roster is within its committed baseline
+node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 # 5. the licence scanner runs
 node plugins/gru953-studio/hooks/licence-scan.mjs .
 ```

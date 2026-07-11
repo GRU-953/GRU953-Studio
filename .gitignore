@@ -1,4 +1,11 @@
-Dev-Memory/
+# Root-anchored (leading slash) ON PURPOSE: this ignores a project's private
+# working-memory folder if one ever appears at the repo root, but must NOT
+# match the plugin's own `plugins/gru953-studio/skills/dev-memory/` skill.
+# Without the leading slash, `Dev-Memory/` matched that skill folder
+# case-insensitively on macOS (git core.ignorecase=true), so the skill was
+# silently never committed — the published plugin shipped with 5 skills, not
+# 6, and CI failed on a clean Linux checkout. 2026-07-11 fix.
+/Dev-Memory/
 node_modules/
 .DS_Store
 *.log

@@ -36,7 +36,17 @@ function frontmatterField(text, field) {
   const m = text.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const line = m[1].split('\n').find((l) => new RegExp('^' + field + ':').test(l.trim()));
-  return line ? line.slice(line.indexOf(':') + 1).trim() : null;
+  if (!line) return null;
+  let value = line.slice(line.indexOf(':') + 1).trim();
+  // 2026-07-11 Round 7 audit fix (dormant, not yet triggered by any
+  // committed file, closed anyway): a YAML value quoted as `"architect"` or
+  // `'architect'` was returned verbatim WITH the quotes, so a syntactically
+  // valid `name: "architect"` in architect.md would falsely fail INV1's
+  // name-matches-filename check (`'"architect"' !== 'architect'`). Strip one
+  // layer of matching surrounding quotes, same as any real YAML parser would.
+  const quoted = value.match(/^"([^"]*)"$|^'([^']*)'$/);
+  if (quoted) value = quoted[1] !== undefined ? quoted[1] : quoted[2];
+  return value;
 }
 
 // ---- gather ground truth -----------------------------------------------------
@@ -112,23 +122,37 @@ for (const f of allFiles.filter((x) => x.endsWith('.md') || x.endsWith('.json') 
 }
 
 // ---- INV 5: README role count matches actual agent count ---------------------
+// 2026-07-11 Round 7 audit fix (2 real bugs, found by execution): the
+// previous regex had no `/g` and matched the FIRST "<n> roles"-shaped text
+// ANYWHERE in the whole README, with "specialist" merely optional. Two
+// failure modes, both reproduced live: (a) FALSE-CLEAN — an early, correct
+// "23 specialist roles" mention let a LATER, actually-wrong number
+// elsewhere in the file go completely unchecked, since only the first
+// match was ever read; (b) FALSE-BLOCK — an unrelated historical sentence
+// like "grew from 16 roles in early versions" matched before the real
+// stated count and was misread as the count. Fixed two ways: require the
+// specific phrase this project actually uses ("N specialist roles" — not
+// generic "N roles", which is a common enough phrase to collide with
+// incidental prose); and check EVERY occurrence of that specific phrase
+// with `/g`, not just the first, so a stale or conflicting second mention
+// can no longer hide behind an earlier correct one.
 const readme = read(path.join(repoRoot, 'README.md')) || '';
-const roleCountMatch = readme.match(/(\d+)\s+(?:AI\s+)?(?:specialist\s+)?roles?/i);
-if (roleCountMatch) {
-  const stated = parseInt(roleCountMatch[1], 10);
-  if (stated !== agentCount) fail(`README states ${stated} roles but agents/ has ${agentCount}`);
-} else {
-  fail(`README does not state a role count in a recognisable "<n> roles" form`);
+function checkStatedCount(text, re, actual, label) {
+  const matches = [...text.matchAll(re)].map((m) => parseInt(m[1], 10));
+  if (matches.length === 0) {
+    fail(`README does not state a ${label} count in a recognisable form`);
+    return;
+  }
+  const distinct = [...new Set(matches)];
+  if (distinct.length > 1 || distinct[0] !== actual) {
+    fail(`README's stated ${label} count(s) [${distinct.join(', ')}] do not all match the actual count ${actual}`);
+  }
 }
+checkStatedCount(readme, /(\d+)\s+(?:AI\s+)?specialist\s+roles?/gi, agentCount, 'role');
 
 // ---- INV 6: README skill count matches actual skill count --------------------
-const skillCountMatch = readme.match(/(\d+)\s+skills?/i);
-if (skillCountMatch) {
-  const stated = parseInt(skillCountMatch[1], 10);
-  if (stated !== skillCount) fail(`README states ${stated} skills but skills/ has ${skillCount}`);
-} else {
-  fail(`README does not state a skill count in a recognisable "<n> skills" form`);
-}
+// Same fix shape as INV5, for the same reason.
+checkStatedCount(readme, /(\d+)\s+skills?/gi, skillCount, 'skill');
 
 // ---- INV 7: plugin.json and marketplace.json versions agree ------------------
 // 2026-07-11 v2.0.0 follow-up audit fix (MAJOR, false-clean): the previous
@@ -164,12 +188,28 @@ if (pv !== undefined && mv !== undefined && pv !== mv) fail(`version mismatch: p
 // all instead of failing loud, which is the same shape of silent blind spot
 // this very invariant exists to close. Now requires the phrase to be found
 // in the expected shape at all, not just correct when it happens to match.
+//
+// 2026-07-11 Round 7 audit fix (real crash, found by execution): the
+// `if (!marketPluginDesc) fail(...)` above did not STOP execution — `fail`
+// only appends to `problems[]` and returns — so when marketplace.json was
+// missing entirely, the very next line called `.match()` on `undefined`
+// and the whole script threw an uncaught TypeError. Exit code was still
+// non-zero (Node's default for a crash), so CI didn't silently pass, but
+// every OTHER problem this script would have reported — including the
+// real, useful "marketplace.json is missing" message from INV7 above — was
+// lost behind a raw stack trace instead of the structured problem list
+// this script exists to produce. Guarded with an early `else` so the rest
+// of this invariant only runs when there is a description to check.
 const marketPluginDesc = marketJson.plugins && marketJson.plugins[0] && marketJson.plugins[0].description;
-if (!marketPluginDesc) fail(`marketplace.json plugins[0].description is missing`);
-const dm = marketPluginDesc.match(/up to (\d+) specialised roles/i);
-if (!dm) fail(`marketplace.json plugin description does not state a role count in the expected "up to N specialised roles" form: "${marketPluginDesc}"`);
-if (parseInt(dm[1], 10) !== agentCount) {
-  fail(`marketplace.json plugin description says "up to ${dm[1]} specialised roles" but agents/ has ${agentCount}`);
+if (!marketPluginDesc) {
+  fail(`marketplace.json plugins[0].description is missing`);
+} else {
+  const dm = marketPluginDesc.match(/up to (\d+) specialised roles/i);
+  if (!dm) {
+    fail(`marketplace.json plugin description does not state a role count in the expected "up to N specialised roles" form: "${marketPluginDesc}"`);
+  } else if (parseInt(dm[1], 10) !== agentCount) {
+    fail(`marketplace.json plugin description says "up to ${dm[1]} specialised roles" but agents/ has ${agentCount}`);
+  }
 }
 
 // ---- INV 8: committed roster baseline matches agent count --------------------

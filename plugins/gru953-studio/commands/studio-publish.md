@@ -23,8 +23,9 @@ Publish the current project's MVP to a private GitHub repository.
    confirmation with AskUserQuestion:
    "Publish this app privately to your GitHub now? This step is permanent
    and irreversible — you can always make it public later, but the private
-   repository itself cannot be un-created." with options
-   "Yes, publish privately (Recommended)" and "No, not now".
+   copy of your project on GitHub (called a 'repository') itself cannot be
+   un-created." with options "Yes, publish privately (Recommended)" and
+   "No, not now".
 4. If the user says no, stop politely and note in `Dev-Memory/PROGRESS.md`
    that publishing remains pending.
 5. If yes: record the confirmation so the publish-gate hook allows the

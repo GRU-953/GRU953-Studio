@@ -31,7 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable } from './lib.mjs';
+import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck } from './lib.mjs';
 
 function publishToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-publish:${studioRoot}`).digest('hex');
@@ -58,9 +58,29 @@ function publishConfirmed(studioRoot) {
 // from running as soon as the (private-scoped) publish token existed. A
 // second, differently-derived token now specifically gates any
 // public-visibility command.
-function isGoPublicCommand(c) {
-  return /(^|[^A-Za-z0-9_])gh[ \t]+repo[ \t]+(create|edit)/.test(c) &&
-    (/--public([ \t]|$)/.test(c) || /--visibility[ \t=]+(public|internal)/.test(c));
+// 2026-07-11 Round 5 audit fix (CRITICAL, found live via the real hook
+// interface, not just read): this matched RAW, un-normalized command text,
+// so every obfuscation technique isPushCapable() spent four rounds closing
+// — IFS-splicing (`gh${IFS}repo${IFS}edit`), quote-tolerance around the
+// `gh`/`repo`/`edit` tokens (`gh "repo" "edit"`), and a quoted flag VALUE
+// (`--visibility="public"`) — was never ported here. Reproduced live: with
+// only the private-publish token recorded, `gh repo edit me/app
+// --visibility="public"` was ALLOWED with no go-public confirmation at
+// all, defeating the "private-then-public, separately confirmed" guarantee
+// that is one of this project's settled gold-standard decisions. Fixed by
+// normalizing the command the same way isPushCapable() does, and adding
+// the same quote-tolerance around every token and the flag value.
+// 2026-07-11 Round 8 audit fix (CRITICAL, same root cause as the
+// isPushCapable fix in lib.mjs): this matched `gh`/`repo`/`create`/`edit`/
+// `--public`/`--visibility` as literal case-sensitive text, but on the
+// case-insensitive filesystems this plugin targets, `GH repo edit me/app
+// --visibility public` is not obfuscation — bash resolves `GH` to the same
+// real `gh` binary as lowercase `gh`, unchanged, so the command executes
+// exactly as typed. Added `/i` throughout to match.
+function isGoPublicCommand(rawC) {
+  const c = normalizeForPushCheck(rawC);
+  return /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
+    (/--public['"]?([ \t]|$)/i.test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
 }
 function goPublicToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-go-public:${studioRoot}`).digest('hex');

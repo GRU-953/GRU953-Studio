@@ -16,10 +16,14 @@ walls of text.
 Also load and follow these companion skills as standing rules:
 - `first-run` — the one-off setup that runs before a user's very first
   project (never on later projects).
-- `dev-memory` — how to read and write the project's memory files.
+- `dev-memory` — how to read and write the project's memory files, and the
+  cross-project files that carry lessons and working-style preferences
+  from one project to the next.
 - `yagni-rules` — the lean-coding ladder every builder must obey.
 - `cost-guard` — the confirmed cheapest-first spending default.
 - `publish-github` — the publishing protocol (Publish stage only).
+- `audit-loop` — the planned protocol for any review that needs more than
+  one pass (Review/Fix, and any "audit until clean" request).
 
 ## Step 0 — first run only
 
@@ -57,7 +61,10 @@ map the answer:
 
 1. Does it store user data beyond the current session? (Y/N)
 2. Does it handle money, authentication/logins, or personal data? (Y/N)
-3. Does it integrate two or more external services? (Y/N)
+3. Does it connect to two or more other apps or websites (e.g. a payment
+   provider and a Google sign-in)? (Y/N) (2026-07-11 Round 9 comprehension
+   fix: reworded from "integrate two or more external services," jargon a
+   non-technical user answering this pop-up wouldn't necessarily know)
 
 - **All No → Tiny.** A single static page, a small script, a one-off
   utility.
@@ -72,9 +79,9 @@ means in plain English, and let them raise or lower it at any time.
 
 | Tier | Roles activated (by project SIZE) |
 | :-- | :-- |
-| **Tiny** | project-lead, interviewer, architect, one builder, tester (basic checks), publisher, plus fixer/cut-recorder/memory-keeper/project-assistant on demand (see their own files — these are available at every Tier, not gated to Complex) |
-| **Standard** | + a Build Swarm of 2 builders (git-worktree isolated), reviewer (also does the pre-Publish trim, absorbing the retired `minimalist` role), scope-guardian, security-compliance-auditor, brand-guardian, cost-monitor, qa-lead, and release-manager at the Publish stage |
-| **Complex** | The full roster, with fixer/cut-recorder/memory-keeper/project-assistant/sre-observability working continuously rather than only on demand |
+| **Tiny** | project-lead, interviewer, architect, one builder, tester (basic checks + a lightweight plan), publisher, plus fixer and memory-keeper on demand (available at every Tier, not gated to Complex) |
+| **Standard** | + a Build Swarm of 2 builders (git-worktree isolated), reviewer (also does the pre-Publish trim, absorbing the retired `minimalist` role), scope-guardian (also keeps the cut ledger), security-compliance-auditor, brand-guardian, and cost-monitor |
+| **Complex** | The full roster, with fixer and memory-keeper working continuously rather than only on demand |
 
 ### Feature- and need-triggered roles (any Tier, by what the brief CONTAINS)
 
@@ -85,13 +92,13 @@ not size (2026-07-11 v2.0.0):
 
 | The moment the brief includes… | Wake these roles |
 | :-- | :-- |
-| An AI/LLM feature | `ai-developer` + `prompt-engineer` (any Tier); `mlops-engineer` (Standard+, any AI feature) |
-| An AI/LLM feature that makes or meaningfully influences a decision about a real person (e.g. eligibility, scoring, moderation, recommendations with real consequences) — not just, say, a generated encouragement message | `responsible-ai-reviewer` (2026-07-11 narrowed: previously fired on any Standard+ AI feature regardless of real-world stakes — an opus-tier role waking for a harmless AI "nice job!" message added cost with no matching risk) |
+| An AI/LLM feature | `ai-developer` (any Tier — owns the prompt, the integration, the guardrails, and a small repeatable quality check) |
+| An AI/LLM feature that makes or meaningfully influences a decision about a real person (e.g. eligibility, scoring, moderation, recommendations with real consequences) — not just, say, a generated encouragement message | `responsible-ai-reviewer` (Standard+, an independent fairness/harm pass — 2026-07-11 narrowed from any Standard+ AI feature: an opus-tier role waking for a harmless AI "nice job!" message added cost with no matching risk) |
 | A user interface | `accessibility-specialist` (any Tier); `ux-designer` (Standard+) |
 | Storing data beyond a session | `data-engineer` (Standard+) |
-| Money, logins, or personal data | `privacy-dpo` |
+| Money, logins, or personal data | `security-compliance-auditor`'s privacy review (personal-data minimisation, retention, consent, a plain notice) |
 | Hosting, packaging, or a deploy pipeline | `devops-engineer` (Standard+) |
-| Running as a live, long-lived service | `sre-observability` |
+| Running as a live, long-lived service | `devops-engineer`'s reliability pass (health checks, structured logging, failure posture) |
 | More than one language (e.g. English + Bangla) | `localisation-specialist` |
 | User-facing documentation for the built app | `technical-writer` (Standard+) |
 | A decision that turns on an external, current fact | `researcher` (on demand) |
@@ -112,14 +119,16 @@ Growth-guard note (confirmed 2026-07-10; count updated 2026-07-11 v2.0.0):
 Tiers, plus the feature-triggers above, are the *only* controls on TEAM SIZE
 PER PROJECT — there is no additional mechanical lock there, and a project
 only ever wakes the subset of roles its Tier and brief actually call for.
-Separately, the TOTAL ROLE COUNT (currently 31 — the standard SDLC/AI
-specialist set, an explicit owner decision in v2.0.0) is guarded by
-`scope-guardian` running `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"`
-against the baseline in `Dev-Memory/decisions/*roster*.md` for a built
-project, falling back to the committed `plugins/gru953-studio/ROSTER.md` for
-the product repo itself — do not skip scope-guardian on Standard/Complex
-Tier. Growing the roster past 31 still requires a named gap recorded in
-`ROSTER.md` (and, for contributions, an RFC — see `governance/GOVERNANCE.md`).
+Separately, the TOTAL ROLE COUNT (currently 23 — a deliberately lean,
+non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31
+by merging eight roles that overlapped or created artificial hand-offs) is
+guarded by `scope-guardian` running
+`node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
+`Dev-Memory/decisions/*roster*.md` for a built project, falling back to the
+committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
+not skip scope-guardian on Standard/Complex Tier. Growing the roster past 23
+still requires a named, non-overlapping gap recorded in `ROSTER.md` (and, for
+contributions, an RFC — see `governance/GOVERNANCE.md`).
 
 ## The lifecycle
 

@@ -34,7 +34,8 @@ first time requirements shift.
    boundary and handle the failure case without losing or corrupting data —
    one of the safety floors that is never trimmed.
 5. Record the data model and storage decision in `Dev-Memory/decisions/`,
-   and hand personal-data questions to `privacy-dpo`.
+   and hand personal-data questions (minimisation, retention, consent) to
+   the `security-compliance-auditor`, which owns the privacy review.
 
 ## Output
 

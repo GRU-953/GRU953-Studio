@@ -47,6 +47,14 @@ If any field is empty, STOP and ask the user to confirm it — never assume.
 
 ## 3. Pre-flight blocking checks (all four, via security-compliance-auditor)
 
+0. **Dev-Memory resume rehearsal** (2026-07-11 Round 9 fix: this step used
+   to be a paragraph placed AFTER all four checks below, telling the reader
+   to run it "before the pre-flight checks" — self-contradicting its own
+   position in the document). If this project has a `Dev-Memory` resume
+   rehearsal still outstanding (see the `dev-memory` skill), run it now,
+   before the four checks that follow — a project that cannot prove it
+   resumes correctly is not ready to publish regardless of how clean its
+   code is.
 1. **Secrets scan** — committed + staged + untracked-not-ignored files,
    checked against the same patterns as `hooks/scan.mjs`. Any hit is a hard
    stop; report redacted (`{type, file, line}`), never the value.
@@ -64,11 +72,6 @@ If any field is empty, STOP and ask the user to confirm it — never assume.
    actually running the missing verification) before publishing, never by
    editing the status back to make the check pass.
 
-If this project has a `Dev-Memory` resume rehearsal still outstanding (see
-the `dev-memory` skill), run it now, before the pre-flight checks — a
-project that cannot prove it resumes correctly is not ready to publish
-regardless of how clean its code is.
-
 ## 4. Attribution cleanup (in a throwaway temp clone only)
 
 Never rewrite history in the user's live project directory.
@@ -80,7 +83,7 @@ Never rewrite history in the user's live project directory.
    signed-in user, WITH a DCO sign-off trailer (2026-07-11 brand-alignment
    addition — GRU953's contribution policy requires this on every commit):
    `git commit --signoff -m "GRU953-Studio v<version>"` (with `<version>`
-   set by `release-manager`; the `--signoff` flag
+   chosen by `publisher` per SemVer; the `--signoff` flag
    adds `Signed-off-by: <name> <email>` using the identity set in step 2
    above).
 3. Delete `Dev-Memory/` from the temp clone before the orphan commit —
@@ -95,10 +98,14 @@ Never rewrite history in the user's live project directory.
 
 **Order matters here (2026-07-10 Round 4 audit fix):** `gate.mjs` denies
 `gh repo create`/`git push` unless the publish confirmation is ALREADY
-recorded — so confirming must happen before step 2, not after it. The
-earlier version of this list got this backwards and would have denied
-itself if followed literally outside the `/studio-publish` command (which
-already had the order right).
+recorded — so confirming (step 3 below) must happen before `gh repo create`
+(step 4), not after it. The earlier version of this list got this backwards
+and would have denied itself if followed literally outside the
+`/studio-publish` command (which already had the order right). (2026-07-11
+Round 9 fix: this note previously said "before step 2, not after it" — a
+cross-reference to an older, differently-numbered version of this same
+list, left stale after a later renumbering. Referencing the actual step
+names now instead of numbers, so this can't drift again.)
 
 1. `gh repo view <login>/<project-name>` — if it exists, stop and ask for a
    different name.
@@ -135,7 +142,7 @@ and do not consider Publish complete without it:
 ```
 git -C <temp-clone-path> tag v<version>
 git -C <temp-clone-path> push origin v<version>
-gh release create v<version> --repo <login>/<project-name> --title "v<version>" --notes "<release notes from release-manager>"
+gh release create v<version> --repo <login>/<project-name> --title "v<version>" --notes "<publisher's plain-English release notes>"
 gh release view v<version> --repo <login>/<project-name> --json tagName,isDraft
 ```
 
