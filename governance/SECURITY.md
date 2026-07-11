@@ -85,3 +85,18 @@ list will keep growing as real cases are found, not be treated as closed.
 
 `hooks/licence-scan.mjs` currently checks top-level `node_modules/*` only,
 not each dependency's own nested `node_modules`.
+
+`gate.mjs`'s two internal scripts, `confirm-publish.mjs` and
+`confirm-go-public.mjs`, are exempted from push-capable detection so the
+studio can record a user's confirmation at all (see `isConfirmScriptOnly`
+in `hooks/lib.mjs`). That exemption checks an exact filename
+(`path.basename()` match against the two known script names) — it trusts a
+FILENAME, not a cryptographic identity. A file deliberately created with
+one of those exact names, anywhere the session can run `node` against it,
+would receive the same exemption as the real script. This is the same
+class of residual risk every filename-based check in this project carries,
+disclosed rather than eliminated: doing better would mean verifying the
+resolved path against a fixed, known-good location, which isn't possible
+here because the legitimate invocation form genuinely varies (an absolute
+`${CLAUDE_PLUGIN_ROOT}/...` path from the plugin cache, or a relative
+`hooks/confirm-publish.mjs` from within the project root).

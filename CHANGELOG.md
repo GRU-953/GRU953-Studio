@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.0.3 — 2026-07-11
+
+Round 4 of the same "until golden" audit-fix loop on v2.0.2. The Round 3
+fixes all held up under fresh, hostile re-testing (every case verified by
+executing the real code, not just reading it) — no push/publish/go-public
+bypass was found. Three new bugs surfaced, all in the safe direction
+(over-blocking a legitimate command, not under-blocking a real push), plus
+one dangling documentation cross-reference.
+
+**Fixed**
+
+- **`normalizeForPushCheck()`'s quote-stripping was one-sided.** It
+  stripped a quote whenever a word character touched either side of it,
+  with no check on the OTHER side — so the closing quote of a perfectly
+  normal, properly paired argument (`"My Project"`, or the second of two
+  separately-quoted absolute paths) also got stripped, purely because it
+  sits after a word character, even though what follows it is whitespace
+  or end-of-string, not another word character. That corrupted a
+  legitimate confirm-publish.mjs invocation whose project-root argument
+  contained a space, misclassifying it as push-capable — over-blocking,
+  not a bypass, but the same deadlock shape found and fixed in Rounds 1-3.
+  Fixed: a quote is now only stripped when word/quote characters sit on
+  BOTH immediate sides (the actual mid-word-splice signature); a quote at
+  a genuine token boundary is left alone. The Round 1-2 splice bypasses
+  (`p"u"s"h"`, `pu""sh`) are still caught — verified with new tests.
+- **`isConfirmScriptOnly()`'s closing anchor didn't tolerate a trailing
+  newline.** `node confirm-publish.mjs \n` failed the exemption and fell
+  through to the generic heuristic (misclassified as push-capable).
+  Trailing `\r`/`\n` is now tolerated the same as spaces and tabs.
+- **The script-indirection keyword list only covered the private-publish
+  action.** A script indirectly performing the plugin's separately-gated
+  GOING-PUBLIC action (e.g. `make-repo-public.mjs`, `visibility-change.mjs`)
+  contained none of the original `deploy|release|publish|ship` keywords
+  and got an unconditional pass. Added `public`/`visibility` to the list.
+- `governance/SECURITY.md` was missing the paragraph its own code comment
+  (in `lib.mjs`) pointed readers to, about the confirm-script exemption's
+  filename-trust residual risk. Added.
+
+Verified: 19/19 behavioural tests (3 new this round), `repo-integrity.mjs`,
+`roster-check.mjs` and `licence-scan.mjs` all clean — re-run after every
+fix, then again on a fresh clone of the actual published repo before
+pushing.
+
 ## 2.0.2 — 2026-07-11
 
 Round 3 of the same "until golden" audit-fix loop on v2.0.1 — a fresh,

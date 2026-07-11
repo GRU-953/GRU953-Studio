@@ -137,6 +137,23 @@ export function findStudioRoot(start) {
 // ordinary word character. Still not a full shell parser — command
 // substitution and variable-reuse-based obfuscation remain open, disclosed
 // limitations (see SECURITY.md).
+//
+// 2026-07-11 Round 4 adversarial-audit fix: the Round 2 version stripped a
+// quote whenever a word character touched EITHER side of it, with no check
+// on the OTHER side — so the closing quote of a perfectly normal, properly
+// paired quoted argument (`"My Project"`, `"/some/path/confirm-publish.mjs"`)
+// also got stripped, because it sits right after a word character (the
+// last letter of the argument) even though what follows the quote is
+// whitespace or end-of-string, not another word character. That corrupted
+// legitimate quoted paths containing a space, which then failed
+// isConfirmScriptOnly()'s exact-match regex and fell through to the
+// generic script/keyword heuristic below — misclassifying a genuine
+// confirm-publish.mjs invocation with a spaced project-root argument as
+// push-capable, recreating the bootstrap deadlock for that specific input.
+// Fixed by only stripping a quote when word characters (or another quote,
+// so chained splices still resolve) sit on BOTH immediate sides — the
+// actual signature of mid-word splicing — never when the quote is at a
+// genuine token boundary (next to whitespace, start, or end of string).
 function normalizeForPushCheck(c) {
   let n = c;
   n = n.replace(/\\\r?\n/g, ''); // backslash-newline line continuation
@@ -145,10 +162,14 @@ function normalizeForPushCheck(c) {
   let prev;
   do {
     prev = n;
-    // strip a quote char that touches a word char on either side (mid-word
-    // splicing), one layer per pass; loop to a fixed point so chained
-    // splices like p"u"s"h" fully resolve, not just the first pair.
-    n = n.replace(/([A-Za-z0-9_-])(["'])/g, '$1').replace(/(["'])([A-Za-z0-9_-])/g, '$2');
+    // strip a quote char only when word/quote characters sit on BOTH
+    // immediate sides (the mid-word-splice signature), one layer per pass;
+    // loop to a fixed point so chained splices like p"u"s"h" fully
+    // resolve. A quote at a real token boundary (next to whitespace, the
+    // start, or the end of the string) is left alone.
+    n = n
+      .replace(/([A-Za-z0-9_"'-])(["'])(?=[A-Za-z0-9_"'-])/g, '$1')
+      .replace(/(?<=[A-Za-z0-9_"'-])(["'])([A-Za-z0-9_-])/g, '$2');
   } while (n !== prev);
   return n;
 }
@@ -211,10 +232,15 @@ function normalizeForPushCheck(c) {
 // path from the plugin cache, or a relative `hooks/confirm-publish.mjs` from
 // within the project root), so no single directory prefix covers every real
 // use without also blocking it.
+// 2026-07-11 Round 4 audit fix: the closing anchor only tolerated trailing
+// [ \t], not a trailing newline — `node confirm-publish.mjs \n` (a trailing
+// newline, plausible from how some shells/tools terminate a command) failed
+// the match and fell through to the generic heuristic, misclassifying it as
+// push-capable. Trailing `\r`/`\n` is now tolerated the same as spaces/tabs.
 function isConfirmScriptOnly(c) {
   const afterCd = c.replace(/^[ \t]*cd[ \t]+(?:"[^"]+"|'[^']+'|[^ \t;&|]+)[ \t]*(?:&&|;)[ \t]*/, '');
   if (/(&&|\|\||;|\||`|\$\()/.test(afterCd)) return false;
-  const m = /^node[ \t]+(?:"([^"]+)"|'([^']+)'|(\S+))(?:[ \t]+(?:"[^"]*"|'[^']*'|\S+))?[ \t]*$/.exec(afterCd);
+  const m = /^node[ \t]+(?:"([^"]+)"|'([^']+)'|(\S+))(?:[ \t]+(?:"[^"]*"|'[^']*'|\S+))?[ \t\r\n]*$/.exec(afterCd);
   if (!m) return false;
   const scriptPath = m[1] || m[2] || m[3];
   const base = path.basename(scriptPath);
@@ -260,9 +286,20 @@ export function isPushCapable(rawC) {
   // safe usage. Indirection: running a script file, a Makefile target, or a
   // package-manager task can contain a push with no "push"/"gh" text in
   // THIS command. Fail closed rather than assume it's safe.
+  //
+  // 2026-07-11 Round 4 audit fix: this keyword list only covered the
+  // PRIVATE-publish action (deploy/release/publish/ship). This project also
+  // has a separately-gated GOING-PUBLIC action (see isGoPublicCommand /
+  // GO-PUBLIC-APPROVED above) with its own, differently-worded vocabulary —
+  // a script named e.g. `make-repo-public.mjs` or `visibility-change.mjs`
+  // contained none of the four original keywords, so it fell through this
+  // heuristic entirely and got an unconditional pass, unlike an
+  // equivalently-indirect `publish-app.mjs`. Added `public`/`visibility` so
+  // both gated actions get the same fail-closed treatment.
+  const SCRIPT_INDIRECTION_KEYWORDS = /(deploy|release|publish|ship|public|visibility)/i;
   if (/(^|[^A-Za-z0-9_])(\.\/|bash[ \t]+|sh[ \t]+|node[ \t]+)?[^ \t]*\.(sh|mjs|js|py)([ \t]|$)/.test(c) &&
-      /(deploy|release|publish|ship)/i.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])make[ \t]+\S+/.test(c) && /(deploy|release|publish|ship)/i.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])(npm|pnpm|yarn)[ \t]+run[ \t]+\S+/.test(c) && /(deploy|release|publish|ship)/i.test(c)) return true;
+      SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])make[ \t]+\S+/.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])(npm|pnpm|yarn)[ \t]+run[ \t]+\S+/.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
   return false;
 }

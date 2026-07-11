@@ -255,6 +255,43 @@ test('lib.mjs isConfirmScriptOnly: exact basename only, never a suffix/substring
   assert.equal(isPushCapable('node /tmp/attacker/z-confirm-publish.mjs'), true, 'a look-alike filename in any directory must NOT get the same free pass');
 });
 
+test('lib.mjs normalizeForPushCheck: a genuine quoted argument survives normalization (2026-07-11 Round 4 audit fix)', () => {
+  // The Round 2 quote-stripping loop stripped a quote whenever a word
+  // character touched EITHER side of it, with no check on the other side —
+  // so the CLOSING quote of a normal, properly paired argument (one that
+  // happens to end in a letter, and is followed by whitespace/end-of-string
+  // rather than another word character) also got stripped. That corrupted
+  // legitimate quoted paths containing a space and misclassified them as
+  // push-capable, which would make gate.mjs deny the very command that
+  // records a publish confirmation whenever the project path has a space
+  // in it. A quote is now only stripped when word/quote characters sit on
+  // BOTH immediate sides — the actual signature of mid-word splicing.
+  assert.equal(isPushCapable('node confirm-publish.mjs "/Users/aninda/My Project"'), false, 'a genuine quoted project-root argument containing a space must still be exempt');
+  assert.equal(isPushCapable('node "/Users/x/plugins/hooks/confirm-publish.mjs" "/path"'), false, 'two separately quoted arguments must still be exempt');
+  // The mid-word splice bypasses from Rounds 1-2 must still be caught.
+  assert.equal(isPushCapable('git p"u"s"h"'), true, 'mid-word quote-splicing must still be caught after the Round 4 fix');
+  assert.equal(isPushCapable('git pu""sh'), true, 'empty-quote splicing must still be caught after the Round 4 fix');
+});
+
+test('lib.mjs isConfirmScriptOnly: tolerates a trailing newline (2026-07-11 Round 4 audit fix)', () => {
+  // The closing anchor only tolerated trailing [ \t], not \n — a trailing
+  // newline on an otherwise-exempt confirm-script invocation fell through
+  // to the generic heuristic and was misclassified as push-capable.
+  assert.equal(isPushCapable('node confirm-publish.mjs \n'), false, 'a trailing newline must not defeat the confirm-script exemption');
+});
+
+test('lib.mjs isPushCapable: script-indirection heuristic also covers going-public keywords (2026-07-11 Round 4 audit fix)', () => {
+  // The keyword list only covered the private-publish action
+  // (deploy/release/publish/ship). This project also separately gates
+  // GOING PUBLIC (isGoPublicCommand/GO-PUBLIC-APPROVED) with its own
+  // vocabulary — a script indirectly changing visibility, named around
+  // that action rather than "publish", fell through this heuristic
+  // entirely and got an unconditional pass.
+  assert.equal(isPushCapable('node make-repo-public.mjs'), true, 'a script indirectly making a repo public must be caught');
+  assert.equal(isPushCapable('bash go-public.sh'), true, 'a script indirectly changing visibility must be caught');
+  assert.equal(isPushCapable('node visibility-change.mjs'), true, 'a script named around visibility must be caught');
+});
+
 test('gate.mjs: private-publish token does NOT authorise going public', () => {
   const dir = mkTmp('gru-gate-tokensep-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
