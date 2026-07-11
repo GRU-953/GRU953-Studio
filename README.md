@@ -47,10 +47,14 @@ in one short sentence the first time it comes up.
    week later, and pick up exactly where you left off, in the same session
    or a brand new one.
 
-## The specialists (16 AI roles)
+## The specialists (31 AI roles)
 
 You never talk to these directly — the Project Lead is your one point of
-contact, and brings in whichever of these your project actually needs:
+contact, and brings in only the ones your project actually needs. A tiny
+one-page website wakes a handful; a bigger app with logins, data and an AI
+feature wakes more. A specialist your project doesn't need never runs.
+
+**The core team — most projects use these:**
 
 | Role | What it does |
 | :-- | :-- |
@@ -71,7 +75,29 @@ contact, and brings in whichever of these your project actually needs:
 | **Memory Keeper** | Remembers everything about your project between sessions, safely |
 | **Maintenance Agent** | Comes back later for fixes and new features on an already-published project |
 
-## The skills (how it all runs)
+**Brought in only when your project needs them** (an AI feature, a user
+interface, stored data, more than one language, and so on) — added in
+v2.0.0 to cover the full range of professional software and AI work:
+
+| Role | What it does | Turns up when… |
+| :-- | :-- | :-- |
+| **QA Lead** | Decides what "tested enough" means and plans the testing, before any test is run | your project is Standard-sized or bigger |
+| **Release Manager** | Sets the version number and writes the plain-English "what changed" notes | it's time to publish something bigger than tiny |
+| **DevOps Engineer** | Sets up a repeatable way to build and put your app online | your app needs to be hosted or packaged |
+| **SRE / Observability** | Makes a running app's problems visible instead of silent | your app runs as a live, always-on service |
+| **Prompt Engineer** | Writes and fine-tunes the instructions behind any AI feature | your idea includes an AI feature |
+| **MLOps Engineer** | Keeps measuring an AI feature's quality over time | an AI feature needs to keep working well |
+| **Responsible-AI Reviewer** | Checks an AI feature for fairness, harm and honesty | your idea includes an AI feature |
+| **UX Designer** | Makes the app easy and pleasant to move through | your app has a screen people use |
+| **Accessibility Specialist** | Makes sure people with disabilities can use it | your app has any user interface |
+| **Technical Writer** | Writes the plain-English guide for *your* finished app | your app needs its own instructions |
+| **Data Engineer** | Designs how your app stores data so it's safe to change | your app keeps data between uses |
+| **Privacy Officer** | Checks personal data is collected minimally and honestly | your app handles personal data |
+| **Localisation Specialist** | Makes the app work in more than one language (e.g. English + Bangla) | your app needs more than one language |
+| **Researcher** | Finds current, real facts so decisions aren't guesswork | a choice depends on an up-to-date fact |
+| **Project Assistant** | Keeps the task list, checklists and logs tidy behind the scenes | any project; always-on for the biggest ones |
+
+## The skills (6 skills — how it all runs)
 
 | Skill | What it does |
 | :-- | :-- |

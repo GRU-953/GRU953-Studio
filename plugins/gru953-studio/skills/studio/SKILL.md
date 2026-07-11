@@ -70,14 +70,35 @@ Record the three answers and the resulting Tier in `OBJECTIVE.md` so it's
 auditable later, not just asserted. Show the user the Tier and what it
 means in plain English, and let them raise or lower it at any time.
 
-| Tier | Roles activated |
+| Tier | Roles activated (by project SIZE) |
 | :-- | :-- |
-| **Tiny** | project-lead, interviewer, architect, one builder, tester (basic checks), publisher, plus fixer/cut-recorder/memory-keeper on demand (see their own files — these three are available at every Tier, not gated to Complex) |
-| **Standard** | + a Build Swarm of 2 builders (git-worktree isolated), reviewer (also does the pre-Publish trim, absorbing the retired `minimalist` role), scope-guardian, security-compliance-auditor, brand-guardian, cost-monitor |
-| **Complex** | The full roster, with fixer/cut-recorder/memory-keeper working continuously rather than only on demand |
+| **Tiny** | project-lead, interviewer, architect, one builder, tester (basic checks), publisher, plus fixer/cut-recorder/memory-keeper/project-assistant on demand (see their own files — these are available at every Tier, not gated to Complex) |
+| **Standard** | + a Build Swarm of 2 builders (git-worktree isolated), reviewer (also does the pre-Publish trim, absorbing the retired `minimalist` role), scope-guardian, security-compliance-auditor, brand-guardian, cost-monitor, qa-lead, and release-manager at the Publish stage |
+| **Complex** | The full roster, with fixer/cut-recorder/memory-keeper/project-assistant/sre-observability working continuously rather than only on demand |
 
-Add `ai-developer` at any Tier the moment the brief includes an AI/LLM
-feature — triggered by feature content, not project size.
+### Feature- and need-triggered roles (any Tier, by what the brief CONTAINS)
+
+Size sets the base team; the brief's *content* wakes these specialists on
+top of it — so a Tiny project with a UI still gets accessibility, and a
+Standard project with no AI never loads an AI role. Triggered by feature,
+not size (2026-07-11 v2.0.0):
+
+| The moment the brief includes… | Wake these roles |
+| :-- | :-- |
+| An AI/LLM feature | `ai-developer` + `prompt-engineer` (any Tier); `mlops-engineer` + `responsible-ai-reviewer` (Standard+) |
+| A user interface | `accessibility-specialist` (any Tier); `ux-designer` (Standard+) |
+| Storing data beyond a session | `data-engineer` (Standard+) |
+| Money, logins, or personal data | `privacy-dpo` |
+| Hosting, packaging, or a deploy pipeline | `devops-engineer` (Standard+) |
+| Running as a live, long-lived service | `sre-observability` |
+| More than one language (e.g. English + Bangla) | `localisation-specialist` |
+| User-facing documentation for the built app | `technical-writer` (Standard+) |
+| A decision that turns on an external, current fact | `researcher` (on demand) |
+
+Every triggered role still obeys `yagni-rules` and `cost-guard`: it does the
+smallest useful version of its job, and `scope-guardian` still guards against
+any role quietly expanding. Waking a role because the brief genuinely needs
+it is not scope creep; adding one the brief does not need is.
 
 **Footnote (2026-07-10 Round 4 audit fix):** `security-compliance-auditor`
 only appears in the table from Standard Tier up, but its Publish-gate
@@ -86,12 +107,18 @@ Publish on EVERY Tier, including Tiny — the table lists which roles are
 part of day-to-day Build work; the Publish gate itself is universal and
 never skipped.
 
-Growth-guard note (confirmed 2026-07-10): Tiers are the *only* size control
-on TEAM SIZE PER PROJECT — there is no additional mechanical lock there.
-Separately, the TOTAL ROLE COUNT (currently 16) is guarded by
+Growth-guard note (confirmed 2026-07-10; count updated 2026-07-11 v2.0.0):
+Tiers, plus the feature-triggers above, are the *only* controls on TEAM SIZE
+PER PROJECT — there is no additional mechanical lock there, and a project
+only ever wakes the subset of roles its Tier and brief actually call for.
+Separately, the TOTAL ROLE COUNT (currently 31 — the standard SDLC/AI
+specialist set, an explicit owner decision in v2.0.0) is guarded by
 `scope-guardian` running `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"`
-against the baseline in `Dev-Memory/decisions/*roster*.md` (see its own
-file) — do not skip scope-guardian on Standard/Complex Tier.
+against the baseline in `Dev-Memory/decisions/*roster*.md` for a built
+project, falling back to the committed `plugins/gru953-studio/ROSTER.md` for
+the product repo itself — do not skip scope-guardian on Standard/Complex
+Tier. Growing the roster past 31 still requires a named gap recorded in
+`ROSTER.md` (and, for contributions, an RFC — see `governance/GOVERNANCE.md`).
 
 ## The lifecycle
 

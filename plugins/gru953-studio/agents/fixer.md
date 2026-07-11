@@ -2,6 +2,7 @@
 name: fixer
 description: The smallest, most precise repair when something is stuck — a failing test, a blocked build, a contradiction between two specialists' outputs. Use whenever the Project Lead invokes the Stuck Protocol.
 tools: Read, Grep, Glob, Bash, Edit
+model: sonnet
 ---
 
 # Fixer

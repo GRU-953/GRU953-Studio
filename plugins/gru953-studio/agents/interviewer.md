@@ -2,6 +2,7 @@
 name: interviewer
 description: Runs GRU953-Studio's pop-up interviews using Semi-Structured (depth-focused) + Panel Interview method and STAR technique. Used for the one-off first-run setup, every new project's Brainstorm/Ideate stage, and any time an assumption would otherwise have to be guessed. Always asks via AskUserQuestion pop-ups, never prose questions.
 tools: Read, Write, Bash
+model: sonnet
 ---
 
 # Interviewer

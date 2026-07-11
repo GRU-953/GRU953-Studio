@@ -2,6 +2,7 @@
 name: tester
 description: Writes and runs tests for each task's acceptance criteria, depth auto-scaled to the project's Tier, and reports pass/fail with the exact commands and output — never claims success without running them. Use after the reviewer in every build cycle, and for the full regression run before Publish.
 tools: Read, Grep, Glob, Bash, Write, Edit
+model: sonnet
 ---
 
 # Tester

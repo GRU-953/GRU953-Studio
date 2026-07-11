@@ -10,3 +10,21 @@ When GRU953-Studio is installed and used to build a DIFFERENT project (e.g.
 Obhijatra), that project gets its own `Dev-Memory/` and its own `CLAUDE.md`
 in its own working directory — this file only governs work on GRU953-Studio
 itself.
+
+## Before committing changes to this repo
+
+Run the same gates CI runs, and keep them all green:
+
+```
+for f in plugins/gru953-studio/hooks/*.mjs; do node --check "$f"; done
+node plugins/gru953-studio/hooks/repo-integrity.mjs .
+node plugins/gru953-studio/hooks/roster-check.mjs
+node --test plugins/gru953-studio/hooks/hooks.test.mjs
+node plugins/gru953-studio/hooks/licence-scan.mjs .
+```
+
+`repo-integrity.mjs` is the guard that stops a file referencing a skill,
+hook, or role count that doesn't actually exist — if you add or rename any
+agent, skill, or hook, run it before you commit. Adding a specialist role
+means updating `plugins/gru953-studio/ROSTER.md` (the committed baseline)
+with the named gap it fills.

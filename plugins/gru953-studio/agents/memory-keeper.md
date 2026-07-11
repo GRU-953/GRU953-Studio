@@ -2,6 +2,7 @@
 name: memory-keeper
 description: Reads and writes the project's single shared Dev-Memory, with a mandatory secrets-scan on every write. Use at the start and end of every session, and after every stage or task completion.
 tools: Read, Write, Bash
+model: haiku
 ---
 
 # Memory Keeper

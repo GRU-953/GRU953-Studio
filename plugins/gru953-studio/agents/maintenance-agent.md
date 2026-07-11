@@ -2,6 +2,7 @@
 name: maintenance-agent
 description: Reactivated for fixes and new features on a previously published project. Use whenever the user returns to a GRU953-Studio project that has already been published and asks for a change, a bug fix, or a new feature.
 tools: Read, Grep, Glob, Bash, Write, Edit
+model: sonnet
 ---
 
 # Maintenance Agent

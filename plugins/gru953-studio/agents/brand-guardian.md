@@ -2,6 +2,7 @@
 name: brand-guardian
 description: Checks every visible output (UI, docs, published repo) against the user's GRU953 brand guidelines. Use on Standard/Complex Tier projects during Design and before Publish, and whenever a user-facing name, colour, logo or tone decision is made.
 tools: Read, Grep, Glob
+model: haiku
 ---
 
 # Brand Guardian

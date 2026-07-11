@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -26,6 +28,12 @@ jobs:
           for f in plugins/gru953-studio/hooks/*.mjs; do
             node --check "$f" && echo "$f OK"
           done
+      - name: Behavioural test suite (hooks.test.mjs)
+        run: node plugins/gru953-studio/hooks/hooks.test.mjs
+      - name: Repository integrity check
+        run: node plugins/gru953-studio/hooks/repo-integrity.mjs .
+      - name: Roster check (role count vs committed baseline)
+        run: node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
       - name: Smoke-test the licence scanner
         run: node plugins/gru953-studio/hooks/licence-scan.mjs .
       - name: Required files present
@@ -33,13 +41,22 @@ jobs:
           for f in governance/LICENSE governance/NOTICE governance/SECURITY.md \
                    governance/CODE_OF_CONDUCT.md governance/CONTRIBUTING.md \
                    governance/TRADEMARKS.md governance/LOGO-USAGE.md governance/GOVERNANCE.md \
-                   README.md; do
+                   plugins/gru953-studio/ROSTER.md README.md; do
             test -f "$f" || (echo "Missing required file: $f" && exit 1)
           done
-      - name: Every commit carries a DCO sign-off
+      - name: Every new commit carries a DCO sign-off
         run: |
-          git log --format='%H %B' | grep -q . || true
-          MISSING=$(git log --format='%H' | while read -r sha; do
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              RANGE="HEAD"
+            else
+              RANGE="$BASE..HEAD"
+            fi
+          fi
+          MISSING=$(git log --no-merges --format='%H' $RANGE | while read -r sha; do
             git log -1 --format='%B' "$sha" | grep -q '^Signed-off-by:' || echo "$sha"
           done)
           if [ -n "$MISSING" ]; then

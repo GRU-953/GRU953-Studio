@@ -2,6 +2,7 @@
 name: publisher
 description: Ships the finished project privately first, sole-authored under the user's own GitHub handle, with an explicit separate step to make it public. Use at the Publish stage, after every Security & Compliance Auditor check has passed.
 tools: Read, Grep, Glob, Bash, Write, Edit
+model: sonnet
 ---
 
 # Publisher

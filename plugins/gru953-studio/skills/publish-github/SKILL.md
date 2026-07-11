@@ -79,7 +79,8 @@ Never rewrite history in the user's live project directory.
    from files and messages; create ONE clean orphan commit authored as the
    signed-in user, WITH a DCO sign-off trailer (2026-07-11 brand-alignment
    addition — GRU953's contribution policy requires this on every commit):
-   `git commit --signoff -m "GRU953-Studio v0.1.0"` (the `--signoff` flag
+   `git commit --signoff -m "GRU953-Studio v<version>"` (with `<version>`
+   set by `release-manager`; the `--signoff` flag
    adds `Signed-off-by: <name> <email>` using the identity set in step 2
    above).
 3. Delete `Dev-Memory/` from the temp clone before the orphan commit —
@@ -120,9 +121,9 @@ already had the order right).
    specifically because it's recognised by GitHub's licence detector and
    dependency-compliance tooling, which matters for a publicly-distributed
    developer tool).
-7. Attach a downloadable zip of the release tree as a GitHub Release asset
-   (2026-07-11 addition) — see step 6 below (Tag and Release).
-7. Push: `git -C <temp-clone-path> push -u origin main`
+7. Push: `git -C <temp-clone-path> push -u origin main` — never
+   create-and-push in one step. (The downloadable zip is attached later, in
+   section 6, as part of the real Release.)
 
 ## 6. Tag and create a REAL GitHub Release (2026-07-10 audit addition)
 
@@ -132,10 +133,10 @@ tools (a git tag at best, zero real Releases ever). Do not skip this step
 and do not consider Publish complete without it:
 
 ```
-git -C <temp-clone-path> tag v1.0.0
-git -C <temp-clone-path> push origin v1.0.0
-gh release create v1.0.0 --repo <login>/<project-name> --title "v1.0.0" --notes "Initial release"
-gh release view v1.0.0 --repo <login>/<project-name> --json tagName,isDraft
+git -C <temp-clone-path> tag v<version>
+git -C <temp-clone-path> push origin v<version>
+gh release create v<version> --repo <login>/<project-name> --title "v<version>" --notes "<release notes from release-manager>"
+gh release view v<version> --repo <login>/<project-name> --json tagName,isDraft
 ```
 
 **Attach a downloadable zip (2026-07-11 addition)** — every release gets a
@@ -143,8 +144,8 @@ zip of the release tree as a downloadable asset, so non-technical users
 can install from a direct download without using git at all:
 
 ```
-cd <temp-clone-path> && zip -rq /tmp/<project-name>-v1.0.0.zip . -x ".git/*"
-gh release upload v1.0.0 /tmp/<project-name>-v1.0.0.zip --repo <login>/<project-name>
+cd <temp-clone-path> && zip -rq /tmp/<project-name>-v<version>.zip . -x ".git/*"
+gh release upload v<version> /tmp/<project-name>-v<version>.zip --repo <login>/<project-name>
 ```
 
 The last `gh release view` command must show `"isDraft": false` before this step is

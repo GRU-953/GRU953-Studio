@@ -14,13 +14,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // ---- decision helpers --------------------------------------------------------
+// Output is built with JSON.stringify, never hand-interpolated: a reason
+// string can legitimately contain quotes, backslashes or newlines (several of
+// this project's own deny reasons do — they quote shell commands), and a
+// hand-built JSON string silently produced INVALID JSON for those. An
+// unparseable PreToolUse deny risks failing OPEN (the block not being
+// honoured). 2026-07-11 v2.0.0 audit fix — caught by hooks.test.mjs.
 export function allow() {
-  process.stdout.write('{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}\n');
+  process.stdout.write(
+    JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } }) + '\n'
+  );
   process.exit(0);
 }
 export function deny(reason) {
   process.stdout.write(
-    `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"${reason}"}}\n`
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: String(reason),
+      },
+    }) + '\n'
   );
   process.exit(2);
 }
@@ -99,7 +113,15 @@ export function findStudioRoot(start) {
 // `.git/config` on every command, which this hook design doesn't do.
 export function isPushCapable(c) {
   if (!c) return true;
-  if (/(^|[^A-Za-z0-9_])git([ \t]+-[^ \t]+|[ \t]+[^ \t]+)*[ \t]+push([ \t]|$)/.test(c)) return true;
+  // 2026-07-11 Round-A adversarial-audit fix: tolerate quotes around the
+  // git binary or the `push` subcommand. `git "push"`, `git 'push'` and
+  // `"git" push` all run a real push once the shell strips the quotes, but
+  // the un-quoted matcher rated them NON-push — a fail-OPEN bypass that
+  // contradicted this matcher's own "prove non-push or treat as push" rule.
+  // Optional `['"]?` around `git` and `push` closes it; a battery in
+  // hooks.test.mjs locks it in, and the safe-command set was re-verified to
+  // confirm no new false positives (gitk/github/xgit/`git pushx` stay clear).
+  if (/(^|[^A-Za-z0-9_])['"]?git['"]?([ \t]+-[^ \t]+|[ \t]+[^ \t]+)*[ \t]+['"]?push['"]?([ \t]|$)/.test(c)) return true;
   if (/(^|[^A-Za-z0-9_])gh[ \t]+(repo[ \t]+(create|edit|sync|clone)|pr[ \t]+create|release[ \t]+(create|upload)|gist[ \t]+create)/.test(c)) return true;
   if (/(^|[^A-Za-z0-9_])gh[ \t].*--push([ \t]|=|$)/.test(c)) return true;
   // git aliases that resolve to push (e.g. `git -c alias.p=push p`, or

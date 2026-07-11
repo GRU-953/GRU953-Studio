@@ -39,17 +39,41 @@ function main() {
   }
   const currentCount = agentFiles.length;
 
+  // 2026-07-11 v2.0.0 fix: fall back to the committed product baseline
+  // (plugins/gru953-studio/ROSTER.md) when no per-project Dev-Memory baseline
+  // exists. A project BUILT BY the studio records its baseline in
+  // Dev-Memory/decisions/*roster*.md; the PRODUCT repo itself has no
+  // Dev-Memory, so before this fallback existed this check could never pass
+  // on GRU953-Studio's own repository (and CI therefore couldn't run it).
   const decisionsDir = path.join(devMemoryRoot, 'Dev-Memory', 'decisions');
   let decisionFiles = [];
   try {
     decisionFiles = fs.readdirSync(decisionsDir).filter((f) => /roster/i.test(f));
   } catch {
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles but no Dev-Memory/decisions/*roster*.md baseline exists to check against`, currentCount }, null, 2));
-    process.exit(1);
+    decisionFiles = [];
   }
+
   if (decisionFiles.length === 0) {
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles but no *roster* decision file recorded a baseline`, currentCount }, null, 2));
-    process.exit(1);
+    // No per-project baseline — try the committed product baseline.
+    const rosterFile = path.join(pluginRoot, 'ROSTER.md');
+    let rosterText = null;
+    try { rosterText = fs.readFileSync(rosterFile, 'utf8'); } catch { rosterText = null; }
+    if (rosterText === null) {
+      console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles but no Dev-Memory/decisions/*roster*.md baseline and no committed ROSTER.md to check against`, currentCount }, null, 2));
+      process.exit(1);
+    }
+    const rm = /role count[^0-9]*(\d+)/i.exec(rosterText) || /baseline[^0-9]*(\d+)/i.exec(rosterText);
+    if (!rm) {
+      console.log(JSON.stringify({ status: 'BLOCKED', reason: `ROSTER.md exists but states no numeric "role count: <n>"`, currentCount }, null, 2));
+      process.exit(1);
+    }
+    const recordedBaseline = parseInt(rm[1], 10);
+    if (currentCount > recordedBaseline) {
+      console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles, exceeding the committed ROSTER.md baseline of ${recordedBaseline} — update ROSTER.md with a named reason before this count is acceptable`, currentCount, recordedBaseline, source: 'ROSTER.md' }, null, 2));
+      process.exit(1);
+    }
+    console.log(JSON.stringify({ status: 'clean', currentCount, recordedBaseline, source: 'ROSTER.md' }, null, 2));
+    process.exit(0);
   }
 
   // Most recent by filename (decision files are named YYYY-MM-DD-*.md, so

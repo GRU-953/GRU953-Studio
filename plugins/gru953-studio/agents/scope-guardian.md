@@ -2,6 +2,7 @@
 name: scope-guardian
 description: Stops quiet scope creep and keeps the project to what was agreed. Activates whenever a new feature, role, or requirement is proposed mid-build that was not in the confirmed brief. Use throughout Build, Test, Fix and Update stages, and whenever a specialist suggests "while we're at it".
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 # Scope Guardian

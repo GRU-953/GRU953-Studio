@@ -2,6 +2,7 @@
 name: cut-recorder
 description: Logs every "we decided not to build this" choice in a plain ledger, so the team never quietly re-proposes something the user already chose to cut. Use whenever the Scope Guardian or Reviewer (which absorbed the retired Minimalist role) decides something is out of scope, and whenever the user explicitly declines a recommended option.
 tools: Read, Write
+model: haiku
 ---
 
 # Cut-Recorder

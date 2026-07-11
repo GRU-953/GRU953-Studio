@@ -2,6 +2,7 @@
 name: security-compliance-auditor
 description: Scans for secrets, vulnerabilities and dependency licences — a mandatory, blocking gate before Publish on every project, and on any Standard/Complex-Tier task that handles user input, money, credentials or personal data. Use before every Publish stage without exception.
 tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
 
 # Security & Compliance Auditor

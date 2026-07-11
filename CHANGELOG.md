@@ -1,5 +1,85 @@
 # Changelog
 
+## 2.0.0 — 2026-07-11
+
+A major gold-standard audit and expansion. Breaking only in the sense that
+the specialist-role contract changed (the roster grew); every existing
+project, command and skill continues to work unchanged.
+
+**Added**
+
+- **15 new specialist roles (16 → 31)**, the standard SDLC/AI specialist
+  set, each Tier- or feature-gated so it only wakes when a project actually
+  needs it (a Tiny site never loads them): `devops-engineer`,
+  `sre-observability`, `release-manager`, `mlops-engineer`, `prompt-engineer`,
+  `responsible-ai-reviewer`, `qa-lead`, `accessibility-specialist`,
+  `ux-designer`, `technical-writer`, `data-engineer`, `privacy-dpo`,
+  `localisation-specialist`, `researcher`, `project-assistant`. The `studio`
+  skill's Tier table now has a companion "feature-triggered roles" table.
+- **The `dev-memory` skill now exists.** It was referenced by five files
+  (the studio skill, publish-github, memory-keeper, a command and a hook)
+  but the `SKILL.md` had never been written — the headline "it remembers
+  everything" feature had no defining document. Now it does.
+- **`hooks/repo-integrity.mjs`** — a repository self-consistency check
+  (referenced skills/hooks exist, role/skill counts match the README,
+  versions agree, roster matches its baseline). This is the systemic fix
+  for the class of bug above: CI now fails on a dangling reference, so a
+  missing skill can't hide again.
+- **`hooks/hooks.test.mjs`** — the first behavioural test suite for the
+  security hooks (11 tests): the push-matcher catches real bypasses and
+  allows ordinary reads; the scanner refuses planted secrets and the
+  private Dev-Memory folder while ignoring look-alike code; the publish
+  gate's two tokens are proven independent.
+- **`plugins/gru953-studio/ROSTER.md`** — a committed roster baseline so the
+  product's own role count is mechanically verifiable (previously
+  `roster-check.mjs` could never pass on this repo, because the baseline
+  lived only in a built project's Dev-Memory).
+- Community-health pointer files under `.github/` (SECURITY, CONTRIBUTING,
+  CODE_OF_CONDUCT) so GitHub discovers the canonical `governance/` versions;
+  a `CODEOWNERS`; and a Dependabot config for the CI Actions.
+- **Every role now declares a model deliberately** (6 haiku · 21 sonnet ·
+  4 opus) instead of 12 roles inheriting the surface default — cheapest-first
+  per `cost-guard`, with the tiers and reasoning recorded in
+  `plugins/gru953-studio/ROSTER.md`. Existing opus/sonnet choices were left
+  untouched; only the 12 unset roles were assigned.
+
+**Fixed**
+
+- **Security (fail-open risk): `lib.deny()` emitted invalid JSON** whenever a
+  deny reason contained a quote, backslash or newline — which several of the
+  gate's own reasons do. An unparseable PreToolUse deny risks not being
+  honoured (failing open). Both `allow()` and `deny()` now build their
+  output with `JSON.stringify`, so any reason is always correctly escaped.
+  Caught by the new test suite.
+- `roster-check.mjs` now falls back to the committed `ROSTER.md` when no
+  per-project Dev-Memory baseline exists, so it works on the product repo.
+- `publish-github` skill: removed a duplicated, mis-numbered "step 7" in
+  section 5, and de-hardcoded the `v0.1.0`/`v1.0.0` version strings to a
+  `<version>` placeholder set by the new `release-manager` role.
+- CI: the DCO sign-off check now inspects only the commits introduced by
+  the current push or pull request (merge commits exempt), instead of
+  scanning all history — a single unsigned legacy or fork commit can no
+  longer block every future change. CI also now runs the integrity check,
+  the roster check and the behavioural test suite on every change.
+- **Role-boundary sharpen (independent verification audit):**
+  `ai-developer` still claimed prompt authoring as its own step, which
+  duplicated the newly added `prompt-engineer`. It now delegates prompt
+  authoring to `prompt-engineer` (drafting inline only when none is
+  engaged, e.g. Tiny Tier) and keeps AI-justification, integration and the
+  safety guardrails — closing the only genuine overlap the 16 → 31
+  expansion introduced. A second, independent audit confirmed every other
+  role boundary is distinct, no role is redundant, and every review-only
+  role is correctly read-only.
+- **Security (fail-open bypass in the push matcher):** `isPushCapable()`
+  rated `git "push"`, `git 'push'` and `"git" push` as NON-push, so a
+  quote-obfuscated push could have slipped past both the secret scan and the
+  publish gate (failing open) — the opposite of the matcher's stated
+  "prove non-push or treat as push" rule. The matcher now tolerates optional
+  quotes around the `git` binary and the `push` subcommand. Found by an
+  adversarial audit that ran the matcher against a battery of bypasses;
+  a new `hooks.test.mjs` case locks it in, and the safe-command set was
+  re-verified to confirm no new false positives.
+
 ## 1.0.2 — 2026-07-11
 
 - **Licence changed again, from the GRU953 Community Licence 1.0 to the

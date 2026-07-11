@@ -93,6 +93,18 @@ function main() {
   // alphanumerics right after "sk-", missing today's hyphenated key formats
   // (sk-ant-api03-..., sk-proj-...). Loosened to tolerate internal hyphens.
   const SECRET_RE = /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+  // 2026-07-11 fix (found live, pushing this very repo): this project's own
+  // test fixtures (hooks.test.mjs) deliberately embed a realistic-looking
+  // fake secret (AWS's own reserved "EXAMPLE"-suffixed placeholder key) so
+  // the tests can prove the scanner actually catches AKIA-shaped keys —
+  // which means the scanner then flags its own test file's source line.
+  // A blanket allow-list for that string would be wrong: the test also
+  // writes the identical string into a fresh temp repo and asserts scan.mjs
+  // DENIES it there, so exempting the string everywhere would silently
+  // break that real detection case too. Instead, only a line ending in the
+  // explicit marker `// scan-allow: known test fixture` is exempt — this
+  // marks ONE deliberately-annotated source line, not the string itself.
+  const SCAN_ALLOW_MARKER = '// scan-allow: known test fixture';
   // Widened variable-name class to [A-Z0-9_-] so hyphenated header/field
   // names like "x-api-key" are also caught, not just underscore_case.
   // 2026-07-10 Round 2 fix: also allow an optional closing quote between the
@@ -147,7 +159,7 @@ function main() {
     const lines = text.split(/\r?\n/);
     if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
     for (let i = 0; i < lines.length; i++) {
-      if (SECRET_RE.test(lines[i])) addFinding('secret', f, String(i + 1));
+      if (SECRET_RE.test(lines[i]) && !lines[i].includes(SCAN_ALLOW_MARKER)) addFinding('secret', f, String(i + 1));
     }
     for (let i = 0; i < lines.length; i++) {
       if (SECRETVAR_RE.test(lines[i])) addFinding('secret-var', f, String(i + 1));

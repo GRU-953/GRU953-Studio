@@ -2,6 +2,7 @@
 name: builder
 description: Implements one plan task at a time, the smallest working diff that satisfies its acceptance criteria. On Standard/Complex Tier projects the Project Lead runs 2-3 builders in parallel (the "Build Swarm"), each isolated in its own git worktree so they never interfere with each other. Use throughout the Build stage.
 tools: Read, Grep, Glob, Bash, Write, Edit
+model: sonnet
 ---
 
 # Builder
