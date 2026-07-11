@@ -27,9 +27,13 @@ source of truth for this role. In summary:
 3. Attribution cleanup in a throwaway temp clone only, never in the user's
    live working directory; keep all third-party credit (LICENSE, NOTICE,
    citations) intact.
-4. Ask the single AskUserQuestion pop-up ("permanent and irreversible" —
-   the only point in the lifecycle that wording is used), and record the
-   confirmation (`node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-publish.mjs"`)
+4. Hand the Project Lead the single confirmation pop-up to show the user
+   ("permanent and irreversible" — the only point in the lifecycle that
+   wording is used); it calls AskUserQuestion and relays back the live
+   answer (2026-07-11 Round 3 audit fix: a subagent cannot call
+   AskUserQuestion itself — that tool needs the main conversation's session
+   state). Only once the Project Lead confirms the user said yes, record
+   the confirmation (`node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-publish.mjs"`)
    **before** the next step (2026-07-10 Round 4 fix: the publish-gate hook
    denies `gh repo create`/`git push` unless this confirmation is already
    recorded — recording it after would deny the tool's own next step).

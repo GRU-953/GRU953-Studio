@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.0.2 — 2026-07-11
+
+Round 3 of the same "until golden" audit-fix loop on v2.0.1 — a fresh,
+independent review pass with instructions to assume nothing from the prior
+two rounds is guaranteed correct. Found the most serious issue of the whole
+loop, plus one architectural misdescription affecting four agent files.
+
+**Fixed**
+
+- **Security (CRITICAL, real bypass): the v2.0.1 confirm-script exemption
+  trusted a filename suffix, not an identity.** `isConfirmScriptOnly()` in
+  `plugins/gru953-studio/hooks/lib.mjs` (added in 2.0.1 to fix the
+  confirm-publish.mjs bootstrap deadlock) matched any path that merely
+  ENDED WITH `confirm-publish.mjs` or `confirm-go-public.mjs` — so
+  `node ./evil-confirm-publish.mjs` or `node /tmp/attacker/z-confirm-publish.mjs`
+  were exempted just as completely as the real script. Since `gate.mjs` and
+  `scan.mjs` both `allow()` immediately once a command is judged non-push,
+  this gave any arbitrarily-named script an unconditional, unscanned,
+  ungated pass. The same regex also failed the confirm scripts' own
+  documented bare usage (`node confirm-publish.mjs`, no directory prefix),
+  recreating the exact deadlock the exemption exists to close. Fixed by
+  comparing an exact `path.basename()` match instead of a suffix test;
+  verified live against both bugs before and after the fix, and locked in
+  with a new regression test in `hooks.test.mjs` (now 16/16 passing).
+- **`repo-integrity.mjs` INV9 had no `else fail()`.** Unlike every sibling
+  invariant, the role-count-in-description check silently stopped verifying
+  anything if the wording ever stopped matching its expected pattern —
+  the same shape of blind spot it was written to close. Now fails loud if
+  the description is missing or doesn't state a role count in the expected
+  form.
+- **A real architectural misdescription, found by verifying against
+  Claude Code's own subagent documentation rather than assuming:**
+  `interviewer.md`, `publisher.md` and `scope-guardian.md` were written as
+  if they themselves called `AskUserQuestion` to show the user a live
+  pop-up. Task-tool subagents cannot do this — the tool depends on the main
+  conversation's session state and is unavailable to them even when
+  declared. Corrected all three to prepare question content / confirmation
+  wording / an escalation recommendation and hand it to the Project Lead,
+  which is the one role played by the main conversation itself and the
+  only place that can actually show a pop-up or wait for a live answer —
+  documented explicitly in `project-lead.md`. This was a documentation
+  correction, not a behavioural change: every real GRU953-Studio session
+  observed so far already worked this way in practice.
+- Stray "Claude Code or Claude Desktop" claim in `memory-keeper.md` —
+  the plugin does not run on Claude Desktop (see README); corrected to
+  match the accurate wording already used in `dev-memory/SKILL.md`.
+- `reviewer.md` said it performs deletions and "fixes" stale docs directly,
+  contradicting its own deliberately read-only tool list (Read, Grep, Glob,
+  Bash — no Write/Edit) and the project's stated "every review-only role is
+  correctly read-only" guarantee. Reworded to recommend and report findings
+  for the builder/Project Lead to act on, matching its actual tools and its
+  own Output section.
+
+Verified: 16/16 behavioural tests, `repo-integrity.mjs` clean (31 agents,
+version 2.0.2 in both `plugin.json` and `marketplace.json`), `roster-check.mjs`
+clean, `licence-scan.mjs` clean — all re-run after every fix in this round.
+
 ## 2.0.1 — 2026-07-11
 
 A follow-up audit round on v2.0.0, requested explicitly ("identify and fix

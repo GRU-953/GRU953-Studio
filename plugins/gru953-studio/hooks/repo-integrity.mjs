@@ -156,12 +156,20 @@ if (pv !== undefined && mv !== undefined && pv !== mv) fail(`version mismatch: p
 // consistency audit found — marketplace.json's plugins[0].description said
 // "up to 16 specialised roles" for a full day after the roster grew to 31,
 // because nothing checked description TEXT, only the version field (INV7).
+//
+// 2026-07-11 Round 3 fix: unlike every sibling invariant above, this check
+// had no `else fail(...)` — if the wording were ever rephrased to something
+// that doesn't match `/up to (\d+) specialised roles/i` (a rewrite, a typo,
+// a translation), the check would silently stop verifying the role count at
+// all instead of failing loud, which is the same shape of silent blind spot
+// this very invariant exists to close. Now requires the phrase to be found
+// in the expected shape at all, not just correct when it happens to match.
 const marketPluginDesc = marketJson.plugins && marketJson.plugins[0] && marketJson.plugins[0].description;
-if (marketPluginDesc) {
-  const dm = marketPluginDesc.match(/up to (\d+) specialised roles/i);
-  if (dm && parseInt(dm[1], 10) !== agentCount) {
-    fail(`marketplace.json plugin description says "up to ${dm[1]} specialised roles" but agents/ has ${agentCount}`);
-  }
+if (!marketPluginDesc) fail(`marketplace.json plugins[0].description is missing`);
+const dm = marketPluginDesc.match(/up to (\d+) specialised roles/i);
+if (!dm) fail(`marketplace.json plugin description does not state a role count in the expected "up to N specialised roles" form: "${marketPluginDesc}"`);
+if (parseInt(dm[1], 10) !== agentCount) {
+  fail(`marketplace.json plugin description says "up to ${dm[1]} specialised roles" but agents/ has ${agentCount}`);
 }
 
 // ---- INV 8: committed roster baseline matches agent count --------------------

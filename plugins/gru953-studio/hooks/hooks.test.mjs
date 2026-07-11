@@ -239,6 +239,22 @@ test('gate.mjs/scan.mjs: invoking confirm-publish.mjs ITSELF as a Bash command i
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('lib.mjs isConfirmScriptOnly: exact basename only, never a suffix/substring match (2026-07-11 Round 3 audit fix)', () => {
+  // The earlier version matched "path ends with confirm-publish.mjs" as a
+  // plain substring test. That both (a) failed the confirm-script's own
+  // DOCUMENTED bare usage ("node confirm-publish.mjs [projectRoot]", no
+  // directory prefix), recreating the deadlock it was meant to close, and
+  // (b) exempted any look-alike filename that merely ENDS with the trusted
+  // name, giving an arbitrary unverified script an unconditional, unscanned
+  // pass through both scan.mjs and gate.mjs. Fixed by comparing an exact
+  // path.basename() match instead.
+  assert.equal(isPushCapable('node confirm-publish.mjs'), false, 'bare confirm-publish.mjs invocation (its own documented usage) must be exempt');
+  assert.equal(isPushCapable('node confirm-publish.mjs /some/path'), false, 'bare confirm-publish.mjs invocation with an arg must be exempt');
+  assert.equal(isPushCapable('node confirm-go-public.mjs'), false, 'bare confirm-go-public.mjs invocation must be exempt');
+  assert.equal(isPushCapable('node ./evil-confirm-publish.mjs'), true, 'a look-alike filename must NOT get the same free pass');
+  assert.equal(isPushCapable('node /tmp/attacker/z-confirm-publish.mjs'), true, 'a look-alike filename in any directory must NOT get the same free pass');
+});
+
 test('gate.mjs: private-publish token does NOT authorise going public', () => {
   const dir = mkTmp('gru-gate-tokensep-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });

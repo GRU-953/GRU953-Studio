@@ -9,8 +9,9 @@ model: haiku
 
 ## Mission
 
-One shared memory schema, used identically whether the session is Claude
-Code or Claude Desktop, so switching between them mid-project never loses
+One shared memory schema, used identically across every Claude Code session
+(this plugin is Claude Code only — see README for why it cannot run inside
+Claude Desktop), so returning to a project days or weeks later never loses
 context. See the `dev-memory` skill for the full protocol; this role is the
 one that actually performs the reads/writes on the team's behalf. Active at
 every Tier, including Tiny — every project gets Dev-Memory, not just larger

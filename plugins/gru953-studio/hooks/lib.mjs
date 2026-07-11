@@ -167,18 +167,58 @@ function normalizeForPushCheck(c) {
 // The exemption below is deliberately narrow — it strips at most one simple
 // leading `cd ... &&`/`cd ...;` prefix, then requires NO compound operator
 // anywhere in what remains (so nothing can be chained before or after), and
-// only THEN checks that what's left is a plain `node <path-ending-in-one-
-// of-the-two-scripts> [one optional argument]` invocation. This is NOT a
-// bare substring check: `git push origin main; node confirm-publish.mjs`
-// still has a `;` left after stripping (there's no leading cd to strip, so
-// the whole string is scanned for compound operators and the `;` is found)
-// and is correctly NOT exempted — still caught by the checks below as a
-// real push. A loose substring exemption would have been a genuine new
-// bypass; this two-step one is not.
+// only THEN checks that what's left is a plain `node <path-to-one-of-the-
+// two-scripts> [one optional argument]` invocation. This is NOT a bare
+// substring check: `git push origin main; node confirm-publish.mjs` still
+// has a `;` left after stripping (there's no leading cd to strip, so the
+// whole string is scanned for compound operators and the `;` is found) and
+// is correctly NOT exempted — still caught by the checks below as a real
+// push.
+//
+// 2026-07-11 Round 3 adversarial-audit fix (CRITICAL, found by independent
+// verification, not trusted from the first report): the original version of
+// this function matched the path with `\S.*(confirm-publish|confirm-go-
+// public)\.mjs`, which is a SUFFIX/substring test, not an identity check —
+// `node ./evil-confirm-publish.mjs` and `node /tmp/attacker/z-confirm-
+// publish.mjs` both matched, because the literal text "confirm-publish.mjs"
+// merely appears at the end of a longer, unrelated filename. Since
+// isPushCapable() returning false makes BOTH gate.mjs and scan.mjs allow()
+// immediately — skipping the secret scan and the publish-confirmation check
+// entirely — this let any node script with a crafted filename run completely
+// unchecked. The same over-broad match also had a second bug: a BARE
+// invocation with no directory prefix at all (`node confirm-publish.mjs`,
+// which is exactly the usage documented in that script's own header
+// comment) failed the old regex, because `\S.*` required at least one
+// character to exist strictly BEFORE the matched filename text — recreating,
+// for that literal invocation form, the exact bootstrap deadlock this
+// function was written to fix.
+//
+// Fixed by extracting the actual path argument and comparing its real
+// `path.basename()` for an EXACT match against the two known script names,
+// rather than testing whether the filename merely ends with that text. This
+// closes both bugs: a bare `confirm-publish.mjs` has basename
+// `confirm-publish.mjs` (exact match, exempted); `evil-confirm-publish.mjs`
+// has basename `evil-confirm-publish.mjs` (not an exact match, NOT
+// exempted, falls through to the ordinary push-capable checks below).
+//
+// Disclosed, not eliminated: this still trusts a FILENAME, not a
+// cryptographic identity — a file deliberately created with the exact name
+// `confirm-publish.mjs` in a location the session can reach would still be
+// exempted, the same residual risk every filename-based check in this
+// project carries (see SECURITY.md). Requiring the resolved path to also
+// live under a fixed directory was considered and rejected: the legitimate
+// invocation form varies by design (an absolute `${CLAUDE_PLUGIN_ROOT}/...`
+// path from the plugin cache, or a relative `hooks/confirm-publish.mjs` from
+// within the project root), so no single directory prefix covers every real
+// use without also blocking it.
 function isConfirmScriptOnly(c) {
   const afterCd = c.replace(/^[ \t]*cd[ \t]+(?:"[^"]+"|'[^']+'|[^ \t;&|]+)[ \t]*(?:&&|;)[ \t]*/, '');
   if (/(&&|\|\||;|\||`|\$\()/.test(afterCd)) return false;
-  return /^node[ \t]+\S.*(confirm-publish|confirm-go-public)\.mjs["']?([ \t]+\S+)?[ \t]*$/.test(afterCd);
+  const m = /^node[ \t]+(?:"([^"]+)"|'([^']+)'|(\S+))(?:[ \t]+(?:"[^"]*"|'[^']*'|\S+))?[ \t]*$/.exec(afterCd);
+  if (!m) return false;
+  const scriptPath = m[1] || m[2] || m[3];
+  const base = path.basename(scriptPath);
+  return base === 'confirm-publish.mjs' || base === 'confirm-go-public.mjs';
 }
 export function isPushCapable(rawC) {
   if (!rawC) return true;

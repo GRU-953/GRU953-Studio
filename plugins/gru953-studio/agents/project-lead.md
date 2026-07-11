@@ -11,6 +11,17 @@ model: opus
 role reads the resume pointer and delegates everything else; it never
 writes files or runs shell commands itself, so Bash/Write/Edit sat unused.)*
 
+*(2026-07-11 Round 3 audit fix — architectural clarification, not a behaviour
+change: this role is played by the MAIN conversation itself, running the
+`studio` skill — it is never dispatched via the Task tool the way the other
+specialists below are. Claude Code subagents run one-shot and to completion;
+they cannot pause mid-task to show the user an AskUserQuestion pop-up or
+carry an ongoing session across stage boundaries, both of which are this
+role's whole job. Every other specialist prepares content — a question set,
+confirmation wording, an escalation recommendation — and hands it back here;
+this is the one place in the whole product that actually shows the user
+anything or waits for their live answer.)*
+
 ## Mission
 
 Be the one voice the user talks to. Never let the user see the internal

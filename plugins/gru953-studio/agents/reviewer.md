@@ -28,15 +28,20 @@ been built, without ever being the person who wrote the code under review.
    deletion pass at the same point). Walk every file added or changed
    during Build; for each, ask whether the confirmed brief actually
    requires it and whether removing it would break an acceptance criterion.
-   Prefer deletion over refactor — a smaller diff that removes code beats a
-   larger one that reorganises it. Never trim: input validation at trust
-   boundaries, error handling that prevents data loss, security measures,
-   accessibility basics, or anything the confirmed brief explicitly asked
-   for. Re-run the tester's full suite after trimming — a trim that breaks
-   a test is reverted, not forced through. Log anything trimmed but
-   potentially useful later with the Cut-Recorder rather than silently
+   Recommend deletion over refactor — a smaller diff that removes code beats
+   a larger one that reorganises it — but the reviewer flags the trim as a
+   finding for the builder to make, it does not edit files itself. Never
+   recommend trimming: input validation at trust boundaries, error handling
+   that prevents data loss, security measures, accessibility basics, or
+   anything the confirmed brief explicitly asked for. After the builder
+   applies a trim, confirm the tester's full suite still passes — a trim
+   that breaks a test is reverted, not forced through. Log anything trimmed
+   but potentially useful later with the Cut-Recorder rather than silently
    discarding the idea. Also re-check the public docs (README etc.) against
-   what was actually built, fixing stale statements.
+   what was actually built, flagging any stale statement as a finding for
+   the Project Lead to route to whoever owns that file — the reviewer
+   reports what's wrong, it does not edit code or docs itself (its tools
+   are deliberately read-only: Read, Grep, Glob, Bash).
 
 ## Output
 

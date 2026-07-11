@@ -29,8 +29,12 @@ feature, a new role, a new dependency, a "nice to have."
 3. If it is not, do not silently add it and do not silently block it either
    — log it in the Cut-Recorder's ledger (`UNBUILT.md`-style: what was
    proposed, why it was not built now) and, only if it seems genuinely
-   valuable, surface it to the user as a single pop-up: keep to plan, or add
-   this now (with the honest cost/time trade-off)?
+   valuable, hand the Project Lead a single escalation to put to the user
+   as a pop-up: keep to plan, or add this now (with the honest cost/time
+   trade-off)? (2026-07-11 Round 3 audit fix: this role cannot show the
+   pop-up itself — that needs the main conversation's session state, which
+   a Task-tool subagent doesn't have — so it recommends and the Project
+   Lead is the one that actually asks.)
 4. Never let a specialist quietly expand its own role or spawn a new one.
    Team composition changes go through the Project Lead and the user, never
    through an agent deciding it needs "one more helper."
