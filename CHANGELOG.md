@@ -1,5 +1,91 @@
 # Changelog
 
+## 2.0.1 — 2026-07-11
+
+A follow-up audit round on v2.0.0, requested explicitly ("identify and fix
+all issues... until golden"). GitHub Copilot was requested for this round
+too — checked and reported honestly that this account has no active
+Copilot subscription (`user/copilot_seat` → 404), so this round used the
+same Claude-based adversarial audit process instead, across four lenses:
+role-redundancy/growth, security, cross-file consistency, and non-technical
+end-user experience.
+
+**Fixed**
+
+- **Security (MAJOR, real bypass): `isPushCapable()` defeated by shell
+  word-splitting/quote-splicing — found and closed across two audit
+  rounds, not one.** Round 1: `git${IFS}push` (bash's `$IFS` expands to
+  whitespace, triggering word-splitting) and `git pu""sh` / `git pu''sh`
+  (empty adjacent quotes are zero-width to bash) both resolved to a real
+  `git push` while the matcher — which only ever sees the un-expanded
+  literal text — rated them non-push, skipping the secret scan and the
+  publish gate entirely. Round 2 (an independent re-audit of the Round 1
+  fix, not just re-reading it): found the fix only stripped EMPTY quote
+  pairs, missing the equally trivial non-empty case (`git p"u"s"h"`),
+  plus backslash-escaped mid-word splicing (`git p\ush`) and
+  backslash-newline line continuations. Generalised the fix to a
+  fixed-point loop that strips any quote touching a word character on
+  either side (so chained splices like `p"u"s"h"` fully resolve, not just
+  the first pair), plus the two backslash techniques. This closes every
+  proof-of-concept bypass demonstrated across both rounds; shell text
+  obfuscation in general remains an open-ended problem (command
+  substitution, variable reuse), documented plainly in SECURITY.md rather
+  than implied to be solved. Locked in with 2 new test cases (14 tests
+  total, up from 12 at v2.0.0).
+- **`hooks/repo-integrity.mjs` false-clean bug (MAJOR).** The
+  plugin.json/marketplace.json version-agreement check compared
+  `pv !== mv` only — if BOTH files were entirely missing, both values were
+  `undefined`, `undefined !== undefined` is `false`, and the check
+  reported "clean." Reproduced directly (a repo missing both files passed
+  as clean) and fixed: now fails explicitly when either file is
+  unreadable or either version is absent. Also added a new invariant
+  (INV9) checking marketplace.json's own plugin-description text states
+  the correct role count — the systemic fix for the next finding.
+- **`marketplace.json`'s plugin description said "up to 16 specialised
+  roles"** — visible in the actual marketplace listing, unnoticed for a
+  full day after the roster grew to 31 because nothing checked
+  description text, only the version field. Fixed, and now mechanically
+  checked (see above).
+- **CHANGELOG's own "11 tests" claim was wrong** (actually 12 at the time of
+  v2.0.0, now 14 after this round's fixes) — fixed for the record, per the
+  user's own note that this project's CHANGELOG has a history of
+  overclaiming.
+- **`responsible-ai-reviewer` narrowed.** Previously fired on ANY Standard+
+  AI feature — an opus-tier (priciest) role waking for a harmless
+  AI-generated encouragement message added cost with no matching risk.
+  Now scoped to AI features that make or meaningfully influence a real
+  decision about a person.
+- **Security (MAJOR, real deadlock, found live while publishing this very
+  release): `confirm-publish.mjs`/`confirm-go-public.mjs` could never be
+  run.** Both scripts' own filenames contain "publish"/"go-public", so
+  invoking either via the Bash tool matched the generic "script whose name
+  suggests deploy/release/publish/ship" indirection rule and was itself
+  treated as push-capable — meaning `gate.mjs` denied the very command
+  that RECORDS a user's publish confirmation, on the grounds that no
+  confirmation was recorded yet. An unbreakable deadlock with no way to
+  ever create the record. Fixed with a narrowly-scoped exemption (matches
+  ONLY a plain `node <path-ending-in-one-of-these-two-scripts>
+  [one optional arg]` invocation with no chained commands anywhere in the
+  string — verified a decoy like `git push origin main; node
+  confirm-publish.mjs` is still correctly caught, not exempted). Existing
+  tests never caught this because they invoke the confirm scripts directly
+  via `spawnSync` (bypassing the Bash-tool hook layer entirely) rather than
+  through the actual PreToolUse interface; a new test exercises the real
+  interface and locks the fix in (15 tests total).
+- **README "31 AI roles" headline softened** to "The specialist team,"
+  with the count moved into supporting text — a minor but real instance of
+  number-forward framing cutting against this product's plain-language,
+  non-overwhelming design ethos.
+
+**Considered and explicitly declined**
+
+- An independent audit flagged 4 of the 15 new v2.0.0 roles (`qa-lead`,
+  `project-assistant`, `prompt-engineer`, `release-manager`) as likely
+  duplicating `tester`, `memory-keeper`, `ai-developer`, and `publisher`
+  respectively — the same "one job as two roles" pattern that sank an
+  earlier 26-role tool. Asked directly; the user chose to keep all 31
+  roles as-is. Not re-litigated further.
+
 ## 2.0.0 — 2026-07-11
 
 A major gold-standard audit and expansion. Breaking only in the sense that
@@ -26,7 +112,7 @@ project, command and skill continues to work unchanged.
   for the class of bug above: CI now fails on a dangling reference, so a
   missing skill can't hide again.
 - **`hooks/hooks.test.mjs`** — the first behavioural test suite for the
-  security hooks (11 tests): the push-matcher catches real bypasses and
+  security hooks (12 tests): the push-matcher catches real bypasses and
   allows ordinary reads; the scanner refuses planted secrets and the
   private Dev-Memory folder while ignoring look-alike code; the publish
   gate's two tokens are proven independent.

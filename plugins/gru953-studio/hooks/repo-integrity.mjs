@@ -131,11 +131,38 @@ if (skillCountMatch) {
 }
 
 // ---- INV 7: plugin.json and marketplace.json versions agree ------------------
-const pluginJson = JSON.parse(read(path.join(pluginRoot, '.claude-plugin', 'plugin.json')) || '{}');
-const marketJson = JSON.parse(read(path.join(repoRoot, '.claude-plugin', 'marketplace.json')) || '{}');
+// 2026-07-11 v2.0.0 follow-up audit fix (MAJOR, false-clean): the previous
+// version compared `pv !== mv` only. When either file is missing, `read()`
+// returns null, `JSON.parse(null || '{}')` silently parses to `{}`, and both
+// pv and mv become `undefined` — `undefined !== undefined` is false, so this
+// invariant reported CLEAN when both version files were entirely absent.
+// A false-clean is worse than a false-positive here: nobody double-checks a
+// green result. Now fails explicitly if either file is unreadable or either
+// version is missing, in addition to a real mismatch.
+const pluginJsonRaw = read(path.join(pluginRoot, '.claude-plugin', 'plugin.json'));
+const marketJsonRaw = read(path.join(repoRoot, '.claude-plugin', 'marketplace.json'));
+if (pluginJsonRaw === null) fail(`plugins/gru953-studio/.claude-plugin/plugin.json is missing or unreadable`);
+if (marketJsonRaw === null) fail(`.claude-plugin/marketplace.json is missing or unreadable`);
+const pluginJson = JSON.parse(pluginJsonRaw || '{}');
+const marketJson = JSON.parse(marketJsonRaw || '{}');
 const pv = pluginJson.version;
 const mv = marketJson.metadata && marketJson.metadata.version;
-if (pv !== mv) fail(`version mismatch: plugin.json=${pv} marketplace.json=${mv}`);
+if (pv === undefined) fail(`plugin.json has no "version" field`);
+if (mv === undefined) fail(`marketplace.json has no metadata.version field`);
+if (pv !== undefined && mv !== undefined && pv !== mv) fail(`version mismatch: plugin.json=${pv} marketplace.json=${mv}`);
+
+// ---- INV 9: marketplace.json's own plugin description role-count agrees -----
+// 2026-07-11 addition: this is the systemic fix for the exact bug the
+// consistency audit found — marketplace.json's plugins[0].description said
+// "up to 16 specialised roles" for a full day after the roster grew to 31,
+// because nothing checked description TEXT, only the version field (INV7).
+const marketPluginDesc = marketJson.plugins && marketJson.plugins[0] && marketJson.plugins[0].description;
+if (marketPluginDesc) {
+  const dm = marketPluginDesc.match(/up to (\d+) specialised roles/i);
+  if (dm && parseInt(dm[1], 10) !== agentCount) {
+    fail(`marketplace.json plugin description says "up to ${dm[1]} specialised roles" but agents/ has ${agentCount}`);
+  }
+}
 
 // ---- INV 8: committed roster baseline matches agent count --------------------
 const rosterBaselineFile = path.join(pluginRoot, 'ROSTER.md');

@@ -47,12 +47,14 @@ in one short sentence the first time it comes up.
    week later, and pick up exactly where you left off, in the same session
    or a brand new one.
 
-## The specialists (31 AI roles)
+## The specialist team
 
-You never talk to these directly — the Project Lead is your one point of
-contact, and brings in only the ones your project actually needs. A tiny
-one-page website wakes a handful; a bigger app with logins, data and an AI
-feature wakes more. A specialist your project doesn't need never runs.
+You never talk to any of these directly — the Project Lead is your one
+point of contact, and brings in only the ones your project actually needs.
+The full list below (31 specialist roles in total) is here for anyone curious how it
+works — you'll never need to remember it. A tiny one-page website wakes a
+handful; a bigger app with logins, data and an AI feature wakes more. A
+specialist your project doesn't need never runs.
 
 **The core team — most projects use these:**
 

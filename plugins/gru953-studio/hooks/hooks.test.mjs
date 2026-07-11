@@ -106,6 +106,36 @@ test('isPushCapable: catches quote-obfuscated pushes (Round-A audit)', () => {
   }
 });
 
+test('isPushCapable: catches IFS-splice and empty-quote-splice pushes (2026-07-11 audit)', () => {
+  for (const c of [
+    'git${IFS}push origin main',
+    'gh${IFS}repo${IFS}create x --public',
+    'git pu""sh origin main',
+    "git pu''sh origin main",
+  ]) {
+    assert.equal(isPushCapable(c), true, `obfuscated push should be caught: "${c}"`);
+  }
+  // normalisation must not create new false positives on ordinary commands
+  for (const c of ['cd /path && gh repo view x/y --json isArchived', 'gh auth status', 'git status']) {
+    assert.equal(isPushCapable(c), false, `must stay clear: "${c}"`);
+  }
+});
+
+test('isPushCapable: catches non-empty quote-splice, backslash-escape, and line-continuation pushes (2026-07-11 Round 2 audit)', () => {
+  for (const c of [
+    'git p"u"s"h" origin main',
+    "git p'u's'h' origin main",
+    'git p\\ush origin main',
+    'git \\\npush origin main',
+  ]) {
+    assert.equal(isPushCapable(c), true, `obfuscated push should be caught: "${c}"`);
+  }
+  // must not create new false positives
+  for (const c of ['git commit -m "fix"', "gh api user --jq '.login'", 'git log --oneline']) {
+    assert.equal(isPushCapable(c), false, `must stay clear: "${c}"`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // scan.mjs — the secret scanner (integration, against a real temp git tree)
 // ---------------------------------------------------------------------------
@@ -183,6 +213,29 @@ test('gate.mjs: allows a push after confirm-publish is recorded', () => {
   assert.equal(c.status, 0);
   const r = runHook('gate.mjs', 'git push', dir);
   assert.equal(r.decision, 'allow');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs/scan.mjs: invoking confirm-publish.mjs ITSELF as a Bash command is never blocked (2026-07-11 deadlock fix)', () => {
+  // Found live: confirm-publish.mjs's own filename contains "publish", so
+  // running it via the Bash tool (not spawnSync with array args, the way
+  // the tests above do it) used to match the generic script/keyword
+  // indirection rule and get treated as push-capable — meaning gate.mjs
+  // denied the very command that RECORDS the confirmation, on the grounds
+  // that no confirmation was recorded yet. An unbreakable deadlock. This
+  // proves the fix by running the confirm scripts through the REAL
+  // PreToolUse hook interface (runHook), which the tests above never did.
+  const dir = mkTmp('gru-gate-confirmscript-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const cmd = `node "${path.join(HERE, 'confirm-publish.mjs')}" "${dir}"`;
+  const scanResult = runHook('scan.mjs', cmd, dir);
+  assert.equal(scanResult.decision, 'allow', 'scan.mjs must not block confirm-publish.mjs');
+  const gateResult = runHook('gate.mjs', cmd, dir);
+  assert.equal(gateResult.decision, 'allow', 'gate.mjs must not block confirm-publish.mjs even with no confirmation recorded yet');
+  // A decoy must NOT get the same exemption: a real push chained with the
+  // confirm-script name mentioned elsewhere is still caught.
+  const decoy = `git push origin main; node confirm-publish.mjs`;
+  assert.equal(isPushCapable(decoy), true, 'a real push must not be exempted just because the string also mentions confirm-publish.mjs');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

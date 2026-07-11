@@ -111,8 +111,79 @@ export function findStudioRoot(start) {
 // by bare name (`git p`) without the word "push" appearing in that later
 // command. Catching that would require a state store or inspecting
 // `.git/config` on every command, which this hook design doesn't do.
-export function isPushCapable(c) {
-  if (!c) return true;
+// 2026-07-11 v2.0.0 follow-up audit fix (MAJOR): an adversarial pass found
+// that bash resolves `git${IFS}push` (IFS-based word-splitting) and
+// `git pu""sh` / `git pu''sh` (empty-string quote splicing) to a real
+// `git push` — but the matcher only ever sees the UN-expanded literal text,
+// so both returned false (non-push), skipping the secret scan and the
+// publish gate entirely. Neither is a variant of the quote-tolerance fix
+// above (that handles a whole token wrapped in quotes, not mid-word
+// splicing or a shell variable expanding to whitespace). Fix: canonicalise
+// the two concrete techniques found — strip empty adjacent quote pairs, and
+// replace `$IFS`/`${IFS}` with a literal space — before running every check
+// below. This closes the two proof-of-concept bypasses; it does NOT close
+// shell obfuscation in general, which has effectively unlimited variations
+// (see SECURITY.md's disclosed-limitations section, extended for this).
+// 2026-07-11 Round 2 follow-up: adversarial re-testing found the first pass
+// only stripped EMPTY adjacent quote pairs, missing the more general (and
+// equally trivial) case of quoting real characters mid-word — `git
+// p"u"s"h"` splices to a real `push` in bash the same way `pu""sh` does,
+// just with non-empty quoted segments — plus backslash-escaped mid-word
+// characters (`p\ush`) and backslash-newline line continuations. Now
+// stripped generally: repeatedly remove any quote character touching a
+// word character on either side (a fixed-point loop, so cascading splices
+// like `p"u"s"h"` fully resolve, not just the first pair), remove
+// backslash-newline continuations, and un-escape a backslash before an
+// ordinary word character. Still not a full shell parser — command
+// substitution and variable-reuse-based obfuscation remain open, disclosed
+// limitations (see SECURITY.md).
+function normalizeForPushCheck(c) {
+  let n = c;
+  n = n.replace(/\\\r?\n/g, ''); // backslash-newline line continuation
+  n = n.replace(/\\([A-Za-z0-9])/g, '$1'); // p\ush -> push
+  n = n.replace(/\$\{IFS\}|\$IFS\b/g, ' '); // git${IFS}push -> git push
+  let prev;
+  do {
+    prev = n;
+    // strip a quote char that touches a word char on either side (mid-word
+    // splicing), one layer per pass; loop to a fixed point so chained
+    // splices like p"u"s"h" fully resolve, not just the first pair.
+    n = n.replace(/([A-Za-z0-9_-])(["'])/g, '$1').replace(/(["'])([A-Za-z0-9_-])/g, '$2');
+  } while (n !== prev);
+  return n;
+}
+// 2026-07-11 v2.0.1 follow-up fix (real deadlock, found live): the
+// "script name contains deploy/release/publish/ship" indirection rule
+// below correctly treats an arbitrary project script that might hide a
+// push as push-capable — but `confirm-publish.mjs` and
+// `confirm-go-public.mjs` themselves match it purely because their OWN
+// filenames contain "publish"/"go-public", even though neither script
+// pushes anything; each only writes a local marker file recording that
+// the user already confirmed. That made gate.mjs deny the very script
+// that RECORDS a confirmation on the grounds that "no confirmation is
+// recorded yet" — a bootstrap deadlock with no way out, since the record
+// can never be written.
+//
+// The exemption below is deliberately narrow — it strips at most one simple
+// leading `cd ... &&`/`cd ...;` prefix, then requires NO compound operator
+// anywhere in what remains (so nothing can be chained before or after), and
+// only THEN checks that what's left is a plain `node <path-ending-in-one-
+// of-the-two-scripts> [one optional argument]` invocation. This is NOT a
+// bare substring check: `git push origin main; node confirm-publish.mjs`
+// still has a `;` left after stripping (there's no leading cd to strip, so
+// the whole string is scanned for compound operators and the `;` is found)
+// and is correctly NOT exempted — still caught by the checks below as a
+// real push. A loose substring exemption would have been a genuine new
+// bypass; this two-step one is not.
+function isConfirmScriptOnly(c) {
+  const afterCd = c.replace(/^[ \t]*cd[ \t]+(?:"[^"]+"|'[^']+'|[^ \t;&|]+)[ \t]*(?:&&|;)[ \t]*/, '');
+  if (/(&&|\|\||;|\||`|\$\()/.test(afterCd)) return false;
+  return /^node[ \t]+\S.*(confirm-publish|confirm-go-public)\.mjs["']?([ \t]+\S+)?[ \t]*$/.test(afterCd);
+}
+export function isPushCapable(rawC) {
+  if (!rawC) return true;
+  const c = normalizeForPushCheck(rawC);
+  if (isConfirmScriptOnly(c)) return false;
   // 2026-07-11 Round-A adversarial-audit fix: tolerate quotes around the
   // git binary or the `push` subcommand. `git "push"`, `git 'push'` and
   // `"git" push` all run a real push once the shell strips the quotes, but

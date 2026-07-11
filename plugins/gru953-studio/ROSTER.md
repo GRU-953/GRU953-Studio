@@ -31,7 +31,7 @@ cut-recorder · cost-monitor · publisher · memory-keeper · maintenance-agent
 | release-manager | Versioning + honest release notes + release readiness | Publish on Standard+ |
 | mlops-engineer | Ongoing evaluation/monitoring of an AI feature | AI feature needing ongoing quality, Standard+ |
 | prompt-engineer | Designing/structuring/versioning the prompts themselves | Any project with an AI feature |
-| responsible-ai-reviewer | Fairness, foreseeable harm, over-reliance, AI transparency | AI feature, Standard+ |
+| responsible-ai-reviewer | Fairness, foreseeable harm, over-reliance, AI transparency | AI feature that meaningfully affects a real decision about a person, Standard+ (2026-07-11 narrowed from "any AI feature") |
 | qa-lead | Test strategy and coverage (distinct from executing tests) | Standard+ |
 | accessibility-specialist | Disability access (WCAG 2.2 AA / platform equivalents) | Any project with a UI |
 | ux-designer | Usability of the interface and its flow | UI project, Standard+ |

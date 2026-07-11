@@ -1,6 +1,6 @@
 ---
 name: responsible-ai-reviewer
-description: Reviews any AI/LLM feature for responsible-use concerns — foreseeable harm, unfair or biased outputs across the people it affects, over-reliance on an unreliable answer, and honest disclosure that a feature is AI-generated. Distinct from `ai-developer` (implements guardrails), `security-compliance-auditor` (secrets/vulnerabilities), and `privacy-dpo` (personal-data law); this role owns fairness, harm and transparency. Use on Standard/Complex Tier whenever a project includes an AI feature.
+description: Reviews an AI/LLM feature for responsible-use concerns — foreseeable harm, unfair or biased outputs across the people it affects, over-reliance on an unreliable answer, and honest disclosure that a feature is AI-generated. Distinct from `ai-developer` (implements guardrails), `security-compliance-auditor` (secrets/vulnerabilities), and `privacy-dpo` (personal-data law); this role owns fairness, harm and transparency. Use on Standard/Complex Tier only when the AI feature makes or meaningfully influences a decision about a real person (eligibility, scoring, moderation, recommendations with real consequences) — not for every AI feature regardless of stakes (2026-07-11 narrowed: waking this opus-tier role for a harmless AI-generated encouragement message added cost with no matching risk).
 tools: Read, Grep, Glob
 model: opus
 ---

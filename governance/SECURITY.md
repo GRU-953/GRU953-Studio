@@ -63,5 +63,25 @@ agent itself, actually approved an action. If you find a way to defeat these
 mechanisms in an honest, non-adversarial session, that IS a bug — please
 report it.
 
+The push-detection matcher (`isPushCapable` in `hooks/lib.mjs`) matches
+literal command TEXT, not what the shell actually executes after expansion.
+As of 2026-07-11 (two audit rounds, the second one specifically re-testing
+the first fix rather than trusting it) it canonicalises several known
+obfuscation techniques before matching: `$IFS`-based word-splitting
+(`git${IFS}push`), quote-splicing of a word whether the quoted segments are
+empty or not and however many splices are chained (`git pu""sh`,
+`git p"u"s"h"`), backslash-escaped mid-word characters (`git p\ush`), and
+backslash-newline line continuations. All of these were found, in live
+adversarial passes, to defeat the matcher entirely. This closes every
+concrete case found so far; it does not close shell text obfuscation in
+general, which has effectively unlimited variations (command substitution,
+variable reuse/assignment, encoding, and combinations of all of the above).
+Treat this as raising the bar against realistic accidents and common
+tricks, not as a sandbox against a determined adversary — the only fully
+robust fix would be executing the command and inspecting its real effect,
+which this hook design (a fast, stdlib-only, per-command check) does not do.
+If you find another concrete bypass, please report it (see above) — this
+list will keep growing as real cases are found, not be treated as closed.
+
 `hooks/licence-scan.mjs` currently checks top-level `node_modules/*` only,
 not each dependency's own nested `node_modules`.

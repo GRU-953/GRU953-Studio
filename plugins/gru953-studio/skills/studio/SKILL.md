@@ -85,7 +85,8 @@ not size (2026-07-11 v2.0.0):
 
 | The moment the brief includes… | Wake these roles |
 | :-- | :-- |
-| An AI/LLM feature | `ai-developer` + `prompt-engineer` (any Tier); `mlops-engineer` + `responsible-ai-reviewer` (Standard+) |
+| An AI/LLM feature | `ai-developer` + `prompt-engineer` (any Tier); `mlops-engineer` (Standard+, any AI feature) |
+| An AI/LLM feature that makes or meaningfully influences a decision about a real person (e.g. eligibility, scoring, moderation, recommendations with real consequences) — not just, say, a generated encouragement message | `responsible-ai-reviewer` (2026-07-11 narrowed: previously fired on any Standard+ AI feature regardless of real-world stakes — an opus-tier role waking for a harmless AI "nice job!" message added cost with no matching risk) |
 | A user interface | `accessibility-specialist` (any Tier); `ux-designer` (Standard+) |
 | Storing data beyond a session | `data-engineer` (Standard+) |
 | Money, logins, or personal data | `privacy-dpo` |
