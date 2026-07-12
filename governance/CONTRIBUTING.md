@@ -45,7 +45,7 @@ Create a branch from `main` for your work:
 
 Use clear, Conventional-style commit messages, for example:
 
-- `feat: add a deployment-engineer role for Linux packaging`
+- `feat: extend devops-engineer to cover Linux packaging`
 - `fix: correct the publish-gate token derivation`
 - `docs: clarify the first-run setup`
 

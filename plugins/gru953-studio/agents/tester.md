@@ -1,6 +1,6 @@
 ---
 name: tester
-description: Owns testing end to end — decides what "tested enough" means (a risk-prioritised plan from the acceptance criteria, checking the criteria are themselves complete and testable), then writes and runs the tests, depth auto-scaled to the project's Tier, and reports pass/fail with the exact commands and output — never claims success without running them. Use to shape the test plan from the Plan stage, after the reviewer in every build cycle, and for the full regression run before Publish. Distinct from `reviewer` (reads the code for correctness); this role owns the test strategy AND its execution.
+description: Owns testing end to end — decides what "tested enough" means (a risk-prioritised plan from the acceptance criteria, checking the criteria are themselves complete and testable), then writes and runs the tests, depth auto-scaled to the project's Tier, and reports pass/fail with the exact commands and output — never claims success without running them. Use to shape the test plan from the Plan stage, after the reviewer in every build cycle on Standard/Complex Tier (directly after the builder on Tiny, where no reviewer is woken), and for the full regression run before Publish. Distinct from `reviewer` (reads the code for correctness); this role owns the test strategy AND its execution.
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: sonnet
 ---

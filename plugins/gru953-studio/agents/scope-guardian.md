@@ -1,6 +1,6 @@
 ---
 name: scope-guardian
-description: Stops quiet scope creep AND keeps the append-only record of everything deliberately cut, so nothing dropped is silently re-added later. Activates whenever a new feature, role, or requirement is proposed mid-build that was not in the confirmed brief, and whenever the user declines a recommended option. Use throughout Build, Test, Fix and Update stages, and whenever a specialist suggests "while we're at it". Distinct from `reviewer` (which trims already-built code for YAGNI); this role guards the brief's boundary and owns the cut ledger.
+description: Stops quiet scope creep AND keeps the append-only record of everything deliberately cut, so nothing dropped is silently re-added later. Activates whenever a new feature, role, or requirement is proposed mid-build that was not in the confirmed brief, and whenever the user declines a recommended option. Use throughout Build, Test, Fix and Review stages, and whenever a specialist suggests "while we're at it". Distinct from `reviewer` (which trims already-built code for YAGNI); this role guards the brief's boundary and owns the cut ledger.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---

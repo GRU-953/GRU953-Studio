@@ -31,7 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck } from './lib.mjs';
+import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck, LEXICAL_BOUNDARY } from './lib.mjs';
 
 function publishToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-publish:${studioRoot}`).digest('hex');
@@ -77,10 +77,20 @@ function publishConfirmed(studioRoot) {
 // --visibility public` is not obfuscation — bash resolves `GH` to the same
 // real `gh` binary as lowercase `gh`, unchanged, so the command executes
 // exactly as typed. Added `/i` throughout to match.
+// 2026-07-12 audit fix (CRITICAL, found by execution): the bare `--public`
+// alternative required a trailing space/tab or true end-of-string, so
+// `--public;`, `--public|cat`, `--public)` etc. all failed to match —
+// isGoPublicCommand() returned false and the command fell through to the
+// ordinary PRIVATE-publish check instead, so `gh repo edit me/app --public;`
+// was allowed on the private-publish token alone, with no go-public
+// confirmation at all. Reproduced live: with only PUBLISH-APPROVED recorded
+// (no GO-PUBLIC-APPROVED), that exact command was `allow`ed. Uses the same
+// LEXICAL_BOUNDARY fix as lib.mjs's isPushCapable — see that file for the
+// full explanation of why `([ \t]|$)` was too narrow a boundary.
 function isGoPublicCommand(rawC) {
   const c = normalizeForPushCheck(rawC);
   return /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
-    (/--public['"]?([ \t]|$)/i.test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
+    (new RegExp(`--public['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
 }
 function goPublicToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-go-public:${studioRoot}`).digest('hex');

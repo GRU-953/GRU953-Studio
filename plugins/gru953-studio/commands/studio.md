@@ -14,8 +14,8 @@ pipeline exactly.
   is done; if not, run the `first-run` skill before anything else.
 - Then check for a `Dev-Memory/` folder in the current working directory.
   If it exists, this is a RESUME: read the task table in
-  `Dev-Memory/PROGRESS.md` and the tail of `Dev-Memory/SESSION-LOG.md`, then
-  continue per the studio skill's Step 2 — the next task is the first one
+  `Dev-Memory/PROGRESS.md`, the tail of `Dev-Memory/SESSION-LOG.md`, and
+  `Dev-Memory/INDEX.md`, then continue per the studio skill's Step 2 — the next task is the first one
   whose Status is "todo" or "doing" and whose dependencies are all "done".
   A task marked "blocked" is never picked as next until a human unblocks
   it. The "▶ RESUME HERE" line is a human-friendly hint; the Status column

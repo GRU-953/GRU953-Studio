@@ -36,7 +36,8 @@ for you; it lets two builders edit at once without stepping on each other.
 4. Run the named verification command yourself before handing off; do not
    claim success without having run it.
 5. Hand off to the reviewer with: the diff, the command run, and its exact
-   output.
+   output. (Standard/Complex Tier only — `reviewer` isn't woken on Tiny; on
+   a Tiny project hand off directly to the tester instead.)
 
 ## Build Swarm worktree isolation (2026-07-10 audit: made concrete, was prose-only)
 

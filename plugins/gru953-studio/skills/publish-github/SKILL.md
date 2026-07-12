@@ -45,7 +45,7 @@ git config user.email "<email from gh api user>"
 ```
 If any field is empty, STOP and ask the user to confirm it — never assume.
 
-## 3. Pre-flight blocking checks (all four, via security-compliance-auditor)
+## 3. Pre-flight blocking checks (four via security-compliance-auditor, plus a roster check via scope-guardian)
 
 0. **Dev-Memory resume rehearsal** (2026-07-11 Round 9 fix: this step used
    to be a paragraph placed AFTER all four checks below, telling the reader
@@ -71,6 +71,12 @@ If any field is empty, STOP and ask the user to confirm it — never assume.
    means something was marked done without evidence — fix the record (by
    actually running the missing verification) before publishing, never by
    editing the status back to make the check pass.
+5. **Roster check, via `scope-guardian`** (2026-07-12 fix: this file — the
+   role's own declared "single source of truth" — used to omit this step
+   even though `publisher.md` and `/studio-publish` both treat it as
+   mandatory) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"`. A
+   non-zero exit means the agent roster grew past its recorded baseline
+   with no named reason; resolve that first too.
 
 ## 4. Attribution cleanup (in a throwaway temp clone only)
 
@@ -125,9 +131,13 @@ names now instead of numbers, so this can't drift again.)
    Licence: **Polyform Noncommercial License 1.0.0** plus a commercial-use
    contact path — a professionally drafted, independently reviewed licence
    template (2026-07-11: chosen over a GRU953-branded custom licence
-   specifically because it's recognised by GitHub's licence detector and
-   dependency-compliance tooling, which matters for a publicly-distributed
-   developer tool).
+   specifically because it's recognised by name by dependency-compliance
+   tooling, which matters for a publicly-distributed developer tool).
+   Tell the user plainly at Publish time: because the file lives in
+   `governance/` and not at the repository root, GitHub's own automatic
+   licence badge on the repo page will show "no license detected" — this is
+   expected, not a sign anything broke, and doesn't change what the licence
+   actually says or requires.
 7. Push: `git -C <temp-clone-path> push -u origin main` — never
    create-and-push in one step. (The downloadable zip is attached later, in
    section 6, as part of the real Release.)

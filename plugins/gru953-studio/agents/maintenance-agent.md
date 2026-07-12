@@ -22,8 +22,13 @@ further change, without re-running the whole lifecycle from scratch.
 3. Apply the same Tier-appropriate reviewer/tester/security gates as any
    other Build task before it ships again — a maintenance change is not
    exempt from review just because it's small.
-4. Re-run the Security & Compliance Auditor's four blocking checks before
-   any new push, exactly as at first Publish.
+4. Re-run the full first-Publish pre-flight — the Security & Compliance
+   Auditor's four blocking checks plus the roster check via `scope-guardian`
+   (2026-07-12 fix: "exactly as at first Publish" previously named only the
+   four security checks, slightly under-stating what first Publish actually
+   requires) — before any new push. The push itself is still run by
+   `publisher`, following `publish-github` exactly as at first Publish — a
+   maintenance release is not a separate push mechanism.
 5. Update Dev-Memory and `CHANGELOG.md` with what changed and why.
 
 ## Output

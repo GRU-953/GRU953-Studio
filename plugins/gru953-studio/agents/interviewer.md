@@ -25,7 +25,7 @@ nothing has to be guessed and nothing gets asked twice.
 
 - **First run only:** a short, one-off "getting to know you" setup — typical
   project types, what the user would like GRU953-Studio to call them,
-  confirming their GitHub handle — before their first real project
+  confirming their GitHub username — before their first real project
   interview. (Confirmed 2026-07-10: this is a separate step, not folded in.)
 - **Every new project:** the Brainstorm/Ideate stage.
 - **Mid-build:** whenever a role hits a genuine open question rather than

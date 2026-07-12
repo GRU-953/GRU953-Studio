@@ -109,6 +109,31 @@ for (const f of allMd) {
 for (const s of referencedSkills) {
   if (!knownSkillWords.has(s)) fail(`referenced skill '${s}' (as \`${s}\` skill) has no skills/${s}/SKILL.md`);
 }
+// 2026-07-12 audit fix (SEVERE false-clean, found by execution): the check
+// above only matches the phrase shape "`name` skill". The single most
+// load-bearing file in the whole product — skills/studio/SKILL.md's own
+// "companion skills" bullet list, which every session reads and follows —
+// uses a completely different shape (`- \`name\` — description`), which the
+// old regex never matched at all, so a stale/renamed entry there (the exact
+// coordinator instructions every session loads) went completely
+// undetected. Reproduced live: renaming `first-run` to a non-existent
+// `first-run-renamed-stale` in that bullet list still reported "clean".
+// Scoped specifically to this one bullet-list shape in this one file
+// (confirmed by repo-wide grep to be the only place this shape currently
+// appears) rather than generalising to every backticked token repo-wide,
+// which would risk new false positives on an unrelated hook/agent bullet
+// list that happens to share the same visual format for something else.
+const studioSkillFile = path.join(skillsDir, 'studio', 'SKILL.md');
+if (fs.existsSync(studioSkillFile)) {
+  const studioText = read(studioSkillFile) || '';
+  const bulletRe = /^\s*-\s*`([a-z0-9-]+)`\s*[—-]/gm;
+  let bm;
+  while ((bm = bulletRe.exec(studioText))) {
+    if (!knownSkillWords.has(bm[1])) {
+      fail(`skills/studio/SKILL.md's companion-skill list references \`${bm[1]}\`, which has no skills/${bm[1]}/SKILL.md`);
+    }
+  }
+}
 
 // ---- INV 4: every referenced hook file exists --------------------------------
 const knownHooks = new Set(hookFiles);
@@ -167,8 +192,33 @@ const pluginJsonRaw = read(path.join(pluginRoot, '.claude-plugin', 'plugin.json'
 const marketJsonRaw = read(path.join(repoRoot, '.claude-plugin', 'marketplace.json'));
 if (pluginJsonRaw === null) fail(`plugins/gru953-studio/.claude-plugin/plugin.json is missing or unreadable`);
 if (marketJsonRaw === null) fail(`.claude-plugin/marketplace.json is missing or unreadable`);
-const pluginJson = JSON.parse(pluginJsonRaw || '{}');
-const marketJson = JSON.parse(marketJsonRaw || '{}');
+// 2026-07-12 audit fix (SEVERE, found by execution): the missing-file guard
+// above only protects against `read()` returning null; a file that EXISTS
+// but contains invalid JSON still reached JSON.parse() unguarded and threw
+// an uncaught SyntaxError — the exact bug class INV9 below was written to
+// prevent ("every other problem was lost behind a raw stack trace instead
+// of the structured problem list this script exists to produce"),
+// recurring one invariant over. Reproduced live: corrupting plugin.json's
+// syntax crashed the whole script with a stack trace instead of a
+// structured fail(). Both parses are now individually guarded so a syntax
+// error is reported like every other invariant violation, and the rest of
+// the script (which doesn't depend on these two values) still runs.
+let pluginJson = {};
+let marketJson = {};
+if (pluginJsonRaw !== null) {
+  try {
+    pluginJson = JSON.parse(pluginJsonRaw);
+  } catch {
+    fail(`plugins/gru953-studio/.claude-plugin/plugin.json is not valid JSON`);
+  }
+}
+if (marketJsonRaw !== null) {
+  try {
+    marketJson = JSON.parse(marketJsonRaw);
+  } catch {
+    fail(`.claude-plugin/marketplace.json is not valid JSON`);
+  }
+}
 const pv = pluginJson.version;
 const mv = marketJson.metadata && marketJson.metadata.version;
 if (pv === undefined) fail(`plugin.json has no "version" field`);

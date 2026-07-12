@@ -156,8 +156,14 @@ program you install once) signed in (`gh auth login`).
 Free for any noncommercial purpose — personal use, research, hobby
 projects, and use by charities, schools and public-benefit organisations —
 under the [Polyform Noncommercial License 1.0.0](governance/LICENSE), a
-professionally drafted, independently reviewed licence template recognised
-by GitHub and by dependency-compliance tooling. Commercial use, including
+professionally drafted, independently reviewed licence template that
+dependency-compliance tooling recognises by name. One honest caveat: because
+the file lives in `governance/` rather than at the very top level of the
+repository, GitHub's own automatic "no license detected" badge on the repo
+page won't pick it up — that badge only scans the top level, not subfolders.
+The words in [governance/LICENSE](governance/LICENSE) are what actually
+govern use either way; the missing badge doesn't mean anything is wrong.
+Commercial use, including
 apps GRU953-Studio builds for you that you go on to sell, requires a
 separate paid licence — see the "Commercial use" section at the end of the
 licence, or email aninda.sh15@gmail.com. The GRU953 name and logo are

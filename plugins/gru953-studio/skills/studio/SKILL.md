@@ -108,12 +108,16 @@ smallest useful version of its job, and `scope-guardian` still guards against
 any role quietly expanding. Waking a role because the brief genuinely needs
 it is not scope creep; adding one the brief does not need is.
 
-**Footnote (2026-07-10 Round 4 audit fix):** `security-compliance-auditor`
-only appears in the table from Standard Tier up, but its Publish-gate
-checks (secrets/vulnerability/licence/progress-evidence) run before
-Publish on EVERY Tier, including Tiny — the table lists which roles are
-part of day-to-day Build work; the Publish gate itself is universal and
-never skipped.
+**Footnote (2026-07-10 Round 4 audit fix; extended 2026-07-12):**
+`security-compliance-auditor` only appears in the table from Standard Tier
+up, but its Publish-gate checks (secrets/vulnerability/licence/progress-
+evidence) run before Publish on EVERY Tier, including Tiny — the table
+lists which roles are part of day-to-day Build work; the Publish gate
+itself is universal and never skipped. The same applies to the roster
+check below: `scope-guardian` only appears in the table from Standard Tier
+up, but is woken specifically for its `roster-check.mjs` Publish-gate step
+on EVERY Tier including Tiny, the same way security-compliance-auditor is
+— not part of Tiny's day-to-day Build roster, but never skipped at Publish.
 
 Growth-guard note (confirmed 2026-07-10; count updated 2026-07-11 v2.0.0):
 Tiers, plus the feature-triggers above, are the *only* controls on TEAM SIZE
@@ -132,10 +136,14 @@ contributions, an RFC — see `governance/GOVERNANCE.md`).
 
 ## The lifecycle
 
-Brainstorm → Ideate → Design → Plan → Build → Test → Fix → Update → Publish
+Brainstorm → Ideate → Design → Plan → Build → Test → Fix → Review → Publish
 (plus Maintain for returning projects). Delegate each stage's work to the
 right specialist agents (parallel where independent); never do specialist
-work yourself.
+work yourself. On Tiny Tier no separate `reviewer` is woken (2026-07-12
+fix: this was previously only stated in `builder.md`/`tester.md`, not here
+in the one file the coordinator itself follows) — the tester's own checks
+stand in for the Review stage, and there is no separate pre-Publish
+whole-product trim; from Standard Tier up, `reviewer` owns both.
 
 Every stage boundary follows this gate standard:
 1. **What just happened** — one line.

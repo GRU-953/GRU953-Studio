@@ -12,7 +12,11 @@ technical jargon.
    square brackets or running `/studio`.
 2. If it exists, read `Dev-Memory/PROGRESS.md` (the task table — its Status
    column is the source of truth; the "▶ RESUME HERE" pointer is only a
-   hint) and the last few entries of `Dev-Memory/SESSION-LOG.md`.
+   hint), the last few entries of `Dev-Memory/SESSION-LOG.md`, and
+   `Dev-Memory/OBJECTIVE.md` (2026-07-12 fix: step 4 below asks for the
+   Tier, which only `OBJECTIVE.md` records — the Tier's own log entry can
+   scroll out of SESSION-LOG.md's tail on an older project, so it must not
+   be the only source read for this).
 3. Reply with a short, friendly report covering exactly four things:
    - **Done** — what is finished, described as things the app can now do.
    - **In progress** — what is being worked on right now, if anything.

@@ -63,10 +63,23 @@ function scanNode(root) {
   for (const p of pkgDirs) {
     const pkgJsonPath = path.join(nm, p, 'package.json');
     let licence = null;
+    // 2026-07-12 audit fix (SEVERE false-clean, found by execution): a
+    // package whose package.json is missing or unparseable used to just
+    // `continue` here — silently dropped from every category (blocked,
+    // needsReview, notChecked), so the scanner reported the whole ecosystem
+    // "clean" even with a genuinely unknowable licence sitting in
+    // node_modules. This is exactly the case isAllowed()'s own comment
+    // above says the design principle rejects: "unknown — reported, not
+    // silently passed." Reproduced live: a package directory containing
+    // only an index.js (no package.json at all) produced
+    // {"status":"clean", findings:[]}, exit 0. Now surfaced as a
+    // 'needs-review' finding instead of being dropped, same as any other
+    // licence the scanner can't positively classify.
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
       licence = typeof pkg.license === 'string' ? pkg.license : (pkg.license && pkg.license.type) || null;
     } catch {
+      findings.push({ package: p, licence: 'unreadable (missing or invalid package.json)', verdict: 'needs-review' });
       continue;
     }
     const verdict = isAllowed(licence);

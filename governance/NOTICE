@@ -13,10 +13,12 @@ aninda.sh15@gmail.com.
 
 (2026-07-11: chosen over the GRU953 Community Licence 1.0 used elsewhere
 in the GRU953 brand — Polyform Noncommercial is a professionally drafted,
-independently reviewed licence template recognised by GitHub's licence
-detector and dependency-compliance tooling, which matters for a
-publicly-distributed developer tool. Same free-noncommercial/paid-commercial
-intent as the brand's own licence.)
+independently reviewed licence template recognised by name by
+dependency-compliance tooling, which matters for a publicly-distributed
+developer tool. Same free-noncommercial/paid-commercial intent as the
+brand's own licence. Note: because this file lives in governance/ rather
+than the repository root, GitHub's own automatic licence-detector badge
+will not pick it up — that is expected, not an error.)
 
 The GRU953 name and the Soaring Bird logo are brand identifiers and are
 not licensed for identity use; see governance/TRADEMARKS.md and

@@ -524,3 +524,291 @@ test('verify-progress.mjs: a decorated "Done ✅" status is still recognised as 
   assert.equal(json.status, 'BLOCKED');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-12 fresh audit engagement, Round 1 — a 4-lens panel found 2 CRITICAL
+// security bypasses, 1 safe-direction false-positive, and 6 real bugs across
+// the integrity/coverage hooks (repo-integrity, roster-check, verify-progress,
+// licence-scan). Every finding was reproduced by direct execution before
+// fixing; these tests lock every fix in.
+// ---------------------------------------------------------------------------
+
+test('lib.mjs isPushCapable: a trailing shell terminator no longer hides a real push (2026-07-12 CRITICAL fix)', () => {
+  // `([ \t]|$)`-style anchors required push/send-pack/--push to be followed
+  // by a space, tab, or the true end of the string — but `;`, `|`, `&`, `)`,
+  // a trailing newline, etc. are equally valid real terminators bash accepts,
+  // and none of them satisfied the old anchor. Reproduced live end-to-end:
+  // `git push;` bypassed both scan.mjs and gate.mjs completely with a real
+  // secret committed and zero confirmation tokens recorded.
+  for (const c of [
+    'git push;', 'git push|cat', 'git push&', 'git push\n', 'git push)',
+    'git push<in.txt', 'git push>out.txt', 'git send-pack;origin',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must be push-capable despite the trailing terminator: ${JSON.stringify(c)}`);
+  }
+  // isolate the --push flag path specifically (not via gh repo create/edit)
+  assert.equal(isPushCapable('gh workflow run x --push;'), true, 'a trailing terminator must not hide --push either');
+});
+
+test('gate.mjs: a trailing shell terminator on --public no longer downgrades to the private-only token (2026-07-12 CRITICAL fix)', () => {
+  const dir = mkTmp('gru-gate-public-anchor-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  for (const cmd of ['gh repo edit me/app --public;', 'gh repo edit me/app --public|cat', 'gh repo edit me/app --public)']) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a trailing terminator after --public must still require the go-public token: ${cmd}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: script-indirection requires an actual execution prefix, not just a mentioned path (2026-07-12 fix)', () => {
+  // The execution-prefix group used to be optional, so a command merely
+  // MENTIONING a script path and a keyword — never executing it — was
+  // misclassified as push-capable. Reproduced live: a plain read-only `grep`
+  // over this very test file was denied by the live hook during this audit.
+  assert.equal(isPushCapable('grep -n "visibility" plugins/gru953-studio/hooks/hooks.test.mjs'), false, 'a grep merely mentioning a script path + keyword must not count as indirection');
+  assert.equal(isPushCapable('echo "release notes for visibility.mjs"'), false, 'an echo merely mentioning a script name must not count as indirection');
+  // real indirection must still be caught, including the newly-added python prefix
+  assert.equal(isPushCapable('node evil-release.mjs'), true, 'a real node execution of a release-named script must still be caught');
+  assert.equal(isPushCapable('./deploy-public.sh'), true, 'a real ./ execution must still be caught');
+  assert.equal(isPushCapable('bash ship-it.sh'), true, 'a real bash execution must still be caught');
+  assert.equal(isPushCapable('python make-public.py'), true, 'a real python execution must now be caught (prefix added)');
+  assert.equal(isPushCapable('python3 visibility-change.py'), true, 'a real python3 execution must now be caught (prefix added)');
+});
+
+test('lib.mjs isPushCapable: bash brace expansion ({git,push}) no longer bypasses detection (2026-07-12 Round 3 CRITICAL fix)', () => {
+  // Bash brace expansion turns `{git,push}` into the two separate words
+  // `git push` BEFORE the command line is even parsed (confirmed live:
+  // `bash -c 'echo {git,push} origin main'` -> `git push origin main`) —
+  // a distinct technique from every other fix in this file, since it
+  // targets the SOURCE TEXT'S inter-token separator itself (a comma inside
+  // braces) rather than quoting, escaping, or case. Found by a fresh
+  // adversarial pass explicitly told to combine untried techniques.
+  for (const c of [
+    '{git,push} origin main',
+    '{GIT,PUSH} origin main;',
+    '{g""it,pu""sh} origin main', // stacked with quote-splicing
+  ]) {
+    assert.equal(isPushCapable(c), true, `brace expansion must not hide a real push: ${JSON.stringify(c)}`);
+  }
+  // a legitimate command that merely contains literal brace text (not a
+  // real expansion opportunity — no push keyword anywhere) must not be
+  // affected.
+  assert.equal(isPushCapable('echo "hello {world}"'), false, 'literal brace text with no push keyword must not be misclassified');
+});
+
+test('lib.mjs isPushCapable: a same-command variable assignment can no longer disguise the keyword inside a brace list (2026-07-12 Round 4 CRITICAL fix)', () => {
+  // Removing the brace regex's `$` exclusion (the Round 3 fix's own
+  // reasoning for that exclusion was wrong: `${IFS}` has no comma, so it
+  // was never going to match this comma-requiring regex either way) was
+  // NOT enough on its own — the disguised alternative itself (`gi$t`)
+  // still isn't literally "git" once split out. The real PoC assigns the
+  // variable in the SAME command string: bash brace-expands `{gi$t,push}`
+  // into `gi$t push`, THEN resolves `$t`, giving a genuine `git push`
+  // (confirmed live: `t=t; set -- {gi$t,push} origin main; echo "$@"` ->
+  // `git push origin main`). A narrow, same-command-only variable
+  // substitution step closes this without becoming a general shell
+  // interpreter.
+  for (const c of [
+    't=t; {gi$t,push} origin main',
+    'h=h; {g$h,repo,edit} me/app --public',
+  ]) {
+    assert.equal(isPushCapable(c), true, `a same-command variable substitution inside a brace list must not hide a real push: ${JSON.stringify(c)}`);
+  }
+  // ordinary VAR=value-prefixed commands with no push keyword must not be
+  // misclassified by this new substitution step.
+  for (const c of ['NODE_ENV=production node server.js', 'FOO=bar; echo $FOO', 'PORT=3000; node server.js --port=$PORT']) {
+    assert.equal(isPushCapable(c), false, `an ordinary VAR=value command must not be misclassified as push-capable: ${JSON.stringify(c)}`);
+  }
+});
+
+test('gate.mjs: brace-expanded go-public commands still require the go-public token (2026-07-12 Round 3 CRITICAL fix)', () => {
+  const dir = mkTmp('gru-gate-brace-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  for (const cmd of [
+    '{gh,repo,edit} me/app --public',
+    '{gh,repo,edit} me/app --visibility public',
+    "{gh,repo,edit} me/app --visibility=$'public';",
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a brace-expanded go-public command must still require its own token: ${cmd}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: variable-substitution fix survives declaration keywords, transitive chains, and JS-replace special tokens (2026-07-12 Round 5 CRITICAL fixes)', () => {
+  // Three real gaps found by a final adversarial re-verification pass,
+  // all confirmed live via real bash before fixing:
+  // (1) `export`/`local`/`readonly`/`declare`/`typeset` prefixes defeated
+  //     the assignment anchor, so `export t=t; {gi$t,push}` left $t
+  //     unresolved.
+  // (2) A transitive chain (`a=i; b=$a; {g${b}t,push}`) captured `b`'s
+  //     value as the literal unresolved text `$a`, not `a`'s real value.
+  // (3) Passing an attacker-influenced value as a plain string to JS's
+  //     String.replace() let `$$`/`$&`/`` $` ``/`$'`/`$1`-`$9` in the
+  //     value corrupt the normalized string — a JS-mechanics bug, not a
+  //     missing shell-obfuscation case.
+  for (const c of [
+    'export t=t; {gi$t,push} origin main',
+    'a=i; b=$a; {g${b}t,push} origin main',
+    "t=$'push'; git $t origin main",
+  ]) {
+    assert.equal(isPushCapable(c), true, `must still catch the disguised push: ${JSON.stringify(c)}`);
+  }
+  // ordinary declaration-prefixed / no-op-value commands must not be misclassified.
+  for (const c of ['export DEBUG=true; npm test', 'local x=1; echo $x', 'FOO=bar; echo $FOO']) {
+    assert.equal(isPushCapable(c), false, `must not misclassify an ordinary declaration-prefixed command: ${JSON.stringify(c)}`);
+  }
+});
+
+test('lib.mjs isPushCapable: a degenerate single-element brace range ({X..X}) no longer hides a keyword (2026-07-12 Round 5 CRITICAL fix)', () => {
+  // Bash's {X..Y} sequence syntax has no comma, so the comma-requiring
+  // brace-expansion regex never touched it — but the DEGENERATE case where
+  // both ends are identical ({s..s} -> just "s") lets a single character
+  // hide behind range syntax purely to dodge the comma requirement.
+  // Confirmed live: `git pu{s..s}h origin main` -> real bash `git push
+  // origin main`. Only the narrow degenerate case is expanded, not general
+  // ranges (`{a..z}`, `{1..100}`), which would need materially more
+  // engineering and risk a DoS on large numeric ranges.
+  assert.equal(isPushCapable('git pu{s..s}h origin main'), true, 'a degenerate {s..s} range must not hide "push"');
+  assert.equal(isPushCapable('{g..g}{h..h} repo edit me/app --public'), true, 'a degenerate range must not hide "gh" either');
+  // a REAL, non-degenerate range (an ordinary for-loop, for example) must
+  // not be misclassified.
+  assert.equal(isPushCapable('for i in {1..5}; do echo $i; done'), false, 'a genuine non-degenerate range must not be misclassified');
+});
+
+test('lib.mjs isPushCapable: script-indirection detection also survives a trailing shell terminator (2026-07-12 Round 2 re-verification fix)', () => {
+  // The Round 1 fix above (mandatory execution prefix) shared this same file
+  // with three OTHER regexes that got a LEXICAL_BOUNDARY trailing-anchor fix
+  // for the identical bug class (git push;/--push;/send-pack;) — but this
+  // regex's own trailing anchor was accidentally left on the old, too-narrow
+  // `([ \t]|$)`, so `node evil-release.mjs;` (and the same with `|`, `&`,
+  // `)`, or any of the four execution prefixes) still bypassed detection.
+  // Found by a same-configuration re-verification pass specifically re-
+  // attacking this round's own fixes, per the audit-loop protocol.
+  for (const c of [
+    'node evil-release.mjs;', 'node evil-release.mjs|cat', 'node evil-release.mjs&', 'node evil-release.mjs)',
+    './evil-release.mjs;', 'bash evil-deploy.sh;', 'python3 evil-ship.py;',
+  ]) {
+    assert.equal(isPushCapable(c), true, `script-indirection must still be caught despite the trailing terminator: ${JSON.stringify(c)}`);
+  }
+});
+
+test('licence-scan.mjs: a package with no readable package.json is surfaced as needs-review, not silently dropped (2026-07-12 SEVERE fix)', () => {
+  const dir = mkTmp('gru-licscan-unreadable-');
+  fs.mkdirSync(path.join(dir, 'node_modules', 'broken-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'node_modules', 'broken-pkg', 'index.js'), 'module.exports = {};\n');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"root","version":"1.0.0"}');
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.notEqual(json.status, 'clean', 'a package with no readable package.json must not report clean');
+  assert.ok(json.needsReview.some((f) => f.package === 'broken-pkg'), 'the unreadable package must be surfaced in needsReview, not dropped');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('repo-integrity.mjs: a malformed (not missing) plugin.json is reported, not an uncaught crash (2026-07-12 SEVERE fix)', () => {
+  const dir = mkTmp('gru-repointeg-malformed-');
+  copyRepoTo(dir);
+  fs.writeFileSync(path.join(dir, 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'), '{ "version": "3.0.0", invalid json here ]');
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.stderr, '', `must not crash with an uncaught SyntaxError: ${r.stderr}`);
+  assert.ok(r.json, `must produce parseable JSON output, not a stack trace: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => p.includes('plugin.json is not valid JSON')), 'the malformed-JSON problem must be named explicitly');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('repo-integrity.mjs INV3: a stale reference in studio/SKILL.md\'s own companion-skill bullet list is caught (2026-07-12 SEVERE fix)', () => {
+  // The old regex only matched the phrase shape "`name` skill" — the single
+  // most load-bearing file in the product, studio/SKILL.md's own companion
+  // list, uses a different shape ("- `name` — description") that was never
+  // checked at all. Reproduced live: renaming `first-run` there to a
+  // non-existent skill name still reported clean.
+  const dir = mkTmp('gru-repointeg-inv3-');
+  copyRepoTo(dir);
+  const studioSkillPath = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md');
+  let text = fs.readFileSync(studioSkillPath, 'utf8');
+  const renamed = text.replace('`first-run`', '`first-run-renamed-stale`');
+  assert.notEqual(renamed, text, 'test setup: the `first-run` bullet must exist to rename');
+  fs.writeFileSync(studioSkillPath, renamed);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale companion-skill bullet reference must be caught, not reported clean');
+  assert.ok(r.json.problems.some((p) => p.includes('first-run-renamed-stale')), `expected a problem naming the stale reference, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('roster-check.mjs: decision-file "latest" selection sorts by actual date, not filename text (2026-07-12 MAJOR fix)', () => {
+  // Decision files are named YYYY-MM-DD-*.md; the old code assumed lexical
+  // sort was chronological, which breaks the moment any file uses a
+  // non-zero-padded month/day. Reproduced live in the worse (false-clean)
+  // direction: a stale `2026-9-5` file sorted AFTER a true-latest
+  // `2026-12-01` rollback, reviving a superseded, higher baseline.
+  const dir = mkTmp('gru-rostercheck-datesort-');
+  fs.mkdirSync(path.join(dir, 'agents'), { recursive: true });
+  for (let i = 1; i <= 9; i++) fs.writeFileSync(path.join(dir, 'agents', `a${i}.md`), `---\nname: a${i}\n---\n`);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory', 'decisions'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'decisions', '2026-12-01-roster-rollback.md'), 'role count: 5\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'decisions', '2026-9-5-roster-note.md'), 'role count: 20\n');
+  const r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), dir, dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.latestDecisionFile, '2026-12-01-roster-rollback.md', `must pick the numerically-latest file, not the lexically-latest one, got: ${json.latestDecisionFile}`);
+  assert.equal(r.status, 1, '9 agents must be BLOCKED against the true-latest baseline of 5');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: checks only the Status column, not every cell in the row (2026-07-12 MAJOR false-block fix)', () => {
+  // A genuinely in-progress task whose Notes cell simply started with the
+  // word "Done" was misclassified as a completed row via .find() across
+  // every cell, then blocked for lacking evidence it was never expected to
+  // have — even though its real Status cell plainly said "In Progress".
+  const dir = mkTmp('gru-verifyprog-statuscol-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| # | Task | Status | Notes |',
+      '| :-- | :-- | :-- | :-- |',
+      '| 1 | Ship feature X | In Progress | Done except manual QA still pending, no verification yet |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 0, `an In Progress row must never be false-blocked just because its Notes cell starts with "Done": ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: a stale "exit 0" claim no longer masks a later, live-failure claim in the same row (2026-07-12 MAJOR false-clean fix)', () => {
+  const dir = mkTmp('gru-verifyprog-contradiction-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| # | Task | Status | Notes |',
+      '| :-- | :-- | :-- | :-- |',
+      '| 1 | Payment webhook | Done | verified: node test.js -> exit 0 on the old build, but the current build now fails with exit 1 and has not been re-verified |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, 'a row documenting its own current failure must still be blocked despite an old "exit 0" mention');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: a real multi-clause "done" row (exit 0 not the last clause) is not a false-block regression (2026-07-12)', () => {
+  // This project's OWN real Dev-Memory has legitimate multi-clause done rows
+  // where "exit 0" is deliberately not the row's final clause (more text
+  // follows, e.g. a release/push confirmation) — guards against an
+  // end-anchored fix that would have wrongly blocked these.
+  const dir = mkTmp('gru-verifyprog-multiclause-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| # | Task | Status | Notes |',
+      '| :-- | :-- | :-- | :-- |',
+      '| P13 | v2.0.1 audit-fix loop | done | Fixed bugs. verified: 15/15 tests, all gates clean on `update-clone6` -> exit 0; pushed `c9d8b50`; `gh release view v2.0.1` -> not draft, zip attached (2026-07-11). |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 0, `a real multi-clause done row must not be a false-block regression: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -1,5 +1,5 @@
 ---
-description: Publish the current GRU953-Studio project privately to the user's GitHub, after one confirmation and four blocking pre-flight checks.
+description: Publish the current GRU953-Studio project privately to the user's GitHub, after one confirmation and its blocking pre-flight checks (four security checks plus a roster check).
 argument-hint: (no arguments needed)
 ---
 
@@ -8,17 +8,21 @@ Publish the current project's MVP to a private GitHub repository.
 1. Confirm there is a project here: check for `Dev-Memory/` and a working
    codebase in the current directory. If neither exists, tell the user in
    plain English there is nothing to publish yet and suggest `/studio`.
-2. Run the four blocking pre-flight checks via `security-compliance-auditor`
-   BEFORE asking to publish: secrets scan, dependency vulnerability scan,
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/licence-scan.mjs" .`, and
+2. First, confirm the Dev-Memory resume rehearsal (see `dev-memory` skill)
+   has actually been done at least once for this project — a project that
+   cannot prove it resumes correctly is not ready to publish regardless of
+   how clean its code is (2026-07-12 fix: this step used to be listed AFTER
+   the checks below, contradicting `publish-github/SKILL.md`'s own Round 9
+   fix, which reordered it to run first for the same reason).
+   Then run the security-compliance-auditor's four blocking pre-flight
+   checks BEFORE asking to publish: secrets scan, dependency vulnerability
+   scan, `node "${CLAUDE_PLUGIN_ROOT}/hooks/licence-scan.mjs" .`, and
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/verify-progress.mjs" .`. Also run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` via
    `scope-guardian` — a non-zero exit means the agent roster grew without a
    recorded reason; resolve that first too.
-   Also confirm the Dev-Memory resume rehearsal (see `dev-memory` skill) has
-   actually been done at least once for this project. Report each result
-   plainly. Stop here, without asking to publish, if any of these fails —
-   explain what needs fixing first.
+   Report each result plainly. Stop here, without asking to publish, if any
+   of these fails — explain what needs fixing first.
 3. Only once all four checks (plus the roster check) pass, ask ONE
    confirmation with AskUserQuestion:
    "Publish this app privately to your GitHub now? This step is permanent

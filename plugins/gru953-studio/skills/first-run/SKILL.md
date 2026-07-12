@@ -30,8 +30,14 @@ Keep this short — three or four questions at most:
 2. **Typical project types** — e.g. web apps, mobile apps, desktop tools,
    command-line tools, "not sure yet, decide per project" — this informs
    (but never restricts) the architect's stack-menu defaults later.
-3. **GitHub handle confirmation** — confirm via `gh api user --jq '.login'`
-   rather than asking blind; only ask the user if the CLI isn't signed in.
+3. **GitHub username confirmation** (2026-07-12 fix: was "handle," unexplained
+   jargon for a non-technical user — the README itself says "username"/"your
+   GitHub account") — confirm via `gh api user --jq '.login'` rather than
+   asking blind. If the CLI isn't signed in (a brand-new user very likely
+   has no GitHub account yet — the README defers this to publish time),
+   don't block first-run on it: offer a recommended "I'll connect this
+   later, when I publish" option and record it as not-yet-set, rather than
+   asking the user to answer something they may not have yet.
 4. **Language preference** — UK English by default; Bangla on request, per
    the user's existing README.bn.md convention.
 

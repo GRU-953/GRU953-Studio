@@ -76,9 +76,34 @@ function main() {
     process.exit(0);
   }
 
-  // Most recent by filename (decision files are named YYYY-MM-DD-*.md, so
-  // lexical sort on the date-prefixed name is chronological).
-  decisionFiles.sort();
+  // 2026-07-12 audit fix (MAJOR, found by execution, both directions):
+  // decision files are named YYYY-MM-DD-*.md, and this used to rely on
+  // lexical string sort being chronological — which silently breaks the
+  // moment any file uses a non-zero-padded month/day (e.g. `2026-9-5-...`
+  // for September instead of `2026-09-05-...`), since JS string comparison
+  // puts `'9'` after `'1'` as characters even though month 9 < month 12
+  // numerically. Reproduced live in both directions: a stale `2026-9-5`
+  // decision sorted AFTER a true-latest `2026-12-01` rollback, silently
+  // reviving a superseded, higher baseline (false-clean, the worse
+  // direction — defeats this script's whole anti-growth purpose); the
+  // reverse ordering also produced a false-BLOCK against a legitimate
+  // newer, higher baseline. Fixed by parsing the leading YYYY-M-D (allowing
+  // 1-2 digit month/day so an existing non-padded filename still parses
+  // correctly, rather than only masking the bug going forward) and sorting
+  // by the actual numeric date, not the raw filename string.
+  function decisionFileDate(name) {
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})-/.exec(name);
+    if (!m) return null;
+    return Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  }
+  decisionFiles.sort((a, b) => {
+    const da = decisionFileDate(a);
+    const db = decisionFileDate(b);
+    if (da === null && db === null) return a < b ? -1 : a > b ? 1 : 0;
+    if (da === null) return -1; // undated names sort before any dated one
+    if (db === null) return 1;
+    return da - db;
+  });
   const latest = decisionFiles[decisionFiles.length - 1];
   const text = fs.readFileSync(path.join(decisionsDir, latest), 'utf8');
   const m = /role count[^0-9]*(\d+)/i.exec(text) || /baseline[^0-9]*(\d+)/i.exec(text);

@@ -1,5 +1,82 @@
 # Changelog
 
+## 3.0.1 — 2026-07-12
+
+A patch release: a fresh, bounded 5-round security-and-quality audit of the
+already-published v3.0.0, fixing everything it found. Every round found at
+least one real issue; the loop closed at its agreed 5-round cap rather than
+the ideal "two clean rounds in a row," the same honest outcome as the prior
+audit engagement on this project. No new features or roles — fixes and
+hardening only.
+
+**Fixed — publish-safety hooks (several CRITICAL, found and closed across
+all 5 rounds; every fix independently reproduced against the real code
+before and after, never taken on trust)**
+
+- A trailing character after a push/go-public keyword (`;`, `|`, `&`, `)`,
+  a backtick, or a newline) could hide a real `git push`/`gh ... --public`
+  from detection entirely — closed with a shared boundary check reused
+  across every affected pattern (one instance of this was itself missed on
+  the first pass and only caught by a dedicated re-check round, then fixed).
+- Bash's `{git,push}`-style shortcut syntax (brace expansion) was not
+  recognised at all, letting a disguised push slip through completely
+  unchecked — closed by expanding this shortcut before checking.
+- A follow-on bypass of the fix above: a variable set earlier in the same
+  command (`t=t; {gi$t,push}`) could still hide the keyword. Closed with a
+  narrow, same-command-only variable resolver — not a general shell
+  interpreter, deliberately bounded in scope.
+- A further re-check of that variable resolver found it could still be
+  defeated by common prefixes (`export`, `local`, `readonly`, `declare`,
+  `typeset`), by a two-step variable chain, by a bash "single-item range"
+  shortcut (`{s..s}`), and — the most interesting of the whole exercise — a
+  subtle bug in how the fix used a built-in JavaScript text-replacement
+  feature, unrelated to shell tricks at all. All closed and independently
+  verified.
+- A narrower rule (spotting a script pretending to be something safe) was
+  too easily fooled by ordinary punctuation after the script name, and
+  separately blocked some perfectly normal read-only commands that merely
+  mentioned a script's name without running it — both fixed.
+- One further technique (spelling out a command letter-by-letter via a
+  `printf` call) is real but sits inside an already-accepted, clearly
+  out-of-scope category — closing it fully would mean this safety check
+  actually running shell commands to see what they do, which is not what a
+  fast, lightweight check like this is built to do. Documented plainly in
+  `governance/SECURITY.md` instead of pretending it's closed.
+
+**Fixed — internal quality checks**
+
+- The dependency-licence checker silently ignored a package it couldn't
+  read instead of flagging it for a human look.
+- The internal consistency checker missed a broken reference in the
+  studio's own main instruction file, and could crash instead of reporting
+  cleanly on a corrupted file.
+- The role-count checker sorted dates incorrectly in a way that could
+  either hide or wrongly flag a legitimate roster change.
+- The progress-tracking checker had two bugs: one that could wrongly block
+  a perfectly normal in-progress task, and one that could wrongly wave
+  through a task that had actually documented its own failure.
+- 16 new automated regression tests added (30 → 46) so none of the above
+  can silently reappear.
+
+**Fixed — navigation, wording and first-time-user experience**
+
+- The studio's own nine-stage roadmap named a stage ("Update") that no
+  file anywhere actually defined — renamed to "Review," matching what
+  genuinely happens there, and clarified that smaller ("Tiny" tier)
+  projects fold this into the tester's own checks rather than leaving it
+  unowned.
+- The publishing instructions were missing a safety check that other files
+  already assumed was in place.
+- The status-report command promised to state a project's size-tier but
+  was never told to read the one file that actually records it.
+- The one-off first-time setup asked for a GitHub username with no
+  "I'll do this later" option for someone who doesn't have an account yet;
+  and "GitHub handle" was replaced with the plainer "username" throughout,
+  to match the README's own wording.
+- Several smaller wording and cross-reference fixes (a miscounted check
+  list, a stale CI-tool-version note, a contributor-guide example that
+  accidentally contradicted its own advice).
+
 ## 3.0.0 — 2026-07-11
 
 A golden release: fixes a real shipping bug that failed CI, closes a
@@ -25,7 +102,11 @@ eight role names no longer exist.
   folder and would have blocked every push of the plugin itself. Made the
   match case-sensitive to the canonical `Dev-Memory` name.
 - Cleared the CI "Node.js 20 is deprecated" warning (bumped
-  `actions/checkout` and `actions/setup-node` to v5, Node 22).
+  `actions/checkout` and `actions/setup-node` to v5, Node 22). (Note, added
+  2026-07-12: Dependabot has since bumped these further, directly on
+  GitHub, to `actions/checkout@v7` and `actions/setup-node@v6` — the
+  currently committed `ci.yml` reflects that, not the v5 this entry
+  originally described.)
 
 **Fixed — publish-safety (Round 5 of the audit loop, CRITICAL)**
 

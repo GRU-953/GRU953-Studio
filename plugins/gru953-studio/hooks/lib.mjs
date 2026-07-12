@@ -158,8 +158,148 @@ export function findStudioRoot(start) {
 // can share the exact same canonicalisation isPushCapable() uses, instead
 // of matching raw, unnormalized command text (see that function for what
 // this closed).
+//
+// 2026-07-12 audit fix (CRITICAL, found by execution): every trailing
+// boundary below (`([ \t]|$)`, `([ \t]|=|$)`) required the matched keyword
+// to be followed by a literal space/tab or the true end of the string. But
+// real bash commands are just as often followed by `;`, `|`, `&`, `)`, `<`,
+// `>`, a backtick, or a trailing newline — none of which satisfy those
+// anchors — so `git push;`, `git push|cat`, `git push\n`, `git send-pack;`,
+// and the go-public `--public;` all failed to match and were misclassified
+// as non-push, bypassing the secret scan and both confirmation gates
+// entirely. Reproduced live end-to-end: with a real secret committed and
+// zero confirmation tokens recorded, `git push;` was `allow`ed by both
+// scan.mjs and gate.mjs while plain `git push` was correctly denied.
+// `LEXICAL_BOUNDARY` is shared by every regex below (and by gate.mjs's
+// isGoPublicCommand) that previously ended in one of those two anchors: a
+// negative lookahead for an identifier character treats any of ';|&)<>`\n'
+// or end-of-string as a valid boundary, while still rejecting a keyword
+// that's actually part of a longer word (`pushx`, `--publicity`).
+export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
 export function normalizeForPushCheck(c) {
   let n = c;
+  // 2026-07-12 Round 3 audit fix (CRITICAL, found by adversarial combination
+  // testing, then independently reproduced live before fixing): bash brace
+  // expansion turns `{git,push}` into the two separate words `git push`
+  // BEFORE the command line is even parsed — confirmed live (`bash -c
+  // 'echo {git,push} origin main'` -> `git push origin main`) — but nothing
+  // here recognised the `{a,b}` form at all, so `{git,push} origin main`
+  // (and stacked with case-variance, a trailing terminator, quote-splicing,
+  // or ANSI-C quoting) bypassed every keyword regex below, since none of
+  // them ever expected a comma where whitespace should be. This is a
+  // distinct technique from every prior fix in this file (IFS-splitting,
+  // quote-splicing, backslash-escapes, ANSI-C quoting all target something
+  // OTHER than the source text's inter-token separator) and defeated BOTH
+  // the push gate and the go-public gate simultaneously with zero
+  // confirmation tokens — reproduced end-to-end via the real gate.mjs, and
+  // separately confirmed live against this very session's own active hook
+  // chain. Runs before the ANSI-C step below (2026-07-12 Round 5 comment
+  // fix: this originally said brace expansion "runs first," matching
+  // bash's real evaluation order — but the Round 4 variable-substitution
+  // step immediately below was inserted ABOVE this line, so the actual
+  // code order is now variable-substitution, then brace, then ANSI-C —
+  // the reverse of bash's own brace-then-variable order. Re-verified this
+  // round that the divergence is safe, not exploitable: every case where
+  // the two orders would give a different answer requires brace expansion
+  // to synthesise a `$VAR` reference that doesn't appear in the source
+  // text at all, which fails CLOSED — misclassified as MORE push-capable,
+  // never less — so this comment is corrected for accuracy, not because
+  // the order needed to change).
+  // 2026-07-12 Round 4 re-verification fix (CRITICAL, found by execution,
+  // then a second real bug found while fixing the first): a fresh
+  // adversarial pass found that the Round 3 line above excluded any brace
+  // group containing a `$`, reasoned as needed "so `${IFS}`-style parameter
+  // expansions are left alone" — that reasoning was simply wrong: `${IFS}`
+  // contains no comma, so it was never going to match this comma-requiring
+  // regex regardless of the `$` exclusion; the exclusion protected against
+  // nothing while creating a real gap. First fix attempt: removed the `$`
+  // exclusion so the comma-list is split regardless of `$` content — this
+  // alone did NOT close the bypass (verified: still failed after that
+  // change), because the disguised alternative itself (`gi$t`) still isn't
+  // literally "git" once split out; splitting alone doesn't resolve what
+  // `$t` means. Real bash's actual PoC — `t=t; {gi$t,push} origin main` —
+  // assigns the variable in the SAME command string, then relies on it:
+  // confirmed live via real bash (`t=t; set -- {gi$t,push} origin main;
+  // echo "$@"` -> `git push origin main`). Second, complete fix: a
+  // narrow, bounded variable-substitution step (below) that resolves ONLY
+  // a simple `VAR=value` assignment made earlier in the SAME command
+  // string, then substitutes later `$VAR`/`${VAR}` references with that
+  // literal value — deliberately NOT a general shell-variable interpreter
+  // (no export/arrays/command-substitution/quoting-in-value support), the
+  // same "closes the concrete case, not shell obfuscation in general"
+  // pattern already used throughout this function; a variable whose value
+  // isn't resolvable this way (e.g. set in an earlier, separate Bash call,
+  // or from the environment) remains a disclosed residual limitation, the
+  // same shape as the already-disclosed git-alias-reuse gap in SECURITY.md
+  // (this hook has no persistent state across commands). Reproduced
+  // end-to-end before fixing: with a real secret committed and zero
+  // confirmation tokens, `t=t; {gi$t,push} origin main` was allowed by
+  // both `scan.mjs` and `gate.mjs`; the go-public analogue (`h=h;
+  // {g$h,repo,edit} me/app --public`) defeated both gates the same way.
+  // Also disclosed, not fully closed (re-confirmed this round): nested
+  // braces (`{g{i,y}t,push}`) and prefix/suffix concatenation forms
+  // (`p{ush,ost}`, `git{,-push}`) are a detection gap but NOT a live
+  // working bypass — real bash's own Cartesian-product semantics corrupt
+  // the resulting command's actual target/subcommand in both cases (e.g.
+  // `git p{ush,ost} origin main` really runs `git push` but with "post"
+  // substituted as the destination, so nothing actually reaches `origin`).
+  // 2026-07-12 Round 5 re-verification fix (CRITICAL x3 + one implementation
+  // bug, found by a final adversarial pass, all independently reproduced
+  // live before fixing): the Round 4 variable-substitution step above had
+  // four real gaps.
+  // (1) The assignment anchor required the variable name to start
+  // immediately after `^`/`;`/`\n`/`&&` — a leading `export `/`local `/
+  // `readonly `/`declare `/`typeset ` keyword (all fully resolvable in the
+  // SAME command, unlike the alias-reuse/array/command-substitution cases
+  // this step already disclosed as inherently unclosable) sat in between
+  // and was never captured, so `export t=t; {gi$t,push}` left `$t`
+  // unresolved. Fixed by tolerating an optional declaration keyword.
+  // (2) Assignment VALUES were captured once from the untouched original
+  // string, so a transitive chain (`a=i; b=$a; {g${b}t,push}`) captured
+  // `b`'s value as the literal, unresolved text `$a`, not `a`'s actual
+  // value `i`. Fixed by resolving each new assignment's value against
+  // already-processed assignments (in left-to-right order, matching how
+  // bash itself would resolve a sequential chain) before recording it.
+  // (3) The substitution itself was `n.replace(varRe, value)` — passing an
+  // attacker-influenced VALUE as a plain string to JS's `String.replace()`
+  // is unsafe, because JS treats `$$`, `$&`, `` $` ``, `$'`, and `$1`-`$9`
+  // in a STRING replacement argument as special back-reference tokens, not
+  // literal text. A value containing any of these (trivially producible in
+  // real bash, e.g. `t=$'push'`) corrupted the normalized string in
+  // unpredictable ways instead of substituting literally. This is a JS-
+  // mechanics defect, not a missing shell-obfuscation case — fixed by using
+  // a function replacer (`() => value`), which always substitutes literally
+  // regardless of what characters `value` contains.
+  // (4) Bash's `{X..Y}` sequence/range syntax (distinct from the comma-list
+  // form already handled) has no comma, so the brace-expansion regex below
+  // never touched it — but bash also accepts a DEGENERATE single-element
+  // range where both ends are identical (`{s..s}` -> just `s`), letting a
+  // single character hide behind range syntax purely to dodge the comma
+  // requirement: confirmed live, `git pu{s..s}h origin main` -> real bash
+  // `git push origin main`. Fixed by expanding only this narrow, safe
+  // degenerate case (`{X..X}` -> `X`) — NOT general range expansion
+  // (`{a..z}`, `{1..100}`), which would be materially more engineering
+  // effort and a DoS risk for large numeric ranges, well beyond "closes the
+  // concrete case." All four reproduced end-to-end via the real
+  // gate.mjs/scan.mjs with a real secret and zero confirmation tokens on
+  // both the push and go-public paths before being fixed here.
+  const varAssignRe = /(?:^|[;\n]|&&)\s*(?:export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"]*)"|'([^']*)'|([^\s;&|]*))/g;
+  const known = new Map();
+  for (const am of n.matchAll(varAssignRe)) {
+    const varName = am[1];
+    let value = am[2] ?? am[3] ?? am[4] ?? '';
+    for (const [kName, kValue] of known) {
+      const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
+      value = value.replace(kRe, () => kValue);
+    }
+    known.set(varName, value);
+  }
+  for (const [varName, value] of known) {
+    const varRe = new RegExp('\\$\\{' + varName + '\\}|\\$' + varName + '\\b', 'g');
+    n = n.replace(varRe, () => value);
+  }
+  n = n.replace(/\{([A-Za-z0-9]+)\.\.\1\}/g, '$1'); // degenerate {X..X} range -> X
+  n = n.replace(/\{([^{}]*,[^{}]*)\}/g, (_m, list) => list.split(',').join(' '));
   // 2026-07-11 Round 7 security fix: ANSI-C quoting (`$'public'`) resolves
   // to the literal text `public` in bash, but nothing here recognised the
   // `$'...'` form at all, so `gh repo edit me/app --visibility $'public'`
@@ -167,7 +307,13 @@ export function normalizeForPushCheck(c) {
   // both isPushCapable's own gh-detection and isGoPublicCommand with only
   // the private-publish token recorded — reproduced live via bash itself
   // (`x=$'public'; echo "$x"` -> `public`) before fixing. Stripped to its
-  // raw inner text FIRST, before any other step, using an escape-aware
+  // raw inner text before the generic backslash-unescape pass and IFS/
+  // quote-splice steps that follow (2026-07-12 Round 5 comment fix: this
+  // said "FIRST, before any other step" — no longer accurate now that the
+  // Round 4 variable-substitution step and the brace-expansion step both
+  // run earlier; the ordering THIS comment actually cares about — before
+  // the generic backslash pass, so an escaped quote inside the ANSI-C
+  // string isn't resolved too early — still holds), using an escape-aware
   // match (`\\.` consumes an escaped char, including an escaped quote,
   // without treating it as the closing quote) so the wrapper's true end is
   // found correctly even if the content contains `\'`. This runs before the
@@ -375,7 +521,7 @@ export function isPushCapable(rawC) {
   // name, subcommand, or keyword — matching the same `/i` this project
   // already added to the script-extension check and the confirm-script
   // basename comparison, for the identical reason.
-  if (/(^|[^A-Za-z0-9_])['"]?git['"]?([ \t]+-[^ \t]+|[ \t]+[^ \t]+)*[ \t]+['"]?push['"]?([ \t]|$)/i.test(c)) return true;
+  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?git['"]?([ \\t]+-[^ \\t]+|[ \\t]+[^ \\t]+)*[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
   // 2026-07-11 Round 5 audit fix (CRITICAL, found live via gate.mjs's real
   // isGoPublicCommand()): every `gh ...` regex below required the literal,
   // unquoted text "gh" — `"gh" repo edit ...` or `gh "repo" "edit" ...`
@@ -388,13 +534,13 @@ export function isPushCapable(rawC) {
   // gh regexes never got the same treatment. Added `['"]?` around every gh
   // token and sub-token.
   if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+(['"]?repo['"]?[ \t]+['"]?(create|edit|sync|clone)['"]?|['"]?pr['"]?[ \t]+['"]?create['"]?|['"]?release['"]?[ \t]+['"]?(create|upload)['"]?|['"]?gist['"]?[ \t]+['"]?create['"]?)/i.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t].*--push['"]?([ \t]|=|$)/i.test(c)) return true;
+  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?gh['"]?[ \\t].*--push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
   // git aliases that resolve to push (e.g. `git -c alias.p=push p`, or
   // `git config alias.foo push` followed later by `git foo`).
   if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/i.test(c)) return true;
   if (/(^|[^A-Za-z0-9_])git[ \t]+config([ \t]+--\S+)*[ \t]+alias\.[A-Za-z0-9_.-]+[ \t]+['"]?push/i.test(c)) return true;
   // git plumbing command that performs a push without the word "push".
-  if (/(^|[^A-Za-z0-9_])git[ \t]+send-pack([ \t]|$)/i.test(c)) return true;
+  if (new RegExp(`(^|[^A-Za-z0-9_])git[ \\t]+send-pack${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
   // gh's own alias mechanism, same shape of risk as git aliases.
   if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+alias[ \t]+set/i.test(c)) return true;
   // 2026-07-11 fix (found live, in real use, not just review): there used
@@ -430,8 +576,35 @@ export function isPushCapable(rawC) {
   // filesystems this plugin actually runs on) silently skipped script-
   // indirection detection entirely, for any script, not just a
   // confirm-script look-alike. Made case-insensitive to match its neighbour.
+  // 2026-07-12 audit fix (safe-direction false-positive): the execution-
+  // prefix group was OPTIONAL, so this rule only actually required (a) any
+  // path ending in one of the four extensions appearing ANYWHERE in the
+  // command, plus (b) one of the keywords appearing anywhere else — with no
+  // requirement that the script is actually being executed. Reproduced live:
+  // `grep -n "visibility" hooks.test.mjs` and a heredoc merely writing the
+  // literal text "gh repo edit ... --public" into a fixture file were both
+  // misclassified as push-capable, purely because a `.mjs` path and a
+  // keyword co-occurred in the command string — this interfered with this
+  // very audit's own read-only commands. Made the prefix mandatory (an
+  // actual `./`, `bash `, `sh `, `node `, or `python[3] ` invocation) so a
+  // bare mention of a script path in grep/cat/echo/a heredoc body no longer
+  // counts as indirection. `python[3] ` added to the mandatory set so this
+  // doesn't newly lose detection of a `.py` script run the normal way (it
+  // was previously "detected" only as a side effect of the prefix being
+  // optional, since python was never in the prefix list to begin with).
+  // 2026-07-12 Round 2 re-verification fix (CRITICAL, found by execution):
+  // this regex's OWN trailing anchor was still the old, too-narrow
+  // `([ \t]|$)` — it was not on the list of regexes migrated to
+  // LEXICAL_BOUNDARY earlier this round (the git-push/gh--push/send-pack
+  // regexes above, and gate.mjs's bare --public), so the identical bypass
+  // class reappeared here: `node evil-release.mjs;` (and the same with
+  // `|`, `&`, `)`, a backtick, or a trailing newline, and with any of the
+  // ./,bash,sh,node,python3 prefixes) was misclassified as non-push,
+  // reproduced live end-to-end with a real secret and zero confirmation
+  // tokens recorded. Fixed with the same shared boundary as every other
+  // regex in this function.
   const SCRIPT_INDIRECTION_KEYWORDS = /(deploy|release|publish|ship|public|visibility)/i;
-  if (/(^|[^A-Za-z0-9_])(\.\/|bash[ \t]+|sh[ \t]+|node[ \t]+)?[^ \t]*\.(sh|mjs|js|py)([ \t]|$)/i.test(c) &&
+  if (new RegExp(`(^|[^A-Za-z0-9_])(\\.\\/|bash[ \\t]+|sh[ \\t]+|node[ \\t]+|python3?[ \\t]+)[^ \\t]*\\.(sh|mjs|js|py)${LEXICAL_BOUNDARY}`, 'i').test(c) &&
       SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
   if (/(^|[^A-Za-z0-9_])make[ \t]+\S+/i.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
   if (/(^|[^A-Za-z0-9_])(npm|pnpm|yarn)[ \t]+run[ \t]+\S+/i.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;

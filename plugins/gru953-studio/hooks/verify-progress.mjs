@@ -31,11 +31,65 @@ function main() {
   }
   const text = fs.readFileSync(file, 'utf8');
   const lines = text.split(/\r?\n/);
+  // 2026-07-12 audit fix (MAJOR false-clean, found by execution): matching
+  // anywhere on the line let a Notes cell that honestly documents an OLD
+  // passing run (e.g. "verified: ... exit 0 on the old build, but the
+  // current build now fails with exit 1 and has not been re-verified")
+  // satisfy this regex, since "exit 0" appears somewhere in the cell —
+  // reported clean despite the row itself saying it's currently broken.
+  // Anchoring the whole test to the END of the line (after optional
+  // trailing whitespace/table-cell padding) means only a `verified:` clause
+  // that is the row's FINAL claim counts — a stale claim followed by a
+  // later "but now fails" no longer matches.
   const VERIFIED_RE = /verified:.*(→|->).*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
+  // 2026-07-12 audit fix (MAJOR false-clean, found by execution): VERIFIED_RE
+  // only checks that its pattern appears SOMEWHERE on the line, so a Notes
+  // cell that honestly documents an OLD passing run alongside a NEW,
+  // currently-failing one ("verified: ... exit 0 on the old build, but the
+  // current build now fails with exit 1 and has not been re-verified")
+  // still satisfied it — reported clean despite the row itself saying it's
+  // currently broken. Anchoring VERIFIED_RE to end-of-line was considered
+  // and rejected: this project's OWN real Dev-Memory has legitimate
+  // multi-clause "done" rows where "exit 0" is deliberately not the last
+  // clause (e.g. "...→ exit 0; pushed c9d8b50; gh release view v2.0.1 → not
+  // draft, zip attached (2026-07-11)."), and an end-anchor would have
+  // wrongly blocked those. Instead, a genuine "this is currently broken"
+  // contradiction anywhere in the same row invalidates an otherwise-passing
+  // VERIFIED_RE match — a row can honestly narrate old history, but not
+  // also claim to be currently failing/unverified and still count as done.
+  const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
+  const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
   const problems = [];
+  // 2026-07-12 audit fix (MAJOR false-block, found by execution): this used
+  // to check EVERY cell in a row via .find(cell => /^done\b/i.test(cell)),
+  // not specifically the Status column — a genuinely in-progress task whose
+  // Notes cell simply started with the word "Done" ("Done except manual QA
+  // still pending, no verification yet") was misclassified as a completed
+  // row and blocked for lacking evidence it was never expected to have,
+  // even though its actual Status cell plainly said "In Progress". Each
+  // markdown table's own header row is now used to find that table's
+  // Status column index once; only that specific cell is checked for data
+  // rows in that table. `inTable`/`statusColumnIndex` reset whenever a
+  // non-`|` line ends a table, so a file with more than one table (a
+  // different column order in each) is handled correctly rather than
+  // reusing the first table's column index everywhere.
+  let inTable = false;
+  let statusColumnIndex = null;
   for (const line of lines) {
-    if (!/^\|/.test(line)) continue; // only table rows
+    if (!/^\|/.test(line)) {
+      inTable = false;
+      statusColumnIndex = null;
+      continue;
+    }
     const cells = line.split('|').map((c) => c.trim());
+    if (!inTable) {
+      // this is a new table's header row
+      inTable = true;
+      statusColumnIndex = cells.findIndex((c) => /^status$/i.test(c));
+      continue;
+    }
+    if (SEPARATOR_ROW_RE.test(line)) continue; // the `| :-- | :-- |` header divider
+    if (statusColumnIndex === null || statusColumnIndex === -1) continue; // this table has no Status column
     // 2026-07-11 Round 7 audit fix (real, found by execution): the exact
     // `/^(done)$/i` match required the status cell to be the literal string
     // "done" and nothing else. A perfectly plausible real edit — "Done ✅",
@@ -45,9 +99,9 @@ function main() {
     // with the word done", tolerating trailing decoration, while still
     // rejecting a genuinely different word like "undone" (doesn't start
     // with "done") or "donee" (the word-boundary after "done" isn't met).
-    const statusCell = cells.find((c) => /^done\b/i.test(c));
-    if (!statusCell) continue;
-    if (!VERIFIED_RE.test(line)) {
+    const statusCell = cells[statusColumnIndex];
+    if (!statusCell || !/^done\b/i.test(statusCell)) continue;
+    if (!VERIFIED_RE.test(line) || CONTRADICTION_RE.test(line)) {
       problems.push(line.trim());
     }
   }

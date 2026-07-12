@@ -100,7 +100,17 @@ called fixed), to defeat the matcher entirely. This closes every concrete
 case found so far; it does not close shell text obfuscation in general,
 which has effectively unlimited variations (command substitution, variable
 reuse/assignment, further encoding schemes, and combinations of all of the
-above). Treat this as raising the bar against realistic accidents and
+above). A concrete, reproduced instance of the command-substitution
+category: `git $(printf "\x70\x75\x73\x68") origin main` resolves in real
+bash to `git push origin main`, but this hook cannot know that without
+actually executing the `printf` call — closing this in general would mean
+executing (or fully simulating) arbitrary shell command substitution,
+which this hook design deliberately does not do (see the next paragraph).
+Bounded same-command variable assignment (`VAR=value; ... $VAR ...`,
+including `export`/`local`/`readonly`/`declare`/`typeset`-prefixed forms
+and simple transitive chains) IS resolved, as of 2026-07-12 — only a
+variable set in an earlier, separate command, or from the environment
+outside this command's own text, remains unresolvable. Treat this as raising the bar against realistic accidents and
 common tricks, not as a sandbox against a determined adversary — the only
 fully robust fix would be executing the command and inspecting its real
 effect, which this hook design (a fast, stdlib-only, per-command check)
