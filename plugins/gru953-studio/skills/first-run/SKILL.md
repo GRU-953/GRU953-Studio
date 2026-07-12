@@ -15,10 +15,14 @@ repeating or being wrongly skipped):
 
 1. Does `~/.gru953-studio/profile.md` exist? If yes, first-run is done —
    skip straight to the project interview.
-2. If not, does the assistant's own persistent memory (on surfaces that
-   have one) record first-run as done? If yes, also write the file marker
-   now (so future sessions on any surface find it at step 1), then skip to
-   the project interview.
+2. If not, does Claude Code's own persistent memory (where configured)
+   record first-run as done? If yes, also write the file marker now (so a
+   future session finds it at step 1 without needing to check this), then
+   skip to the project interview. (2026-07-12 final-audit fix: this and
+   step 1's follow-on used to say "on surfaces that have one" / "any
+   surface" — this plugin is Claude Code only, see README; reworded to drop
+   the multi-surface framing, which had already drifted back once before,
+   per a documented past fix to `memory-keeper.md` for the same claim.)
 3. Otherwise, first-run has never happened — run it now.
 
 ## What to ask (via `interviewer`, pop-up MCQs, recommended option marked)

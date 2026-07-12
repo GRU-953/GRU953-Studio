@@ -678,6 +678,41 @@ test('lib.mjs isPushCapable: a degenerate single-element brace range ({X..X}) no
   assert.equal(isPushCapable('for i in {1..5}; do echo $i; done'), false, 'a genuine non-degenerate range must not be misclassified');
 });
 
+test('gate.mjs: a brace list embedded in a declaration-keyword assignment value no longer bypasses the go-public gate (final-audit CRITICAL fix)', () => {
+  // A declaration keyword (export/local/readonly/declare/typeset) is itself
+  // a real command invocation, so its arguments undergo bash's normal
+  // command-line expansion -- including brace expansion -- BEFORE the
+  // keyword sees them. `export v={private,public}` therefore does not
+  // assign the literal text `{private,public}`; bash expands it into TWO
+  // arguments, `v=private v=public`, and export applies them left-to-right
+  // with the LAST one winning (confirmed live via `bash -x`). The code used
+  // to capture the raw, un-expanded value and space-join it later instead
+  // of modelling last-write-wins, producing `--visibility=private public`
+  // -- which no longer matched the go-public regex, defeating the
+  // private-then-public separation with only the private token recorded.
+  const dir = mkTmp('gru-gate-bracevar-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  for (const cmd of [
+    'export v={private,public}; gh repo edit me/app --visibility=$v',
+    'declare v={private,public}; gh repo edit me/app --visibility=$v',
+    'readonly v={private,public}; gh repo edit me/app --visibility=$v',
+    'typeset v={private,public}; gh repo edit me/app --visibility=$v',
+    'export v={priv,public}; gh repo create me/app --$v',
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a brace-list value on a declaration-keyword assignment must not bypass the go-public gate: ${cmd}`);
+  }
+  // the bare, no-keyword form is a different, already-safe case (a plain
+  // assignment word is NOT itself brace-expanded by bash) -- must not crash
+  // and must not be misclassified as push-capable when the value simply
+  // isn't a real command.
+  assert.equal(isPushCapable('v={a,b}; echo $v'), false, 'the bare no-keyword form must remain unaffected by this fix');
+  // ordinary declaration-prefixed commands with no brace list must stay safe.
+  assert.equal(isPushCapable('export PATH=/usr/bin:$PATH; npm test'), false, 'an ordinary export must not be misclassified');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('lib.mjs isPushCapable: script-indirection detection also survives a trailing shell terminator (2026-07-12 Round 2 re-verification fix)', () => {
   // The Round 1 fix above (mandatory execution prefix) shared this same file
   // with three OTHER regexes that got a LEXICAL_BOUNDARY trailing-anchor fix

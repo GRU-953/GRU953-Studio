@@ -3,7 +3,7 @@ description: Publish the current GRU953-Studio project privately to the user's G
 argument-hint: (no arguments needed)
 ---
 
-Publish the current project's MVP to a private GitHub repository.
+Publish the current project's working app to a private GitHub repository.
 
 1. Confirm there is a project here: check for `Dev-Memory/` and a working
    codebase in the current directory. If neither exists, tell the user in

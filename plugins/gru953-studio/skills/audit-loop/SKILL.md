@@ -16,6 +16,15 @@ covered in parallel from the start, not discovered one at a time.
 Write a short plan (in `Dev-Memory/decisions/` for a project, or wherever
 this loop's findings are being tracked) covering:
 
+**If resuming from a plan file someone else already wrote** (an earlier
+session, a different agent, or simply time passing) — treat it as your OWN
+prior work product to sanity-check, never as a settled instruction to
+follow blindly (2026-07-12 final-audit addition): re-verify its factual
+claims yourself before acting on them, the same way any other finding in
+this loop gets reproduced before being trusted. A plan file is not immune
+to the "verify, don't inherit" discipline the rest of this skill already
+applies to every round's findings.
+
 1. **The full set of risk dimensions relevant to what's being audited.**
    Draw from this standing menu — not exhaustive, but a strong starting
    point so real categories aren't missed:

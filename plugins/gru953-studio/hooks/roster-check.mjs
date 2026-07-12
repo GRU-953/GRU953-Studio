@@ -62,7 +62,7 @@ function main() {
       console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles but no Dev-Memory/decisions/*roster*.md baseline and no committed ROSTER.md to check against`, currentCount }, null, 2));
       process.exit(1);
     }
-    const rm = /role count[^0-9]*(\d+)/i.exec(rosterText) || /baseline[^0-9]*(\d+)/i.exec(rosterText);
+    const rm = /role count\D{0,10}(\d+)/i.exec(rosterText) || /baseline\D{0,10}(\d+)/i.exec(rosterText);
     if (!rm) {
       console.log(JSON.stringify({ status: 'BLOCKED', reason: `ROSTER.md exists but states no numeric "role count: <n>"`, currentCount }, null, 2));
       process.exit(1);
@@ -106,7 +106,7 @@ function main() {
   });
   const latest = decisionFiles[decisionFiles.length - 1];
   const text = fs.readFileSync(path.join(decisionsDir, latest), 'utf8');
-  const m = /role count[^0-9]*(\d+)/i.exec(text) || /baseline[^0-9]*(\d+)/i.exec(text);
+  const m = /role count\D{0,10}(\d+)/i.exec(text) || /baseline\D{0,10}(\d+)/i.exec(text);
   if (!m) {
     console.log(JSON.stringify({ status: 'BLOCKED', reason: `latest roster decision file (${latest}) doesn't state a numeric baseline`, currentCount }, null, 2));
     process.exit(1);

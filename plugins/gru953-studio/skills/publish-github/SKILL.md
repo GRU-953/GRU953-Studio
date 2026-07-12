@@ -158,7 +158,12 @@ gh release view v<version> --repo <login>/<project-name> --json tagName,isDraft
 
 **Attach a downloadable zip (2026-07-11 addition)** — every release gets a
 zip of the release tree as a downloadable asset, so non-technical users
-can install from a direct download without using git at all:
+can install from a direct download without using git at all. Use
+`<project-name>` exactly as it appears in the repository's own name (2026-07-12
+final-audit fix: the v3.0.0 and v3.0.1 zip assets differ only in casing —
+`GRU953-Studio-v3.0.0.zip` vs `gru953-studio-v3.0.1.zip` — cosmetic, doesn't
+break the install instructions, but pinned here so it can't drift a third
+time):
 
 ```
 cd <temp-clone-path> && zip -rq /tmp/<project-name>-v<version>.zip . -x ".git/*"

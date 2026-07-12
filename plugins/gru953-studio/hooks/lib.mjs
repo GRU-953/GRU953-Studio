@@ -283,11 +283,50 @@ export function normalizeForPushCheck(c) {
   // concrete case." All four reproduced end-to-end via the real
   // gate.mjs/scan.mjs with a real secret and zero confirmation tokens on
   // both the push and go-public paths before being fixed here.
-  const varAssignRe = /(?:^|[;\n]|&&)\s*(?:export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"]*)"|'([^']*)'|([^\s;&|]*))/g;
+  // 2026-07-12 audit fix (CRITICAL, live bypass, found by a final adversarial
+  // combination pass that specifically re-attacked this same step): a
+  // declaration-keyword statement (`export`/`declare`/`readonly`/`typeset`)
+  // is itself a real command invocation, so its ARGUMENTS undergo bash's
+  // normal command-line expansion — including brace expansion — BEFORE the
+  // keyword ever sees them. `export v={private,public}` therefore does not
+  // assign the literal text `{private,public}`; bash expands it first into
+  // TWO arguments, `v=private v=public`, and `export` (like `declare`/
+  // `readonly`/`typeset`) applies them left-to-right with the LAST one
+  // winning — confirmed live (`bash -x` shows `+ export v=private v=public`,
+  // then `+ v=private` then `+ v=public`). The code below used to capture
+  // the raw, un-expanded `{private,public}` text as the value and defer
+  // expansion to the generic brace-expansion pass further down, which just
+  // space-joins the list in place instead of modelling last-write-wins —
+  // producing `--visibility=private public` instead of `--visibility=public`,
+  // which no longer matches `isGoPublicCommand`'s regex (it requires
+  // `public`/`internal` immediately after `=`). Reproduced end-to-end via
+  // the real gate.mjs: with only the PRIVATE-publish token recorded (no
+  // go-public token), `export v={private,public}; gh repo edit me/app
+  // --visibility=$v` was ALLOWED — a live bypass of the private-then-public
+  // separation. The bare, no-keyword form (`v={private,public}; ...`) is
+  // NOT exploitable and is deliberately left untouched here: a plain
+  // assignment word is not itself brace-expanded by bash, so `$v` really
+  // does hold the literal, un-expanded text `{private,public}` there, which
+  // the existing generic brace-expansion pass below correctly reproduces —
+  // confirmed live before scoping this fix to keyword-prefixed assignments
+  // only, rather than applying it universally and risking a DIFFERENT
+  // divergence from bash's actual (keyword-dependent) behaviour.
+  function resolveEmbeddedBraceList(raw) {
+    let v = raw.replace(/\{([A-Za-z0-9]+)\.\.\1\}/g, '$1'); // degenerate {X..X} -> X
+    const m = v.match(/\{([^{}]*,[^{}]*)\}/);
+    if (m) {
+      const parts = m[1].split(',');
+      v = v.slice(0, m.index) + parts[parts.length - 1] + v.slice(m.index + m[0].length);
+    }
+    return v;
+  }
+  const varAssignRe = /(?:^|[;\n]|&&)\s*(export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"]*)"|'([^']*)'|([^\s;&|]*))/g;
   const known = new Map();
   for (const am of n.matchAll(varAssignRe)) {
-    const varName = am[1];
-    let value = am[2] ?? am[3] ?? am[4] ?? '';
+    const hadKeyword = Boolean(am[1]);
+    const varName = am[2];
+    let value = am[3] ?? am[4] ?? am[5] ?? '';
+    if (hadKeyword) value = resolveEmbeddedBraceList(value);
     for (const [kName, kValue] of known) {
       const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
       value = value.replace(kRe, () => kValue);

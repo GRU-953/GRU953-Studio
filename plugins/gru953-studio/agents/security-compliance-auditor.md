@@ -87,11 +87,16 @@ For anything handling money, personal data, or credentials mid-build:
 input validation at every trust boundary, no plaintext secrets anywhere,
 and error handling that cannot lose or corrupt user data.
 
-On any project with an AI/LLM feature (Standard/Complex Tier): as part of
-your normal review pass, confirm `ai-developer`'s baseline guardrail lines
-are actually present in the diff (not just claimed) — untrusted-input
-markers, refusal to leak the system prompt, no secrets in prompts. This is
-not a separate gate; it rides along with the checks above.
+On any project with an AI/LLM feature, at EVERY Tier including Tiny (fixed
+2026-07-12 final audit — this used to say "Standard/Complex Tier" only, but
+`reviewer` isn't woken on Tiny either, so a Tiny-tier AI feature had no
+independent check that `ai-developer`'s guardrails actually shipped, only
+`ai-developer`'s own self-report; this check already runs at every Tier for
+everything else, so extending it here is the same pattern, not a new one):
+as part of your normal review pass, confirm `ai-developer`'s baseline
+guardrail lines are actually present in the diff (not just claimed) —
+untrusted-input markers, refusal to leak the system prompt, no secrets in
+prompts. This is not a separate gate; it rides along with the checks above.
 
 ## Output
 

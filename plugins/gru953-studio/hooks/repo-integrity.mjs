@@ -109,6 +109,16 @@ for (const f of allMd) {
 for (const s of referencedSkills) {
   if (!knownSkillWords.has(s)) fail(`referenced skill '${s}' (as \`${s}\` skill) has no skills/${s}/SKILL.md`);
 }
+// Disclosed limitation (2026-07-12 final audit, confirmed by execution, not
+// fixed): this check and the bullet-list carve-out just below only match
+// specific PROSE shapes. A stale skill name written inside a markdown TABLE
+// CELL or a fenced code block would not be caught by either regex. Narrow
+// and low-severity (no currently-committed file uses either shape for a
+// skill reference), and generalising to match inside tables/code blocks
+// reliably would need a real markdown parser rather than line-oriented
+// regexes — deliberately left as a known, bounded gap rather than a fix,
+// matching this project's established "close the concrete case found, not
+// every theoretical shape" pattern used throughout the push-safety matcher.
 // 2026-07-12 audit fix (SEVERE false-clean, found by execution): the check
 // above only matches the phrase shape "`name` skill". The single most
 // load-bearing file in the whole product — skills/studio/SKILL.md's own
@@ -263,12 +273,20 @@ if (!marketPluginDesc) {
 }
 
 // ---- INV 8: committed roster baseline matches agent count --------------------
+// 2026-07-12 final-audit fix: the gap between "role count"/"baseline" and its
+// digits was unbounded ([^0-9]*), so a plausible prose edit like "role count:
+// grew from 16 in early versions, now 23" read the FIRST digit sequence
+// found (16) instead of the real, intended count (23) -- a false-BLOCK
+// (fails toward flagging a human, the safe direction, but for the wrong
+// reason). Bounded the gap to 10 non-digit characters, matching this file's
+// own real "**role count: 23**" phrasing exactly while no longer skipping
+// over an entire unrelated sentence to find a later, unintended number.
 const rosterBaselineFile = path.join(pluginRoot, 'ROSTER.md');
 const rosterText = read(rosterBaselineFile);
 if (rosterText === null) {
   fail(`no committed roster baseline at plugins/gru953-studio/ROSTER.md (needed so the product's own roster can be verified)`);
 } else {
-  const rm = rosterText.match(/role count[^0-9]*(\d+)/i) || rosterText.match(/baseline[^0-9]*(\d+)/i);
+  const rm = rosterText.match(/role count\D{0,10}(\d+)/i) || rosterText.match(/baseline\D{0,10}(\d+)/i);
   if (!rm) fail(`ROSTER.md does not state a numeric "role count: <n>"`);
   else if (parseInt(rm[1], 10) !== agentCount) fail(`ROSTER.md role count ${rm[1]} != actual agent count ${agentCount}`);
 }

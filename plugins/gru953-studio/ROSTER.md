@@ -70,9 +70,10 @@ hard to undo.
 - **haiku** (cheapest) — mechanical/clerical work, little open reasoning:
   `brand-guardian`, `cost-monitor`, `memory-keeper`.
 - **sonnet** (balanced default) — real but bounded reasoning; the bulk of
-  the team, including the code workhorse (`builder`, run 2–3 in parallel, so
-  deliberately not opus) and the rare-but-irreversible `publisher` (spent up
-  from haiku for reliability): `interviewer`, `scope-guardian`, `builder`,
+  the team, including the code workhorse (`builder`, run 2 in parallel on
+  Standard/Complex Tier per the Build Swarm — see `studio/SKILL.md`'s Tier
+  table — so deliberately not opus) and the rare-but-irreversible `publisher`
+  (spent up from haiku for reliability): `interviewer`, `scope-guardian`, `builder`,
   `tester`, `security-compliance-auditor`, `fixer`, `publisher`,
   `maintenance-agent`, `ai-developer`, `ux-designer`,
   `accessibility-specialist`, `technical-writer`, `data-engineer`,

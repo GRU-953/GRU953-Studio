@@ -163,9 +163,16 @@ built). Two rules keep it private:
    by `hooks/scan.mjs`, which blocks any push whose file set contains a
    `Dev-Memory/` path.
 
-## One schema, every surface
+## One schema, every session
 
-The schema above is identical whether the session runs in Claude Code or
-any other surface, so switching between them mid-project never loses
-context. Only the file marker locations differ; the file names, columns,
-and the `▶ RESUME HERE` convention do not.
+The schema above is identical across every Claude Code session and every
+machine — a new session picking up an existing project reads the exact same
+file names, columns, and `▶ RESUME HERE` convention a prior session left
+behind, so nothing is ever lost between sessions. (2026-07-12 final-audit
+fix: this section used to say "whether the session runs in Claude Code or
+any other surface" — this plugin is Claude Code only, see README and
+`memory-keeper.md`, and this wording had already drifted back toward
+implying multi-surface support once before, per a documented past fix to
+`memory-keeper.md` for the same claim; corrected here too, and dropped the
+cross-app framing entirely rather than leaving room for it to drift back a
+third time.)

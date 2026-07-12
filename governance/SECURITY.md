@@ -110,7 +110,40 @@ Bounded same-command variable assignment (`VAR=value; ... $VAR ...`,
 including `export`/`local`/`readonly`/`declare`/`typeset`-prefixed forms
 and simple transitive chains) IS resolved, as of 2026-07-12 — only a
 variable set in an earlier, separate command, or from the environment
-outside this command's own text, remains unresolvable. Treat this as raising the bar against realistic accidents and
+outside this command's own text, remains unresolvable.
+
+Two more currently-active protections, added this same 2026-07-12
+engagement and previously missing from this document (a genuine staleness
+gap, not a security hole — this section under-described what the matcher
+already covers, rather than over-claiming): bash brace expansion
+(`{git,push}` resolves to the two words `git push` before the command line
+is even parsed) is recognised and expanded, including the degenerate
+single-element range form (`{s..s}` resolves to just `s`) that has no comma
+and would otherwise dodge the comma-requiring expansion; and every keyword
+match tolerates a trailing shell terminator immediately after it (`;`, `|`,
+`&`, `)`, a backtick, or a newline) rather than requiring whitespace or
+end-of-string, since `git push;`/`gh repo edit ... --public|` etc. are
+real, common shell forms that a naive end-anchor previously missed
+entirely.
+
+A final adversarial pass across this whole engagement (2026-07-12) found
+one more CRITICAL bypass in the bounded variable-assignment feature just
+described: a declaration keyword (`export`/`declare`/`readonly`/`typeset`)
+is itself a real command invocation, so ITS OWN arguments undergo bash's
+normal command-line expansion — including brace expansion — before the
+keyword sees them. `export v={private,public}` does not assign the literal
+text `{private,public}`; bash expands it into two arguments, `v=private
+v=public`, and the keyword applies them left-to-right with the LAST one
+winning (confirmed live via `bash -x`). This let `export v={private,public};
+gh repo edit me/app --visibility=$v` bypass the go-public gate with only
+the private-publish token recorded — reproduced end-to-end via the real
+`gate.mjs` before being fixed. The bare, no-keyword form
+(`v={private,public}; ...`) is NOT exploitable and was deliberately left
+unchanged: a plain assignment word is not itself brace-expanded by bash, so
+`$v` there really does hold the literal, un-expanded text, which the
+existing generic brace-expansion pass already handles correctly.
+
+Treat all of this as raising the bar against realistic accidents and
 common tricks, not as a sandbox against a determined adversary — the only
 fully robust fix would be executing the command and inspecting its real
 effect, which this hook design (a fast, stdlib-only, per-command check)

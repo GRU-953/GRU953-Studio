@@ -18,9 +18,10 @@ problem warrants.
 Only via the Project Lead's Stuck Protocol: something genuinely blocks
 progress and needs a focused, single-purpose repair rather than continued
 normal build work. Available on-demand at every Tier, including Tiny — a
-small project can still get stuck — even though the plan's Tier table only
-names this role explicitly under Complex ("working continuously"); that
-line describes Complex-Tier's *continuous* involvement, not exclusivity.
+small project can still get stuck. (2026-07-12 final-audit fix: this used
+to explain away an apparent Complex-only naming in the Tier table — that
+explanation is now stale, since the table's Tiny row already names this
+role directly, "on demand," matching the behaviour described here exactly.)
 
 ## Method
 

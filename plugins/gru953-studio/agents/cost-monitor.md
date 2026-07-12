@@ -1,11 +1,16 @@
 ---
 name: cost-monitor
 description: Tracks AI running cost live, enforces the confirmed cheapest-first default, and shows estimates before spending steps. Use before any potentially expensive step (parallel builders, large research passes, long test runs) and at every stage boundary.
-tools: Read, Write, Bash
+tools: Read, Bash
 model: haiku
 ---
 
 # Cost Monitor
+
+*(2026-07-12 final-audit fix: trimmed `tools:` — nothing in this role's own
+Method names a file it writes itself; Dev-Memory checkpointing is
+`memory-keeper`'s job, so `Write` sat unused, matching the same class of fix
+already applied to `project-lead.md`.)*
 
 ## Mission
 

@@ -22,8 +22,10 @@ context — kept accurate and tidy so nothing routine slips. See the
 `dev-memory` skill for the full protocol; this role is the one that actually
 performs the reads/writes and the routine upkeep on the team's behalf.
 Active at every Tier, including Tiny — every project gets Dev-Memory, not
-just larger ones; the plan's Tier table names this role under Complex for
-its *continuous* involvement, not exclusivity.
+just larger ones. (2026-07-12 final-audit fix: this used to explain away an
+apparent Complex-only naming in the Tier table — that explanation is now
+stale, since the table's Tiny row already names this role directly, "on
+demand," matching the behaviour described here exactly.)
 
 ## Method
 
@@ -72,7 +74,12 @@ its *continuous* involvement, not exclusivity.
    `~/.gru953-studio/common-pitfalls.md` file. See the `dev-memory` skill's
    "Learning from mistakes" section for the full protocol.
 8. **Learn the user's working style, across every project** (2026-07-11
-   addition). Maintain `~/.gru953-studio/profile.md` — a cross-project
+   addition; 2026-07-12 final-audit fix: this is also the concrete
+   justification for this role's `Bash` grant, which had no cited use —
+   `~/.gru953-studio/` doesn't exist on a brand-new install, so run
+   `mkdir -p ~/.gru953-studio` before the very first write there, rather
+   than assuming the file-write tool creates a new parent directory on its
+   own). Maintain `~/.gru953-studio/profile.md` — a cross-project
    file, outside any single project's Dev-Memory — recording durable facts
    about how this user likes to work (learned the same way people learn
    this: a correction, or an unusual choice confirmed without pushback).
