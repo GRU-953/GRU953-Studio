@@ -33,6 +33,28 @@ import process from 'node:process';
 import crypto from 'node:crypto';
 import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck, LEXICAL_BOUNDARY } from './lib.mjs';
 
+// 2026-07-12 Round 7 audit fix (real TOCTOU gap, found by direct code
+// reading, not a text-obfuscation bypass — a different bug class): neither
+// confirmation record was ever deleted by any code path (confirm-
+// publish.mjs's deletion was prose-only, in the publish skill's own
+// instructions to the agent; GO-PUBLIC-APPROVED had no deletion path
+// anywhere at all), and the derived token has no session or command
+// nonce — so a legitimately-written record authorised an UNBOUNDED number
+// of later commands, in later sessions, not just the one push/visibility
+// change the user actually confirmed. A bounded validity window (this
+// generous but finite, since the real multi-step publish sequence — push,
+// tag, release create, release upload — normally completes in minutes)
+// closes the "valid forever" failure mode as defense in depth alongside
+// the still-recommended explicit delete, without needing to plumb a
+// session/command identity through the hook (which the PreToolUse stdin
+// payload does not reliably expose across tool types).
+const CONFIRMATION_TTL_MS = 60 * 60 * 1000; // 60 minutes
+function issuedWithinTtl(text) {
+  const m = /^ISSUED:(\d+)$/m.exec(text);
+  if (!m) return false; // no timestamp recorded -> fails closed, not open
+  const issuedAt = parseInt(m[1], 10);
+  return Number.isFinite(issuedAt) && Date.now() - issuedAt <= CONFIRMATION_TTL_MS && Date.now() - issuedAt >= 0;
+}
 function publishToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-publish:${studioRoot}`).digest('hex');
 }
@@ -47,7 +69,7 @@ function publishConfirmed(studioRoot) {
   }
   const expected = `STUDIO-PUBLISH-CONFIRMED:${publishToken(studioRoot)}`;
   for (const line of text.split(/\r?\n/)) {
-    if (line.trim() === expected) return true;
+    if (line.trim() === expected) return issuedWithinTtl(text);
   }
   return false;
 }
@@ -106,7 +128,7 @@ function goPublicConfirmed(studioRoot) {
   }
   const expected = `STUDIO-GO-PUBLIC-CONFIRMED:${goPublicToken(studioRoot)}`;
   for (const line of text.split(/\r?\n/)) {
-    if (line.trim() === expected) return true;
+    if (line.trim() === expected) return issuedWithinTtl(text);
   }
   return false;
 }

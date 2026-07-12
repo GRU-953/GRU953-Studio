@@ -47,6 +47,24 @@ export function readStdin() {
     return '';
   }
 }
+// 2026-07-12 Round 7 audit fix (real gap, verified via Claude Code's own
+// docs and a live GitHub issue, not previously disclosed): hooks.json's
+// PreToolUse matcher only ever listed "Bash" — but Claude Code's separate
+// PowerShell tool (the automatic default on native Windows without Git
+// for Windows/Git Bash, and opt-in elsewhere via
+// CLAUDE_CODE_USE_POWERSHELL_TOOL=1) is a genuinely different tool, so
+// neither scan.mjs nor gate.mjs ever ran at all for a command executed
+// through it — not a missed obfuscation pattern, a complete, silent
+// non-invocation of the whole publish-safety mechanism on a documented,
+// non-obscure configuration. hooks.json's matcher now also lists
+// "PowerShell". Official docs (code.claude.com/docs/en/hooks.md,
+// tools-reference.md) do not formally document the PowerShell tool's
+// tool_input schema, but a live captured payload (github.com/anthropics/
+// claude-code issue #57137) shows it uses the same `command` field name as
+// Bash — read as primary here, with `script` kept as a defensive fallback
+// in case a future/undocumented PowerShell payload shape differs, since
+// getting this wrong means silently reading no command at all rather than
+// an error that would be noticed.
 export function extractCommand(input) {
   let obj;
   try {
@@ -56,7 +74,7 @@ export function extractCommand(input) {
   }
   const ti = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj.tool_input : undefined;
   if (ti === null || ti === undefined || typeof ti !== 'object' || Array.isArray(ti)) return '';
-  const cmd = ti.command;
+  const cmd = typeof ti.command === 'string' ? ti.command : ti.script;
   return typeof cmd === 'string' ? cmd : '';
 }
 export function extractCwd(input) {
@@ -178,6 +196,108 @@ export function findStudioRoot(start) {
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
 export function normalizeForPushCheck(c) {
   let n = c;
+  // 2026-07-12 Round 7 audit fix (CRITICAL, found by execution): bash's
+  // array assignment (`arr=(a b)`) and subscript access (`${arr[N]}`, bare
+  // `$arr`/`${arr}` for element 0, `${arr[@]}`/`${arr[*]}` for all elements
+  // space-joined) is a wholly different construct from the scalar `VAR=
+  // value` case resolved further below — it was left completely
+  // unmodelled, so `arr=(pull push); git "${arr[1]}" origin main` left
+  // `${arr[1]}` as opaque, unresolved text. Confirmed live via real bash
+  // (`arr=(pull push); echo "${arr[1]}"` -> `push`) and via the real
+  // isPushCapable(): it returned false for that exact command — the same
+  // complete, both-gates bypass as the printf -v case below. The
+  // go-public analogue (`arr=(private public); gh repo edit me/app
+  // --visibility=${arr[1]}`) defeated isGoPublicCommand the same way.
+  // Deliberately narrow, matching this file's established pattern: only a
+  // literal `NAME=( ... )` assignment with whitespace-separated (optionally
+  // quoted) elements is modelled — no post-assignment element writes
+  // (`arr[1]=x`), no `+=` append, no associative (`declare -A`) arrays,
+  // and no evaluation of a command substitution embedded in an element.
+  // Those remain a disclosed residual limitation (see governance/
+  // SECURITY.md), the same shape as this file's other already-disclosed,
+  // deliberately-not-fully-modelled shell constructs, not a newly-
+  // introduced one — confirmed with the user before drawing this line,
+  // after four consecutive rounds kept finding narrower and narrower array
+  // constructs, the same open-ended shape this file already declines to
+  // fully solve for scalar command substitution.
+  // 2026-07-12 Round 8 audit fix (real gap, found by a re-attack pass,
+  // then independently reproduced live before fixing): bash's array
+  // COMPOUND assignment `NAME=(word1 word2 ...)` is documented to run
+  // brace expansion (among other expansions) on each word INSIDE the
+  // parens, regardless of any declaration keyword — a materially
+  // different rule from the plain scalar case below, where a bareword
+  // value is NOT brace-expanded unless a keyword makes it a real command
+  // argument. `arr=({pull,push})` genuinely produces a real TWO-element
+  // array (`pull`, `push`), confirmed live (`arr=({pull,push}); echo
+  // "${arr[1]}"` -> `push`), which the original element-splitting here
+  // (a plain whitespace split with no brace handling at all) left as one
+  // opaque, un-expanded element, and `git "${arr[1]}" origin main` was
+  // left unresolved.
+  function expandBraceListToElements(tok) {
+    let t = tok.replace(/\{([A-Za-z0-9]+)\.\.\1\}/g, '$1'); // degenerate {X..X} -> X
+    const m = t.match(/\{([^{}]*,[^{}]*)\}/);
+    if (!m) return [t];
+    const prefix = t.slice(0, m.index);
+    const suffix = t.slice(m.index + m[0].length);
+    return m[1].split(',').map((part) => prefix + part + suffix);
+  }
+  // 2026-07-12 Round 9 audit fix (real gap, found by a re-attack pass, then
+  // independently reproduced live before fixing): array-element token
+  // extraction only ever stripped a quote character sitting at the
+  // absolute start/end of a token (`/^["']|["']$/`) — a much weaker path
+  // than the scalar value pipeline, which decodes ANSI-C `$'...'` quoting
+  // (including its hex/octal escapes) explicitly. `arr=($'pu\x73h')`
+  // genuinely decodes to the array element `push` in real bash (confirmed
+  // live), but the naive quote-strip here left a corrupted, unterminated
+  // `$'pu\x73h` behind (it stripped the trailing `'` but the leading `$`
+  // isn't a quote char, so it wasn't recognised as the ANSI-C wrapper at
+  // all), which the later whole-string ANSI-C pass then couldn't match
+  // either (its regex requires a matching closing quote). Fixed by
+  // decoding ANSI-C tokens INSIDE each array element first, using the same
+  // decode logic the main whole-string pass further below now also calls
+  // (extracted into this shared function so the two paths cannot drift
+  // apart from each other again).
+  // 2026-07-12 Round 14 audit fix: extended to also decode the common
+  // ANSI-C letter-escapes (`\n`, `\t`, `\r`, `\\`, `\'`) — previously only
+  // `\xHH` hex and octal escapes were decoded here. Needed so a real
+  // embedded newline inside a `$'...'`-quoted value (e.g. `mapfile -t arr
+  // <<< $'pull\npush'`) is recognised as a genuine line break rather than
+  // staying literal backslash-n text, which is what `mapfile`'s
+  // one-element-per-line splitting depends on.
+  const ANSI_C_ESCAPES = { n: '\n', t: '\t', r: '\r', '\\': '\\', "'": "'", a: '\x07', b: '\b', f: '\f', v: '\v', e: '\x1b' };
+  function decodeAnsiCTokens(text) {
+    return text.replace(/\$'((?:\\.|[^'\\])*)'/g, (_m, inner) =>
+      inner
+        .replace(/\\x([0-9A-Fa-f]{1,2})/g, (_h, hex) => String.fromCharCode(parseInt(hex, 16)))
+        .replace(/\\([0-7]{1,3})/g, (_o, oct) => String.fromCharCode(parseInt(oct, 8)))
+        .replace(/\\([ntr\\'abfve])/g, (_l, ch) => ANSI_C_ESCAPES[ch])
+    );
+  }
+  const arrayAssignRe = /(?:^|[;\n]|&&)\s*(?:export\s+|local\s+|readonly\s+|declare\s+(?:-a\s+)?|typeset\s+(?:-a\s+)?)?([A-Za-z_][A-Za-z0-9_]*)=\(([^)]*)\)/g;
+  const knownArrays = new Map();
+  for (const am of n.matchAll(arrayAssignRe)) {
+    const name = am[1];
+    const raw = am[2].trim();
+    const tokens = raw.length === 0 ? [] : raw.split(/\s+/).map((e) => decodeAnsiCTokens(e).replace(/^["']|["']$/g, ''));
+    const elems = tokens.flatMap(expandBraceListToElements);
+    knownArrays.set(name, elems);
+  }
+  // 2026-07-12 Round 10 audit fix (real gap, found by a systematic
+  // completeness sweep, then independently reproduced live before fixing):
+  // `${#arr[@]}`/`${#arr[*]}` (bash's array-length syntax) used as a scalar
+  // assignment's value — then that scalar used inside a later subscript —
+  // resolves to a real element in bash (`i=${#arr[@]}; i=$((i-1));
+  // ${arr[$i]}` -> the array's last element) but was left completely
+  // unmodelled: nothing recognised the `${#name[@]}` form at all, so the
+  // assigned scalar kept the literal, unresolved text. Substituted
+  // textually HERE, before the scalar assignment step below runs (moved
+  // the whole array-parsing block earlier in the function specifically so
+  // this ordering is possible), so the existing transitive-chain machinery
+  // picks up the resolved number the same way it already handles any other
+  // literal value.
+  n = n.replace(/\$\{#([A-Za-z_][A-Za-z0-9_]*)\[[@*]\]\}/g, (m, name) =>
+    knownArrays.has(name) ? String(knownArrays.get(name).length) : m
+  );
   // 2026-07-12 Round 3 audit fix (CRITICAL, found by adversarial combination
   // testing, then independently reproduced live before fixing): bash brace
   // expansion turns `{git,push}` into the two separate words `git push`
@@ -320,7 +440,56 @@ export function normalizeForPushCheck(c) {
     }
     return v;
   }
-  const varAssignRe = /(?:^|[;\n]|&&)\s*(export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"]*)"|'([^']*)'|([^\s;&|]*))/g;
+  // 2026-07-12 Round 8 audit fix (real gap, found by a re-attack pass on
+  // the Round 7 array fix, then independently reproduced live before
+  // fixing): the bareword alternative below had no exclusion for a leading
+  // `(`, so it ALSO matched every `NAME=(elem1 elem2)` array assignment —
+  // capturing the bogus scalar value `"(elem1 elem2)"`, parens included.
+  // That corrupted value then poisoned two things: (1) the literal parens
+  // broke the exact `push`/keyword-boundary matching once substituted back
+  // into the command text, and (2) the parameter-expansion-default step
+  // read this bogus scalar entry instead of correctly falling through to
+  // the array-subscript handling below. Confirmed live on both gates:
+  // `arr=(push); git ${arr:-pull} origin main` (real bash: `git push
+  // origin main`) and `arr=(public); gh repo edit me/app
+  // --visibility=${arr:-private}` (real bash: `--visibility=public`) both
+  // returned false/not-go-public. A plain scalar assignment's value can
+  // never legitimately start with an unescaped `(` in bash — that syntax
+  // is array-assignment only — so excluding it here is safe, not a new
+  // divergence.
+  // 2026-07-12 Round 10 audit fix (real gap, found by a systematic
+  // completeness sweep, then independently reproduced live before fixing):
+  // moved earlier so the scalar-assignment loop below can use it too.
+  // Unwraps an optional `$((...))` wrapper, and — new this round — also
+  // substitutes any BARE variable name (bash arithmetic context allows a
+  // variable reference with no `$` prefix) via an optional `lookup`
+  // callback before evaluating. Without this, a completely ordinary
+  // same-command decrement idiom (`i=${#arr[@]}; i=$((i-1));
+  // git "${arr[$i]}"` — the realistic way anyone actually uses an array's
+  // length, since the length itself is one past the last valid index) left
+  // the second assignment's value as literal, un-evaluated text
+  // (`"$((i-1))"`), because the transitive-chain substitution used
+  // elsewhere in this file only ever replaces `$i`/`${i}` forms, not a
+  // bare `i` inside an arithmetic expression.
+  function resolveSimpleArithmetic(expr, lookup) {
+    let e = expr.trim();
+    const wrap = e.match(/^\$\(\(\s*(.*?)\s*\)\)$/);
+    if (wrap) e = wrap[1];
+    if (lookup) {
+      e = e.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (m, a, b, c) => {
+        const v = lookup(a || b || c);
+        return v !== undefined ? v : m;
+      });
+    }
+    const m = e.match(/^(\d+)\s*([+-])\s*(\d+)$/);
+    if (m) {
+      const a = parseInt(m[1], 10);
+      const b = parseInt(m[3], 10);
+      return String(m[2] === '+' ? a + b : a - b);
+    }
+    return /^\d+$/.test(e) ? e : null;
+  }
+  const varAssignRe = /(?:^|[;\n]|&&)\s*(export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"]*)"|'([^']*)'|((?!\()[^\s;&|]*))/g;
   const known = new Map();
   for (const am of n.matchAll(varAssignRe)) {
     const hadKeyword = Boolean(am[1]);
@@ -331,8 +500,297 @@ export function normalizeForPushCheck(c) {
       const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
       value = value.replace(kRe, () => kValue);
     }
+    // 2026-07-12 Round 10 audit fix: if the value is a `$((...))`
+    // arithmetic expression, evaluate it now against the known map built
+    // SO FAR (matching bash's real left-to-right, same-command chain
+    // order) rather than leaving it as literal text — closes the ordinary
+    // `i=2; i=$((i-1))` decrement idiom this array-length fix needs to be
+    // useful in practice, not just in the direct, unincremented case.
+    if (/^\$\(\(.*\)\)$/.test(value.trim())) {
+      const resolved = resolveSimpleArithmetic(value, (name) => known.get(name));
+      if (resolved !== null) value = resolved;
+    }
     known.set(varName, value);
   }
+  // 2026-07-12 Round 7 audit fix (CRITICAL x2, found by execution, then
+  // independently reproduced by this session before fixing): `printf -v
+  // NAME VALUE` is bash's other real way to assign a variable's value —
+  // completely different surface syntax from `NAME=value`, so the
+  // varAssignRe step above never saw it at all. Confirmed live: `printf -v
+  // v push; git $v origin main` left `$v` fully unresolved, and because
+  // isPushCapable() returning false makes gate.mjs allow() immediately
+  // (before even checking whether a studio project exists), this was a
+  // complete, unconditional bypass of BOTH gates simultaneously — worse
+  // than any prior finding in this file, which at most defeated the
+  // go-public gate alone. The same construct against `--visibility=$v`
+  // defeated isGoPublicCommand the same way. Resolved into the same
+  // `known` map so it benefits from the same transitive-chain and
+  // brace-list handling as an ordinary assignment.
+  // 2026-07-12 Round 9 audit fix (real gap, found by a re-attack pass, then
+  // independently reproduced live before fixing): the unquoted-value
+  // branch used `(\S+)`, which does not stop at a shell metacharacter —
+  // `printf -v i 1;` (no space before the semicolon, an entirely normal
+  // way to write this) captured `"1;"` as the value instead of `"1"`,
+  // which then failed the digit test downstream and left the variable
+  // unresolved. Tightened to the same `[^\s;&|]` exclusion set the bareword
+  // branch of `varAssignRe` above already uses.
+  const printfVRe = /printf\s+-v\s+([A-Za-z_][A-Za-z0-9_]*)\s+(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/g;
+  for (const pm of n.matchAll(printfVRe)) {
+    const varName = pm[1];
+    let value = pm[2] ?? pm[3] ?? pm[4] ?? '';
+    for (const [kName, kValue] of known) {
+      const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
+      value = value.replace(kRe, () => kValue);
+    }
+    known.set(varName, value);
+  }
+  // 2026-07-12 Round 13 audit fix (CRITICAL, found by an adversarial
+  // re-attack pass specifically hunting for a genuinely new class of
+  // assignment/retrieval syntax, then independently reproduced live before
+  // fixing): the `read` builtin reading from a here-string
+  // (`read NAME <<< "value"`) is bash's third real way to assign a
+  // variable's value — yet another surface syntax the `known` map never
+  // recognised. Confirmed live (`read v <<< "push"; echo $v` -> `push`)
+  // and via the real isPushCapable(): `read v <<< "push"; git $v origin
+  // main` returned false, the same complete, both-gates bypass shape as
+  // the printf -v finding above. The go-public analogue
+  // (`read v <<< "public"; gh repo edit me/app --visibility=$v`) defeated
+  // isGoPublicCommand the same way. Resolved into the same `known` map so
+  // it benefits from the same transitive-chain handling.
+  const readHereStringRe = /read\s+([A-Za-z_][A-Za-z0-9_]*)\s*<<<\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  for (const rm of n.matchAll(readHereStringRe)) {
+    const varName = rm[1];
+    let value = (rm[2] ?? rm[3] ?? rm[4] ?? '').trim();
+    for (const [kName, kValue] of known) {
+      const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
+      value = value.replace(kRe, () => kValue);
+    }
+    known.set(varName, value);
+  }
+  // 2026-07-12 Round 14 audit fix (CRITICAL, found by a capped final
+  // adversarial pass specifically hunting for one more new assignment
+  // mechanism, then independently reproduced live before fixing): a real
+  // here-DOCUMENT (`read NAME <<DELIM` ... `DELIM`, distinct from the
+  // here-STRING `<<<` form already fixed) is a fourth surface syntax for
+  // `read` to assign a value — `read`, in real bash, consumes only the
+  // FIRST line supplied on stdin. Confirmed live (`read v <<EOF
+  // push
+  // EOF
+  // echo $v` -> `push`) and via the real isPushCapable(): the same
+  // command with `git $v` in place of `echo $v` returned false. No
+  // command-execution simulation is needed here (unlike process
+  // substitution/co-processes, disclosed below) — the value is literal
+  // text already sitting in the command string; only its first line is
+  // extracted, matching what `read` actually consumes.
+  const readHeredocRe = /read\s+([A-Za-z_][A-Za-z0-9_]*)\s*<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2\r?\n([\s\S]*?)\r?\n\3(?=[ \t]*(?:[;\n&|]|$))/g;
+  for (const rm of n.matchAll(readHeredocRe)) {
+    const varName = rm[1];
+    const firstLine = rm[4].split(/\r?\n/)[0];
+    let value = decodeAnsiCTokens(firstLine).trim();
+    for (const [kName, kValue] of known) {
+      const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
+      value = value.replace(kRe, () => kValue);
+    }
+    known.set(varName, value);
+  }
+  // 2026-07-12 Round 14 audit fix (CRITICAL, found the same way):
+  // `mapfile`/`readarray` (bash 4+, aliases of each other) reading a
+  // here-string into an array is a structurally different array-
+  // population mechanism from the literal `NAME=(...)` compound
+  // assignment `knownArrays` is built from — each line of input becomes
+  // one array element. Confirmed live (`mapfile -t arr <<< $'pull
+  // push'; echo "${arr[1]}"` -> `push`) and via the real isPushCapable():
+  // the same command with `git "${arr[1]}"` returned false, because
+  // `${arr[1]}` was left as opaque text (the array was never registered
+  // in `knownArrays` at all). Only the here-string (`<<<`) form is
+  // modelled here, matching this file's established "closes the concrete
+  // case" pattern — a `mapfile`/`readarray` fed from an actual file or
+  // process substitution would need real I/O this hook deliberately does
+  // not perform, and remains an unclosed, disclosed gap the same shape as
+  // command substitution.
+  const mapfileRe = /(?:mapfile|readarray)\s+(?:-t\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*<<<\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  for (const mm of n.matchAll(mapfileRe)) {
+    const arrName = mm[1];
+    let raw = decodeAnsiCTokens(mm[2] ?? mm[3] ?? mm[4] ?? '');
+    for (const [kName, kValue] of known) {
+      const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
+      raw = raw.replace(kRe, () => kValue);
+    }
+    const elems = raw.split(/\r?\n/).filter((_, i, arr) => !(i === arr.length - 1 && arr[i] === ''));
+    knownArrays.set(arrName, elems);
+  }
+  // 2026-07-12 Round 13 audit fix (CRITICAL, found the same way as above):
+  // `set -- word1 word2 ...` resets bash's positional parameters, so
+  // `$1`/`$2`/etc. afterward refer to those exact words — a fourth,
+  // completely different assignment mechanism (no variable NAME appears
+  // in the source text at all; the "name" is a numeric position).
+  // Confirmed live (`set -- push; echo "$1"` -> `push`) and via the real
+  // isPushCapable(): `set -- push; git "$1" origin main` returned false —
+  // the same complete bypass shape once again. Modelled as a numbered
+  // entry in the same `known` map (keys `"1"`, `"2"`, ...) so `$1` is
+  // resolved by the existing substitution loop below with no separate
+  // code path to keep in sync.
+  const setPositionalRe = /(?:^|[;\n]|&&)\s*set\s+--\s+([^;\n&|]*)/g;
+  for (const sm of n.matchAll(setPositionalRe)) {
+    const raw = sm[1].trim();
+    const words = raw.length === 0 ? [] : raw.split(/\s+/).map((w) => w.replace(/^["']|["']$/g, ''));
+    words.forEach((w, i) => known.set(String(i + 1), w));
+  }
+  // 2026-07-12 Round 13 audit fix (CRITICAL, found the same way): bash's
+  // indirect parameter expansion (`${!ref}`) resolves to the VALUE of the
+  // variable whose NAME is held by `ref` — a level of indirection none of
+  // the direct `$VAR`/`${VAR}` substitution above models. Confirmed live
+  // (`name=push; ref=name; echo ${!ref}` -> `push`) and via the real
+  // isPushCapable(): `name=push; ref=name; git ${!ref} origin main`
+  // returned false — the same bypass shape again. The go-public analogue
+  // (`v=public; ref=v; gh repo edit me/app --visibility=${!ref}`) defeated
+  // isGoPublicCommand the same way. Resolved by a two-hop lookup: `ref`'s
+  // own value (the target NAME) via `known`, then that name's value, also
+  // via `known`.
+  n = n.replace(/\$\{!([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, refName) => {
+    const targetName = known.get(refName);
+    if (targetName === undefined || !known.has(targetName)) return m;
+    return known.get(targetName);
+  });
+  // 2026-07-12 Round 13 audit fix (CRITICAL, found the same way): bash's
+  // case-modifying parameter expansion (`${VAR,,}` lowercase-all,
+  // `${VAR^^}` uppercase-all, `${VAR,}`/`${VAR^}` first-character-only)
+  // transforms an already-known value without any new assignment syntax
+  // at all — a structurally different gap from every case above (there is
+  // no new "assignment" to model; the existing, correctly-resolved value
+  // just needs a case transform applied). Confirmed live (`x=PUSH; echo
+  // ${x,,}` -> `push`) and via the real isPushCapable(): `x=PUSH; git
+  // ${x,,} origin main` returned false.
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(,,|\^\^|,|\^)\}/g, (m, name, op) => {
+    if (!known.has(name)) return m;
+    const v = known.get(name);
+    if (op === ',,') return v.toLowerCase();
+    if (op === '^^') return v.toUpperCase();
+    if (op === ',') return v.length ? v[0].toLowerCase() + v.slice(1) : v;
+    return v.length ? v[0].toUpperCase() + v.slice(1) : v;
+  });
+  // 2026-07-12 Round 14 audit fix (CRITICAL, found the same way, then
+  // independently reproduced live before fixing): bash 4.4+'s `@`
+  // transformation operators (`${VAR@L}` lowercase-all, `${VAR@U}`
+  // uppercase-all, `${VAR@Q}` shell-quoted form) are a DISTINCT operator
+  // family from the `,,`/`^^`/`,`/`^` case-fold operators just above — a
+  // separate regex, confirmed live not to already match this syntax at
+  // all (`x=PUSH; echo ${x@L}` -> `push`, but `isPushCapable()` returned
+  // false for the git-equivalent before this fix).
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)@([LUQ])\}/g, (m, name, op) => {
+    if (!known.has(name)) return m;
+    const v = known.get(name);
+    if (op === 'L') return v.toLowerCase();
+    if (op === 'U') return v.toUpperCase();
+    return `'${v}'`; // @Q: bash's shell-quoted form
+  });
+  // 2026-07-12 Round 14 audit fix (CRITICAL, found the same way): bash's
+  // substring parameter expansion (`${VAR:offset:length}`, or
+  // `${VAR:offset}` for "to the end") extracts a slice of an
+  // already-resolved value with no new assignment syntax at all — the
+  // only colon-form previously recognised was the `:-`/`:=` default-value
+  // pair; a numeric offset/length is a different sub-syntax entirely.
+  // Confirmed live (`x=xxpushxx; echo ${x:2:4}` -> `push`) and via the
+  // real isPushCapable(): the git-equivalent returned false before this
+  // fix. No ambiguity with the default-value regex above: a `-`/`=` and a
+  // digit can never both be the first character after the colon.
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):(\d+)(?::(\d+))?\}/g, (m, name, off, len) => {
+    if (!known.has(name)) return m;
+    const v = known.get(name);
+    const offset = parseInt(off, 10);
+    return len !== undefined ? v.substr(offset, parseInt(len, 10)) : v.slice(offset);
+  });
+  // 2026-07-12 Round 8 audit fix (real gap, found by a re-attack pass,
+  // then independently reproduced live before fixing): the subscript
+  // resolver only ever accepted a LITERAL digit (`${arr[1]}`) — a
+  // variable index (`i=1; ${arr[$i]}`) or a simple arithmetic index
+  // (`${arr[$((0+1))]}`) both resolve to the same real element in bash
+  // (confirmed live) but were left completely unmodelled, so
+  // `arr=(pull push); i=1; git "${arr[$i]}" origin main` was allowed.
+  // Deliberately narrow, matching this file's established pattern: only a
+  // name already resolved by the scalar `known` map, or a two-operand
+  // `N+M`/`N-M` arithmetic expression, is handled — no general shell
+  // arithmetic evaluator (and deliberately no `eval`/`Function`
+  // construction of any kind, even though the digit-only input this
+  // parses would be safe, to keep this file free of anything resembling
+  // dynamic code execution on principle).
+  // 2026-07-12 Round 9 audit fix (real gap, found by a re-attack pass, then
+  // independently reproduced live before fixing): bash array subscripts
+  // are evaluated in ARITHMETIC context, where a bare variable name (no
+  // leading `$`) is valid and means that variable's value — confirmed live
+  // (`arr=(pull push); i=1; echo "${arr[i]}"` -> `push`). The `$`/`${...}`
+  // requirement here missed this bare form entirely, so `${arr[i]}` (as
+  // opposed to `${arr[$i]}`, which the `$`-prefixed branch already
+  // handled) was left unresolved.
+  // 2026-07-12 Round 10 audit fix (real gap, found by a systematic
+  // completeness sweep, then independently reproduced live before fixing):
+  // a NEGATIVE literal index (`${arr[-1]}`, bash's "from the end" syntax)
+  // was rejected by the digit-only literal check, so a real last-element
+  // reference was left unresolved. Also: array-subscript resolution ran
+  // BEFORE the final `$IFS`/`${IFS}` normalisation pass further below, so
+  // an IFS-obfuscated subscript (`${arr[$i${IFS}]}`, where real bash's
+  // word-splitting collapses this to the plain index `$i`) never matched
+  // any of the patterns here and was permanently left unresolved (the
+  // array-resolution loop only runs once, earlier than the pass that would
+  // otherwise have cleaned this up). Fixed by normalising `$IFS`/`${IFS}`
+  // to a space inside the subscript text itself before every other check.
+  function resolveSubscript(sub) {
+    const s = sub.trim().replace(/\$\{IFS\}|\$IFS\b/g, ' ').trim();
+    if (/^-?\d+$/.test(s)) return s;
+    let m = s.match(/^\$\(\(\s*(.*?)\s*\)\)$/);
+    if (m) return resolveSimpleArithmetic(m[1]);
+    m = s.match(/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/) || s.match(/^([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (m && known.has(m[1])) return resolveSimpleArithmetic(known.get(m[1]));
+    return null;
+  }
+  for (const [arrName, elems] of knownArrays) {
+    const idxRe = new RegExp('\\$\\{' + arrName + '\\[([^\\]]+)\\]\\}', 'g');
+    n = n.replace(idxRe, (m, sub) => {
+      const idxStr = resolveSubscript(sub);
+      if (idxStr === null) return m;
+      let idx = parseInt(idxStr, 10);
+      if (idx < 0) idx = elems.length + idx;
+      const el = elems[idx];
+      return el !== undefined ? el : m;
+    });
+    const allRe = new RegExp('\\$\\{' + arrName + '\\[[@*]\\]\\}', 'g');
+    n = n.replace(allRe, () => elems.join(' '));
+    const bareRe = new RegExp('\\$\\{' + arrName + '\\}|\\$' + arrName + '\\b(?!\\[)', 'g');
+    n = n.replace(bareRe, () => (elems[0] !== undefined ? elems[0] : ''));
+  }
+  // 2026-07-12 Round 7 audit fix (CRITICAL, found by execution): bash's
+  // parameter-expansion default-value syntax (`${VAR:-default}`,
+  // `${VAR-default}`, `${VAR:=default}`, `${VAR=default}`) supplies a
+  // literal value with NO assignment anywhere in the string — there is
+  // nothing for the varAssignRe step above to even attempt to resolve,
+  // since the code only ever looked for `VAR=value` text, not this
+  // structurally different in-place default. Confirmed live (`unset v;
+  // echo "${v:-public}"` -> `public`) and via the real isGoPublicCommand
+  // logic: `gh repo edit me/app --visibility=${v:-public}` with `v` never
+  // assigned anywhere returned false. When the name IS one this pass
+  // already resolved (assigned earlier in the same command), that value is
+  // used instead of the default, matching bash's real "only fall back when
+  // unset/empty" semantics for the common case; a name that's genuinely
+  // unset resolves to the literal default text, which is the safe (fails
+  // toward catching, never toward missing) direction for a security match.
+  // 2026-07-12 Round 8 audit fix (real gap, found by a re-attack pass,
+  // then independently reproduced live before fixing): when `name` is a
+  // known ARRAY rather than a scalar, bash still resolves an unsubscripted
+  // reference like `${arr:-default}` to element 0 whenever that element
+  // is set/non-empty — the default only applies when the whole thing is
+  // genuinely unset/empty. The array case was missed entirely here (only
+  // the scalar `known` map was checked), so `arr=(push);
+  // git ${arr:-pull} origin main` resolved to the DEFAULT "pull" instead
+  // of the real element-0 value "push" — the wrong direction for a
+  // security match (under-detecting a real push), confirmed live before
+  // fixing.
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?[-=]([^{}]*)\}/g, (_m, name, def) => {
+    if (knownArrays.has(name)) {
+      const el = knownArrays.get(name)[0];
+      return el !== undefined && el !== '' ? el : def;
+    }
+    return known.has(name) ? known.get(name) : def;
+  });
   for (const [varName, value] of known) {
     const varRe = new RegExp('\\$\\{' + varName + '\\}|\\$' + varName + '\\b', 'g');
     n = n.replace(varRe, () => value);
@@ -371,12 +829,11 @@ export function normalizeForPushCheck(c) {
   // binary-name regexes ever saw `public`/`gh`, an unconditional bypass.
   // Decoded BEFORE stripping the wrapper (any other backslash escape inside
   // the string, e.g. `\'`, is left for the generic pass right after).
-  n = n.replace(/\$'((?:\\.|[^'\\])*)'/g, (_m, inner) => {
-    const decoded = inner
-      .replace(/\\x([0-9A-Fa-f]{1,2})/g, (_h, hex) => String.fromCharCode(parseInt(hex, 16)))
-      .replace(/\\([0-7]{1,3})/g, (_o, oct) => String.fromCharCode(parseInt(oct, 8)));
-    return decoded;
-  }); // $'public' -> public, $'pub\x6cic' -> public, $'\x67\x68' -> gh
+  // 2026-07-12 Round 9 audit fix: now calls the shared decodeAnsiCTokens()
+  // helper (defined above, alongside the array-element parsing) instead of
+  // its own inline copy of the same logic, so the two decode paths cannot
+  // drift apart from each other again the way they just did.
+  n = decodeAnsiCTokens(n); // $'public' -> public, $'pub\x6cic' -> public, $'\x67\x68' -> gh
   n = n.replace(/\\\r?\n/g, ''); // backslash-newline line continuation
   // Un-escape a backslash before ANY other (non-newline) character: in bash,
   // outside quotes, `\X` is just a literal `X`, whatever X is. 2026-07-11

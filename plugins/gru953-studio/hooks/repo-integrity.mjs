@@ -281,14 +281,93 @@ if (!marketPluginDesc) {
 // reason). Bounded the gap to 10 non-digit characters, matching this file's
 // own real "**role count: 23**" phrasing exactly while no longer skipping
 // over an entire unrelated sentence to find a later, unintended number.
+// 2026-07-12 Round 7 audit fix: the 10-character bound above traded one
+// false-block for another -- reproduced live: a maintainer writing
+// legitimate, longer explanatory prose around the count (e.g. "role count,
+// after the most recent consolidation exercise held on 2026-07-12, now
+// stands at 23") still tripped a false BLOCK, because the true digits sat
+// well past 10 characters away. Widening the bound again would just
+// reopen the ORIGINAL bug (skip past an earlier decoy number). The real
+// fix is that ROSTER.md is not free prose to search -- it's a single-
+// purpose committed baseline file with one documented, fixed convention
+// (this file's own header literally says "**role count: 23**"), so the
+// check now requires the digits to sit IMMEDIATELY after "role count"/
+// "baseline", separated only by whitespace and an optional `:`/`=` -- not
+// bounded-but-arbitrary prose. This still matches the established
+// convention exactly (here, and in every Dev-Memory decision file's
+// "role count = N" phrasing, checked against this project's own real
+// files) while no longer reading past unrelated text in either direction.
 const rosterBaselineFile = path.join(pluginRoot, 'ROSTER.md');
 const rosterText = read(rosterBaselineFile);
 if (rosterText === null) {
   fail(`no committed roster baseline at plugins/gru953-studio/ROSTER.md (needed so the product's own roster can be verified)`);
 } else {
-  const rm = rosterText.match(/role count\D{0,10}(\d+)/i) || rosterText.match(/baseline\D{0,10}(\d+)/i);
+  const rm = rosterText.match(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/i);
   if (!rm) fail(`ROSTER.md does not state a numeric "role count: <n>"`);
   else if (parseInt(rm[1], 10) !== agentCount) fail(`ROSTER.md role count ${rm[1]} != actual agent count ${agentCount}`);
+}
+
+// ---- INV 10: hooks.json still actually wires the publish-safety hooks --------
+// 2026-07-12 Round 8 audit fix (real gap, found by direct execution): a
+// reviewer proved live that reverting hooks.json's matcher back to just
+// "Bash" (silently disabling the whole publish-safety mechanism for the
+// PowerShell tool — exactly the Round 7-documented failure mode) still
+// left every gate this project trusts before a commit fully green: JSON
+// parses fine, hooks.test.mjs invokes scan.mjs/gate.mjs directly via
+// spawnSync (bypassing hooks.json entirely), and this very script had no
+// check on hooks.json's actual content, only that referenced hook
+// FILENAMES resolve (INV 4). Nothing previously verified the fix itself
+// stays in place.
+// 2026-07-12 second fix (two bugs found by direct execution against
+// constructed hooks.json variants): the original anchor-based regex
+// (`/(^|[|,])\s*Bash\s*($|[|,])/`) required "Bash"/"PowerShell" to be
+// immediately preceded by "^", "|", or ",", so a parenthesised/anchored
+// but functionally-identical matcher like "(Bash|PowerShell)" or
+// "^(Bash|PowerShell)$" was wrongly reported BLOCKED (false-BLOCK) purely
+// because "(" isn't one of those three characters. Worse, the same regex
+// treated "," as an equivalent alternation separator to "|", so
+// "Bash,PowerShell" was reported clean — but per this project's own
+// documented fix (governance/SECURITY.md: `"Bash|PowerShell"`) and actual
+// Claude Code matcher behaviour, only "|" is a valid OR-separator; a
+// comma-joined matcher never actually matches tool name "Bash" or
+// "PowerShell" at runtime, so the publish-safety hooks would silently stop
+// firing while this check reported clean (false-PASS, the more severe
+// direction). Fixed by parsing the matcher properly: split ONLY on "|"
+// (the one real separator), then strip any wrapping "(", ")", "^", "$"
+// from each alternative before comparing it exactly to the tool name. This
+// recognises "(Bash|PowerShell)" / "^(Bash|PowerShell)$" as valid coverage
+// while no longer accepting a comma as if it were "|".
+function matcherAlternatives(matcher) {
+  return matcher
+    .split('|')
+    .map((part) => part.trim().replace(/^[(^]+/, '').replace(/[)$]+$/, '').trim());
+}
+function matcherCoversTool(matchers, toolName) {
+  return matchers.some((m) => matcherAlternatives(m).includes(toolName));
+}
+const hooksJsonFile = path.join(pluginRoot, 'hooks', 'hooks.json');
+const hooksJsonText = read(hooksJsonFile);
+if (hooksJsonText === null) {
+  fail(`no plugins/gru953-studio/hooks/hooks.json found`);
+} else {
+  let hooksJson;
+  try {
+    hooksJson = JSON.parse(hooksJsonText);
+  } catch (e) {
+    fail(`hooks.json is not valid JSON: ${e.message}`);
+    hooksJson = null;
+  }
+  if (hooksJson) {
+    const preToolUse = hooksJson.hooks && Array.isArray(hooksJson.hooks.PreToolUse) ? hooksJson.hooks.PreToolUse : [];
+    const matchers = preToolUse.map((e) => String(e.matcher || ''));
+    const coversBash = matcherCoversTool(matchers, 'Bash');
+    const coversPowerShell = matcherCoversTool(matchers, 'PowerShell');
+    if (!coversBash) fail(`hooks.json's PreToolUse matcher no longer covers "Bash" — the publish-safety hooks would not run for ordinary shell commands`);
+    if (!coversPowerShell) fail(`hooks.json's PreToolUse matcher no longer covers "PowerShell" — the publish-safety hooks would silently not run on native Windows without Git Bash (2026-07-12 Round 7 fix regressed)`);
+    const allCommands = preToolUse.flatMap((e) => (Array.isArray(e.hooks) ? e.hooks : [])).map((h) => String(h.command || ''));
+    if (!allCommands.some((c) => /scan\.mjs/.test(c))) fail(`hooks.json no longer wires scan.mjs as a PreToolUse hook`);
+    if (!allCommands.some((c) => /gate\.mjs/.test(c))) fail(`hooks.json no longer wires gate.mjs as a PreToolUse hook`);
+  }
 }
 
 // ---- report ------------------------------------------------------------------

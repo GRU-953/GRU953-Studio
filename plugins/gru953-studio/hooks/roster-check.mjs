@@ -62,7 +62,11 @@ function main() {
       console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles but no Dev-Memory/decisions/*roster*.md baseline and no committed ROSTER.md to check against`, currentCount }, null, 2));
       process.exit(1);
     }
-    const rm = /role count\D{0,10}(\d+)/i.exec(rosterText) || /baseline\D{0,10}(\d+)/i.exec(rosterText);
+    // 2026-07-12 Round 7 audit fix: bounded-but-arbitrary-gap search still
+    // false-blocked legitimate longer prose around the count — tightened to
+    // require immediate adjacency (see repo-integrity.mjs's matching INV 8
+    // comment for the full reproduction and rationale).
+    const rm = /(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/i.exec(rosterText);
     if (!rm) {
       console.log(JSON.stringify({ status: 'BLOCKED', reason: `ROSTER.md exists but states no numeric "role count: <n>"`, currentCount }, null, 2));
       process.exit(1);
@@ -106,7 +110,11 @@ function main() {
   });
   const latest = decisionFiles[decisionFiles.length - 1];
   const text = fs.readFileSync(path.join(decisionsDir, latest), 'utf8');
-  const m = /role count\D{0,10}(\d+)/i.exec(text) || /baseline\D{0,10}(\d+)/i.exec(text);
+  // 2026-07-12 Round 7 audit fix: same immediate-adjacency tightening as
+  // above — checked this project's own real Dev-Memory decision files
+  // (e.g. "agent role count = 16") to confirm the tighter pattern still
+  // matches the actual phrasing used, not just ROSTER.md's.
+  const m = /(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/i.exec(text);
   if (!m) {
     console.log(JSON.stringify({ status: 'BLOCKED', reason: `latest roster decision file (${latest}) doesn't state a numeric baseline`, currentCount }, null, 2));
     process.exit(1);

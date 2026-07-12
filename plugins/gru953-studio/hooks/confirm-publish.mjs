@@ -29,7 +29,20 @@ function main() {
   }
   const token = crypto.createHash('sha256').update(`studio-publish:${studioRoot}`).digest('hex');
   const record = path.join(studioRoot, 'Dev-Memory', 'PUBLISH-APPROVED');
-  fs.writeFileSync(record, `STUDIO-PUBLISH-CONFIRMED:${token}\n`, 'utf8');
+  // 2026-07-12 Round 7 audit fix (real TOCTOU gap, found by direct code
+  // reading — no unlinkSync/rmSync of this file exists ANYWHERE in the
+  // codebase; deletion was prose-only, in the publish skill's own steps
+  // for the AGENT to remember). A durable file with no expiry means one
+  // confirmation silently authorises every LATER push-capable command in
+  // this project — a crash before cleanup, a differently-worded future
+  // skill revision, or a maintenance session that never loads the publish
+  // skill all leave it valid indefinitely. Stamping an issue time and
+  // having gate.mjs enforce a bounded window (defense in depth alongside
+  // the still-recommended explicit delete) closes the "valid forever"
+  // failure mode without breaking the legitimate multi-command publish
+  // sequence (push, tag, release create, release upload), which normally
+  // completes in well under the window.
+  fs.writeFileSync(record, `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'utf8');
   process.stdout.write('confirm-publish: recorded publish confirmation for ' + studioRoot + '\n');
 }
 

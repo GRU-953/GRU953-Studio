@@ -197,3 +197,8 @@ wording or that answer):
 2. Only then: `gh repo edit <login>/<project-name> --visibility public`.
 3. Verify: `gh repo view <login>/<project-name> --json visibility` shows
    `public`, and report this back to the user plainly.
+4. Delete `Dev-Memory/GO-PUBLIC-APPROVED` afterwards (2026-07-12 Round 11
+   audit fix — this step existed for `PUBLISH-APPROVED` above but was
+   never mirrored here), so a later visibility change must be
+   re-confirmed by the user, the same way step 5's private-publish token
+   is handled.

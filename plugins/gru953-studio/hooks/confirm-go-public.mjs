@@ -32,7 +32,16 @@ function main() {
   }
   const token = crypto.createHash('sha256').update(`studio-go-public:${studioRoot}`).digest('hex');
   const record = path.join(studioRoot, 'Dev-Memory', 'GO-PUBLIC-APPROVED');
-  fs.writeFileSync(record, `STUDIO-GO-PUBLIC-CONFIRMED:${token}\n`, 'utf8');
+  // 2026-07-12 Round 7 audit fix (real TOCTOU gap, worse than confirm-
+  // publish.mjs's — found by direct code reading): unlike PUBLISH-APPROVED,
+  // nothing anywhere, not even in prose, ever instructs deleting this
+  // file after use. Once a user confirms going public once, this record
+  // permanently authorises every LATER visibility-changing command in this
+  // project, forever, with zero re-confirmation — quietly weakening the
+  // "private-then-public, separately confirmed" guarantee to "confirmed
+  // once, ever." Same fix as confirm-publish.mjs: stamp an issue time and
+  // have gate.mjs enforce a bounded window.
+  fs.writeFileSync(record, `STUDIO-GO-PUBLIC-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'utf8');
   process.stdout.write('confirm-go-public: recorded go-public confirmation for ' + studioRoot + '\n');
 }
 

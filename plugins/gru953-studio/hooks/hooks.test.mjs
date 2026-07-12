@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import { isPushCapable } from './lib.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -773,6 +774,68 @@ test('repo-integrity.mjs INV3: a stale reference in studio/SKILL.md\'s own compa
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('repo-integrity.mjs INV10: hooks.json regressing off the "Bash|PowerShell" matcher is caught (2026-07-12 Round 8 fix)', () => {
+  // A reviewer proved live that reverting hooks.json's matcher back to just
+  // "Bash" (silently disabling the whole publish-safety mechanism for the
+  // PowerShell tool — exactly the Round 7-documented failure mode) still
+  // left every other gate this project trusts before a commit fully green.
+  // Nothing previously verified hooks.json's actual content, only that
+  // referenced hook FILENAMES resolve (INV 4).
+  const dir = mkTmp('gru-repointeg-inv10-');
+  copyRepoTo(dir);
+  const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
+  const hj = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  hj.hooks.PreToolUse[0].matcher = 'Bash';
+  fs.writeFileSync(hooksJsonPath, JSON.stringify(hj, null, 2));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping PowerShell from the matcher must be caught, not reported clean');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('PowerShell')),
+    `expected a problem naming the missing PowerShell coverage, got: ${JSON.stringify(r.json && r.json.problems)}`
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('repo-integrity.mjs INV10: a parenthesised/anchored pipe matcher is recognised as valid coverage, not false-BLOCKED', () => {
+  // The old anchor-based regex (/(^|[|,])\s*Bash\s*($|[|,])/) required
+  // "Bash"/"PowerShell" to be immediately preceded by "^", "|", or "," — so
+  // a functionally-identical matcher wrapped in parens or full-string
+  // anchors was wrongly reported BLOCKED, purely because "(" isn't one of
+  // those three characters.
+  for (const matcher of ['(Bash|PowerShell)', '^(Bash|PowerShell)$']) {
+    const dir = mkTmp('gru-repointeg-inv10-parens-');
+    copyRepoTo(dir);
+    const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
+    const hj = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+    hj.hooks.PreToolUse[0].matcher = matcher;
+    fs.writeFileSync(hooksJsonPath, JSON.stringify(hj, null, 2));
+    const r = runRepoIntegrity(dir);
+    assert.equal(r.json && r.json.status, 'clean', `matcher "${matcher}" is equivalent to "Bash|PowerShell" and must not be false-BLOCKED, got: ${JSON.stringify(r.json)}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('repo-integrity.mjs INV10: a comma-separated matcher is caught as NOT real coverage (false-PASS)', () => {
+  // Only "|" is a valid OR-separator in Claude Code's actual matcher
+  // behaviour (governance/SECURITY.md documents the real fix as
+  // "Bash|PowerShell"). A comma-joined matcher like "Bash,PowerShell" would
+  // never actually match tool name "Bash" or "PowerShell" at runtime, so it
+  // must be treated as missing coverage, not reported clean.
+  const dir = mkTmp('gru-repointeg-inv10-comma-');
+  copyRepoTo(dir);
+  const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
+  const hj = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  hj.hooks.PreToolUse[0].matcher = 'Bash,PowerShell';
+  fs.writeFileSync(hooksJsonPath, JSON.stringify(hj, null, 2));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a comma-separated matcher never actually matches at runtime and must not be reported clean');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('Bash')) && r.json.problems.some((p) => p.includes('PowerShell')),
+    `expected problems naming both missing "Bash" and "PowerShell" coverage, got: ${JSON.stringify(r.json && r.json.problems)}`
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('roster-check.mjs: decision-file "latest" selection sorts by actual date, not filename text (2026-07-12 MAJOR fix)', () => {
   // Decision files are named YYYY-MM-DD-*.md; the old code assumed lexical
   // sort was chronological, which breaks the moment any file uses a
@@ -846,4 +909,312 @@ test('verify-progress.mjs: a real multi-clause "done" row (exit 0 not the last c
   const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
   assert.equal(r.status, 0, `a real multi-clause done row must not be a false-block regression: ${r.stdout}`);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a stale publish/go-public confirmation past its TTL is no longer honoured (2026-07-12 Round 7 TOCTOU fix)', () => {
+  // Neither confirmation record was ever deleted by any code path (the
+  // publish skill's deletion instruction is prose the AGENT must remember,
+  // and GO-PUBLIC-APPROVED had no deletion path anywhere at all) and the
+  // token has no session/command nonce — so a real, legitimately-written
+  // record authorised an unbounded number of LATER commands, in later
+  // sessions, not just the one the user actually confirmed. A bounded
+  // validity window closes the "valid forever" direction.
+  const dir = mkTmp('gru-gate-ttl-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const publishToken = crypto.createHash('sha256').update(`studio-publish:${dir}`).digest('hex');
+  const staleMs = Date.now() - 2 * 60 * 60 * 1000; // 2h old, past the 60-minute TTL
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'),
+    `STUDIO-PUBLISH-CONFIRMED:${publishToken}\nISSUED:${staleMs}\n`,
+    'utf8'
+  );
+  const stale = runHook('gate.mjs', 'git push origin main', dir);
+  assert.equal(stale.decision, 'deny', 'a stale (past-TTL) publish confirmation must no longer be honoured');
+  // a freshly-recorded confirmation must still work.
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  const fresh = runHook('gate.mjs', 'git push origin main', dir);
+  assert.equal(fresh.decision, 'allow', 'a fresh confirmation must still be honoured');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: array-subscript and printf -v assignment no longer bypass the push gate (2026-07-12 Round 7 CRITICAL fixes)', () => {
+  // Two genuinely new assignment mechanisms, neither modelled by the
+  // existing VAR=value variable-substitution step at all (a different
+  // surface syntax, not a missing case of the same syntax): bash array
+  // assignment + subscript access (`arr=(pull push); git "${arr[1]}"`),
+  // and `printf -v NAME VALUE`. Both left the disguised keyword fully
+  // unresolved, and because isPushCapable() returning false makes gate.mjs
+  // allow() immediately (before it even checks for a studio project), both
+  // were a complete, unconditional bypass of every gate — confirmed live
+  // via real bash (`arr=(pull push); echo "${arr[1]}"` -> push; `printf -v
+  // v push; echo $v` -> push) and via the real isPushCapable() before
+  // fixing.
+  for (const c of [
+    'arr=(pull push); git "${arr[1]}" origin main',
+    'printf -v v push; git $v origin main',
+    'arr=(git push); ${arr[0]} ${arr[1]} origin main',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must catch the disguised push: ${JSON.stringify(c)}`);
+  }
+  // an array/printf -v use with no push-related content must not be misclassified.
+  for (const c of ['arr=(one two); echo "${arr[1]}"', 'printf -v v hello; echo $v']) {
+    assert.equal(isPushCapable(c), false, `must not misclassify an ordinary array/printf-v use: ${JSON.stringify(c)}`);
+  }
+});
+
+test('gate.mjs: array-subscript, printf -v, and parameter-expansion-default visibility values no longer bypass the go-public gate (2026-07-12 Round 7 CRITICAL fixes)', () => {
+  // Three more genuinely new mechanisms for supplying the --visibility
+  // value, on top of the array/printf-v push-gate bypass above:
+  // (1) array subscript (`arr=(private public); --visibility=${arr[1]}`),
+  // (2) printf -v (`printf -v v public; --visibility=$v`),
+  // (3) parameter-expansion default (`--visibility=${v:-public}`), which
+  //     supplies a literal value with NO assignment anywhere in the string
+  //     at all for any variable-resolution step to even attempt.
+  // All three confirmed live via real bash and via the real
+  // gate.mjs/isGoPublicCommand before fixing: with only the PRIVATE-publish
+  // token recorded (no GO-PUBLIC-APPROVED), each command was `allow`ed,
+  // defeating the private-then-public separately-confirmed guarantee.
+  const dir = mkTmp('gru-gate-arrprintf-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  for (const cmd of [
+    'arr=(private public); gh repo edit me/app --visibility=${arr[1]}',
+    'printf -v v public; gh repo edit me/app --visibility=$v',
+    'gh repo edit me/app --visibility=${v:-public}',
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a disguised visibility value must not bypass the go-public gate: ${cmd}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: variable/arithmetic array indices, brace lists inside array literals, and array/scalar cross-contamination no longer bypass the push gate (2026-07-12 Round 8 CRITICAL fixes)', () => {
+  // A re-attack pass on the Round 7 array fix (above) found it was
+  // genuinely incomplete, all confirmed live before fixing:
+  // (1) a variable index (`i=1; ${arr[$i]}`) and (2) a simple arithmetic
+  // index (`${arr[$((0+1))]}`) both resolve to the same real element in
+  // bash but were left unmodelled (only a literal digit was accepted).
+  // (3) bash's array COMPOUND assignment expands a brace list INSIDE the
+  // parens into multiple real elements (`arr=({pull,push})` genuinely
+  // becomes a 2-element array) — a materially different rule from the
+  // plain scalar case, where a bareword value is untouched unless a
+  // declaration keyword makes it a real command argument; the original
+  // element-splitting had no brace handling at all.
+  // (4) the scalar assignment regex had no exclusion for a leading `(`,
+  // so it ALSO wrongly captured every array assignment as a bogus scalar
+  // (value `"(elem1 elem2)"`, parens included) — corrupting the
+  // parameter-expansion-default step, which read that bogus entry
+  // instead of correctly resolving the array's real element 0.
+  for (const c of [
+    'arr=(pull push); i=1; git "${arr[$i]}" origin main',
+    'arr=(pull push); git "${arr[$((0+1))]}" origin main',
+    'arr=({pull,push}); git "${arr[1]}" origin main',
+    'arr=(push); git ${arr:-pull} origin main',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must catch the disguised push: ${JSON.stringify(c)}`);
+  }
+  // ordinary, non-push array/arithmetic/brace use must not be misclassified.
+  for (const c of [
+    'arr=(one two); i=1; echo "${arr[$i]}"',
+    'arr=({red,blue}); echo "${arr[1]}"',
+    'arr=(hello); echo ${arr:-world}',
+  ]) {
+    assert.equal(isPushCapable(c), false, `must not misclassify an ordinary array/arithmetic/brace use: ${JSON.stringify(c)}`);
+  }
+});
+
+test('gate.mjs: an array/scalar cross-contamination visibility value no longer bypasses the go-public gate (2026-07-12 Round 8 CRITICAL fix)', () => {
+  // The go-public analogue of the array/scalar cross-contamination fix
+  // above: `arr=(public); gh repo edit me/app --visibility=${arr:-private}`
+  // resolves in real bash to `--visibility=public` (the array's element 0,
+  // since it's set/non-empty), but the bug read a bogus scalar entry
+  // instead and fell through to the literal default "private", denying
+  // the correctly-detected go-public check the confirmation it should have
+  // needed for "public" — reproduced live before fixing.
+  const dir = mkTmp('gru-gate-arr-contam-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  const r = runHook('gate.mjs', 'arr=(public); gh repo edit me/app --visibility=${arr:-private}', dir);
+  assert.equal(r.decision, 'deny', 'the array-resolved visibility value must still require its own go-public token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: bare-name array subscripts, semicolon-glued printf -v values, and ANSI-C hex-escaped array elements no longer bypass the push gate (2026-07-12 Round 9 CRITICAL fixes)', () => {
+  // A second re-attack pass on the Round 8 array rewrite found it was
+  // STILL genuinely incomplete, all confirmed live before fixing:
+  // (1) bash array subscripts are evaluated in ARITHMETIC context, where a
+  //     bare variable name (no leading `$`) is valid and means that
+  //     variable's value (`${arr[i]}`, not just `${arr[$i]}`) — the
+  //     `$`/`${...}`-only requirement missed this bare form entirely.
+  // (2) `printf -v i 1;` (no space before the semicolon — an entirely
+  //     normal way to write this) captured the value as `"1;"` instead of
+  //     `"1"`, because the unquoted-value branch used `\S+`, which doesn't
+  //     stop at a shell metacharacter; the stray `;` then failed the digit
+  //     test and left the variable unresolved.
+  // (3) array-element parsing had its OWN, much weaker quote-handling than
+  //     scalar values get — it never recognised ANSI-C `$'...'` quoting at
+  //     all, so `arr=($'pu\x73h')` (which really decodes to the element
+  //     `push` in bash) was corrupted into an unterminated fragment instead
+  //     of being decoded.
+  for (const c of [
+    'arr=(pull push); i=1; git "${arr[i]}"',
+    'arr=(pull push); printf -v i 1; git "${arr[$i]}"',
+    "arr=($'pu\\x73h'); git \"${arr[0]}\"",
+  ]) {
+    assert.equal(isPushCapable(c), true, `must catch the disguised push: ${JSON.stringify(c)}`);
+  }
+  // ordinary, non-push uses of each construct must not be misclassified.
+  for (const c of [
+    'arr=(one two); i=1; echo "${arr[i]}"',
+    'arr=(one two); printf -v i 1; echo "${arr[$i]}"',
+    "arr=($'he\\x6clo'); echo \"${arr[0]}\"",
+  ]) {
+    assert.equal(isPushCapable(c), false, `must not misclassify an ordinary use: ${JSON.stringify(c)}`);
+  }
+});
+
+test('lib.mjs isPushCapable: negative array indices, array length used in arithmetic, and $IFS inside a subscript no longer bypass the push gate (2026-07-12 Round 10 fixes)', () => {
+  // A systematic completeness sweep of the array-resolution code (rather
+  // than another scattergun re-attack) found 3 narrow, bounded gaps worth
+  // fixing directly (a further 4 broader ones — post-assignment element
+  // writes, `+=` append, associative arrays, command substitution inside
+  // an array element — were confirmed with the user as accepted, disclosed
+  // residual limitations instead, matching this file's existing "closes
+  // the concrete case, not general shell interpreter" pattern for scalar
+  // command substitution):
+  // (1) a negative literal index (`${arr[-1]}`, bash's "from the end"
+  //     syntax) was rejected by the digit-only check.
+  // (2) `${#arr[@]}` (array length) used inside a same-command arithmetic
+  //     decrement (`i=${#arr[@]}; i=$((i-1))` — the realistic way anyone
+  //     actually uses an array's length to reach its last valid index)
+  //     was left as literal, unevaluated text.
+  // (3) an ordering bug: array-subscript resolution ran BEFORE the final
+  //     `$IFS` normalisation pass, so an IFS-obfuscated subscript
+  //     (`${arr[$i${IFS}]}`, which real bash's word-splitting collapses to
+  //     the plain index `$i`) was never recognised.
+  for (const c of [
+    'arr=(pull push); git "${arr[-1]}" origin main',
+    'arr=(pull push); i=${#arr[@]}; i=$((i-1)); git "${arr[$i]}" origin main',
+    'arr=(pull push); i=1; git "${arr[$i${IFS}]}" origin main',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must catch the disguised push: ${JSON.stringify(c)}`);
+  }
+  // ordinary, non-push uses of each construct must not be misclassified.
+  for (const c of [
+    'arr=(one two); echo "${arr[-1]}"',
+    'arr=(one two); i=${#arr[@]}; i=$((i-1)); echo "${arr[$i]}"',
+  ]) {
+    assert.equal(isPushCapable(c), false, `must not misclassify an ordinary use: ${JSON.stringify(c)}`);
+  }
+});
+
+test('lib.mjs isPushCapable: indirect expansion, read here-strings, positional parameters, and case-folding no longer bypass the push gate (2026-07-12 Round 13 CRITICAL fixes)', () => {
+  // A dedicated adversarial pass hunting specifically for a genuinely NEW
+  // class of assignment/retrieval syntax (not another array construct)
+  // found four, all confirmed live before fixing:
+  // (1) indirect parameter expansion (`${!ref}`) resolves to the value of
+  //     the variable whose NAME is held by `ref` — a level of indirection
+  //     none of the direct `$VAR`/`${VAR}` substitution modelled.
+  // (2) `read NAME <<< "value"` (a here-string) is bash's third real way
+  //     to assign a variable's value, a completely different surface
+  //     syntax from `NAME=value` and `printf -v`.
+  // (3) `set -- word1 word2` resets bash's positional parameters, so
+  //     `$1`/`$2`/etc. refer to those words afterward — no variable NAME
+  //     appears in the source text at all.
+  // (4) case-modifying expansion (`${VAR,,}` lowercase-all, `${VAR^^}`
+  //     uppercase-all) transforms an already-resolved value with no new
+  //     assignment syntax at all.
+  // Each one, on its own, made isPushCapable() return false for a command
+  // that genuinely executes a push — the same complete, both-gates bypass
+  // shape as every prior "new assignment mechanism" finding this session.
+  for (const c of [
+    'name=push; ref=name; git ${!ref} origin main',
+    'read v <<< "push"; git $v origin main',
+    'set -- push; git "$1" origin main',
+    'x=PUSH; git ${x,,} origin main',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must catch the disguised push: ${JSON.stringify(c)}`);
+  }
+  // ordinary, non-push uses of each construct must not be misclassified.
+  for (const c of [
+    'name=hello; ref=name; echo ${!ref}',
+    'read v <<< "hello"; echo $v',
+    'set -- hello; echo "$1"',
+    'x=HELLO; echo ${x,,}',
+  ]) {
+    assert.equal(isPushCapable(c), false, `must not misclassify an ordinary use: ${JSON.stringify(c)}`);
+  }
+});
+
+test('gate.mjs: an indirect-expansion visibility value no longer bypasses the go-public gate (2026-07-12 Round 13 CRITICAL fix)', () => {
+  // The go-public analogue of the indirect-expansion fix above:
+  // `v=public; ref=v; gh repo edit me/app --visibility=${!ref}` resolves
+  // in real bash to `--visibility=public`, but was `allow`ed with only the
+  // private-publish token recorded before this fix — a live, end-to-end
+  // bypass of the private-then-public separation gate.
+  const dir = mkTmp('gru-gate-indirect-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  const r = runHook('gate.mjs', 'v=public; ref=v; gh repo edit me/app --visibility=${!ref}', dir);
+  assert.equal(r.decision, 'deny', 'the indirect-expansion-resolved visibility value must still require its own go-public token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: a real here-document (not here-string) feeding read, mapfile/readarray into an array, bash @-transform operators, and substring expansion no longer bypass the push gate (2026-07-12 Round 14 CRITICAL fixes)', () => {
+  // A capped final adversarial pass, specifically hunting for one more
+  // genuinely new bash variable-assignment/retrieval mechanism, found
+  // four more, all confirmed live before fixing:
+  // (1) a real here-DOCUMENT (`read v <<EOF` ... `EOF`, distinct from the
+  //     here-STRING `<<<` form already fixed) — `read` consumes only the
+  //     first line supplied on stdin.
+  // (2) `mapfile`/`readarray` reading a here-string into an array is a
+  //     structurally different array-population mechanism from the
+  //     literal `NAME=(...)` compound assignment already modelled — each
+  //     line of input becomes one array element.
+  // (3) bash 4.4+'s `@` transformation operators (`${VAR@L}` lowercase,
+  //     `${VAR@U}` uppercase) are a DISTINCT operator family from the
+  //     `,,`/`^^` case-fold operators fixed in Round 13.
+  // (4) substring expansion (`${VAR:offset:length}`) extracts a slice of
+  //     an already-resolved value — a different colon-form from the
+  //     `:-`/`:=` default-value pair.
+  // Two related findings from the same round — process substitution
+  // feeding `read` (`read v < <(echo push)`) and a co-process — are
+  // DELIBERATELY not fixed here: both require actually executing a real
+  // subprocess to know the produced value, the same already-disclosed
+  // "this hook does not execute or simulate arbitrary shell commands"
+  // limitation as ordinary command substitution, just reached via a
+  // different syntax rather than a new bug class.
+  for (const c of [
+    'read v <<EOF\npush\nEOF\ngit $v origin main',
+    "mapfile -t arr <<< $'pull\\npush'; git ${arr[1]} origin main",
+    'x=PUSH; git ${x@L} origin main',
+    'x=xxpushxx; git ${x:2:4} origin main',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must catch the disguised push: ${JSON.stringify(c)}`);
+  }
+  // ordinary, non-push uses of each construct must not be misclassified.
+  for (const c of [
+    'read v <<EOF\nhello\nEOF\necho $v',
+    "mapfile -t arr <<< $'one\\ntwo'; echo ${arr[1]}",
+    'x=HELLO; echo ${x@L}',
+    'x=xxhelloxx; echo ${x:2:5}',
+  ]) {
+    assert.equal(isPushCapable(c), false, `must not misclassify an ordinary use: ${JSON.stringify(c)}`);
+  }
+  // the deliberately-not-fixed process-substitution case must not crash
+  // and must not be falsely reported as caught (it stays a disclosed gap).
+  assert.equal(isPushCapable('read v < <(echo push); git $v origin main'), false, 'process substitution remains a disclosed, unresolved gap, not a crash or a false catch');
+});
+
+test('lib.mjs isPushCapable: declare -n namerefs remain a disclosed, documented gap (2026-07-12 Round 15)', () => {
+  // Round 15 (dispatched as the absolute final round of this engagement,
+  // per an explicit user cap) found bash's `declare -n` nameref variables
+  // (`declare -n ref=v; v=push; echo $ref` -> `push`, a live alias
+  // mechanism distinct from the `${!ref}` indirect expansion fixed in
+  // Round 13) also defeat the matcher. The user then asked to stop the
+  // audit loop entirely and publish, so this is documented in
+  // governance/SECURITY.md as an accepted residual limitation rather than
+  // fixed. This test locks in that it fails SAFE — stays unresolved, no
+  // crash, no false catch — not that it's caught.
+  assert.equal(isPushCapable('declare -n ref=v; v=push; git $ref origin main'), false, 'declare -n namerefs remain a disclosed, unresolved gap, not a crash or a false catch');
 });
