@@ -1,7 +1,7 @@
 ---
 name: security-compliance-auditor
 description: Scans for secrets, vulnerabilities and dependency licences, AND reviews personal-data handling (data minimisation, retention, consent, a plain privacy notice) — a mandatory, blocking gate before Publish on every project, and on any Standard/Complex-Tier task that handles user input, money, credentials or personal data. Use before every Publish stage without exception. Distinct from `data-engineer` (which builds the data model); this role is the compliance gate — security AND privacy.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---
 

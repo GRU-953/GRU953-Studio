@@ -31,7 +31,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck, LEXICAL_BOUNDARY } from './lib.mjs';
+
+// 2026-07-12 Claude-Topics compliance fix: the deny() messages below used to
+// embed the literal, un-substituted text "${CLAUDE_PLUGIN_ROOT}" — Claude
+// Code only substitutes that placeholder in a hook's OWN command/args
+// fields before running it, not in text the hook writes back out. If Claude
+// copies the remediation command verbatim into a fresh Bash call, that
+// call's shell has no such variable set (hooks.md: it's exported onto the
+// spawned hook process itself, not into "Claude Code's own environment"),
+// so the placeholder expands to empty and the path breaks. gate.mjs's own
+// process DOES have it set (same export), so resolve it once here and
+// interpolate the real value, with a fallback computed from this file's own
+// location in case the env var is ever unset for some other invocation path.
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 // 2026-07-12 Round 7 audit fix (real TOCTOU gap, found by direct code
 // reading, not a text-obfuscation bypass — a different bug class): neither
@@ -154,13 +168,13 @@ function main() {
     if (goPublicConfirmed(STUDIO_ROOT)) {
       allow();
     }
-    deny('studio gate: refusing to change visibility to public — going public is a separate, explicit step from the private publish. Record it by running "node \\"${CLAUDE_PLUGIN_ROOT}/hooks/confirm-go-public.mjs\\"" from the project root, only after the user has explicitly confirmed via its own pop-up (distinct from the private-publish confirmation).');
+    deny(`studio gate: refusing to change visibility to public — going public is a separate, explicit step from the private publish. Record it by running "node \\"${PLUGIN_ROOT}/hooks/confirm-go-public.mjs\\"" from the project root, only after the user has explicitly confirmed via its own pop-up (distinct from the private-publish confirmation).`);
   }
 
   if (publishConfirmed(STUDIO_ROOT)) {
     allow();
   }
-  deny('studio gate: refusing to push — this is a studio project but the user\'s publish confirmation has not been recorded. Pushing happens only after the user confirms; record that by running "node \\"${CLAUDE_PLUGIN_ROOT}/hooks/confirm-publish.mjs\\"" from the project root, which writes the project-bound line Dev-Memory/PUBLISH-APPROVED expects. Reach the Publish stage (or run /studio-publish) and confirm publishing first.');
+  deny(`studio gate: refusing to push — this is a studio project but the user's publish confirmation has not been recorded. Pushing happens only after the user confirms; record that by running "node \\"${PLUGIN_ROOT}/hooks/confirm-publish.mjs\\"" from the project root, which writes the project-bound line Dev-Memory/PUBLISH-APPROVED expects. Reach the Publish stage (or run /studio-publish) and confirm publishing first.`);
 }
 
 main();

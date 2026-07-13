@@ -1,6 +1,14 @@
 ---
 name: studio
-description: Coordinates the GRU953-Studio team — an AI project lead plus a Tier-sized group of specialist agents — that turns a plain-English app idea into a working, tested, privately-published MVP. Activate whenever the user's message starts with "[" and ends with "]" (e.g. "[ a simple expense tracker ]"), whenever they say "studio", "GRU953-Studio", "build my idea", "build my app", "make me an app", or runs /studio, and to resume a project when a Dev-Memory folder exists in the working directory.
+description: >-
+  Coordinates the GRU953-Studio team — an AI project lead plus a Tier-sized
+  group of specialist agents — that turns a plain-English app idea into a
+  working, tested, privately-published MVP. Activate whenever the user's
+  message starts with "[" and ends with "]" (e.g. "[ a simple expense
+  tracker ]"), whenever they say "studio", "GRU953-Studio", "build my
+  idea", "build my app", or "make me an app", or when they run /studio —
+  and to resume a project when a Dev-Memory folder exists in the working
+  directory.
 ---
 
 # GRU953-Studio coordinator
@@ -21,9 +29,17 @@ Also load and follow these companion skills as standing rules:
   from one project to the next.
 - `yagni-rules` — the lean-coding ladder every builder must obey.
 - `cost-guard` — the confirmed cheapest-first spending default.
-- `publish-github` — the publishing protocol (Publish stage only).
 - `audit-loop` — the planned protocol for any review that needs more than
   one pass (Review/Fix, and any "audit until clean" request).
+
+At the Publish stage specifically, read `publish-github` directly rather
+than loading it the way the five skills above load (2026-07-12 Claude-Topics
+compliance fix: `publish-github` sets `disable-model-invocation: true` —
+deliberately, since publishing pushes to the user's real GitHub account and
+must never be something Claude decides to trigger on its own — which also
+means Claude cannot invoke it via the Skill tool the way an ordinary
+companion skill loads; `publisher.md` and the `/studio-publish` command
+both already read its file content directly for this reason).
 
 ## Step 0 — first run only
 

@@ -1,6 +1,7 @@
 ---
 name: dev-memory
 description: The plain-text memory system that makes every GRU953-Studio project resumable — in the same session or a brand-new one, days later. Defines the exact files, the ▶ RESUME HERE pointer, the secrets-scan-before-write rule, the resume rehearsal, and the rule that memory is local-only and never ships. Use at the start and end of every session, after every stage or task, and whenever the studio needs to read or write project memory. The memory-keeper role performs the reads and writes; this skill is the protocol it follows.
+user-invocable: false
 ---
 
 # Dev-Memory

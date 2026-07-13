@@ -20,6 +20,17 @@ import path from 'node:path';
 // hand-built JSON string silently produced INVALID JSON for those. An
 // unparseable PreToolUse deny risks failing OPEN (the block not being
 // honoured). 2026-07-11 v2.0.0 audit fix — caught by hooks.test.mjs.
+//
+// Both functions exit 0, matching Claude Code's own documented contract:
+// "Claude Code only processes JSON on exit 0. If you exit 2, any JSON is
+// ignored" (hooks.md). permissionDecision: "deny" on exit 0 is what blocks
+// the call AND surfaces permissionDecisionReason to Claude — exactly the
+// documented block-rm.sh pattern. deny() previously called process.exit(2),
+// which still blocked the tool call (exit 2 alone forces a PreToolUse block)
+// but silently discarded the JSON reason, since exit 2 only reads stderr —
+// which this function never wrote to. Claude saw an empty error message
+// instead of the remediation text. Fixed 2026-07-12 (Claude-Topics compliance
+// sweep, Round 1).
 export function allow() {
   process.stdout.write(
     JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } }) + '\n'
@@ -36,7 +47,7 @@ export function deny(reason) {
       },
     }) + '\n'
   );
-  process.exit(2);
+  process.exit(0);
 }
 
 // ---- read the tool call ------------------------------------------------------

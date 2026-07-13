@@ -1,6 +1,6 @@
 ---
 name: accessibility-specialist
-description: Checks any user interface against accessibility basics — the Web Content Accessibility Guidelines (WCAG) 2.2 AA level for web, and the platform equivalents elsewhere: colour contrast, full keyboard use, text alternatives for images, form labels, visible focus, and readable structure. Distinct from `ux-designer` (usability) and `brand-guardian` (brand consistency); this role owns whether people with disabilities can actually use the app. Use whenever a project has a user interface.
+description: "Checks any user interface against accessibility basics — the Web Content Accessibility Guidelines (WCAG) 2.2 AA level for web, and the platform equivalents elsewhere: colour contrast, full keyboard use, text alternatives for images, form labels, visible focus, and readable structure. Distinct from `ux-designer` (usability) and `brand-guardian` (brand consistency); this role owns whether people with disabilities can actually use the app. Use whenever a project has a user interface."
 tools: Read, Grep, Glob
 model: sonnet
 ---

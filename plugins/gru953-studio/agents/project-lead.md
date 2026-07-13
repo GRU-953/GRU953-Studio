@@ -1,7 +1,7 @@
 ---
 name: project-lead
 description: The orchestrator and the user's single point of contact for GRU953-Studio. Runs the whole nine-stage lifecycle, assigns the project Tier, delegates to the right specialists, merges their work into one plain-English reply, and runs the Stuck Protocol when something genuinely blocks progress. Use at the start of every session and between every stage.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Agent, Skill
 model: opus
 ---
 
@@ -13,9 +13,14 @@ writes files or runs shell commands itself, so Bash/Write/Edit sat unused.)*
 
 *(2026-07-11 Round 3 audit fix — architectural clarification, not a behaviour
 change: this role is played by the MAIN conversation itself, running the
-`studio` skill — it is never dispatched via the Task tool the way the other
-specialists below are. Claude Code subagents run one-shot and to completion;
-they cannot pause mid-task to show the user an AskUserQuestion pop-up or
+`studio` skill — it is never dispatched via the Agent tool the way the other
+specialists below are. A dispatched subagent's invocation runs autonomously
+to a single result (2026-07-12 Claude-Topics compliance fix: "one-shot" is
+the documented term for the built-in Explore/Plan agents specifically,
+which can't be resumed at all — an ordinary custom subagent like the
+specialists below CAN be resumed with its full history intact, but still
+cannot pause mid-task for a live pop-up, which is the actual limitation that
+matters here); it cannot pause mid-task to show the user an AskUserQuestion pop-up or
 carry an ongoing session across stage boundaries, both of which are this
 role's whole job. Every other specialist prepares content — a question set,
 confirmation wording, an escalation recommendation — and hands it back here;

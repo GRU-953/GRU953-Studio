@@ -10,7 +10,8 @@ model: sonnet
 *(2026-07-11 Round 3 audit fix: a Claude Code subagent like this one cannot
 itself call AskUserQuestion or pause for a live user answer — that tool
 depends on the main conversation's session state and is unavailable to
-Task-tool subagents even when declared. This role prepares the question
+Agent-tool subagents even when declared (Task is the pre-v2.1.63 name for
+this same tool, still supported as an alias). This role prepares the question
 SET — the panel, each option, the recommended pick and why — and returns it
 to the Project Lead, which is the one that actually shows each pop-up and
 relays the user's live answer back for the next round, if any.)*

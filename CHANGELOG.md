@@ -1,5 +1,74 @@
 # Changelog
 
+## 3.0.4 — 2026-07-13
+
+A platform-compliance patch release (fixes and hardening only; no roster,
+Tier, or workflow changes). A fresh 5-round audit checked every plugin
+component — the 23 agent files, 7 skills, the hooks, the 3 slash commands,
+and the manifests — strictly against Anthropic's own published Claude Code
+documentation, using the real `claude plugin validate --strict` CLI and
+by reproducing each issue before fixing it. Closed at the 5-round cap.
+`hooks.test.mjs` grew from 61 to 63 tests.
+
+**CRITICAL — a total publish-gate bypass via the `Monitor` tool**
+(`hooks/hooks.json`, `hooks/repo-integrity.mjs`). The `PreToolUse` matcher
+listed only `Bash|PowerShell`, but Claude Code's built-in `Monitor` tool
+also runs shell commands, through the same `command` field and the same
+Bash-style permission rules — so a push or a go-public command run via
+Monitor bypassed both the secret scan and the publish gate entirely, with
+no obfuscation and (unlike PowerShell) no opt-in needed. This is the same
+class of gap as the previously-fixed PowerShell bypass. Fixed: matcher is
+now `Bash|PowerShell|Monitor`, the `repo-integrity.mjs` INV10 check now
+also requires Monitor coverage, and a regression test guards it.
+
+**Agents silently loading with NO metadata** (`agents/accessibility-specialist.md`,
+`agents/ai-developer.md`, `agents/responsible-ai-reviewer.md`). Each had an
+unquoted mid-sentence colon in its `description:` frontmatter, which YAML
+parses as an illegal nested key — so at runtime each of these three agents
+loaded with empty metadata (no name, description, tool restriction, or
+model pin), invisibly. Fixed by quoting the descriptions; caught and
+confirmed with `claude plugin validate --strict`.
+
+**Hook deny-reasons never reaching Claude** (`hooks/lib.mjs`). `deny()`
+wrote its explanation as JSON to stdout and then exited with code 2 — but
+Claude Code ignores stdout entirely on exit 2 (it reads only stderr), so
+the tool call was blocked with an empty reason. Fixed to exit 0 with the
+`permissionDecision: "deny"` JSON, the documented block pattern, so the
+remediation text actually reaches Claude.
+
+**Subagents told to use skills/tools they weren't granted.** Several agents
+instructed themselves to "follow"/"apply" a named skill without `Skill` in
+their `tools:` list (which is required to invoke a skill at runtime), and
+`project-lead` — whose whole job is delegation — lacked the `Agent` tool
+needed to spawn any subagent at all. Granted `Skill` where a role actively
+invokes one (builder, reviewer, publisher, security-compliance-auditor,
+cost-monitor, devops-engineer, architect, project-lead), and `Agent` to
+project-lead; where a role has no `Skill` tool by design, the needed rule
+text is now carried inline instead. `architect` also gained the specific
+"zero-dependency options win ties" rule that the lean-coding skill assigns
+it but it previously had no way to load.
+
+**A licence path that broke on install** (`plugin.json`, new
+`plugins/gru953-studio/LICENSE` symlink). The manifest pointed at
+`governance/LICENSE`, which lives outside the plugin directory and so was
+never copied into an installed copy. Fixed with a within-marketplace
+symlink at the plugin root (the documented mechanism), which install
+dereferences into place.
+
+**Other fixes:** `gate.mjs` deny-messages no longer embed a literal
+`${CLAUDE_PLUGIN_ROOT}` placeholder that wouldn't resolve if copied into a
+fresh shell (the real path is interpolated instead); `publish-github` is
+marked `disable-model-invocation: true` and `first-run`/`dev-memory` are
+marked `user-invocable: false`, matching how each is actually used; a
+stale platform claim in the `studio` skill description was corrected (a
+same-named skill takes precedence over a command, and SKILL.md does
+support `argument-hint`); the `repo-integrity.mjs` matcher check was
+corrected to accept a comma as a valid separator (it is, per the docs);
+and `memory-keeper.md` now carries its cross-project-memory safety
+guardrail inline in full. The `marketplace.json` tag list was aligned with
+`plugin.json`'s keywords, and `governance/SECURITY.md` documents the
+Monitor fix.
+
 ## 3.0.3 — 2026-07-12
 
 A security-hardening patch release closing a 15-round audit-loop engagement

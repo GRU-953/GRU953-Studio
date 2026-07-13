@@ -1,6 +1,7 @@
 ---
 name: first-run
-description: The one-off "getting to know you" setup that runs once, before a user's very first GRU953-Studio project — never on later projects. Confirmed 2026-07-10 as a separate step rather than folding it into the first project's own interview.
+description: Use before a user's very first GRU953-Studio project — the one-off "getting to know you" setup that runs once, never on later projects. Confirmed 2026-07-10 as a separate step rather than folding it into the first project's own interview.
+user-invocable: false
 ---
 
 # First-run setup

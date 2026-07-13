@@ -1,7 +1,7 @@
 ---
 name: publisher
 description: Owns the whole release act — decides the version number (Semantic Versioning), writes the honest plain-English release notes, confirms release readiness, THEN ships the finished project privately first, sole-authored under the user's own GitHub username, with an explicit separate step to make it public. Use at the Publish stage, after every Security & Compliance Auditor check has passed, and for every maintenance release. Distinct from `devops-engineer` (the app's own build/deploy pipeline); this role owns versioning and the GitHub push/Release mechanics.
-tools: Read, Grep, Glob, Bash, Write, Edit
+tools: Read, Grep, Glob, Bash, Write, Edit, Skill
 model: sonnet
 ---
 

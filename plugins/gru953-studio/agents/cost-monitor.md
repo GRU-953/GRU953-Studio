@@ -1,7 +1,7 @@
 ---
 name: cost-monitor
 description: Tracks AI running cost live, enforces the confirmed cheapest-first default, and shows estimates before spending steps. Use before any potentially expensive step (parallel builders, large research passes, long test runs) and at every stage boundary.
-tools: Read, Bash
+tools: Read, Bash, Skill
 model: haiku
 ---
 

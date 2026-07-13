@@ -272,6 +272,18 @@ undisclosed findings, all confirmed by direct execution before being fixed:
   `command` field name as Bash, which `extractCommand()` now reads as
   primary with a `script` field kept as a defensive fallback, but this is
   evidenced, not officially confirmed.
+- **The same class of total hook bypass, found again on a second tool
+  (2026-07-12 Claude-Topics compliance fix):** the built-in `Monitor` tool
+  (Claude Code v2.1.98+) runs a real shell command in the background and,
+  per Claude Code's own documented tool reference, "uses the same
+  permission rules as Bash" through the identical `command` field — but
+  `hooks.json`'s matcher never listed it, so a push-capable command run via
+  Monitor bypassed both `scan.mjs` and `gate.mjs` entirely, with no
+  obfuscation needed at all, and unlike PowerShell, Monitor requires no
+  opt-in environment variable. Fixed by adding `Monitor` to the matcher
+  (`"Bash|PowerShell|Monitor"`) and extending `repo-integrity.mjs`'s INV10
+  check (which already guarded the PowerShell fix against silent reversion)
+  to require Monitor coverage too, with a matching regression test.
 - **Verified as a genuine PASS, not re-reported as new:** the plugin has
   zero third-party dependencies anywhere in the repo (no `package.json`,
   lockfile, or `node_modules`), so there is currently nothing for a
@@ -355,12 +367,16 @@ PowerShell fix) left every other gate this project trusts before a commit
 fully green, since nothing previously checked `hooks.json`'s actual
 content. INV10's own matcher-parsing regex was itself found and fixed
 twice more: an anchor-based check falsely BLOCKED a functionally-identical
-parenthesised/anchored matcher (`"^(Bash|PowerShell)$"`), and — the more
-severe direction — falsely PASSED a comma-separated matcher
-(`"Bash,PowerShell"`) that would never actually match at runtime, since
-only `|` is a real OR-separator in Claude Code's matcher syntax. Fixed by
-parsing alternatives properly (split on `|` only, strip wrapping
-parens/anchors, compare exactly) rather than a positional-character regex.
+parenthesised/anchored matcher (`"^(Bash|PowerShell)$"`). An intervening
+version of this same check then asserted that a comma-separated matcher
+(`"Bash,PowerShell"`) "never actually matches at runtime" and treated it as
+missing coverage — that claim was itself wrong (2026-07-12 Claude-Topics
+compliance fix): Claude Code's own hooks reference documents `,` as a valid
+OR-separator alongside `|` (v2.1.191+), so a comma-joined matcher is
+functionally equivalent to the pipe form, not missing coverage. Fixed by
+parsing alternatives on both separators, stripping wrapping parens/anchors,
+and comparing exactly, rather than a positional-character regex or an
+incorrect pipe-only assumption.
 
 One more agent-guardrail gap surfaced and was fixed: `ai-developer.md`
 reads this project's `LESSONS.md` and the cross-project

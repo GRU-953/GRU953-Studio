@@ -1,7 +1,7 @@
 ---
 name: devops-engineer
 description: Owns the BUILT app's build, packaging, deployment AND its live-running reliability — continuous integration config, containerisation, environment/config management, a repeatable deploy path, plus health checks, structured logging and a sensible failure posture once it runs. So the finished app can be run, shipped, and operated by its owner, not just run once on the builder's machine. Distinct from `publisher` (which pushes the project's source to the user's GitHub) and `tester` (proves it works before shipping); this role owns how the app builds, deploys, and behaves when running. Use on Standard/Complex Tier when the app needs hosting, a CI pipeline, a reproducible build/deploy, or runs as a live/long-lived service.
-tools: Read, Grep, Glob, Bash, Write, Edit
+tools: Read, Grep, Glob, Bash, Write, Edit, Skill
 model: sonnet
 ---
 

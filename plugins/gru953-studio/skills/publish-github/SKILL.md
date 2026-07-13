@@ -1,6 +1,7 @@
 ---
 name: publish-github
-description: The GRU953-Studio protocol for publishing a finished MVP privately to the user's OWN GitHub account, with an explicit separate step to make it public later. Use when the studio reaches the Publish stage, when the user runs /studio-publish, or when the user says "publish", "push to GitHub", "put it on GitHub", or "release the app". Covers pre-flight secret/vulnerability/licence scanning, the signed-in user's own author identity, attribution cleanup, private repository creation and the final report.
+description: The GRU953-Studio protocol for publishing a finished MVP privately to the user's OWN GitHub account, with an explicit separate step to make it public later. Referenced by name from `publisher.md` and the `/studio-publish` command, which read this file directly — never auto-invoked by Claude on its own initiative (see disable-model-invocation below), since publishing is a side-effectful, GitHub-pushing action only the user's own explicit trigger should start. Covers pre-flight secret/vulnerability/licence scanning, the signed-in user's own author identity, attribution cleanup, private repository creation and the final report.
+disable-model-invocation: true
 ---
 
 # Publish to GitHub

@@ -1,7 +1,7 @@
 ---
 name: builder
 description: Implements one plan task at a time, the smallest working diff that satisfies its acceptance criteria. On Standard/Complex Tier projects the Project Lead runs 2 builders in parallel (the "Build Swarm"), each isolated in its own git worktree so they never interfere with each other. Use throughout the Build stage.
-tools: Read, Grep, Glob, Bash, Write, Edit
+tools: Read, Grep, Glob, Bash, Write, Edit, Skill
 model: sonnet
 ---
 
@@ -49,6 +49,22 @@ for you; it lets two builders edit at once without stepping on each other.
 
 ## Build Swarm worktree isolation (2026-07-10 audit: made concrete, was prose-only)
 
+**Deliberately manual, not Claude Code's native `isolation: worktree` field**
+(2026-07-12 Claude-Topics compliance check — this was flagged across three
+audit rounds as a candidate simplification before being checked thoroughly
+enough to settle it): the native field creates the worktree branched from
+the repository's *default branch* (`origin/HEAD`), not the current session's
+HEAD, unless the consuming project's own `settings.json` sets
+`worktree.baseRef: "head"` — a setting this plugin has no way to require or
+set on a user's behalf. For the Build Swarm, which isolates parallel work
+on the CURRENT in-progress state (often mid-build, not yet merged to any
+default branch), silently branching from the wrong base would be a worse,
+harder-to-notice bug than today's manual approach. Plain `git worktree add`
+with no explicit start-point (as used below) branches from current HEAD
+with no external configuration dependency, which is the correct behaviour
+for this specific use case out of the box. Revisit only if this plugin ever
+requires/sets `worktree.baseRef: head` as part of its own setup.
+
 When the Project Lead runs 2 builders in parallel on Standard/Complex
 Tier, each one actually runs these commands (not just "works in its own
 worktree" as an idea):
@@ -57,6 +73,17 @@ worktree" as an idea):
 git worktree add ../<project>-swarm-<slot> -b swarm/<slot>
 # builder does its work inside ../<project>-swarm-<slot>
 ```
+
+**A subagent's `cd` does not persist between Bash calls** (2026-07-12
+Claude-Topics compliance fix — Claude Code's own subagent docs state this
+explicitly: a subagent always starts each Bash call from the main
+conversation's working directory, not wherever a previous command `cd`'d
+to). After running `git worktree add` above, every subsequent Read, Write,
+Edit, and Bash call for that task must use paths rooted at
+`../<project>-swarm-<slot>` explicitly (e.g. `Read ../<project>-swarm-<slot>/src/app.js`,
+`Bash: cd ../<project>-swarm-<slot> && npm test` as one combined command) —
+never a bare relative path that assumes the working directory already
+changed.
 
 On completion, the Project Lead (not the builder) compares the swarm
 branches, picks the winner via the reviewer's normal correctness/YAGNI

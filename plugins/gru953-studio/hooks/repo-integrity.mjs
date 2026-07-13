@@ -324,22 +324,31 @@ if (rosterText === null) {
 // immediately preceded by "^", "|", or ",", so a parenthesised/anchored
 // but functionally-identical matcher like "(Bash|PowerShell)" or
 // "^(Bash|PowerShell)$" was wrongly reported BLOCKED (false-BLOCK) purely
-// because "(" isn't one of those three characters. Worse, the same regex
-// treated "," as an equivalent alternation separator to "|", so
-// "Bash,PowerShell" was reported clean — but per this project's own
-// documented fix (governance/SECURITY.md: `"Bash|PowerShell"`) and actual
-// Claude Code matcher behaviour, only "|" is a valid OR-separator; a
-// comma-joined matcher never actually matches tool name "Bash" or
-// "PowerShell" at runtime, so the publish-safety hooks would silently stop
-// firing while this check reported clean (false-PASS, the more severe
-// direction). Fixed by parsing the matcher properly: split ONLY on "|"
-// (the one real separator), then strip any wrapping "(", ")", "^", "$"
-// from each alternative before comparing it exactly to the tool name. This
-// recognises "(Bash|PowerShell)" / "^(Bash|PowerShell)$" as valid coverage
-// while no longer accepting a comma as if it were "|".
+// because "(" isn't one of those three characters. Fixed by parsing the
+// matcher properly: split on the real separator(s), then strip any
+// wrapping "(", ")", "^", "$" from each alternative before comparing it
+// exactly to the tool name. This recognises "(Bash|PowerShell)" /
+// "^(Bash|PowerShell)$" as valid coverage.
+// 2026-07-12 Claude-Topics compliance fix: the intervening version of this
+// comment (and this function) asserted that "," is never a valid
+// OR-separator and that a comma-joined matcher "never actually matches at
+// runtime" — that claim is false. Claude Code's own hooks reference
+// documents a matcher built only from letters/digits/_/-/spaces/,/| as "a
+// list of exact strings separated by | or , with optional surrounding
+// whitespace" (comma support requires Claude Code v2.1.191+; this plugin
+// declares no version floor, so nothing here assumes an older install).
+// The prior fix had it backwards — treating a documented-valid "Bash,PowerShell"
+// as missing coverage would itself be a false-BLOCK on this project's own
+// integrity gate. Fixed by splitting on both "|" and ",".
+// 2026-07-12 second Claude-Topics compliance fix: the built-in Monitor tool
+// also runs shell commands, through the identical `command` field and the
+// same Bash-style permission-rule format ("Bash(npm run *)" applies to both
+// Bash and Monitor per tools-reference.md) — but wasn't in the matcher or
+// this check, exactly the same class of total, silent bypass Round 7 found
+// and fixed for PowerShell. Added the same INV10 coverage check for it.
 function matcherAlternatives(matcher) {
   return matcher
-    .split('|')
+    .split(/[|,]/)
     .map((part) => part.trim().replace(/^[(^]+/, '').replace(/[)$]+$/, '').trim());
 }
 function matcherCoversTool(matchers, toolName) {
@@ -362,8 +371,10 @@ if (hooksJsonText === null) {
     const matchers = preToolUse.map((e) => String(e.matcher || ''));
     const coversBash = matcherCoversTool(matchers, 'Bash');
     const coversPowerShell = matcherCoversTool(matchers, 'PowerShell');
+    const coversMonitor = matcherCoversTool(matchers, 'Monitor');
     if (!coversBash) fail(`hooks.json's PreToolUse matcher no longer covers "Bash" — the publish-safety hooks would not run for ordinary shell commands`);
     if (!coversPowerShell) fail(`hooks.json's PreToolUse matcher no longer covers "PowerShell" — the publish-safety hooks would silently not run on native Windows without Git Bash (2026-07-12 Round 7 fix regressed)`);
+    if (!coversMonitor) fail(`hooks.json's PreToolUse matcher no longer covers "Monitor" — a push-capable command run via the Monitor tool would bypass both scan.mjs and gate.mjs entirely (2026-07-12 Claude-Topics compliance fix regressed)`);
     const allCommands = preToolUse.flatMap((e) => (Array.isArray(e.hooks) ? e.hooks : [])).map((h) => String(h.command || ''));
     if (!allCommands.some((c) => /scan\.mjs/.test(c))) fail(`hooks.json no longer wires scan.mjs as a PreToolUse hook`);
     if (!allCommands.some((c) => /gate\.mjs/.test(c))) fail(`hooks.json no longer wires gate.mjs as a PreToolUse hook`);

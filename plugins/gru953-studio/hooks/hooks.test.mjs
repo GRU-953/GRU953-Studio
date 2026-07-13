@@ -785,7 +785,7 @@ test('repo-integrity.mjs INV10: hooks.json regressing off the "Bash|PowerShell" 
   copyRepoTo(dir);
   const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
   const hj = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
-  hj.hooks.PreToolUse[0].matcher = 'Bash';
+  hj.hooks.PreToolUse[0].matcher = 'Bash|Monitor';
   fs.writeFileSync(hooksJsonPath, JSON.stringify(hj, null, 2));
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping PowerShell from the matcher must be caught, not reported clean');
@@ -796,13 +796,36 @@ test('repo-integrity.mjs INV10: hooks.json regressing off the "Bash|PowerShell" 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('repo-integrity.mjs INV10: hooks.json regressing off the Monitor tool is caught (2026-07-12 Claude-Topics compliance fix)', () => {
+  // The Monitor tool executes shell commands through the same `command`
+  // field and the same Bash-style permission-rule format as Bash
+  // (tools-reference.md: "Bash(npm run *)" applies to both Bash and
+  // Monitor) — but was never in the matcher, so a push-capable command run
+  // via Monitor bypassed both scan.mjs and gate.mjs entirely, no
+  // obfuscation needed. Exactly the same class of total, silent bypass as
+  // the already-fixed PowerShell gap.
+  const dir = mkTmp('gru-repointeg-inv10-monitor-');
+  copyRepoTo(dir);
+  const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
+  const hj = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+  hj.hooks.PreToolUse[0].matcher = 'Bash|PowerShell';
+  fs.writeFileSync(hooksJsonPath, JSON.stringify(hj, null, 2));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping Monitor from the matcher must be caught, not reported clean');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('Monitor')),
+    `expected a problem naming the missing Monitor coverage, got: ${JSON.stringify(r.json && r.json.problems)}`
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('repo-integrity.mjs INV10: a parenthesised/anchored pipe matcher is recognised as valid coverage, not false-BLOCKED', () => {
   // The old anchor-based regex (/(^|[|,])\s*Bash\s*($|[|,])/) required
   // "Bash"/"PowerShell" to be immediately preceded by "^", "|", or "," — so
   // a functionally-identical matcher wrapped in parens or full-string
   // anchors was wrongly reported BLOCKED, purely because "(" isn't one of
   // those three characters.
-  for (const matcher of ['(Bash|PowerShell)', '^(Bash|PowerShell)$']) {
+  for (const matcher of ['(Bash|PowerShell|Monitor)', '^(Bash|PowerShell|Monitor)$']) {
     const dir = mkTmp('gru-repointeg-inv10-parens-');
     copyRepoTo(dir);
     const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
@@ -815,24 +838,22 @@ test('repo-integrity.mjs INV10: a parenthesised/anchored pipe matcher is recogni
   }
 });
 
-test('repo-integrity.mjs INV10: a comma-separated matcher is caught as NOT real coverage (false-PASS)', () => {
-  // Only "|" is a valid OR-separator in Claude Code's actual matcher
-  // behaviour (governance/SECURITY.md documents the real fix as
-  // "Bash|PowerShell"). A comma-joined matcher like "Bash,PowerShell" would
-  // never actually match tool name "Bash" or "PowerShell" at runtime, so it
-  // must be treated as missing coverage, not reported clean.
+test('repo-integrity.mjs INV10: a comma-separated matcher is recognised as valid coverage, not false-BLOCKED (2026-07-12 Claude-Topics compliance fix)', () => {
+  // Claude Code's own hooks reference documents a matcher built from
+  // letters/digits/_/-/spaces/,/| as "a list of exact strings separated by
+  // | or , with optional surrounding whitespace" — comma IS a valid
+  // OR-separator (v2.1.191+), the same as pipe. A prior version of this
+  // test asserted the opposite (that "Bash,PowerShell" must be reported
+  // BLOCKED) — that assertion was itself wrong, pinning in place a false
+  // reading of the platform's own documented matcher syntax.
   const dir = mkTmp('gru-repointeg-inv10-comma-');
   copyRepoTo(dir);
   const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
   const hj = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
-  hj.hooks.PreToolUse[0].matcher = 'Bash,PowerShell';
+  hj.hooks.PreToolUse[0].matcher = 'Bash,PowerShell,Monitor';
   fs.writeFileSync(hooksJsonPath, JSON.stringify(hj, null, 2));
   const r = runRepoIntegrity(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a comma-separated matcher never actually matches at runtime and must not be reported clean');
-  assert.ok(
-    r.json.problems.some((p) => p.includes('Bash')) && r.json.problems.some((p) => p.includes('PowerShell')),
-    `expected problems naming both missing "Bash" and "PowerShell" coverage, got: ${JSON.stringify(r.json && r.json.problems)}`
-  );
+  assert.equal(r.json && r.json.status, 'clean', `a comma-separated matcher is equivalent to "Bash|PowerShell|Monitor" and must not be false-BLOCKED, got: ${JSON.stringify(r.json)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1217,4 +1238,31 @@ test('lib.mjs isPushCapable: declare -n namerefs remain a disclosed, documented 
   // fixed. This test locks in that it fails SAFE — stays unresolved, no
   // crash, no false catch — not that it's caught.
   assert.equal(isPushCapable('declare -n ref=v; v=push; git $ref origin main'), false, 'declare -n namerefs remain a disclosed, unresolved gap, not a crash or a false catch');
+});
+
+test('lib.mjs deny(): exits 0, not 2, so Claude Code actually reads the JSON deny reason (2026-07-12 Claude-Topics compliance sweep fix)', () => {
+  // Per Claude Code's own documented exit-code contract (hooks.md): "Exit 2
+  // means a blocking error. Claude Code ignores stdout and any JSON in it.
+  // Instead, stderr text is fed back to Claude as an error message." and
+  // "Claude Code only processes JSON on exit 0. If you exit 2, any JSON is
+  // ignored." deny() previously called process.exit(2) while writing its
+  // reason to stdout as JSON and nothing to stderr — the tool call was still
+  // blocked (exit 2 alone forces a PreToolUse block) but Claude never saw
+  // WHY, since exit 2 discards the JSON and stderr was empty. The documented
+  // correct pattern (hooks.md's own block-rm.sh example) is permissionDecision:
+  // "deny" JSON on exit 0. This test proves both an unconfirmed push AND an
+  // unconfirmed go-public attempt now exit 0 while still actually denying.
+  const dir = mkTmp('gru-deny-exit-code-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+
+  const pushResult = runHook('gate.mjs', 'git push origin main', dir);
+  assert.equal(pushResult.code, 0, 'an unconfirmed push must exit 0 (not 2), so Claude Code actually reads the JSON deny reason instead of discarding it');
+  assert.equal(pushResult.decision, 'deny', 'the push must still be denied despite exiting 0 — permissionDecision in the JSON is what blocks it, not the exit code');
+
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private token only, no go-public token
+  const goPublicResult = runHook('gate.mjs', 'gh repo edit me/app --visibility public', dir);
+  assert.equal(goPublicResult.code, 0, 'an unconfirmed go-public attempt must also exit 0, not 2');
+  assert.equal(goPublicResult.decision, 'deny', 'the go-public attempt must still be denied despite exiting 0');
+
+  fs.rmSync(dir, { recursive: true, force: true });
 });
