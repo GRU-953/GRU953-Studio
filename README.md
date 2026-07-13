@@ -2,190 +2,312 @@
   <img src="docs/brand/gru953-logo-colour.svg" alt="GRU953 logo" width="160">
 </p>
 
-# GRU953-Studio
+<h1 align="center">GRU953-Studio</h1>
 
-**Type your app idea in plain English. Answer a few pop-up questions.
-Get a working, tested app, privately published to your own GitHub — GitHub
-is a free online place where your app's code is safely stored, like a
-personal filing cabinet for software — built by a team of AI specialists,
-led by an AI project lead, for people with no coding background at all.**
+<p align="center"><strong>Simple technology. For everyone.</strong><br>
+<em>সহজ প্রযুক্তি। সবার জন্য।</em></p>
 
-## What this is
+<p align="center">
+Describe an app in your own words. Answer a few simple pop-up questions.<br>
+Get a real, working, tested app — published safely to your own GitHub account, under your name.<br>
+<strong>No coding. No jargon. Nothing to install and forget about.</strong>
+</p>
 
-GRU953-Studio is a plugin — an add-on that gives an existing tool a new
-skill — for [Claude Code](https://claude.com/claude-code) (Anthropic's
-command-line coding assistant). Once installed, you talk to it
-the same way you'd describe an idea to a friend, and it handles the entire
-software build for you: understanding what you actually want, designing
-it, planning it, writing the code, checking the code, testing it, fixing
-problems, and — only when you say so — publishing it to your own GitHub
-account, under your own name, as its sole author.
+---
 
-You never need to write or read code yourself. Every question it asks you
-is a simple multiple-choice pop-up, with a recommended answer already
-marked, in plain UK English — any unavoidable technical term is explained
-in one short sentence the first time it comes up.
+## Start here (30-second version)
 
-## How it works, in short
+GRU953-Studio is a helper you talk to in plain English. You tell it what you
+want ("a habit tracker for my phone", "a page that lists my recipes"), it
+asks you a few multiple-choice questions to understand exactly what you mean,
+and then a team of behind-the-scenes AI specialists builds it, checks it,
+tests it, and — only when you say the word — publishes it for you.
 
-1. **Type your idea** between square brackets, e.g. `[ a simple habit
-   tracker for my phone ]`, or run `/studio`.
-2. **Answer a short interview** — GRU953-Studio asks exactly as many
-   pop-up questions as it needs to understand your idea properly, and no
-   more.
-3. **It assigns a size ("Tier")** to your project — Tiny, Standard, or
-   Complex — and tells you in plain English what team and what oversight
-   that means. You can ask for more or less oversight at any time.
-4. **It builds, checks and tests the app**, checking in with you at every
-   meaningful step, and never leaving something broken without telling you
-   plainly what's wrong and what your options are.
-5. **It publishes privately to your own GitHub** only after you explicitly
-   confirm — private by default, with going public a separate, later step
-   you choose.
-6. **It remembers everything**, in plain text files in your own project
-   folder (`Dev-Memory/`) — so you can close your computer, come back a
-   week later, and pick up exactly where you left off, in the same session
-   or a brand new one.
+You never write or read a single line of code. You just answer questions,
+one clear pop-up at a time, each with a recommended answer already marked.
 
-## The specialist team
+> **New to all this?** That's exactly who this is for. If you can describe
+> your idea to a friend, you can use GRU953-Studio.
 
-You never talk to any of these directly — the Project Lead is your one
-point of contact, and brings in only the ones your project actually needs.
-The full list below (23 specialist roles in total) is here for anyone curious how it
-works — you'll never need to remember it. A tiny one-page website wakes a
-handful; a bigger app with logins, data and an AI feature wakes more. A
-specialist your project doesn't need never runs.
+---
 
-**The core team — most projects use these:**
+## Latest version: **3.0.4** — stable, and recommended for everyone
 
-| Role | What it does |
-| :-- | :-- |
-| **Project Lead** | The one voice you talk to; runs the whole build and reports back in plain English |
-| **Interviewer** | Asks your pop-up questions — as many as needed, never more |
-| **Architect** | Proposes 2-3 ways to build your idea, explains the trade-offs, you choose |
-| **Scope Guardian** | Stops the team quietly adding things you didn't ask for, and keeps a permanent note of anything deliberately not built |
-| **Builder** | Writes the actual code, one small piece at a time |
-| **Reviewer** | Checks the code independently and trims anything unnecessary before publishing |
-| **Tester** | Plans what needs testing, then proves each piece actually works with real evidence — never just a claim |
-| **Security & Compliance Auditor** | Scans for leaked secrets, known vulnerabilities and licence conflicts, and checks personal data is handled minimally and honestly, before anything ships |
-| **Brand Guardian** | Keeps your own branding consistent across everything visible |
-| **AI Developer** | Builds in AI features safely, only if your idea genuinely needs one — the prompt, the wiring, the safety rails and a quality check |
-| **Fixer** | The smallest, precise repair when something gets stuck |
-| **Cost Monitor** | Keeps spending on the cheaper side, warns you before anything pricier |
-| **Publisher** | Sets the version and writes the "what changed" notes, then ships your finished app privately to your own GitHub, under your own name |
-| **Memory Keeper** | Remembers everything about your project between sessions and keeps the task list tidy, safely |
-| **Maintenance Agent** | Comes back later for fixes and new features on an already-published project |
+Version 3.0.4 is a **safety and reliability update**. Nothing about how you
+use it has changed — it's simply been checked, hardened, and tested more
+thoroughly, strictly against Anthropic's own official instructions for tools
+like this one. If you already have it, updating is a good idea; if you're new,
+you'll get this version automatically.
 
-**Brought in only when your project needs them** (an AI feature, a user
-interface, stored data, more than one language, and so on) — so the full
-range of professional software and AI work is covered without a specialist
-your project doesn't need ever running:
+You don't need to read the technical details, but if you're curious, the full
+plain-English list of every change is in
+[CHANGELOG.md](CHANGELOG.md).
 
-| Role | What it does | Turns up when… |
-| :-- | :-- | :-- |
-| **DevOps Engineer** | Sets up a repeatable way to build and put your app online, and makes a running app's problems visible instead of silent | your app needs hosting/packaging, or runs as a live service |
-| **Responsible-AI Reviewer** | Independently checks an AI feature for fairness, harm and honesty | an AI feature makes a real decision about a person |
-| **UX Designer** | Makes the app easy and pleasant to move through | your app has a screen people use |
-| **Accessibility Specialist** | Makes sure people with disabilities can use it | your app has any user interface |
-| **Technical Writer** | Writes the plain-English guide for *your* finished app | your app needs its own instructions |
-| **Data Engineer** | Designs how your app stores data so it's safe to change | your app keeps data between uses |
-| **Localisation Specialist** | Makes the app work in more than one language (e.g. English + Bangla) | your app needs more than one language |
-| **Researcher** | Finds current, real facts so decisions aren't guesswork | a choice depends on an up-to-date fact |
+---
 
-## The skills (7 skills — how it all runs)
+## What it can (and can't) build for you
 
-| Skill | What it does |
-| :-- | :-- |
-| `studio` | The main coordinator — runs the whole process end to end |
-| `first-run` | A short, one-off "getting to know you" setup, the very first time you ever use it |
-| `dev-memory` | The plain-text memory system that makes every project resumable, in a new session or the same one — and remembers real lessons and your working style between projects, not just within one |
-| `cost-guard` | The spending rules that keep costs predictable and on the cheaper side |
-| `yagni-rules` | The lean-coding rules every Builder follows — nothing gets built that wasn't actually needed |
-| `publish-github` | The exact, safety-checked steps for publishing to your GitHub |
-| `audit-loop` | The planned protocol used whenever a review needs more than one pass, so it reaches a clean result quickly instead of dragging on |
+**Great for:** small, genuinely useful, self-contained apps — a personal
+tracker, a simple website, a small tool that does one job well, a page that
+organises information, a little utility for your phone or computer. It handles
+the whole job: understanding the idea, designing it, writing the code,
+checking it, testing it, and publishing it.
 
-## Installing
+**Not for:** very large, complex systems (a full banking platform, a social
+network for millions of people). GRU953-Studio deliberately builds the
+smallest version that actually works and does what you asked — then you can
+grow it later. It will tell you honestly, in plain English, if something is
+bigger than it should take on.
 
-**Step 1 — install Claude Code first, if you haven't already.** GRU953-Studio
-is a Claude Code plugin — an add-on for [Claude Code](https://claude.com/claude-code)
-itself, not something that runs on its own. It needs Claude Code's specific
-abilities (spawning specialist sub-agents, running safety checks before every
-action) that the separate Claude Desktop app doesn't have. It does **not**
-work inside Claude Desktop.
+---
 
-**Step 2 — install GRU953-Studio.** Pick one of the two options below.
+## How it works, step by step
 
-### Option 1 — from the marketplace (recommended, always up to date)
+1. **Tell it your idea.** Type it between square brackets, like
+   `[ a simple habit tracker for my phone ]`, or just type `/studio`.
+2. **Answer a short interview.** It asks only as many pop-up questions as it
+   genuinely needs — never a wall of them — each a simple multiple choice with
+   a recommended answer marked.
+3. **It sizes the job.** It tells you, in plain words, whether your project is
+   Tiny, Standard, or Complex, and what that means for how much checking and
+   care it will apply. You can ask for more or less at any time.
+4. **It builds, checks, and tests.** It checks in with you at every meaningful
+   step. If anything gets stuck, it tells you plainly what's wrong and what
+   your choices are — it never leaves something quietly broken.
+5. **It publishes — only when you say so.** Your app goes to *your own* GitHub
+   account (a free, safe online store for your app's files — think of it as a
+   personal filing cabinet for software), private by default. Making it public
+   is a separate step you choose later.
+6. **It remembers everything.** Your whole project is saved in plain-text notes
+   in your own folder. Close your computer, come back next week, and it picks
+   up exactly where you left off.
 
-A "marketplace" here just means the list Claude Code checks when installing
-an add-on like this one. Type these two lines into the Claude Code chat box,
-one at a time, pressing Enter after each:
+---
+
+## Installing it (one-time setup)
+
+### Step 1 — Get Claude Code first
+
+GRU953-Studio is an **add-on for [Claude Code](https://claude.com/claude-code)**
+(Anthropic's coding assistant that you talk to). It is not a separate program,
+and it does **not** run inside the Claude Desktop chat app — it needs Claude
+Code's specific abilities. So: install and sign in to Claude Code first.
+
+### Step 2 — Add GRU953-Studio
+
+Pick **one** of the two ways below.
+
+**Way A — the simple way (recommended, always the newest version).**
+Type these two lines into Claude Code, one at a time, pressing Enter after each:
 
 ```
 /plugin marketplace add GRU-953/GRU953-Studio
-/plugin install gru953-studio
+/plugin install gru953-studio@gru953-studio
 ```
 
-### Option 2 — from a downloaded zip file
+(The `@gru953-studio` part just tells Claude Code which list to install from —
+here the plugin and its list share the same name.)
 
-Every release has a ready-to-download zip attached to it — useful if you'd
-rather not type the marketplace command, or want a specific version.
+**Way B — from a downloaded file** (if you'd rather not type the command above,
+or want a specific version):
 
-1. Go to the [Releases page](https://github.com/GRU-953/GRU953-Studio/releases)
-   and download the `.zip` file under the version you want (the newest one
-   is at the top).
+1. Open the [Releases page](https://github.com/GRU-953/GRU953-Studio/releases)
+   and download the `.zip` file under the newest version (top of the list).
 2. Unzip it anywhere on your computer.
-3. In the Claude Code chat box, type the two lines below — but first,
-   replace `/path/to/the/unzipped/folder` with the real location of the
-   folder you just unzipped (for example, on a Mac that might look like
-   `/Users/yourname/Downloads/GRU953-Studio`, or on Windows something like
+3. In Claude Code, type the two lines below — but replace
+   `/path/to/the/unzipped/folder` with where you actually unzipped it (e.g. on a
+   Mac, `/Users/yourname/Downloads/GRU953-Studio`; on Windows,
    `C:\Users\YourName\Downloads\GRU953-Studio`):
    ```
    /plugin marketplace add /path/to/the/unzipped/folder
-   /plugin install gru953-studio
+   /plugin install gru953-studio@gru953-studio
    ```
 
-Either option needs [Node.js](https://nodejs.org) installed (it powers the
-plugin's safety checks — the secret scanner, the publish gate, and the
-licence scanner) and, only when you're ready to publish, the free [GitHub
-CLI](https://cli.github.com) (CLI = command-line interface, a small
-program you install once) signed in (`gh auth login`).
+### Two free things it relies on
 
-## Licence
+- **[Node.js](https://nodejs.org)** — a small free program that powers the
+  built-in safety checks. Install it once.
+- **[GitHub CLI](https://cli.github.com)** — only needed *when you publish*. A
+  small free tool; after installing, run `gh auth login` once and follow the
+  prompts to sign in to your GitHub account.
 
-Free for any noncommercial purpose — personal use, research, hobby
-projects, and use by charities, schools and public-benefit organisations —
-under the [Polyform Noncommercial License 1.0.0](governance/LICENSE), a
-professionally drafted, independently reviewed licence template that
-dependency-compliance tooling recognises by name. One honest caveat: because
-the file lives in `governance/` rather than at the very top level of the
-repository, GitHub's own automatic "no license detected" badge on the repo
-page won't pick it up — that badge only scans the top level, not subfolders.
-The words in [governance/LICENSE](governance/LICENSE) are what actually
-govern use either way; the missing badge doesn't mean anything is wrong.
-Commercial use, including
-apps GRU953-Studio builds for you that you go on to sell, requires a
-separate paid licence — see the "Commercial use" section at the end of the
-licence, or email aninda.sh15@gmail.com. The GRU953 name and logo are
-governed separately — see
+If either is missing when it's needed, GRU953-Studio will stop and tell you
+exactly what to install, in plain English — it won't fail silently.
+
+---
+
+## Using it for the first time
+
+The very first time, it runs a short, one-off "getting to know you" setup (your
+preferred name, the kinds of things you like to build, your GitHub username).
+This never happens again.
+
+After that, every project is the same friendly loop: **describe → answer
+pop-ups → approve → it builds → you review → it publishes when you say so.**
+
+A real first project might be as simple as typing:
+
+```
+[ a one-page website listing my favourite books ]
+```
+
+…and answering the handful of questions that follow.
+
+---
+
+## The team behind it (you never manage any of this)
+
+You only ever talk to **one** friendly coordinator — the **Project Lead**. It
+quietly brings in only the specialists your particular project needs (a tiny
+website wakes a few; a bigger app with logins and data wakes more) and hides
+all the machinery. This list is here purely if you're curious — you never need
+to remember it.
+
+**The core team — most projects use these:** Project Lead (your single point of
+contact), Interviewer (your pop-up questions), Architect (proposes ways to build
+it), Scope Guardian (stops unrequested extras creeping in), Builder (writes the
+code), Reviewer (checks it independently), Tester (proves each part works),
+Security & Compliance Auditor (scans for leaked passwords, known weaknesses, and
+licence problems before anything ships), Brand Guardian (keeps your look
+consistent), AI Developer (adds AI features safely, only if you need them),
+Fixer (precise repairs when stuck), Cost Monitor (keeps spending on the cheaper
+side), Publisher (versions and ships it), Memory Keeper (remembers everything
+between sessions).
+
+**Brought in only when your project needs them:** Maintenance Agent (later fixes
+and features), DevOps Engineer (hosting/putting it online), Responsible-AI
+Reviewer (fairness and honesty checks for AI features), UX Designer (makes it
+pleasant to use), Accessibility Specialist (usable by people with disabilities),
+Technical Writer (a plain guide for *your* finished app), Data Engineer (safe
+data storage), Localisation Specialist (more than one language, e.g. English +
+Bangla), Researcher (checks current facts).
+
+*(23 specialist roles in total, coordinated for you — never something you
+operate by hand.)*
+
+---
+
+## When something goes wrong — plain fixes
+
+GRU953-Studio is built to explain problems in plain English rather than show
+scary error text. Here are the most common bumps and their simple fixes:
+
+| What you see or notice | What it means | What to do |
+| :-- | :-- | :-- |
+| `command not found: claude` | Claude Code isn't installed yet | Install [Claude Code](https://claude.com/claude-code) first, then try again |
+| It won't work in the **Claude Desktop** app | GRU953-Studio needs Claude **Code**, a different (though related) tool | Use Claude Code, not the Desktop chat app |
+| `/plugin install` didn't seem to take effect | The plugin list sometimes needs a refresh | Close and reopen Claude Code, then try the install line again |
+| A message about **Node.js** or a missing safety check | Node.js isn't installed | Install [Node.js](https://nodejs.org) (free), then retry |
+| It says it **can't publish** / mentions `gh` or "not signed in" | The GitHub tool isn't set up | Install the [GitHub CLI](https://cli.github.com), run `gh auth login`, follow the prompts |
+| It **stopped part-way** (e.g. you ran out of daily usage) | Nothing is lost — it saves progress constantly | Come back later and say "continue" or run `/studio` again; it resumes exactly where it stopped |
+| It **refused to publish** unexpectedly | A safety check did its job (an unconfirmed publish, or a password spotted in the files) | Read the plain-English reason it gives, fix that one thing, and try again — this is protection, not a fault |
+| A pop-up used a word you didn't know | It should explain every term once | Ask it "what does that mean?" in plain words — it's happy to explain |
+
+Still stuck? Open an issue on the
+[GitHub issues page](https://github.com/GRU-953/GRU953-Studio/issues) describing
+what you did and what happened — no technical detail required.
+
+---
+
+## Honest limitations (nothing hidden)
+
+We'd rather tell you the boundaries up front than let you discover them the hard
+way:
+
+- **Claude Code only.** It does not run in Claude Desktop, or on its own. If you
+  don't use Claude Code, this isn't the tool for you (yet).
+- **It's an AI tool, so it needs a connection and has usage limits.** On a long
+  build you may hit your Claude usage cap for the day — that's fine, it saves
+  progress and you continue later.
+- **It builds small, focused apps well** — not huge, complex systems. It will
+  say so honestly if your idea is too big for one sitting.
+- **The safety guards protect against honest mistakes, not deliberate
+  sabotage.** The built-in checks reliably stop *accidental* early publishing and
+  *obvious* leaked passwords. They are a careful safety net for normal, honest
+  use — they can't out-think someone deliberately trying to trick their own
+  setup. In everyday use, this simply means: it won't publish, or leak a secret,
+  by accident. Full technical detail is openly documented in
+  [governance/SECURITY.md](governance/SECURITY.md) — nothing is hidden.
+- **It's an independent, unofficial plugin.** It's not made or endorsed by
+  Anthropic (the makers of Claude).
+
+No software is ever perfectly bug-free, and we won't pretend otherwise — but
+this version has been tested and hardened thoroughly, and it's in dependable
+shape for real use.
+
+---
+
+## Resources & credits
+
+GRU953-Studio stands on the shoulders of good, free tools and open standards. In
+the spirit of "credit where it's due," here is everything it uses or was built
+against:
+
+- **Runs on:** [Claude Code](https://claude.com/claude-code) by
+  [Anthropic](https://www.anthropic.com) — the assistant this plugin extends.
+- **Built strictly to spec against Anthropic's own official documentation:**
+  the [Claude Code docs](https://code.claude.com/docs),
+  the [Claude Developer Platform docs](https://platform.claude.com/docs), and
+  the [Agent Skills documentation](https://agentskills.io) — every part of this
+  plugin was checked, line by line, against these.
+- **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
+  library only).
+- **Publishing uses:** the [GitHub CLI](https://cli.github.com) and
+  [GitHub](https://github.com).
+- **No third-party code dependencies.** The plugin ships no outside packages —
+  fewer moving parts, less to go wrong, nothing extra to trust.
+- **Typefaces (brand):** [DM Sans](https://fonts.google.com/specimen/DM+Sans)
+  and [Noto Sans Bengali](https://fonts.google.com/noto/specimen/Noto+Sans+Bengali),
+  under the SIL Open Font License.
+- **Colours:** the GRU953 *Open Spectrum* palette (Cobalt-led), contrast-checked
+  for accessibility.
+
+---
+
+## Licence & trademark, in plain terms
+
+**Free for non-commercial use** — personal projects, learning, research,
+hobbies, and use by charities, schools and public-benefit organisations — under
+the [Polyform Noncommercial License 1.0.0](governance/LICENSE), a professionally
+drafted, widely recognised licence.
+
+**Selling something built with it?** Commercial use (including apps you build
+with GRU953-Studio and then sell) needs a separate paid licence — see the
+"Commercial use" part of the [licence](governance/LICENSE), or email
+**aninda.sh15@gmail.com**.
+
+> *One honest note:* because the licence file lives in the `governance/` folder
+> rather than at the very top of the repository, GitHub may show "no license
+> detected" on the repo page. That's just where GitHub looks — the
+> [licence text](governance/LICENSE) still fully applies.
+
+The **GRU953 name and Soaring Bird logo** are protected separately — see
 [governance/TRADEMARKS.md](governance/TRADEMARKS.md) and
-[governance/LOGO-USAGE.md](governance/LOGO-USAGE.md).
+[governance/LOGO-USAGE.md](governance/LOGO-USAGE.md). In short: you may use the
+logo, unaltered, to refer to or link to GRU953-Studio; please don't restyle it
+or use it as your own.
 
-## Community
+---
+
+## Community & governance
 
 [Code of Conduct](governance/CODE_OF_CONDUCT.md) ·
 [Contributing](governance/CONTRIBUTING.md) ·
 [Security policy](governance/SECURITY.md) ·
-[Governance](governance/GOVERNANCE.md)
+[Governance](governance/GOVERNANCE.md) ·
+[Changelog](CHANGELOG.md)
 
 ## About
 
-Built by [Aninda Sundar Howlader](https://github.com/GRU-953), for
-non-technical people who have a real idea and just need the software part
-handled for them.
+Made by [Aninda Sundar Howlader](https://github.com/GRU-953) — for people who
+have a real idea and just want the software part handled for them, simply and
+honestly.
+
+<p align="center"><em>Making technology simple — and accessible — for all.<br>
+সবার জন্য প্রযুক্তি — সহজ ও নাগালের মধ্যে।</em></p>
 
 ---
 
-"Claude" and "Claude Code" are trademarks of Anthropic PBC. GRU953-Studio
-is an independent, unofficial plugin and is not affiliated with, sponsored
-by, or endorsed by Anthropic.
+<sub>"Claude" and "Claude Code" are trademarks of Anthropic PBC. GRU953-Studio is
+an independent, unofficial plugin and is not affiliated with, sponsored by, or
+endorsed by Anthropic.</sub>
