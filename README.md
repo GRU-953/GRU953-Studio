@@ -182,8 +182,8 @@ Technical Writer (a plain guide for *your* finished app), Data Engineer (safe
 data storage), Localisation Specialist (more than one language, e.g. English +
 Bangla), Researcher (checks current facts).
 
-*(23 specialist roles in total, coordinated for you — never something you
-operate by hand.)*
+*(The full list below (23 specialist roles in total). The plugin uses 7 skills
+in total, coordinated for you — never something you operate by hand.)*
 
 ---
 
