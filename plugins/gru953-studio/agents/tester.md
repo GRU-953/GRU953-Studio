@@ -44,9 +44,11 @@ benefit for a small, one-off script).
 Before writing test code — from the Plan stage on Standard/Complex Tier
 (on Tiny Tier the basic checks in the table suffice):
 
-1. **Check the criteria.** Are the confirmed acceptance criteria complete
-   and each independently testable? Flag any that are vague or untestable
-   back to the Project Lead before testing starts.
+1. **Check the criteria.** Read `Dev-Memory/PLAN.md`'s micro-task list
+   (the `micro-task-planning` skill) — are the confirmed acceptance
+   criteria complete and each independently testable? Flag any that are
+   vague, untestable, or missing entirely back to the Project Lead before
+   testing starts.
 2. **Risk-prioritise.** Rank what to test by consequence — anything
    handling money, personal data, authentication, or data loss is tested
    first and hardest, including negative paths.

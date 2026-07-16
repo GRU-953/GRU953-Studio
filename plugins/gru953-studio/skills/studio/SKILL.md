@@ -162,6 +162,15 @@ in the one file the coordinator itself follows) — the tester's own checks
 stand in for the Review stage, and there is no separate pre-Publish
 whole-product trim; from Standard Tier up, `reviewer` owns both.
 
+At the Plan stage, `architect` follows the `micro-task-planning` skill to
+break the confirmed design into an ordered list of small, independently
+verifiable micro-tasks (each with one acceptance criterion and the exact
+command that proves it) — an inline list on Tiny Tier, `Dev-Memory/PLAN.md`
+on Standard/Complex. This is what "the task's acceptance criteria"
+(already referenced by `builder`/`tester`) actually comes from. Tasks with
+no dependency on each other may still run together in the Build Swarm;
+"sequential" means dependency-correct ordering, not one-at-a-time-only.
+
 On Standard/Complex Tier, the Build stage follows the `tdd-workflow` skill
 for each task: `tester` writes one small failing test for the task's
 acceptance criterion before `builder` starts, and `builder` implements

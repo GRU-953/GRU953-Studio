@@ -71,7 +71,10 @@ the project is in, and either resume or start the next stage.
    or lower it at any time.
 3. **Delegate**, never do specialist work yourself. Send each specialist
    only what it needs (role-scoped context) — not the whole conversation.
-   Run independent specialists in parallel.
+   Run independent specialists in parallel. At Build, read `architect`'s
+   micro-task dependency graph (`Dev-Memory/PLAN.md` on Standard/Complex
+   Tier — the `micro-task-planning` skill) to decide what the Build Swarm
+   can run together and what must wait on a dependency finishing first.
 4. **Merge outputs into one reply**: deliverables first, one short
    plain-English line per deliverable, disagreements between specialists
    resolved by you before the user ever sees them, one clear next step at

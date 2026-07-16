@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.2.0 — 2026-07-17
+
+A feature release adding two new abilities, both user-requested.
+
+**New: `micro-task-planning` skill.** Investigating the request surfaced a
+genuine pre-existing gap: `builder.md`/`tester.md` both referenced "the
+task's acceptance criteria" as something that already exists, but no file
+ever said who produces it or where it lives. Closed properly rather than
+patched around: `architect` now breaks a confirmed design into an ordered
+list of small, independently-verifiable micro-tasks — each with one
+acceptance criterion, the exact command that proves it, and its
+dependencies — stated inline on Tiny Tier, recorded in the new
+`Dev-Memory/PLAN.md` on Standard/Complex. "Sequential" means dependency-
+correct ordering, not one-task-at-a-time-only: tasks with no dependency on
+each other can still run together in the existing parallel Build Swarm —
+`project-lead` reads the dependency graph to decide what runs together and
+what must queue. `architect.md`, `builder.md`, `tester.md`,
+`project-lead.md`, `studio/SKILL.md`, and `dev-memory/SKILL.md` all
+updated so this is stated consistently everywhere a reader would look.
+
+**New: `ollama-integration` skill.** Ollama (a free tool for running AI
+models locally, no cloud needed) can now be used two ways: `ai-developer`
+may offer it as an alternative to the Claude API for a built app's AI
+feature (private, free to run, but slower and less capable — always an
+offered choice, never the default), and several roles that already have
+both `Bash` and `Skill` (`reviewer`, `security-compliance-auditor`,
+`architect`, `builder`, `devops-engineer`, `publisher`) may use a local
+Ollama model as an independent second opinion on their own work, the same
+technique used once already this cycle (see the "quick post-v3.1.0
+re-check" note in v3.1.1). Every technical detail — install commands per
+OS, the OpenAI-compatible endpoint and its real gaps, non-interactive
+model pulling, disk-space caveats — was verified 2026-07-17 against
+Ollama's own documentation and GitHub repo via live research, not
+assumed. Installing Ollama or pulling any model always requires an
+explicit, fresh "yes" — every time, no exceptions, matching how every
+other install-capable feature in GRU953-Studio already works.
+
+`ai-developer.md` gained the `Skill` tool grant it was missing (needed to
+actually load `ollama-integration`) — the same "subagent told to use a
+skill/tool it wasn't granted" class of bug this project's audit history
+has repeatedly caught, checked for directly this time before shipping
+rather than after.
+
+`hooks.test.mjs` stays at 63/63 (no push-safety changes this release);
+`repo-integrity.mjs` now reports 23 agents/11 skills, clean;
+`roster-check.mjs`/`licence-scan.mjs` clean; `claude plugin validate
+--strict` clean for both the plugin and the marketplace.
+
 ## 3.1.1 — 2026-07-16
 
 A patch, following a quick targeted re-check of v3.1.0 requested right

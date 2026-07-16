@@ -32,6 +32,7 @@ All live under `Dev-Memory/` in the project's working directory:
 | :-- | :-- |
 | `OBJECTIVE.md` | The confirmed one-page brief, the three Tier questions and their Y/N answers, and the resulting Tier — so the Tier is auditable, not just asserted. |
 | `ARCHITECTURE.md` | The chosen stack, components, data flow, interface contracts, decisions, and deliberate omissions (written by `architect`). |
+| `PLAN.md` | (Standard/Complex Tier — see `micro-task-planning` skill) The ordered list of small "micro-tasks" `architect` breaks the design into: each with one acceptance criterion, the exact verification command that proves it, and its dependencies. `builder`/`tester` read task specifics from here; `project-lead` reads the dependency graph to decide what may run in the parallel Build Swarm versus what must wait. Not used on Tiny Tier — the task list there is short enough to state plainly instead. |
 | `PROGRESS.md` | The task table. Its **Status** column (`todo` / `doing` / `done` / `blocked`) is the single source of truth. Each `done` row carries the tester's `verified:` evidence cell. |
 | `SESSION-LOG.md` | An append-only diary — one entry per session/stage. Never edited or deleted, only added to. |
 | `INDEX.md` | A short, growing map of what is where, so a long project stays navigable. |

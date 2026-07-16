@@ -27,7 +27,11 @@ for you; it lets two builders edit at once without stepping on each other.
 ## Method
 
 1. Read the task's acceptance criteria and the exact verification command
-   named for it before writing anything. Also check `Dev-Memory/LESSONS.md`
+   named for it before writing anything — from `Dev-Memory/PLAN.md` on
+   Standard/Complex Tier, or the inline list `project-lead` handed you on
+   Tiny Tier (see the `micro-task-planning` skill). A task with no recorded
+   acceptance criterion isn't ready — send it back rather than guessing at
+   "done." Also check `Dev-Memory/LESSONS.md`
    (this project) and `~/.gru953-studio/common-pitfalls.md` (every project)
    for anything resembling this task (2026-07-11 Round 10 audit fix — these
    files existed but no builder instruction actually told anyone to read

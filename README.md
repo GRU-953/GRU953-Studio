@@ -31,15 +31,16 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.1.0** — stable, and recommended for everyone
+## Latest version: **3.2.0** — stable, and recommended for everyone
 
-Version 3.1.0 adds two small new abilities on top of everything below: the
-team can now spot when a task genuinely needs an outside Claude Code tool
-and suggest one (always asking first — see "The team behind it"), and
-bigger projects get an extra checkpoint where a test must fail before the
-matching code is written. Everything else works exactly as before. If you
-already have it, updating is a good idea; if you're new, you'll get this
-version automatically.
+Version 3.2.0 adds two more small abilities on top of everything below:
+the Architect now breaks a bigger project's plan into small, clearly-
+checkable steps done in the right order, and the AI Developer can
+optionally use a free, local AI model called Ollama instead of Claude for
+an app's AI features — always asking first, and telling you the download
+size. Everything else works exactly as before. If you already have it,
+updating is a good idea; if you're new, you'll get this version
+automatically.
 
 You don't need to read the technical details, but if you're curious, the full
 plain-English list of every change is in
@@ -167,16 +168,18 @@ to remember it.
 
 **The core team — most projects use these:** Project Lead (your single point of
 contact), Interviewer (your pop-up questions), Architect (proposes ways to build
-it), Scope Guardian (stops unrequested extras creeping in), Builder (writes the
+it, then breaks the plan into small, clearly-checkable steps done in the right
+order), Scope Guardian (stops unrequested extras creeping in), Builder (writes the
 code), Reviewer (checks it independently), Tester (proves each part works —
 on bigger projects, writes a test that must fail *before* the code exists,
 then checks the code makes it pass),
 Security & Compliance Auditor (scans for leaked passwords, known weaknesses, and
 licence problems before anything ships), Brand Guardian (keeps your look
-consistent), AI Developer (adds AI features safely, only if you need them),
-Fixer (precise repairs when stuck), Cost Monitor (keeps spending on the cheaper
-side), Publisher (versions and ships it), Memory Keeper (remembers everything
-between sessions).
+consistent), AI Developer (adds AI features safely, only if you need them —
+and can optionally use a free, local AI model called Ollama instead of Claude,
+always asking first and telling you the download size), Fixer (precise repairs
+when stuck), Cost Monitor (keeps spending on the cheaper side), Publisher
+(versions and ships it), Memory Keeper (remembers everything between sessions).
 
 **Brought in only when your project needs them:** Maintenance Agent (later fixes
 and features), DevOps Engineer (hosting/putting it online), Responsible-AI
@@ -255,7 +258,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 9 skills (step-by-step playbooks the coordinator
+  plugin, including its own 11 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).
