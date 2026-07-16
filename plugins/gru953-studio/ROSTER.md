@@ -40,16 +40,17 @@ the `builder`); `accessibility-specialist`, `ux-designer`, `technical-writer`,
 `data-engineer`, `localisation-specialist` and `researcher` are each a
 distinct discipline with a distinct trigger, not an overlap.
 
-## Core roster (15 — most projects use these)
+## Core roster (14 — most projects use these)
 
 project-lead · interviewer · architect · scope-guardian · builder · reviewer ·
 tester · security-compliance-auditor · brand-guardian · ai-developer · fixer ·
-cost-monitor · publisher · memory-keeper · maintenance-agent
+cost-monitor · publisher · memory-keeper
 
-## Feature- and need-triggered specialists (8), with the gap each fills
+## Feature- and need-triggered specialists (9), with the gap each fills
 
 | Role | Distinct gap it fills (no overlap with the above) | Activates when |
 | :-- | :-- | :-- |
+| maintenance-agent | Fixes and new features on a project already published — a distinct mode from building one for the first time | Returning to a previously published project (2026-07-16 fix: this was inconsistently listed as "core" here while README correctly placed it here — a brand-new project never wakes it) |
 | devops-engineer | The built app's build/package/deploy pipeline AND its live-running reliability (health, logging, failure posture) | Standard+ app needs hosting/packaging/CI, or runs as a live service |
 | responsible-ai-reviewer | Independent fairness/harm/over-reliance/transparency review of an AI feature | AI feature that meaningfully affects a real decision about a person, Standard+ |
 | accessibility-specialist | Disability access (WCAG 2.2 AA / platform equivalents) | Any project with a UI |

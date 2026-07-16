@@ -1,5 +1,50 @@
 # Changelog
 
+## 3.1.1 — 2026-07-16
+
+A patch, following a quick targeted re-check of v3.1.0 requested right
+after it shipped (not another open-ended audit — the product has already
+been through 15+ prior rounds). Two review passes ran independently: a
+direct re-read of everything changed in v3.1.0, and a second opinion from
+a locally-run AI model (Ollama, model `ornith:9b`) fed the full plugin
+source and asked to find concrete, high-confidence issues only. Every
+finding from both was independently verified by reading the actual files
+before being treated as real — nothing was fixed on either report's word
+alone.
+
+**Fixed (found by direct re-read): a tool-grant mismatch in the new
+`ecosystem-finder` skill.** It told `researcher` to run
+`claude plugin list --json` to check what's already installed before
+recommending anything — but `researcher` has no `Bash` tool and cannot run
+any command at all, the exact class of bug this project's own audit
+history has caught before ("subagents told to use tools they weren't
+granted"). Fixed by having `builder` (which has `Bash`) run that check and
+report back, matching the same recommend/execute split the skill already
+used for the actual install step. `ecosystem-finder/SKILL.md`,
+`researcher.md`, and `builder.md` all updated to state this consistently.
+
+**Fixed (found by the local-model second opinion, independently
+confirmed): README stated a stale "Latest version: 3.0.4"** in its own
+version banner, while both `plugin.json` and `marketplace.json` — the
+files Claude Code actually reads to identify the installed version —
+already said 3.1.0. Rewrote the banner to state 3.1.0 correctly and
+describe what's actually new in it, rather than just swapping the number.
+
+**Fixed (same source, independently confirmed): `ROSTER.md` and README
+disagreed on how Maintenance Agent is classified.** `ROSTER.md`'s "Core
+roster" list (roles "most projects use") included `maintenance-agent`;
+README correctly placed it under "brought in only when needed." Checked
+`maintenance-agent.md`'s own description to settle which was right: it
+activates only when returning to an already-published project, never on a
+brand-new one — so README's classification was correct and `ROSTER.md`'s
+was the stale one. Moved it to `ROSTER.md`'s feature-triggered table
+(14 core + 9 feature-triggered, still 23 total) to match.
+
+No behaviour change for anyone not yet using the two new v3.1.0 skills.
+`hooks.test.mjs` stays at 63/63; `repo-integrity.mjs`/`roster-check.mjs`
+still report 23 agents/9 skills, clean; `claude plugin validate --strict`
+clean for both the plugin and the marketplace.
+
 ## 3.1.0 — 2026-07-16
 
 A feature release, following a research pass into the wider FOSS Claude

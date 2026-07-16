@@ -31,13 +31,15 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.0.4** — stable, and recommended for everyone
+## Latest version: **3.1.0** — stable, and recommended for everyone
 
-Version 3.0.4 is a **safety and reliability update**. Nothing about how you
-use it has changed — it's simply been checked, hardened, and tested more
-thoroughly, strictly against Anthropic's own official instructions for tools
-like this one. If you already have it, updating is a good idea; if you're new,
-you'll get this version automatically.
+Version 3.1.0 adds two small new abilities on top of everything below: the
+team can now spot when a task genuinely needs an outside Claude Code tool
+and suggest one (always asking first — see "The team behind it"), and
+bigger projects get an extra checkpoint where a test must fail before the
+matching code is written. Everything else works exactly as before. If you
+already have it, updating is a good idea; if you're new, you'll get this
+version automatically.
 
 You don't need to read the technical details, but if you're curious, the full
 plain-English list of every change is in

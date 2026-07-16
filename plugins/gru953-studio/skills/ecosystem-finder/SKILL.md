@@ -40,20 +40,22 @@ question needs outside evidence" rule `researcher` already follows.
 
 ## Method
 
-1. **Check what's already there first**, so nothing gets recommended
-   twice: `claude plugin list --json` (installed plugins) and
+1. **`builder` checks what's already there first**, so nothing gets
+   recommended twice — `researcher` has no `Bash` and cannot run this
+   itself: `claude plugin list --json` (installed plugins) and
    `claude plugin marketplace list --json` (marketplaces already added).
-2. **Look in Anthropic's own vetted lists first** — the official plugin
-   directory and its community mirror (both reachable via `/plugin >
-   Discover`, or by checking their marketplace listings directly). These
-   are pre-screened for security before listing, the safest starting
-   point.
-3. **If nothing there fits, search further** using `researcher`'s normal
-   method — live web search, primary sources over aggregators, the date of
-   anything time-sensitive. For each real candidate found, note: what it
-   does, its exact licence (checked, not guessed — a project with no
-   licence file, or an unclear one, is never recommended), and whether it
-   looks actively maintained.
+   `builder` reports the result back before `researcher` starts searching.
+2. **`researcher` looks in Anthropic's own vetted lists first** — the
+   official plugin directory and its community mirror (both reachable via
+   `/plugin > Discover`, or by checking their marketplace listings
+   directly). These are pre-screened for security before listing, the
+   safest starting point.
+3. **If nothing there fits, `researcher` searches further** using its
+   normal method — live web search, primary sources over aggregators, the
+   date of anything time-sensitive. For each real candidate found, note:
+   what it does, its exact licence (checked, not guessed — a project with
+   no licence file, or an unclear one, is never recommended), and whether
+   it looks actively maintained.
 4. **Recommend at most one or two**, not a long list — the point is a
    fitting answer to the task at hand, not a survey.
 5. **Hand the recommendation to `project-lead`**, who presents it as a

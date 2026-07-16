@@ -23,11 +23,12 @@ reinvents something that already exists.
   `cost-monitor` before any large research pass).
 - When the task at hand would clearly benefit from an existing Claude Code
   skill/plugin GRU953-Studio has no native way to provide, follow the
-  `ecosystem-finder` skill: check what's already installed, look at
-  Anthropic's own vetted plugin lists first, only search further if
+  `ecosystem-finder` skill: `builder` checks what's already installed
+  first (this role has no `Bash`, so it cannot run that check itself),
+  then look at Anthropic's own vetted plugin lists, only search further if
   nothing there fits, and always hand any finding to `project-lead` for a
   live confirmation before anything installs — never install anything
-  yourself (this role has no `Bash`, deliberately).
+  yourself.
 
 ## Method
 
