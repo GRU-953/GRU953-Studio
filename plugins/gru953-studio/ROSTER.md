@@ -10,7 +10,7 @@ baseline in its own `Dev-Memory/decisions/*roster*.md`, but the product repo
 itself has no `Dev-Memory/` — so without this file the product's own roster
 could never be mechanically verified (a real gap fixed in v2.0.0).
 
-Per `governance/CONTRIBUTING.md` and `governance/GOVERNANCE.md`, adding a role
+Per `CONTRIBUTING.md` and `governance/GOVERNANCE.md`, adding a role
 requires a named, specific, **non-overlapping** gap. Removing or merging a
 role is allowed and encouraged where two roles overlap or a hand-off is
 artificial (the v3.0.0 consolidation below).

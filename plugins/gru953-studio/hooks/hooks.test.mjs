@@ -1234,7 +1234,7 @@ test('lib.mjs isPushCapable: declare -n namerefs remain a disclosed, documented 
   // mechanism distinct from the `${!ref}` indirect expansion fixed in
   // Round 13) also defeat the matcher. The user then asked to stop the
   // audit loop entirely and publish, so this is documented in
-  // governance/SECURITY.md as an accepted residual limitation rather than
+  // SECURITY.md as an accepted residual limitation rather than
   // fixed. This test locks in that it fails SAFE — stays unresolved, no
   // crash, no false catch — not that it's caught.
   assert.equal(isPushCapable('declare -n ref=v; v=push; git $ref origin main'), false, 'declare -n namerefs remain a disclosed, unresolved gap, not a crash or a false catch');

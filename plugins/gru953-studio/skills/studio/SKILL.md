@@ -118,6 +118,7 @@ not size (2026-07-11 v2.0.0):
 | More than one language (e.g. English + Bangla) | `localisation-specialist` |
 | User-facing documentation for the built app | `technical-writer` (Standard+) |
 | A decision that turns on an external, current fact | `researcher` (on demand) |
+| A task would clearly benefit from an existing Claude Code skill/plugin GRU953-Studio has no native way to provide | `researcher` (any Tier, via the `ecosystem-finder` skill — recommends at most one or two, always confirmed with a pop-up before anything installs, never bundled into GRU953-Studio itself) |
 
 Every triggered role still obeys `yagni-rules` and `cost-guard`: it does the
 smallest useful version of its job, and `scope-guardian` still guards against
@@ -160,6 +161,13 @@ fix: this was previously only stated in `builder.md`/`tester.md`, not here
 in the one file the coordinator itself follows) — the tester's own checks
 stand in for the Review stage, and there is no separate pre-Publish
 whole-product trim; from Standard Tier up, `reviewer` owns both.
+
+On Standard/Complex Tier, the Build stage follows the `tdd-workflow` skill
+for each task: `tester` writes one small failing test for the task's
+acceptance criterion before `builder` starts, and `builder` implements
+until that test passes — one earlier checkpoint added to the existing
+build→review→test flow, not a replacement for any of it. Not used on Tiny
+Tier.
 
 Every stage boundary follows this gate standard:
 1. **What just happened** — one line.

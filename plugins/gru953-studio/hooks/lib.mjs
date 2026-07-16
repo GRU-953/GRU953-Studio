@@ -224,7 +224,7 @@ export function normalizeForPushCheck(c) {
   // quoted) elements is modelled — no post-assignment element writes
   // (`arr[1]=x`), no `+=` append, no associative (`declare -A`) arrays,
   // and no evaluation of a command substitution embedded in an element.
-  // Those remain a disclosed residual limitation (see governance/
+  // Those remain a disclosed residual limitation (see
   // SECURITY.md), the same shape as this file's other already-disclosed,
   // deliberately-not-fully-modelled shell constructs, not a newly-
   // introduced one — confirmed with the user before drawing this line,

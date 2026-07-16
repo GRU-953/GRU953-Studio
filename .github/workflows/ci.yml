@@ -38,8 +38,8 @@ jobs:
         run: node plugins/gru953-studio/hooks/licence-scan.mjs .
       - name: Required files present
         run: |
-          for f in governance/LICENSE governance/NOTICE governance/SECURITY.md \
-                   governance/CODE_OF_CONDUCT.md governance/CONTRIBUTING.md \
+          for f in LICENSE NOTICE SECURITY.md \
+                   CODE_OF_CONDUCT.md CONTRIBUTING.md \
                    governance/TRADEMARKS.md governance/LOGO-USAGE.md governance/GOVERNANCE.md \
                    plugins/gru953-studio/ROSTER.md README.md; do
             test -f "$f" || (echo "Missing required file: $f" && exit 1)

@@ -1,5 +1,66 @@
 # Changelog
 
+## 3.1.0 — 2026-07-16
+
+A feature release, following a research pass into the wider FOSS Claude
+Code ecosystem (superpowers, claude-mem, several skill/plugin "finder"
+tools, and a broader sweep) to check what GRU953-Studio should adopt.
+Nothing from that research was bundled — GRU953-Studio ships under one
+licence, and mixing in another project's code (even a permissively
+licensed one) would mean re-auditing someone else's code for security,
+plus at least one candidate carried a copyleft licence that would create a
+real conflict if ever copied in. Instead, two gaps the research surfaced
+were built natively, and the file tree was reorganised to match regular
+GitHub practice.
+
+**New: `ecosystem-finder` skill.** When a task would clearly benefit from
+an existing Claude Code skill/plugin GRU953-Studio has no native way to
+provide, `researcher` can now recommend one — checking what's already
+installed, preferring Anthropic's own vetted plugin lists first, only
+searching further if nothing fits. Nothing installs without an explicit
+"install it" from the user on a `project-lead` pop-up; `researcher` itself
+has no `Bash` and cannot install anything, deliberately — `builder` runs
+the confirmed install (`claude plugin marketplace add` /
+`claude plugin install`) as a separate, later step. Distinct from
+Anthropic's own built-in `/plugin > Discover` browsing feature (which this
+does not replace or duplicate — it adds a task-aware recommendation layer
+on top).
+
+**New: `tdd-workflow` skill.** On Standard/Complex Tier, the Build stage
+now writes one small test per task that must genuinely fail *before* the
+Builder implements anything — inspired by an idea a FOSS tool called
+"TDD Guard" enforces (not its code). Tiny Tier is unaffected, matching this
+product's existing "no rigour where it doesn't earn its keep" reasoning.
+`tester`, `builder`, and `studio/SKILL.md` all updated so this is stated in
+every place a reader would look, not just one.
+
+**File tree reorganised to match regular GitHub practice.** `LICENSE`,
+`NOTICE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, and `SECURITY.md` moved
+from a custom `governance/` folder to the repository root, where GitHub's
+own licence-badge detector and Community Standards checklist actually look
+— previously they lived in `governance/` for brand-structure consistency,
+a deliberate trade-off documented at the time, now reversed on request.
+Removed three now-redundant one-line redirect stubs that used to sit in
+`.github/` pointing at the old `governance/` location. `governance/`
+itself keeps `GOVERNANCE.md`, `LOGO-USAGE.md`, and `TRADEMARKS.md` — brand
+and project-governance documents with no special GitHub recognition.
+Every cross-reference across the repo (README, ROSTER.md, CI's own
+required-files check, the plugin's `LICENSE` symlink, and others) updated
+to match; verified with a fresh clone and the full local gate suite, not
+just a search-and-replace.
+
+**README refreshed** for the above: skill count restated (7 → 9), the
+Researcher and Tester team-list entries mention their new capabilities in
+one plain clause each, and a new "Other tools you might also find useful"
+note credits three independent, well-licensed companion projects found
+during the research (clearly marked as not affiliated with GRU953-Studio),
+alongside a pointer to Claude Code's own `/plugin > Discover`.
+
+`hooks.test.mjs` stays at 63/63 (this release adds capability, not push-
+safety hardening); `repo-integrity.mjs`, `roster-check.mjs`, and
+`licence-scan.mjs` all clean; `claude plugin validate --strict` passes for
+both the plugin and the marketplace.
+
 ## 3.0.4 — 2026-07-13
 
 A platform-compliance patch release (fixes and hardening only; no roster,

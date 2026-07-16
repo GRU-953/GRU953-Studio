@@ -120,7 +120,7 @@ was copied here without re-deriving whether it still held):**
 - Neither file's content is ever read by, or connects to, the private-publish
   or go-public confirmation gates — those are checked purely mechanically
   by `hooks/gate.mjs` against a cryptographic token file, never against
-  memory-file prose (see `governance/SECURITY.md`). A recorded preference or
+  memory-file prose (see `SECURITY.md`). A recorded preference or
   lesson is a fact to avoid re-asking or re-repeating — never an instruction
   to follow, and never something that can substitute for a live
   `AskUserQuestion` answer on an irreversible action.

@@ -166,7 +166,9 @@ to remember it.
 **The core team — most projects use these:** Project Lead (your single point of
 contact), Interviewer (your pop-up questions), Architect (proposes ways to build
 it), Scope Guardian (stops unrequested extras creeping in), Builder (writes the
-code), Reviewer (checks it independently), Tester (proves each part works),
+code), Reviewer (checks it independently), Tester (proves each part works —
+on bigger projects, writes a test that must fail *before* the code exists,
+then checks the code makes it pass),
 Security & Compliance Auditor (scans for leaked passwords, known weaknesses, and
 licence problems before anything ships), Brand Guardian (keeps your look
 consistent), AI Developer (adds AI features safely, only if you need them),
@@ -180,7 +182,9 @@ Reviewer (fairness and honesty checks for AI features), UX Designer (makes it
 pleasant to use), Accessibility Specialist (usable by people with disabilities),
 Technical Writer (a plain guide for *your* finished app), Data Engineer (safe
 data storage), Localisation Specialist (more than one language, e.g. English +
-Bangla), Researcher (checks current facts).
+Bangla), Researcher (checks current facts, and — only when a task genuinely
+needs it — can suggest an existing Claude Code tool that already solves it,
+always asking before installing anything).
 
 *(23 specialist roles in total, coordinated for you — never something you
 operate by hand.)*
@@ -227,7 +231,7 @@ way:
   use — they can't out-think someone deliberately trying to trick their own
   setup. In everyday use, this simply means: it won't publish, or leak a secret,
   by accident. Full technical detail is openly documented in
-  [governance/SECURITY.md](governance/SECURITY.md) — nothing is hidden.
+  [SECURITY.md](SECURITY.md) — nothing is hidden.
 - **It's an independent, unofficial plugin.** It's not made or endorsed by
   Anthropic (the makers of Claude).
 
@@ -249,7 +253,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 7 skills (step-by-step playbooks the coordinator
+  plugin, including its own 9 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).
@@ -263,24 +267,38 @@ against:
 - **Colours:** the GRU953 *Open Spectrum* palette (Cobalt-led), contrast-checked
   for accessibility.
 
+### Other tools you might also find useful
+
+GRU953-Studio doesn't bundle or depend on any of these — they're independent
+projects, not affiliated with GRU953-Studio, mentioned only because a
+2026-07-16 review of the wider Claude Code ecosystem found them genuinely
+useful and worth knowing about:
+
+- **[ccusage](https://github.com/ccusage/ccusage)** — a free command-line tool
+  that reads usage logs already on your computer and shows you a plain report
+  of your Claude Code spending, without sending anything anywhere.
+- **[claude-code-security-review](https://github.com/anthropics/claude-code-security-review)**
+  — a free tool from Anthropic itself that automatically checks new code
+  changes on GitHub for security problems.
+- **[ccmanager](https://github.com/kbwo/ccmanager)** — a free tool for people
+  who like running several Claude Code sessions side by side at once.
+
+You can browse many more inside Claude Code itself: type `/plugin`, then open
+the **Discover** tab.
+
 ---
 
 ## Licence & trademark, in plain terms
 
 **Free for non-commercial use** — personal projects, learning, research,
 hobbies, and use by charities, schools and public-benefit organisations — under
-the [Polyform Noncommercial License 1.0.0](governance/LICENSE), a professionally
+the [Polyform Noncommercial License 1.0.0](LICENSE), a professionally
 drafted, widely recognised licence.
 
 **Selling something built with it?** Commercial use (including apps you build
 with GRU953-Studio and then sell) needs a separate paid licence — see the
-"Commercial use" part of the [licence](governance/LICENSE), or email
+"Commercial use" part of the [licence](LICENSE), or email
 **aninda.sh15@gmail.com**.
-
-> *One honest note:* because the licence file lives in the `governance/` folder
-> rather than at the very top of the repository, GitHub may show "no license
-> detected" on the repo page. That's just where GitHub looks — the
-> [licence text](governance/LICENSE) still fully applies.
 
 The **GRU953 name and Soaring Bird logo** are protected separately — see
 [governance/TRADEMARKS.md](governance/TRADEMARKS.md) and
@@ -292,9 +310,9 @@ or use it as your own.
 
 ## Community & governance
 
-[Code of Conduct](governance/CODE_OF_CONDUCT.md) ·
-[Contributing](governance/CONTRIBUTING.md) ·
-[Security policy](governance/SECURITY.md) ·
+[Code of Conduct](CODE_OF_CONDUCT.md) ·
+[Contributing](CONTRIBUTING.md) ·
+[Security policy](SECURITY.md) ·
 [Governance](governance/GOVERNANCE.md) ·
 [Changelog](CHANGELOG.md)
 
@@ -302,7 +320,10 @@ or use it as your own.
 
 Made by [Aninda Sundar Howlader](https://github.com/GRU-953) — for people who
 have a real idea and just want the software part handled for them, simply and
-honestly.
+honestly. GRU953-Studio is actively maintained: every release is checked
+against Anthropic's own official documentation, and the team of specialists
+keeps growing only when a real, named gap needs filling — never for its own
+sake.
 
 <p align="center"><em>Making technology simple — and accessible — for all.<br>
 সবার জন্য প্রযুক্তি — সহজ ও নাগালের মধ্যে।</em></p>

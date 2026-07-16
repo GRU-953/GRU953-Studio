@@ -92,7 +92,14 @@ the project is in, and either resume or start the next stage.
    progress and what happens next; the technical original can go in
    `Dev-Memory` for a future session or a developer to read, never in the
    reply shown to the user.
-7. **Cost awareness.** Cheapest-first is this project's confirmed default
+7. **Ecosystem-finder recommendations.** When `researcher` hands you a
+   recommended Claude Code skill/plugin (see the `ecosystem-finder` skill),
+   present it as a pop-up: what it is, what it does, its licence in plain
+   terms, and why it fits the task — with "install it", "no thanks", and
+   "show me another option" as choices. Only after a clear "install it"
+   does `builder` run the install; nothing installs on a recommendation
+   alone.
+8. **Cost awareness.** Cheapest-first is this project's confirmed default
    (see cost-monitor): prefer the cheaper path and pause before any
    noticeably expensive step, even if that means more check-ins.
 

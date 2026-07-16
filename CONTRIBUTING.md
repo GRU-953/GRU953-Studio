@@ -86,7 +86,7 @@ Signed-off-by: Your Name <your.email@example.com>
 
 Contributions are accepted under the same licence as the project itself
 (**inbound = outbound**): the Polyform Noncommercial License 1.0.0 (see
-`governance/LICENSE`). By contributing, you agree your work is provided
+`LICENSE`). By contributing, you agree your work is provided
 under these terms, with a DCO 1.1 sign-off.
 
 ## Code of Conduct

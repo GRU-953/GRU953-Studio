@@ -95,7 +95,7 @@ Never rewrite history in the user's live project directory.
    above).
 3. Delete `Dev-Memory/` from the temp clone before the orphan commit —
    it never ships.
-4. KEEP third-party credit intact: `governance/LICENSE`, `governance/NOTICE`,
+4. KEEP third-party credit intact: `LICENSE`, `NOTICE`,
    `governance/TRADEMARKS.md`, `governance/LOGO-USAGE.md`, licence headers,
    citations.
 5. This temp clone is what gets published; the user's own directory is
@@ -125,20 +125,23 @@ names now instead of numbers, so this can't drift again.)
    in one step.
 5. Read visibility back: `gh repo view <login>/<project-name> --json
    visibility` — must be `private` before any push.
-6. Ensure the full `governance/` folder (LICENSE, NOTICE, CODE_OF_CONDUCT.md,
-   CONTRIBUTING.md, SECURITY.md, TRADEMARKS.md, LOGO-USAGE.md, GOVERNANCE.md)
-   is present in the published tree, kept in `governance/` to match the
-   established GRU953 repo structure rather than at the repository root.
-   Licence: **Polyform Noncommercial License 1.0.0** plus a commercial-use
-   contact path — a professionally drafted, independently reviewed licence
-   template (2026-07-11: chosen over a GRU953-branded custom licence
-   specifically because it's recognised by name by dependency-compliance
-   tooling, which matters for a publicly-distributed developer tool).
-   Tell the user plainly at Publish time: because the file lives in
-   `governance/` and not at the repository root, GitHub's own automatic
-   licence badge on the repo page will show "no license detected" — this is
-   expected, not a sign anything broke, and doesn't change what the licence
-   actually says or requires.
+6. Ensure every required file is present in the published tree: `LICENSE`,
+   `NOTICE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SECURITY.md` at the
+   repository ROOT (2026-07-16: moved out of `governance/` specifically so
+   GitHub's own licence-badge detector and Community Standards checklist
+   recognise them — GitHub only checks the root, `.github/`, or `docs/`,
+   never an arbitrary custom folder name), plus `governance/TRADEMARKS.md`,
+   `governance/LOGO-USAGE.md`, and `governance/GOVERNANCE.md` (brand/project
+   governance documents with no special GitHub recognition, kept in their
+   own folder for clarity). Licence: **Polyform Noncommercial License
+   1.0.0** plus a commercial-use contact path — a professionally drafted,
+   independently reviewed licence template (2026-07-11: chosen over a
+   GRU953-branded custom licence specifically because it's recognised by
+   name by dependency-compliance tooling, which matters for a
+   publicly-distributed developer tool). Now that `LICENSE` lives at the
+   root, GitHub's automatic licence badge should show "Polyform
+   Noncommercial License 1.0.0" correctly — if it doesn't, GitHub's
+   detector can take a short while to (re)index after a push.
 7. Push: `git -C <temp-clone-path> push -u origin main` — never
    create-and-push in one step. (The downloadable zip is attached later, in
    section 6, as part of the real Release.)
