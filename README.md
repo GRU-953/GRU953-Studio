@@ -31,16 +31,17 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.2.0** — stable, and recommended for everyone
+## Latest version: **3.3.0** — stable, and recommended for everyone
 
-Version 3.2.0 adds two more small abilities on top of everything below:
-the Architect now breaks a bigger project's plan into small, clearly-
-checkable steps done in the right order, and the AI Developer can
-optionally use a free, local AI model called Ollama instead of Claude for
-an app's AI features — always asking first, and telling you the download
-size. Everything else works exactly as before. If you already have it,
-updating is a good idea; if you're new, you'll get this version
-automatically.
+Version 3.3.0 adds self-healing: when something breaks while building, the
+Fixer now quietly tries a couple of small repairs on its own first, and
+only interrupts you if that doesn't work — every fix still needs your
+explicit yes before it ever reaches GitHub, exactly as before. This
+version also adds several small, optional refinements found by a deeper
+review (real spending figures for Cost Monitor, a visible-screen check for
+bigger projects, and a few other small hardenings) — none change how you
+use GRU953-Studio day to day. If you already have it, updating is a good
+idea; if you're new, you'll get this version automatically.
 
 You don't need to read the technical details, but if you're curious, the full
 plain-English list of every change is in
@@ -177,9 +178,12 @@ Security & Compliance Auditor (scans for leaked passwords, known weaknesses, and
 licence problems before anything ships), Brand Guardian (keeps your look
 consistent), AI Developer (adds AI features safely, only if you need them —
 and can optionally use a free, local AI model called Ollama instead of Claude,
-always asking first and telling you the download size), Fixer (precise repairs
-when stuck), Cost Monitor (keeps spending on the cheaper side), Publisher
-(versions and ships it), Memory Keeper (remembers everything between sessions).
+always asking first and telling you the download size), Fixer (quietly tries
+a couple of small fixes on its own first when something breaks, and only
+interrupts you if that doesn't work), Cost Monitor (keeps spending on the
+cheaper side, and can optionally show real spending figures instead of an
+estimate, with your one-time permission), Publisher (versions and ships it),
+Memory Keeper (remembers everything between sessions).
 
 **Brought in only when your project needs them:** Maintenance Agent (later fixes
 and features), DevOps Engineer (hosting/putting it online), Responsible-AI
@@ -258,7 +262,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 11 skills (step-by-step playbooks the coordinator
+  plugin, including its own 12 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).

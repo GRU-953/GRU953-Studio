@@ -1,5 +1,64 @@
 # Changelog
 
+## 3.3.0 — 2026-07-17
+
+Self-healing, plus six small refinements found by a bounded, fact-checked
+gap-research pass. A pop-up interview came first, since the raw request
+("self-heal, publish each fix as new contributors, research and include
+ALL relevant features") bundled a real safety-model question and a
+pattern this project's own history has explicitly guarded against before
+(a prior tool's roster grew 12→26 roles in a week with nothing ever
+shipped). Confirmed: fixes never auto-publish (every push still needs an
+explicit yes, no exceptions); attribution stays exactly as it's always
+been (sole GRU-953 authorship); and the roster-growth research would
+return a shortlist to choose from, not an unfiltered "add everything."
+
+**New: `self-healing` skill, two parts.** (a) When a verification command
+fails during Build/Test, `fixer` now gets up to 2 quiet attempts (no user
+interruption) before the Project Lead's full Stuck Protocol — closing a
+real gap where that hand-off depended entirely on `builder`/`tester`
+remembering to do it. A new `PostToolUseFailure` hook
+(`self-heal-nudge.mjs`) makes the reminder structural rather than
+prose-only, using a plain command hook (Anthropic's own newer "agent"
+hook type is explicitly documented as experimental, "prefer command hooks
+for production" — this project's established pattern throughout). Before
+a second attempt, `fixer` now reverts the first attempt's own changes via
+plain `git` first (not Claude Code's own `/rewind`, which is an
+interactive human menu a subagent cannot invoke — the same restriction
+that already applies to `AskUserQuestion`). (b) `devops-engineer` can add
+proportionate self-recovery to a live built app: crash auto-restart via
+the hosting platform's own behaviour, bounded retry-with-backoff for
+transient failures, every event logged — never a custom supervisor.
+Self-healing never touches Publish or any push-capable action.
+
+**Six small refinements from the gap-research pass**, all independently
+fact-checked against Anthropic's own current docs before being built (one
+research thread initially cited a folder path that had been reorganised
+outside this session — caught, and re-verified from the real current
+location before trusting anything downstream of it):
+- `cost-monitor` can now show real spending figures (`cost.total_cost_usd`,
+  and `rate_limits.*` for Pro/Max subscribers only — verified, not every
+  billing plan gets this) instead of a rough transcript-size proxy, via a
+  one-time opt-in that only ever adds to the user's own personal
+  `~/.claude/settings.json` — never overwrites an existing `statusLine`.
+- `tester` can capture a rendered screenshot before sign-off on
+  Standard/Complex Tier UI projects, if a browser-automation tool happens
+  to be available in that session — gracefully skipped otherwise.
+- The plain-English/UK-English tone rule now has one clearly-marked
+  canonical statement (`studio/SKILL.md`) other files point back to,
+  instead of quietly-drifting duplicated prose. (A shipped `output-style`
+  with `force-for-plugin` was considered and rejected — it would override
+  the user's chosen style for their whole Claude Code session, not just
+  while using GRU953-Studio.)
+- A new `subagentStatusLine` (`settings.json` + `subagent-statusline.mjs`)
+  shows a plainer line for GRU953-Studio's own specialists specifically,
+  leaving every other subagent's row at the platform default.
+
+`hooks.test.mjs` stays at 63/63; `repo-integrity.mjs` now reports 23
+agents/12 skills/12 hooks, clean; `roster-check.mjs`/`licence-scan.mjs`
+clean; `claude plugin validate --strict` clean for both the plugin and
+the marketplace.
+
 ## 3.2.0 — 2026-07-17
 
 A feature release adding two new abilities, both user-requested.

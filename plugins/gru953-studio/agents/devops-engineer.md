@@ -49,8 +49,13 @@ with no way to tell what happened.
    the points that matter (start/stop, errors, slow paths) — never noisy
    debug spew, never a logged secret; and define the failure posture in
    plain terms (when a dependency is down, does the app fail loudly, retry,
-   or degrade — chosen, not accidental). Keep it lean: the smallest
-   observability that would actually let the owner diagnose a real incident.
+   or degrade — chosen, not accidental). Where retry/self-recovery is the
+   right choice, follow the `self-healing` skill's part (b): auto-restart
+   on crash (via the hosting platform's own restart behaviour, not a custom
+   supervisor), bounded retry-with-backoff for transient failures, and
+   every auto-recovery event logged, never silent to the app's own owner.
+   Keep it lean: the smallest observability that would actually let the
+   owner diagnose a real incident.
 5. Provide a plain-English "how to deploy and check on this yourself" note
    for the owner, in `technical-writer`'s docs where one exists.
 6. Record the deploy and reliability decisions, and any deliberate omission,

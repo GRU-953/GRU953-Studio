@@ -24,12 +24,34 @@ interruptions. Concretely:
 
 ## How usage can be judged locally
 
-Claude Code writes each session's transcript as JSONL files (one JSON
-record per line) under the user's `.claude` folder — for example
+**Default, always available:** Claude Code writes each session's
+transcript as JSONL files (one JSON record per line) under the user's
+`.claude` folder — for example
 `~/.claude/projects/<project-folder>/<session-id>.jsonl`. A long, heavy
 transcript file for the current session is a reasonable local signal that a
 lot of the window has been used; exact numbers aren't visible, only this
 rough signal.
+
+**Optional, opt-in upgrade to real numbers (2026-07-17 gap-research
+fix):** Claude Code's `statusLine` feature can expose real figures —
+`cost.total_cost_usd` (an estimated session cost in USD, available
+regardless of billing plan) and `rate_limits.five_hour.used_percentage` /
+`rate_limits.seven_day.used_percentage` (percentage of the 5-hour/7-day
+usage window consumed — **verified: this field "appears only for
+Claude.ai subscribers (Pro/Max)"**, not API-key/pay-as-you-go billing, so
+it won't be available to every user). A plugin cannot ship this itself —
+Claude Code's plugin `settings.json` only supports the `agent` and
+`subagentStatusLine` keys, not a main `statusLine` default — so this can
+only work via the user's own personal, global `~/.claude/settings.json`.
+`first-run` offers this once, explicitly: if the user has no existing
+`statusLine` configured, offer to add a small script that both displays
+these numbers AND writes them to `~/.gru953-studio/cost-snapshot.json` for
+`cost-monitor` to read. **If the user already has their own `statusLine`,
+never overwrite it** — instead show them the one line to add themselves,
+and leave their file untouched either way. `cost-monitor` checks for a
+recent snapshot file first and uses it when present; falls back to the
+transcript-size proxy above otherwise — nobody who doesn't opt in sees
+any change in behaviour.
 
 ## Planning rules
 

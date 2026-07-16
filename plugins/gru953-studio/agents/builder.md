@@ -47,7 +47,10 @@ for you; it lets two builders edit at once without stepping on each other.
 4. Implement the smallest working diff — on Standard/Complex Tier, until
    the failing test from step 2 passes.
 5. Run the named verification command yourself before handing off; do not
-   claim success without having run it.
+   claim success without having run it. **If it fails**, follow the
+   `self-healing` skill: hand it to `fixer` for up to 2 quiet attempts
+   (no user interruption yet) before the Project Lead's full Stuck
+   Protocol — never silently retry code yourself outside that mechanism.
 6. Hand off to the reviewer with: the diff, the command run, and its exact
    output. (Standard/Complex Tier only — `reviewer` isn't woken on Tiny; on
    a Tiny project hand off directly to the tester instead.)
