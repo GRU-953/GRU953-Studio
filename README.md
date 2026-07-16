@@ -249,7 +249,8 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin was checked, line by line, against these.
+  plugin, including its own 7 skills (step-by-step playbooks the coordinator
+  quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).
 - **Publishing uses:** the [GitHub CLI](https://cli.github.com) and

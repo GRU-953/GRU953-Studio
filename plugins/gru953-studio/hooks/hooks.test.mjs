@@ -458,8 +458,8 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    'The full list below (23 specialist roles in total)',
-    'We once evaluated 23 specialist roles for a sibling product. The full list below (99 specialist roles in total)'
+    '23 specialist roles in total',
+    'We once evaluated 23 specialist roles for a sibling product; 99 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
@@ -474,8 +474,8 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    'The full list below (23 specialist roles in total)',
-    'The studio grew from 16 roles in early versions. The full list below (23 specialist roles in total)'
+    '23 specialist roles in total',
+    '(the studio grew from 16 roles in early versions) 23 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
