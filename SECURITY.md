@@ -486,3 +486,51 @@ that this mechanism
 raises the bar against realistic accidents and common tricks, not a proof
 against a determined, patient adversary who keeps searching for the next
 alternate variable-assignment syntax.
+
+## New capabilities added since this document was last updated (2026-07-17)
+
+The three features below shipped across v3.1.0-v3.3.0 and were not yet
+reflected here — a genuine staleness gap in this document, found by a
+2026-07-17 docs-accuracy review, not a newly-discovered hole in any of
+them. None weaken the push/go-public protections described above; all
+three are separate capabilities with their own, already-designed
+confirmation gates.
+
+**Third-party plugin installation (`ecosystem-finder` skill).** When a
+task genuinely needs an existing Claude Code skill/plugin GRU953-Studio
+doesn't provide natively, `researcher` may recommend one and `builder`
+may install it (`claude plugin marketplace add` / `claude plugin
+install`) — but only after an explicit "install it" answer to a
+`project-lead` pop-up naming the specific plugin. This installs
+independent third-party code that GRU953-Studio's own hooks do not
+govern or scan; the user is relying on Anthropic's own marketplace
+vetting (for `claude-plugins-official`/`claude-plugins-community`
+sources) or their own judgement (for any other source), not on anything
+this project's security hooks check.
+
+**External software installation (`ollama-integration` skill).** With
+the same kind of explicit, per-instance confirmation, GRU953-Studio can
+install Ollama itself (`curl -fsSL https://ollama.com/install.sh | sh`
+on macOS/Linux, the equivalent `.ps1`/`.exe` on Windows) and download AI
+model files ranging "from roughly 1GB to well over 100GB" — a real,
+disclosed cost in disk space and bandwidth, never started without a
+fresh yes for that specific install or pull. Six roles beyond
+`ai-developer` now carry both `Bash` and `Skill` specifically to support
+this and the second-opinion use case: `reviewer`,
+`security-compliance-auditor`, `architect`, `builder`, `devops-engineer`,
+and `publisher`.
+
+**Fixer's bounded unsupervised attempts (`self-healing` skill).** When a
+verification command fails during Build/Test, `fixer` now gets up to 2
+attempts to diagnose and modify code on its own, before the Project
+Lead's Stuck Protocol tells the user anything — a genuine, disclosable
+increase in autonomy compared to every other code change in this
+product, which is always shown to a human before or as it happens. The
+bound is real and enforced by a dedicated hook
+(`hooks/self-heal-nudge.mjs`, wired on the `PostToolUseFailure` event
+with the same `Bash|PowerShell|Monitor` matcher as the publish-safety
+hooks): each attempt is logged to `Dev-Memory/SESSION-LOG.md` as it
+happens, and the third failure of the same problem always escalates to
+the full, user-visible Stuck Protocol. This mechanism never touches
+Publish or any push-capable action — confirmed directly with the user
+before it was built, and unchanged by anything in this document above.

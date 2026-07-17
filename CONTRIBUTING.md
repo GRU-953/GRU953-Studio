@@ -18,16 +18,21 @@ all sizes are welcome — from fixing a typo to proposing a change.
 Before opening a pull request, please run the project's checks:
 
 ```
-# 1. every hook parses
+# 1. the manifests parse as valid JSON
+node -e "JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json','utf8'))"
+node -e "JSON.parse(require('fs').readFileSync('plugins/gru953-studio/.claude-plugin/plugin.json','utf8'))"
+node -e "JSON.parse(require('fs').readFileSync('plugins/gru953-studio/hooks/hooks.json','utf8'))"
+# 2. every hook parses
 for f in plugins/gru953-studio/hooks/*.mjs; do node --check "$f"; done
-# 2. the security hooks behave correctly
+# 3. the security hooks behave correctly
 node plugins/gru953-studio/hooks/hooks.test.mjs
-# 3. the repository is internally consistent (references, counts, versions)
+# 4. the repository is internally consistent (references, counts, versions)
 node plugins/gru953-studio/hooks/repo-integrity.mjs .
-# 4. the roster is within its committed baseline
+# 5. the roster is within its committed baseline
 node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
-# 5. the licence scanner runs
+# 6. the licence scanner runs
 node plugins/gru953-studio/hooks/licence-scan.mjs .
+# 7. every required file is present (see .github/workflows/ci.yml for the exact list)
 ```
 
 Pull requests are expected to keep **continuous integration (CI) green** — CI
@@ -52,7 +57,11 @@ Use clear, Conventional-style commit messages, for example:
 ## New specialist roles need a named gap
 
 GRU953-Studio deliberately keeps its agent-role count small and bounded
-(see `Dev-Memory/decisions/` in the build history for why). A pull request
+(see `plugins/gru953-studio/ROSTER.md` for the current roster and the
+reasoning behind it — this file is the committed, public record; a
+built PROJECT's own equivalent reasoning lives in ITS OWN local
+`Dev-Memory/decisions/`, which never ships and isn't part of this
+repository). A pull request
 proposing a new role must name the specific, real gap an existing role
 can't cover — not just "this would be nice." Extending an existing role's
 behaviour is usually a better fit than a new role.
@@ -85,7 +94,7 @@ Signed-off-by: Your Name <your.email@example.com>
 ## Licensing (inbound = outbound)
 
 Contributions are accepted under the same licence as the project itself
-(**inbound = outbound**): the Polyform Noncommercial License 1.0.0 (see
+(**inbound = outbound**): the PolyForm Noncommercial License 1.0.0 (see
 `LICENSE`). By contributing, you agree your work is provided
 under these terms, with a DCO 1.1 sign-off.
 

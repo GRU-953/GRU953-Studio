@@ -159,6 +159,40 @@ A real first project might be as simple as typing:
 
 ---
 
+## Example ideas, from small to bigger
+
+A flavour of the range it covers — type any of these between square
+brackets, or something like them:
+
+- **A personal one-page site** — `[ a one-page website listing my
+  favourite books, with a short review for each ]`. The simplest kind of
+  job (Tiny Tier): a single page, no logins, no stored data.
+- **A small business tool** — `[ a booking page where my hairdressing
+  clients can pick a free slot and leave their phone number ]`. Needs
+  logins and stored data, so a bigger team wakes automatically (Standard
+  Tier): a proper design pass and independent testing before it ships.
+- **Something handling money** — `[ a small shop where people can buy my
+  handmade candles and pay by card ]`. Payments and personal details mean
+  the full team activates (Complex Tier): extra security checks, a
+  privacy review, and tests for what happens when something goes wrong
+  (a declined card, for instance), not just when everything works.
+- **An AI-powered feature, built with guardrails** — `[ a tool that reads
+  a long PDF report and gives me a plain-English summary ]`. The AI
+  Developer writes the prompt itself, builds in "say I don't know rather
+  than guess," and hands the Tester a fixed set of checks — so quality is
+  provable, not just assumed.
+- **Using a free local AI model instead of the cloud** — `[ a private
+  journal app that summarises my entries using an AI model that runs on
+  my own laptop ]`. The AI Developer can offer Ollama instead of Claude
+  for this — always your choice, always asking first, and telling you
+  the download size before anything installs.
+- **Coming back to grow something already published** — just describe
+  the change, e.g. "add a way to search my recipe app by ingredient."
+  The Maintenance Agent picks up an already-published project safely,
+  rather than starting over.
+
+---
+
 ## The team behind it (you never manage any of this)
 
 You only ever talk to **one** friendly coordinator — the **Project Lead**. It
@@ -186,7 +220,9 @@ estimate, with your one-time permission), Publisher (versions and ships it),
 Memory Keeper (remembers everything between sessions).
 
 **Brought in only when your project needs them:** Maintenance Agent (later fixes
-and features), DevOps Engineer (hosting/putting it online), Responsible-AI
+and features), DevOps Engineer (hosting/putting it online, and can add standard
+self-recovery so a live app quietly restarts itself if it ever crashes),
+Responsible-AI
 Reviewer (fairness and honesty checks for AI features), UX Designer (makes it
 pleasant to use), Accessibility Specialist (usable by people with disabilities),
 Technical Writer (a plain guide for *your* finished app), Data Engineer (safe
@@ -194,6 +230,11 @@ data storage), Localisation Specialist (more than one language, e.g. English +
 Bangla), Researcher (checks current facts, and — only when a task genuinely
 needs it — can suggest an existing Claude Code tool that already solves it,
 always asking before installing anything).
+
+Several roles (Reviewer, Security & Compliance Auditor, Architect, Builder,
+DevOps Engineer, and Publisher) can also ask that same free local Ollama
+model for an independent second opinion on their own work — always your
+choice, same as everywhere else Ollama is offered.
 
 *(23 specialist roles in total, coordinated for you — never something you
 operate by hand.)*
@@ -301,8 +342,9 @@ the **Discover** tab.
 
 **Free for non-commercial use** — personal projects, learning, research,
 hobbies, and use by charities, schools and public-benefit organisations — under
-the [Polyform Noncommercial License 1.0.0](LICENSE), a professionally
-drafted, widely recognised licence.
+the [PolyForm Noncommercial License 1.0.0](LICENSE), a professionally
+drafted, widely recognised licence (see also [NOTICE](NOTICE) for why this
+licence was chosen).
 
 **Selling something built with it?** Commercial use (including apps you build
 with GRU953-Studio and then sell) needs a separate paid licence — see the

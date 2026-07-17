@@ -1,6 +1,6 @@
 # GRU953 Logo & Visual Identity — Usage Policy
 
-GRU953-Studio's documentation and code are licensed under the Polyform
+GRU953-Studio's documentation and code are licensed under the PolyForm
 Noncommercial License 1.0.0 (see `LICENSE` and `NOTICE`) — free for personal
 and non-commercial use, with commercial use requiring a paid licence. **The
 GRU953 mark itself — the Soaring Bird logo, the GRU953 wordmark, and any
@@ -38,7 +38,7 @@ altered or reused as someone else's identity.
 The name **GRU953** in plain text, the brand colours (as hex values, which
 are not proprietary), the typefaces (under their own open licences), and
 all other documentation and assets remain under this project's own licence
-(the Polyform Noncommercial License 1.0.0, as stated in `NOTICE`) — only
+(the PolyForm Noncommercial License 1.0.0, as stated in `NOTICE`) — only
 the graphic mark itself is scoped by this policy (see also `TRADEMARKS.md`).
 
 ## Questions or permission requests

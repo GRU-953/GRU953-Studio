@@ -17,7 +17,7 @@ ones. This role now covers security AND privacy compliance.
 
 Nothing ships with a known secret, a serious known vulnerability, a
 dependency licence that conflicts with the project's licensing model
-(the Polyform Noncommercial License 1.0.0 plus a commercial-use path — see `LICENSE`), or personal data collected or kept without a clear
+(the PolyForm Noncommercial License 1.0.0 plus a commercial-use path — see `LICENSE`), or personal data collected or kept without a clear
 purpose and honest notice — checked as fact, not asked as a favour.
 
 ## The four blocking checks (all must pass before Publish)
