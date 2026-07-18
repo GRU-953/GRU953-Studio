@@ -18,8 +18,11 @@
 // Usage: node licence-scan.mjs [projectRoot]
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const ALLOWED = new Set([
   'MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', '0BSD',
@@ -105,6 +108,122 @@ function scanPython(root) {
   return { ecosystem: 'python', checked: false, findings: [], note: 'venv found but not deeply scanned — run pip-licenses manually and review before publish' };
 }
 
+// Dart/Flutter (pub.dev) packages ship a LICENSE file, not a machine-
+// readable SPDX field the way npm's package.json does — so this
+// classifies by matching distinctive phrases in the licence TEXT itself,
+// same three-way true/false/null shape as isAllowed() above. Copyleft
+// signatures are checked first, same priority FLAG_SUBSTRINGS gets in
+// isAllowed() — an unambiguous copyleft match is never allow-listed by a
+// later, looser check. Anything that doesn't match a known signature
+// returns null ("needs a human look"), never a guess.
+export function detectLicenceFromText(text) {
+  if (!text) return null;
+  const t = text.toUpperCase();
+
+  if (t.includes('GNU LESSER GENERAL PUBLIC LICENSE')) return { spdx: 'LGPL', allowed: false };
+  if (t.includes('GNU AFFERO GENERAL PUBLIC LICENSE')) return { spdx: 'AGPL', allowed: false };
+  if (t.includes('GNU GENERAL PUBLIC LICENSE')) return { spdx: 'GPL', allowed: false };
+  if (t.includes('MOZILLA PUBLIC LICENSE')) return { spdx: 'MPL', allowed: false };
+  if (t.includes('ECLIPSE PUBLIC LICENSE')) return { spdx: 'EPL', allowed: false };
+  if (t.includes('SERVER SIDE PUBLIC LICENSE')) return { spdx: 'SSPL', allowed: false };
+
+  if (t.includes('MIT LICENSE')) return { spdx: 'MIT', allowed: true };
+  if (t.includes('APACHE LICENSE') && t.includes('VERSION 2.0')) return { spdx: 'Apache-2.0', allowed: true };
+  // 3-clause BSD adds a "neither the name ... endorse or promote" clause
+  // the 2-clause variant doesn't have — checked first so a 3-clause text
+  // (which also matches the weaker 2-clause pattern below) is never
+  // misclassified as 2-clause.
+  if (t.includes('REDISTRIBUTION AND USE') && t.includes('BINARY FORM') && t.includes('NEITHER THE NAME')) {
+    return { spdx: 'BSD-3-Clause', allowed: true };
+  }
+  if (t.includes('REDISTRIBUTION AND USE') && t.includes('BINARY FORM')) {
+    return { spdx: 'BSD-2-Clause', allowed: true };
+  }
+  if (t.includes('THIS IS FREE AND UNENCUMBERED SOFTWARE')) return { spdx: 'Unlicense', allowed: true };
+  if (t.includes('CC0')) return { spdx: 'CC0-1.0', allowed: true };
+  if (t.includes('ISC LICENSE')) return { spdx: 'ISC', allowed: true };
+
+  return null; // present but not recognised — needs a human look
+}
+
+// `PUB_CACHE` is the documented override; otherwise pub uses a fixed
+// per-OS default location — not `$HOME`-relative on Windows.
+export function findPubCacheRoot() {
+  if (process.env.PUB_CACHE) return process.env.PUB_CACHE;
+  if (process.platform === 'win32') {
+    const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(base, 'Pub', 'Cache');
+  }
+  return path.join(os.homedir(), '.pub-cache');
+}
+
+function scanDartFlutter(root) {
+  let parsed;
+  try {
+    // Reads the already-resolved pubspec.lock state — no network expected,
+    // but bounded with a timeout anyway so a stalled call can't hang this
+    // hook indefinitely.
+    const raw = execFileSync('dart', ['pub', 'deps', '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 30_000,
+    });
+    parsed = JSON.parse(raw);
+  } catch {
+    // Dart SDK not on PATH, `pub deps` failed, or output wasn't valid JSON
+    // — reported honestly as not-checked, the same fallback shape every
+    // other ecosystem here uses, never a guessed/assumed clean result.
+    return {
+      ecosystem: 'dart/flutter',
+      checked: false,
+      findings: [],
+      note: 'could not run `dart pub deps --json` (Dart SDK not on PATH, or pub deps failed) — run it manually and review each package licence before publish',
+    };
+  }
+
+  const pubCacheRoot = findPubCacheRoot();
+  const findings = [];
+  // Only 'hosted' (real pub.dev) packages live in the pub cache this way.
+  // 'root' is the project itself; 'sdk' packages (e.g. `flutter`,
+  // `sky_engine`) ship inside the Flutter SDK install under its own
+  // licence, not as an individually cached pub.dev download — out of
+  // scope here the same way scanNode() doesn't scan Node.js's own
+  // built-in modules.
+  const hostedPackages = (parsed.packages || []).filter((p) => p.source === 'hosted');
+
+  for (const pkg of hostedPackages) {
+    const pkgDir = path.join(pubCacheRoot, 'hosted', 'pub.dev', `${pkg.name}-${pkg.version}`);
+    const licenceFile = ['LICENSE', 'LICENSE.md', 'LICENSE.txt']
+      .map((f) => path.join(pkgDir, f))
+      .find((f) => fs.existsSync(f));
+
+    if (!licenceFile) {
+      findings.push({ package: pkg.name, licence: 'unreadable (no LICENSE file found in pub cache)', verdict: 'needs-review' });
+      continue;
+    }
+
+    let text;
+    try {
+      text = fs.readFileSync(licenceFile, 'utf8');
+    } catch {
+      findings.push({ package: pkg.name, licence: 'unreadable (LICENSE file exists but could not be read)', verdict: 'needs-review' });
+      continue;
+    }
+
+    const detected = detectLicenceFromText(text);
+    if (detected === null) {
+      findings.push({ package: pkg.name, licence: 'unrecognised licence text', verdict: 'needs-review' });
+    } else if (detected.allowed === false) {
+      findings.push({ package: pkg.name, licence: detected.spdx, verdict: 'blocked' });
+    }
+    // else: recognised and allowed — no entry, same convention scanNode()
+    // uses (only non-clean results are pushed to findings).
+  }
+
+  return { ecosystem: 'dart/flutter', checked: true, findings };
+}
+
 function main() {
   const root = process.argv[2] || process.cwd();
   const hasPackageJson = fs.existsSync(path.join(root, 'package.json'));
@@ -114,7 +233,7 @@ function main() {
   const results = [];
   if (hasPackageJson) results.push(scanNode(root));
   if (hasRequirements) results.push(scanPython(root));
-  if (hasPubspec) results.push({ ecosystem: 'dart/flutter', checked: false, findings: [], note: 'run `dart pub deps --style=compact` and review each package licence manually before publish — no offline scan implemented yet' });
+  if (hasPubspec) results.push(scanDartFlutter(root));
 
   if (results.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'no recognised dependency manifests found', results: [] }, null, 2));
@@ -143,4 +262,12 @@ function main() {
   process.exit(0);
 }
 
-main();
+// Guarded so this file can also be `import`-ed for unit testing
+// (detectLicenceFromText, findPubCacheRoot) without main()'s CLI side
+// effects (console output + process.exit) firing on import — this file
+// had no test-facing exports before, so this guard was never needed
+// until now. `node licence-scan.mjs [projectRoot]` still runs exactly as
+// before when invoked directly.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main();
+}

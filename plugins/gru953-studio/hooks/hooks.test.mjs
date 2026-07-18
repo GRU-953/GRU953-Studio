@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { isPushCapable } from './lib.mjs';
+import { detectLicenceFromText, findPubCacheRoot } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -740,6 +741,100 @@ test('licence-scan.mjs: a package with no readable package.json is surfaced as n
   const json = JSON.parse(r.stdout);
   assert.notEqual(json.status, 'clean', 'a package with no readable package.json must not report clean');
   assert.ok(json.needsReview.some((f) => f.package === 'broken-pkg'), 'the unreadable package must be surfaced in needsReview, not dropped');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// licence-scan.mjs Dart/Flutter support (2026-07-19 addition). The
+// classification logic (detectLicenceFromText) is unit-tested directly,
+// since it has no external dependency and no environment can be assumed
+// to have the Dart SDK installed — this plugin's own CI (ubuntu-latest,
+// Node only, see .github/workflows/ci.yml) genuinely does not. The
+// scanDartFlutter() happy path (a resolved pub cache with real packages)
+// is intentionally NOT spawnSync-tested end-to-end for the same reason:
+// faking a resolved `dart pub deps --json` output without the real Dart
+// toolchain would just be testing a mock, not the real classification
+// path — which detectLicenceFromText already covers directly, matching
+// how scanNode()'s package.json-parsing logic doesn't need `npm` itself
+// to run to be tested.
+test('licence-scan.mjs detectLicenceFromText: classifies real-world licence text correctly, permissive and copyleft alike', () => {
+  const cases = [
+    ['MIT License\n\nPermission is hereby granted, free of charge...', 'MIT', true],
+    ['Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/', 'Apache-2.0', true],
+    [
+      'Redistribution and use in source and binary forms, with or without\n' +
+        'modification, are permitted provided that the following conditions are\n' +
+        'met:\n    * Redistributions of source code must retain...\n' +
+        '    * Neither the name of Google LLC nor the names of its\n' +
+        '      contributors may be used to endorse or promote products...',
+      'BSD-3-Clause',
+      true,
+    ],
+    ['Redistribution and use in source and binary forms, with or without modification, are permitted.', 'BSD-2-Clause', true],
+    ['This is free and unencumbered software released into the public domain.', 'Unlicense', true],
+    ['CC0 1.0 Universal', 'CC0-1.0', true],
+    ['ISC License\n\nPermission to use, copy, modify...', 'ISC', true],
+    ['GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007', 'GPL', false],
+    ['GNU LESSER GENERAL PUBLIC LICENSE\nVersion 3\n\nThis version of the GNU Lesser General Public License incorporates\nthe terms and conditions of version 3 of the GNU General Public License', 'LGPL', false],
+    ['GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3', 'AGPL', false],
+    ['Mozilla Public License, v. 2.0', 'MPL', false],
+  ];
+  for (const [text, expectSpdx, expectAllowed] of cases) {
+    const result = detectLicenceFromText(text);
+    assert.ok(result, `expected a match for ${expectSpdx}, got null for: ${text.slice(0, 40)}...`);
+    assert.equal(result.spdx, expectSpdx, `wrong spdx for: ${text.slice(0, 40)}...`);
+    assert.equal(result.allowed, expectAllowed, `wrong allowed verdict for ${expectSpdx}`);
+  }
+});
+
+test('licence-scan.mjs detectLicenceFromText: an LGPL text mentioning "GNU General Public License" in its own preamble is not misclassified as plain GPL', () => {
+  // Real LGPL licence text legitimately contains the substring "GNU General
+  // Public License" (it incorporates GPL terms by reference) — the LGPL/AGPL
+  // checks must run before the plain-GPL check, or this exact case would be
+  // wrongly classified as GPL instead of the less restrictive LGPL.
+  const lgplText = 'GNU LESSER GENERAL PUBLIC LICENSE\nThis incorporates the terms of the GNU GENERAL PUBLIC LICENSE.';
+  const result = detectLicenceFromText(lgplText);
+  assert.equal(result.spdx, 'LGPL');
+});
+
+test('licence-scan.mjs detectLicenceFromText: unrecognised text returns null, never a guess', () => {
+  assert.equal(detectLicenceFromText('Some random README text that is not a licence at all.'), null);
+  assert.equal(detectLicenceFromText(''), null);
+  assert.equal(detectLicenceFromText(null), null);
+});
+
+test('licence-scan.mjs findPubCacheRoot: respects the PUB_CACHE override before falling back to the OS default', () => {
+  const original = process.env.PUB_CACHE;
+  try {
+    process.env.PUB_CACHE = '/custom/pub/cache/path';
+    assert.equal(findPubCacheRoot(), '/custom/pub/cache/path');
+    delete process.env.PUB_CACHE;
+    const fallback = findPubCacheRoot();
+    assert.ok(fallback.includes('pub-cache') || fallback.includes('Pub'), `expected an OS-default pub cache path, got: ${fallback}`);
+  } finally {
+    if (original === undefined) delete process.env.PUB_CACHE;
+    else process.env.PUB_CACHE = original;
+  }
+});
+
+test('licence-scan.mjs: with no Dart SDK reachable, a Dart/Flutter project is reported as not-checked, never a crash or a false clean', () => {
+  // Deliberately runs with a PATH that excludes any `dart` binary — this
+  // dev machine happens to have Dart installed (from building the
+  // Saraswati project), but this plugin's own CI (ubuntu-latest, Node
+  // only) does not, and the test must be true either way, not depend on
+  // what happens to be installed on whichever machine runs it.
+  const dir = mkTmp('gru-licscan-dart-unresolved-');
+  fs.writeFileSync(path.join(dir, 'pubspec.yaml'), 'name: test_project\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n');
+  const nodeDir = path.dirname(process.execPath);
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: nodeDir },
+  });
+  assert.equal(r.stderr, '', `must not crash: ${r.stderr}`);
+  const json = JSON.parse(r.stdout);
+  assert.notEqual(json.status, 'clean', 'a project scanned with no Dart SDK reachable must not report clean');
+  const dartResult = json.results.find((res) => res.ecosystem === 'dart/flutter');
+  assert.ok(dartResult, 'a dart/flutter result must be present since pubspec.yaml exists');
+  assert.equal(dartResult.checked, false, 'cannot be genuinely checked with no Dart SDK reachable');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
