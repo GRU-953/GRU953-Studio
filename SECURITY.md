@@ -7,6 +7,19 @@ those who report vulnerabilities responsibly. GRU953-Studio runs autonomous
 AI agents with file, shell, and GitHub access on your machine — please
 report concerns responsibly rather than opening a public issue.
 
+> **At a glance, in plain words.** Before anything is published, automatic
+> checks scan for leaked passwords, known weaknesses, and licence problems —
+> on every project, however small. These checks are real and effective
+> against ordinary mistakes and premature publishing. They are **not** a
+> defence against a deliberately hostile, fully compromised agent session —
+> an honest limit explained in full under
+> ["Known limitations" below](#known-limitations-disclosed-not-hidden), not
+> hidden from you. If something below is unclear, the
+> [full non-technical FAQ](https://gru-953.github.io/GRU953-Studio/faq.html)
+> and [troubleshooting guide](https://gru-953.github.io/GRU953-Studio/troubleshooting.html)
+> answer the most common questions in everyday language. Everything past this
+> point is the full, detailed policy for anyone who wants it.
+
 ## Reporting a vulnerability
 
 Please report security issues **privately**. Do not open a public issue for a

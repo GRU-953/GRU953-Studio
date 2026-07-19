@@ -28,3 +28,18 @@ hook, or role count that doesn't actually exist — if you add or rename any
 agent, skill, or hook, run it before you commit. Adding a specialist role
 means updating `plugins/gru953-studio/ROSTER.md` (the committed baseline)
 with the named gap it fills.
+
+The five gates above are the ones CI itself runs and are mandatory on every
+commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries five
+project-level gates (no-ops on this repo, since it has no `Dev-Memory/` of its
+own) that a project built *by* the plugin must pass before a phase checkpoint
+or Publish — run these too whenever you touch the skill/hook that documents
+them, so the documented requirement and the enforcing script never drift apart:
+
+```
+node plugins/gru953-studio/hooks/verify-progress.mjs .     # done tasks carry verified: evidence (tester / security-compliance-auditor)
+node plugins/gru953-studio/hooks/quality-gate.mjs .        # Definition of Done (quality-gate skill)
+node plugins/gru953-studio/hooks/traceability-check.mjs .  # requirements <-> tasks (focus-guard skill)
+node plugins/gru953-studio/hooks/memory-integrity.mjs .    # recall index/graph consistency (memory-graph skill)
+node plugins/gru953-studio/hooks/content-check.mjs .       # content approval/provenance/rights (content-creation skill)
+```

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started — GRU953-Studio</title>
+<meta name="description" content="Install GRU953-Studio and build your first app, step by step, in plain English.">
+<link rel="icon" href="brand/gru953-logo-colour.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&family=Noto+Sans+Bengali:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">GRU953-Studio</a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="guide.html" class="current">Guide</a>
+      <a href="use-cases.html">Use cases</a>
+      <a href="agents.html">Agents</a>
+      <a href="skills.html">Skills</a>
+      <a href="faq.html">FAQ</a>
+      <a href="troubleshooting.html">Help</a>
+      <a href="https://github.com/GRU-953/GRU953-Studio">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="tight">
+    <div class="doc-wrap">
+      <span class="eyebrow">Getting started</span>
+      <h1>From nothing installed to your first published app</h1>
+      <p class="lede">This is the same journey described in the project's README, laid out as a
+        step-by-step guide. Nothing here needs technical knowledge — if you can describe your
+        idea to a friend, you can follow this.</p>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="doc-wrap">
+      <h2>1. Install Claude Code</h2>
+      <p>GRU953-Studio is an add-on for <a href="https://claude.com/claude-code">Claude Code</a>,
+        Anthropic's coding assistant that you talk to in plain English. It is not a separate
+        program, and it does <strong>not</strong> run inside the Claude Desktop chat app — it
+        needs Claude Code specifically. It works both in the desktop app and on
+        <a href="https://claude.com/claude-code">Claude Code on the web</a>, from a browser.</p>
+      <p>Install and sign in to Claude Code first, then come back here.</p>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="doc-wrap">
+      <h2>2. Add GRU953-Studio</h2>
+      <p>Type these two lines into Claude Code, one at a time, pressing Enter after each:</p>
+      <div class="hero-install" style="max-width:none;">
+        <pre class="mono"><code>/plugin marketplace add GRU-953/GRU953-Studio
+/plugin install gru953-studio@gru953-studio</code></pre>
+      </div>
+      <p style="margin-top:16px;">Prefer a downloaded file instead? Open the
+        <a href="https://github.com/GRU-953/GRU953-Studio/releases">Releases page</a>, download the
+        newest <code>.zip</code>, unzip it anywhere, then run the two lines above but replace
+        <code>GRU-953/GRU953-Studio</code> with the folder path you unzipped to.</p>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="doc-wrap">
+      <h2>3. Two free things it relies on</h2>
+      <div class="card-grid" style="margin-top:8px;">
+        <div class="card"><h3><a href="https://nodejs.org">Node.js</a></h3><p>A small free program that powers the built-in safety checks. Install it once, before you first publish.</p></div>
+        <div class="card"><h3><a href="https://cli.github.com">GitHub CLI</a></h3><p>Only needed when you publish. After installing, run <code>gh auth login</code> once and follow the prompts.</p></div>
+      </div>
+      <p style="margin-top:18px;">If either is missing exactly when it's needed, GRU953-Studio
+        stops and tells you precisely what to install — it never fails silently.</p>
+      <div class="callout" style="margin-top:8px;">
+        <p><strong>Optional, only for generated images/audio/video:</strong> a
+          <a href="https://ai.google.dev">Google Gemini</a> API key of your own. Entirely
+          optional, off unless you turn it on, and the studio always shows you the cost and asks
+          first. Written text needs none of this.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="doc-wrap">
+      <h2>4. The first time you use it</h2>
+      <p>It runs a short, one-off "getting to know you" setup — your preferred name, the kinds of
+        things you like to build, your GitHub username. This never happens again.</p>
+      <p>After that, every project follows the same loop:</p>
+      <div class="steps" style="margin-top:8px;">
+        <div class="step"><span class="num"></span><div><h3>Describe it</h3><p>Type your idea between square brackets, e.g. <code>[ a one-page website listing my favourite books ]</code>.</p></div></div>
+        <div class="step"><span class="num"></span><div><h3>Answer the pop-ups</h3><p>Simple multiple-choice questions, one at a time, each with a recommended answer marked.</p></div></div>
+        <div class="step"><span class="num"></span><div><h3>Approve the mock-up</h3><p>A clickable preview of the screens, plus what ships first — approve both before real code exists.</p></div></div>
+        <div class="step"><span class="num"></span><div><h3>It writes the content</h3><p>Real Bangla/English text; media only with your yes and a shown cost.</p></div></div>
+        <div class="step"><span class="num"></span><div><h3>It builds and tests it</h3><p>In stages, checking in at every meaningful point.</p></div></div>
+        <div class="step"><span class="num"></span><div><h3>You review, then it publishes</h3><p>Private to your own GitHub by default; public is a separate step you choose.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="doc-wrap">
+      <h2>5. Staying in control while it works</h2>
+      <p>You never have to sit and watch. A few simple commands, typed any time:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>/studio-status</code></td><td>A plain-English progress report — done, in progress, next, and anything waiting on you.</td></tr>
+            <tr><td><code>/studio-pause</code></td><td>Pause the current task. Nothing is lost.</td></tr>
+            <tr><td><code>/studio-resume</code></td><td>Pick up exactly where you paused.</td></tr>
+            <tr><td><code>/studio-stop</code></td><td>Set everything down cleanly for the day.</td></tr>
+            <tr><td><code>/studio-skip</code></td><td>Set the current task aside and move to the next one; nothing is deleted.</td></tr>
+            <tr><td><code>/studio-schedule</code></td><td>Ask it to pick a task back up at a time you choose.</td></tr>
+            <tr><td><code>/studio-dashboard</code></td><td>Open a one-page visual summary of your app's concept, design, plan and content.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="doc-wrap">
+      <div class="callout">
+        <p><strong>What next?</strong> Browse the <a href="use-cases.html">use-case gallery</a>
+          for ideas, meet the <a href="agents.html">specialist team</a>, or jump straight to
+          <a href="troubleshooting.html">troubleshooting</a> and the <a href="faq.html">FAQ</a> if
+          something's not behaving as expected.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">GRU953-Studio</a>
+      <nav aria-label="Footer">
+        <a href="guide.html">Guide</a>
+        <a href="use-cases.html">Use cases</a>
+        <a href="agents.html">Agents</a>
+        <a href="skills.html">Skills</a>
+        <a href="faq.html">FAQ</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+        <a href="https://github.com/GRU-953/GRU953-Studio">GitHub</a>
+      </nav>
+    </div>
+    <div class="fine"><p>Made by <a href="https://github.com/GRU-953">Aninda Sundar Howlader</a>. Free for non-commercial use under the PolyForm Noncommercial License 1.0.0.</p></div>
+  </div>
+</footer>
+
+</body>
+</html>

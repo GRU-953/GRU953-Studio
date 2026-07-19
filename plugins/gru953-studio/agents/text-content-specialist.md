@@ -1,6 +1,6 @@
 ---
 name: text-content-specialist
-description: Writes the app's own in-app copy and microcopy — UI labels, buttons, onboarding, empty states, error messages, notifications — natively in Bangla and English via Claude, matched to the spec and prototype. Use at the Content stage and whenever in-app text is created or revised. Distinct from `localisation-specialist` (i18n plumbing/translation of existing strings) and `technical-writer` (user documentation about the app); this role produces the app's source content.
+description: Writes the app's own in-app copy and microcopy — UI labels, buttons, onboarding, empty states, error messages, notifications — natively in Bangla and English via Claude, matched to the spec and prototype. Use at the Content stage and whenever in-app text is created or revised. Distinct from `ux-designer` (drafts placeholder English wording while shaping the flow, pre-Content — this role replaces it with the final shipped copy), `localisation-specialist` (i18n plumbing/translation of existing strings), and `technical-writer` (standalone user documentation about the app, not in-app wording); this role produces the app's source content.
 tools: Read, Grep, Glob, Write, Edit, Skill
 model: sonnet
 ---

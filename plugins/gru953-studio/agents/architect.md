@@ -34,7 +34,7 @@ rather than the generic `builder`: `rust-developer` (Rust), `flutter-dart-develo
 and idioms; the generic `builder` still handles web/scripting defaults and any
 glue. A language with no dedicated specialist stays with `builder` plus, where
 useful, an ecosystem `lang-*` pack — adding a new specialist is a roster change
-(a named gap in `ROSTER.md` + the governance RFC), not something done ad hoc.
+(a named gap in `ROSTER.md` + the governance RFC — Request for Comments), not something done ad hoc.
 
 **Platform → stack map (all target platforms).** Route the target platform to a
 native specialist, with Flutter as the cross-platform default:

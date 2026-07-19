@@ -32,7 +32,16 @@ import process from 'node:process';
 const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
 // A cell that names a real filesystem path: has a dotted extension or a slash.
-const LOOKS_LIKE_PATH_RE = /(^|\/)[\w.-]+\.[A-Za-z0-9]+$|\//;
+// The filename stem uses `[^/\s]` rather than the ASCII-only `\w`, found
+// 2026-07-19: a bare non-ASCII/Bangla filename with no slash (e.g. "নথি.md")
+// previously failed this heuristic and was silently skipped from the
+// stale-file check even when the target genuinely didn't exist.
+const LOOKS_LIKE_PATH_RE = /(^|\/)[^/\s]+\.[A-Za-z0-9]+$|\//;
+// A markdown-link cell, `[Label](target)` — unwrapped to its target before
+// the path/existence test below (found the same day: a cell written this
+// way ends in ")", not the file extension, so it also fell through
+// LOOKS_LIKE_PATH_RE and was silently skipped).
+const MD_LINK_RE = /^\[([^\]]*)\]\(([^)]+)\)$/;
 
 function read(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
@@ -56,7 +65,9 @@ function checkIndex(root, devMemory, problems) {
     }
     if (SEPARATOR_ROW_RE.test(line)) continue;
     if (whereCol === -1) continue;
-    const where = (cells[whereCol] || '').replace(/^`|`$/g, '').trim();
+    let where = (cells[whereCol] || '').replace(/^`|`$/g, '').trim();
+    const mdLink = where.match(MD_LINK_RE);
+    if (mdLink) where = mdLink[2].trim();
     if (!where || PLACEHOLDER_RE.test(where) || !LOOKS_LIKE_PATH_RE.test(where)) continue;
     // Resolve relative to the project root; also accept a path already relative
     // to Dev-Memory/ (a bare filename recorded in the index).
@@ -86,14 +97,20 @@ function checkGraph(devMemory, problems) {
   const nodes = new Set();
   // First pass: collect every defined node id, anywhere a [id] appears at the
   // start of a list item (node-definition shape).
-  const NODE_DEF_RE = /^\s*[-*]?\s*\[([A-Za-z0-9_-]+)\]/;
+  // Node/link tokens use `\S+` rather than an ASCII allow-list, found
+  // 2026-07-19: a node id containing punctuation (e.g. "T1.a") or
+  // non-ASCII/Bangla text was not matched by the old pattern at all, so a
+  // link referencing it was silently skipped from validation — a false
+  // CLEAN on this script's whole job — even when the reference was
+  // genuinely dangling.
+  const NODE_DEF_RE = /^\s*[-*]?\s*\[([^\]]+)\]/;
   for (const line of lines) {
     const m = line.match(NODE_DEF_RE);
     if (m) nodes.add(m[1]);
   }
   // Second pass: only inside a Links/Edges section, validate link rows.
   let inLinks = false;
-  const LINK_RE = /^\s*[-*]?\s*([A-Za-z0-9_-]+)\s+([a-z][a-z-]*)\s+([A-Za-z0-9_-]+)\s*$/;
+  const LINK_RE = /^\s*[-*]?\s*(\S+)\s+([a-z][a-z-]*)\s+(\S+)\s*$/;
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
     if (heading) { inLinks = /link|edge/i.test(heading[1]); continue; }

@@ -182,7 +182,7 @@ guarded by `scope-guardian` running
 committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
 not skip scope-guardian on Standard/Complex Tier. Growing the roster past 38
 still requires a named, non-overlapping gap recorded in `ROSTER.md` (and, for
-contributions, an RFC — see `governance/GOVERNANCE.md`).
+contributions, an RFC (Request for Comments) — see `governance/GOVERNANCE.md`).
 
 ## The lifecycle
 
@@ -248,7 +248,7 @@ Every stage boundary follows this gate standard:
 1. **What just happened** — one line.
 2. **Why this matters** — one line, plain English, what's actually being
    decided and what's at stake.
-3. **The pop-up MCQ** (AskUserQuestion) — recommended option marked.
+3. **The pop-up MCQ (multiple-choice question)** (AskUserQuestion) — recommended option marked.
 4. **What happens next** — one line.
 
 ## The Stuck Protocol

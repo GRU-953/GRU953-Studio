@@ -31,7 +31,10 @@ stays thin. Plain-English rule is as set in the `studio` skill.
 ## Dependencies & licences
 
 - Dependencies are declared in `pom.xml` (Maven) or `build.gradle` (Gradle).
-- `hooks/licence-scan.mjs` reads those manifests for the dependency set;
-  `security-compliance-auditor` runs it before Publish. `mvn dependency:tree` /
-  `./gradlew dependencies` give the resolved tree for a deeper check.
+- `hooks/licence-scan.mjs` detects Maven/Gradle projects but — like
+  C++/Swift/Go/.NET — has no single zero-config licence source for the JVM,
+  so it reports them best-effort/INCOMPLETE rather than a pass;
+  `security-compliance-auditor` must run the ecosystem's own report
+  (`mvn dependency:tree` / `./gradlew dependencies` plus a licence plugin)
+  and review before Publish.
 - Every added dependency passes the `yagni-rules` ladder.

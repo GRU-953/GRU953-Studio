@@ -60,7 +60,7 @@ cost-monitor · publisher · memory-keeper
 | localisation-specialist | More than one language (i18n/l10n; English + Bangla) | Brief needs multiple languages |
 | researcher | External fact-finding on current evidence | On demand in Brainstorm/Ideate/Design |
 
-## Native language specialists (6), added v3.6.0 (2026-07-19)
+## Native language specialists (10), added v3.6.0 + v4.1.0 (2026-07-19)
 
 Owner-directed expansion (feature request: "add native support for dart/flutter,
 kotlin, rust, python, java, C++ with dedicated agents"). Recorded here as the

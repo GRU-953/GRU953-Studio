@@ -12,10 +12,11 @@ genuine gap: GRU953-Studio's existing Build cycle writes tests *after* the
 code (`builder` implements, then hands off; `tester` proves it afterwards).
 That is correct and sufficient for Tiny Tier's small, one-off scripts, but
 for Standard/Complex Tier — where more is already at stake and more rigour
-already applies elsewhere — the same idea an existing FOSS tool called
-"TDD Guard" enforces (a test written and failing *before* implementation
-exists) is worth having natively. This skill is a GRU953-Studio-original
-protocol inspired by that idea, not a use of that project's code.
+already applies elsewhere — the same idea an existing free, open-source
+(FOSS) tool called "TDD Guard" enforces — TDD (Test-Driven Development): a
+test written and failing *before* implementation exists — is worth having
+natively. This skill is a GRU953-Studio-original protocol inspired by that
+idea, not a use of that project's code.
 
 ## Tier scope
 

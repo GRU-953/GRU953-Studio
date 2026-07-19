@@ -41,6 +41,16 @@ import process from 'node:process';
 // evidence) or N/A (with a reason). Keeping this list HERE — not in the file
 // under test — is what stops a project hiding a skipped dimension by omission:
 // the row can be marked "n/a — no user interface", but it cannot be missing.
+//
+// Deliberately English-only keywords: QUALITY-GATE.md is an internal
+// maintainer/CI record (like PROGRESS.md and REQUIREMENTS.md), and the
+// quality-gate skill's own template uses English column headers and item
+// labels — Bangla is the project's user-FACING language (in-app text,
+// content), not this internal bookkeeping convention. Noted 2026-07-19 (an
+// audit pass flagged this as worth stating explicitly rather than leaving
+// implicit): an Item label written in Bangla fails safe — the dimension is
+// reported MISSING, never a false pass — but locking this down here so a
+// future change is a deliberate choice, not an accident.
 const REQUIRED = [
   { key: 'acceptance', match: /accept/i, label: 'acceptance criteria proven' },
   { key: 'tests', match: /\btest/i, label: 'tests pass (with evidence)' },
@@ -54,7 +64,18 @@ const REQUIRED = [
 // A status cell that counts as a genuine pass. Deliberately narrow — an empty
 // cell, "todo", "pending", "in progress", "fail", "blocked", "no" are NOT here
 // and therefore fail closed.
-const PASS_RE = /^\s*(pass(ed)?|ok|green|done|met|yes|✅|✓)\b/i;
+// 2026-07-19 audit fix (real bug, found by execution): a single trailing `\b`
+// after the whole alternation applied to the ✅/✓ symbol alternatives too, but
+// `\b` requires a `\w` character on one side — neither the symbol nor whatever
+// follows it (whitespace, end-of-string, a table-cell pipe) is a word
+// character, so `\b` can never match there. This made "✅"/"✓" dead
+// alternatives: a cell that is exactly "✅" (or "✅" followed by a space) was
+// never recognised as a pass, even though the regex explicitly lists it as
+// one — confirmed live: `/…✅|✓)\b/i.test("✅")` returns false. Fixed by
+// scoping `\b` to only the word-based alternatives, which genuinely need it
+// (so "passing" doesn't loosely match "pass"), while the symbol alternatives
+// match on their own with no boundary requirement.
+const PASS_RE = /^\s*(pass(ed)?\b|ok\b|green\b|done\b|met\b|yes\b|✅|✓)/i;
 // A status cell that counts as a conscious not-applicable. Requires a reason in
 // the evidence cell (checked below) so "n/a" alone can't wave a dimension past.
 const NA_RE = /^\s*(n\/?a|not[ \t]+applicable|skip(ped)?)\b/i;
@@ -70,18 +91,31 @@ function read(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
 }
 
-// Parse every markdown table in the file into rows of {item, status, evidence,
-// raw}. Each table's own header row supplies the column indices, reset when a
-// non-`|` line ends the table, so a file with several tables (or a different
-// column order per table) is handled correctly — the same per-table header
-// discipline verify-progress.mjs learned the hard way.
+// Parse the FIRST markdown table in the file whose header has both an
+// Item-like and a Status column, into rows of {item, status, evidence, raw}.
+// Stops at that table's end (a non-`|` line) rather than resetting and
+// continuing to scan later tables — mirrors traceability-check.mjs's
+// parseTable() single-table-selection discipline. Found 2026-07-19 (real
+// bug): the previous version reset and kept scanning every subsequent
+// table, so ANY other Item+Status-shaped table later in the same file (e.g.
+// an unrelated backlog list) had its rows swept into the required-dimension
+// matching below — a row like "Improve test coverage tooling | todo" could
+// spuriously satisfy/contradict the "tests" dimension and wrongly BLOCK (or,
+// worse, wrongly pass) a checkpoint that the real Definition-of-Done table
+// already cleared.
 function parseRows(text) {
   const rows = [];
   const lines = text.split(/\r?\n/);
   let inTable = false;
   let idx = { item: -1, status: -1, evidence: -1 };
+  let found = false;
   for (const line of lines) {
-    if (!/^\s*\|/.test(line)) { inTable = false; idx = { item: -1, status: -1, evidence: -1 }; continue; }
+    if (!/^\s*\|/.test(line)) {
+      if (found) break; // the Definition-of-Done table's rows are done
+      inTable = false;
+      idx = { item: -1, status: -1, evidence: -1 };
+      continue;
+    }
     const cells = line.split('|').map((c) => c.trim());
     if (!inTable) {
       inTable = true;
@@ -91,10 +125,11 @@ function parseRows(text) {
         status: find(/^status$/i),
         evidence: find(/^(evidence|proof|notes?|verified|command)$/i),
       };
+      if (idx.item !== -1 && idx.status !== -1) found = true;
       continue;
     }
+    if (!found) continue; // not the Definition-of-Done table — ignore its rows
     if (SEPARATOR_ROW_RE.test(line)) continue;
-    if (idx.item === -1 || idx.status === -1) continue; // not a DoD table
     const item = cells[idx.item] || '';
     const status = cells[idx.status] || '';
     const evidence = idx.evidence === -1 ? '' : (cells[idx.evidence] || '');

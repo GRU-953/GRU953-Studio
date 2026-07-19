@@ -1104,6 +1104,45 @@ test('gate.mjs: array-subscript, printf -v, and parameter-expansion-default visi
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('lib.mjs isPushCapable: scalar append-assignment (VAR+=value) no longer bypasses the push gate (2026-07-19 audit fix)', () => {
+  // Bash's scalar `NAME+=value` append operator (distinct from the array
+  // `+=` case, which remains an explicitly disclosed limitation) was not
+  // modelled by the plain `NAME=value` regex at all, so a value built up
+  // via `+=` stayed frozen at its FIRST assignment in the `known` map while
+  // real bash resolves the appended value. Confirmed live before fixing:
+  // `p=pu; p+=sh; git $p origin main` resolves in real bash to
+  // `git push origin main`, but isPushCapable() returned false.
+  for (const c of [
+    'p=pu; p+=sh; git $p origin main',
+    'p=pu; p+=sh; git ${p} origin main',
+    'export p=pu; p+=sh; git $p origin main',
+  ]) {
+    assert.equal(isPushCapable(c), true, `a scalar += appended push keyword must be caught: ${c}`);
+  }
+  // ordinary non-appending commands must stay clear
+  assert.equal(isPushCapable('p=pu; echo $p'), false, 'an ordinary variable with no append and no push keyword must stay clear');
+});
+
+test('gate.mjs: scalar append-assignment (VAR+=value) no longer bypasses the go-public gate (2026-07-19 audit fix)', () => {
+  // Same root cause as the isPushCapable case above, but against
+  // isGoPublicCommand()'s --visibility value: `v=pub; v+=lic;
+  // --visibility=$v` resolves in real bash to `--visibility=public`, and
+  // with only the PRIVATE-publish token recorded (no GO-PUBLIC-APPROVED),
+  // this previously let a repo be made public on nothing but a
+  // private-publish confirmation.
+  const dir = mkTmp('gru-gate-scalarappend-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  for (const cmd of [
+    'v=pub; v+=lic; gh repo edit me/app --visibility=$v',
+    'v=pub; v+=lic; gh repo create me/app --$v',
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a scalar += appended visibility value must not bypass the go-public gate: ${cmd}`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('lib.mjs isPushCapable: variable/arithmetic array indices, brace lists inside array literals, and array/scalar cross-contamination no longer bypass the push gate (2026-07-12 Round 8 CRITICAL fixes)', () => {
   // A re-attack pass on the Round 7 array fix (above) found it was
   // genuinely incomplete, all confirmed live before fixing:
@@ -1603,6 +1642,112 @@ test('memory-integrity.mjs: a well-formed graph + index is clean', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('memory-integrity.mjs: a dangling link with a punctuated or Bangla node id is still caught (2026-07-19 audit fix)', () => {
+  // NODE_DEF_RE/LINK_RE previously only accepted ASCII [A-Za-z0-9_-] node
+  // ids, so a link whose id contained punctuation (e.g. "T1.a") or
+  // non-ASCII/Bangla text was never matched at all and silently skipped —
+  // a false CLEAN even when the reference was genuinely undefined.
+  const dir = mkTmp('gru-mi-graph-unicode-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T2] task: a\n\n## Links\n- T1.a implements T2\n- ধারণা১ implements T2\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /undefined node "T1\.a"/.test(p)), 'a dotted composite id must still be caught as dangling');
+  assert.ok(r.json.problems.some((p) => /undefined node "ধারণা১"/.test(p)), 'a Bangla node id must still be caught as dangling');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: a stale non-ASCII or markdown-link INDEX cell is still caught (2026-07-19 audit fix)', () => {
+  // LOOKS_LIKE_PATH_RE previously used ASCII-only \w for the extension form
+  // and only otherwise caught cells containing a literal "/" — so a bare
+  // non-ASCII filename (no slash) or a markdown-link-formatted cell (which
+  // ends in ")", not the extension) both fell through and were silently
+  // skipped from the stale-file check.
+  const dir = mkTmp('gru-mi-stale-unicode-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n' +
+    '| Note | নথি.md | missing bangla file | x |\n' +
+    '| Link | [Notes](does-not-exist.md) | missing md-link target | x |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /নথি\.md/.test(p)), 'a bare non-ASCII stale filename must be caught');
+  assert.ok(r.json.problems.some((p) => /does-not-exist\.md/.test(p)), 'a stale markdown-link target must be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// session-start.mjs (2026-07-19 audit fix: previously had ZERO test coverage)
+// ---------------------------------------------------------------------------
+const EPHEMERAL_VARS = ['CLAUDE_CODE_WEB', 'CLAUDE_CODE_CLOUD', 'CLAUDE_CODE_REMOTE', 'CODESPACES', 'GITPOD_WORKSPACE_ID', 'CI'];
+// `env` is the FULL environment to run with — the caller decides, rather than
+// this helper silently re-merging process.env on top (which would put a
+// deleted var right back if this test process itself happens to run inside
+// one of these environments, as a CI or Claude Code Remote session does).
+function runSessionStart(dir, env) {
+  const input = JSON.stringify({ cwd: dir });
+  const r = spawnSync('node', [path.join(HERE, 'session-start.mjs')], { input, encoding: 'utf8', env });
+  let context = null;
+  try { context = JSON.parse(r.stdout).hookSpecificOutput.additionalContext; } catch { context = null; }
+  return { code: r.status, stdout: r.stdout, context };
+}
+
+function cleanEphemeralEnv(overrides) {
+  const env = { ...process.env };
+  for (const k of EPHEMERAL_VARS) delete env[k];
+  return { ...env, ...overrides };
+}
+
+test('session-start.mjs: a studio project emits the focus-guard reminder', () => {
+  const dir = mkTmp('gru-ss-studio-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runSessionStart(dir, cleanEphemeralEnv());
+  assert.equal(r.code, 0);
+  assert.ok(r.context && /focus-guard/i.test(r.context), 'must remind to run the focus-guard ritual');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('session-start.mjs: no studio project stands down silently, exit 0', () => {
+  const dir = mkTmp('gru-ss-nostudio-');
+  const r = runSessionStart(dir, cleanEphemeralEnv());
+  assert.equal(r.code, 0);
+  assert.equal(r.stdout.trim(), '', 'must emit nothing outside a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('session-start.mjs: malformed stdin does not crash — silent stand-down', () => {
+  const r = spawnSync('node', [path.join(HERE, 'session-start.mjs')], { input: 'not valid json{{{', encoding: 'utf8', env: cleanEphemeralEnv() });
+  assert.equal(r.status, 0, 'malformed stdin must not crash the hook');
+});
+
+test('session-start.mjs: an ephemeral-environment marker adds the cloud-persistence paragraph', () => {
+  const dir = mkTmp('gru-ss-ephemeral-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runSessionStart(dir, cleanEphemeralEnv({ CLAUDE_CODE_WEB: 'true' }));
+  assert.ok(r.context && /cloud\/ephemeral session/i.test(r.context), 'must add the cloud-persistence note when the env marker is set');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('session-start.mjs: without an ephemeral marker the cloud-persistence paragraph is absent', () => {
+  const dir = mkTmp('gru-ss-notephemeral-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runSessionStart(dir, cleanEphemeralEnv());
+  assert.ok(r.context && !/cloud\/ephemeral session/i.test(r.context), 'must not add the cloud-persistence note with no ephemeral marker');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('session-start.mjs: a literal "false" string value no longer falsely triggers the ephemeral note (2026-07-19 audit fix)', () => {
+  // A plain `||` truthy check treated ANY non-empty string as true, including
+  // the literal text "false" — so explicitly setting CLAUDE_CODE_WEB=false
+  // (with no other ephemeral marker present) still added the cloud note.
+  const dir = mkTmp('gru-ss-falsestring-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runSessionStart(dir, cleanEphemeralEnv({ CLAUDE_CODE_WEB: 'false' }));
+  assert.ok(r.context && !/cloud\/ephemeral session/i.test(r.context), 'CLAUDE_CODE_WEB=false must not trigger the ephemeral note');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('dashboard.mjs: no Dev-Memory is a no-op, exit 0', () => {
   const dir = mkTmp('gru-db-nostudio-');
   const r = runScript('dashboard.mjs', dir);
@@ -1633,6 +1778,40 @@ test('dashboard.mjs: Dev-Memory present but PROGRESS.md unreadable is blocked, n
   const r = runScript('dashboard.mjs', dir);
   assert.equal(r.code, 1);
   assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: case-varied status values still land in the correct pill group (2026-07-19 audit fix — coverage gap)', () => {
+  // Every GROUPS regex already carries an /i flag, so this behaves correctly
+  // today — this test locks it in so a future refactor that drops the flag
+  // on one of the seven groups is caught rather than silently misclassifying
+  // that status into the generic "other" bucket.
+  const dir = mkTmp('gru-db-casevariance-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | a | DONE | x |\n| T2 | b | Blocked | x |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written');
+  const html = fs.readFileSync(path.join(dir, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.ok(/pill done/.test(html), 'an upper-case "DONE" status must still land in the done pill group');
+  assert.ok(/pill blocked/.test(html), 'a title-case "Blocked" status must still land in the blocked pill group');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: a header-only PROGRESS.md (zero data rows) renders the empty-board message, not a crash', () => {
+  // Renders correctly today; this test locks the combination in so a future
+  // regression (a crash on an empty rows array, or the Concept section
+  // silently disappearing) is caught.
+  const dir = mkTmp('gru-db-headeronly-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# My Project\nbrief\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written', r.stdout);
+  assert.equal(r.json.tasks, 0);
+  const html = fs.readFileSync(path.join(dir, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.ok(/My Project/.test(html), 'the Concept section must still render with zero tasks');
+  assert.ok(/No tasks are recorded yet/.test(html), 'the empty-board message must appear');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1905,6 +2084,29 @@ test('content-check.mjs: an asset with no rights note is blocked', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('content-check.mjs: a Bangla-language Medium value still requires alt-text (2026-07-19 audit fix)', () => {
+  // MEDIA_RE previously matched only English media keywords, so a row whose
+  // Medium/Asset cells were written in Bangla (e.g. "ছবি" for "image") was
+  // never classified as media and silently skipped the alt-text check —
+  // a real accessibility gap given this project's Bangla+English content.
+  // The check is now inverted (fail closed unless explicitly marked TEXT),
+  // so this must be BLOCKED regardless of the language used.
+  const dir = mkTmp('gru-cc-bangla-media-');
+  writeContent(dir, CONTENT_HEADER + '| লোগো.png | ছবি | Gemini image | approved | CC0 | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /alt-text|caption|transcript/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: a Bangla-language "text" Medium value does not need alt-text', () => {
+  const dir = mkTmp('gru-cc-bangla-text-');
+  writeContent(dir, CONTENT_HEADER + '| স্বাগতম বার্তা | টেক্সট | Claude bn+en | approved | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // ---------------------------------------------------------------------------
 // 2026-07-19 (v4.1.0 Phase B) licence-scan grows to Swift (SwiftPM), .NET
 // (NuGet) and Go (modules) — best-effort not-checked, honestly INCOMPLETE,
@@ -1921,3 +2123,99 @@ for (const [label, file] of [['swift/spm', 'Package.swift'], ['.net/nuget', 'app
     fs.rmSync(dir, { recursive: true, force: true });
   });
 }
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 deep-audit fixes — scan.mjs now surfaces its redacted findings in
+// the deny message (previously computed but discarded); quality-gate.mjs's
+// PASS_RE now actually accepts a bare "✅"/"✓" status (previously dead code —
+// a trailing \b after a symbol can never match in JS regex).
+// ---------------------------------------------------------------------------
+test('scan.mjs: a denied push surfaces the redacted findings (type+location), not just a generic message', () => {
+  const dir = mkTmp('gru-scan-surface-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'aws_key = "AKIAIOSFODNN7EXAMPLE"\n'); // scan-allow: known test fixture
+  git(['add', 'config.txt'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny');
+  const reason = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  assert.ok(reason.includes('"type":"secret"') && reason.includes('"file":"config.txt"'), `expected the redacted finding (type+file) surfaced in the deny reason, got: ${reason}`);
+  assert.ok(!reason.includes('AKIAIOSFODNN7EXAMPLE'), 'the actual secret value must never appear, redacted or not');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a bare "✅" or "✓" status is accepted as a pass (previously dead code)', () => {
+  const dir = mkTmp('gru-qg-emoji-');
+  writeGate(dir, [
+    '| Item | Status | Evidence |',
+    '| :-- | :-- | :-- |',
+    '| Acceptance criteria | ✅ | all criteria proven |',
+    '| Automated tests | ✓ | `npm test` -> exit 0 (2026-07-19) |',
+    '| Independent code review | pass | reviewer sign-off, 0 open findings |',
+    '| Security / licence / privacy | pass | scan clean; licence-scan clean |',
+    '| Accessibility | n/a | no user interface — CLI only |',
+    '| Documentation | pass | README updated |',
+    '| Reproducible build | pass | `make build` -> exit 0 on clean clone |',
+    '',
+  ].join('\n'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a bare checkmark status must count as a pass: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: an unrelated later table with an Item+Status shape no longer leaks into required-dimension matching (2026-07-19 audit fix)', () => {
+  // parseRows() previously reset and kept scanning EVERY subsequent table
+  // sharing the generic Item+Status column shape, so an unrelated table
+  // later in the same file (e.g. a backlog list) could inject a spurious
+  // row into a required dimension's match set. Confirmed live: a
+  // completely clean, all-passing DoD table followed by an unrelated
+  // "Improve test coverage tooling" backlog row (status "todo") wrongly
+  // BLOCKED the "tests" dimension. Only the first Item+Status table must
+  // ever be read.
+  const dir = mkTmp('gru-qg-unrelated-table-');
+  writeGate(dir, [
+    '| Item | Status | Evidence |',
+    '| :-- | :-- | :-- |',
+    '| Acceptance criteria | pass | all criteria proven |',
+    '| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |',
+    '| Independent code review | pass | reviewer sign-off, 0 open findings |',
+    '| Security / licence / privacy | pass | scan clean; licence-scan clean |',
+    '| Accessibility | n/a | no user interface — CLI only |',
+    '| Documentation | pass | README updated |',
+    '| Reproducible build | pass | `make build` -> exit 0 on clean clone |',
+    '',
+    '# Unrelated backlog of future feature ideas',
+    '',
+    '| Item | Status | Evidence |',
+    '| :-- | :-- | :-- |',
+    '| Improve test coverage tooling integration | todo | - |',
+    '',
+  ].join('\n'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a genuinely complete DoD table must not be blocked by an unrelated later table: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a Bangla-only Item label is reported as a missing dimension, not a false pass (documented, deliberate)', () => {
+  // REQUIRED dimension keywords are deliberately English-only (matching the
+  // skill template's own English column/label convention for this
+  // internal record) — a Bangla label fails in the SAFE direction (missing
+  // dimension, never a silent pass).
+  const dir = mkTmp('gru-qg-bangla-label-');
+  writeGate(dir, [
+    '| Item | Status | Evidence |',
+    '| :-- | :-- | :-- |',
+    '| গ্রহণযোগ্যতা মানদণ্ড | pass | verified manually |',
+    '| Automated tests | pass | `npm test` -> exit 0 |',
+    '| Independent code review | pass | reviewer sign-off |',
+    '| Security / licence / privacy | pass | scan clean |',
+    '| Accessibility | n/a | no user interface |',
+    '| Documentation | pass | README updated |',
+    '| Reproducible build | pass | `make build` -> exit 0 |',
+    '',
+  ].join('\n'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /missing required dimension: acceptance/i.test(p)), 'a Bangla-only label must be reported missing, never silently passed');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
