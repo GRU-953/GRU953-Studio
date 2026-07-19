@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { isPushCapable } from './lib.mjs';
-import { detectLicenceFromText, findPubCacheRoot } from './licence-scan.mjs';
+import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -459,13 +459,13 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '23 specialist roles in total',
-    'We once evaluated 23 specialist roles for a sibling product; 99 specialist roles in total'
+    '29 specialist roles in total',
+    'We once evaluated 29 specialist roles for a sibling product; 99 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a conflicting later role-count mention must not be masked by an earlier correct one');
-  assert.ok(r.json.problems.some((p) => p.includes('23') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
+  assert.ok(r.json.problems.some((p) => p.includes('29') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -475,8 +475,8 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '23 specialist roles in total',
-    '(the studio grew from 16 roles in early versions) 23 specialist roles in total'
+    '29 specialist roles in total',
+    '(the studio grew from 16 roles in early versions) 29 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
@@ -1633,5 +1633,56 @@ test('dashboard.mjs: Dev-Memory present but PROGRESS.md unreadable is blocked, n
   const r = runScript('dashboard.mjs', dir);
   assert.equal(r.code, 1);
   assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 2 — licence-scan.mjs grows beyond npm/Python/Dart to cover
+// Rust (Cargo, real SPDX scan), JVM (Maven/Gradle, best-effort not-checked) and
+// C++ (best-effort not-checked). SPDX EXPRESSION classification handles dual
+// licences ("A OR B") without a false pass or a false block.
+// ---------------------------------------------------------------------------
+test('licence-scan classifySpdxExpr: dual "OR" is usable if any alternative is permissive', () => {
+  assert.equal(classifySpdxExpr('MIT'), true);
+  assert.equal(classifySpdxExpr('MIT OR Apache-2.0'), true);
+  assert.equal(classifySpdxExpr('GPL-2.0 OR MIT'), true, 'a permissive alternative makes a dual licence usable');
+  assert.equal(classifySpdxExpr('Apache-2.0 AND MIT'), true);
+});
+
+test('licence-scan classifySpdxExpr: all-copyleft blocks; AND-with-copyleft blocks; unknown is review', () => {
+  assert.equal(classifySpdxExpr('GPL-3.0-only'), false);
+  assert.equal(classifySpdxExpr('GPL-2.0 OR LGPL-3.0'), false, 'every alternative copyleft => blocked');
+  assert.equal(classifySpdxExpr('MIT AND GPL-2.0'), false, 'AND with a copyleft term is not permissive');
+  assert.equal(classifySpdxExpr('SomethingUnrecognised'), null);
+  assert.equal(classifySpdxExpr(''), null);
+});
+
+test('licence-scan.mjs: a Maven project is honestly reported not-checked (INCOMPLETE), never a false pass', () => {
+  const dir = mkTmp('gru-lic-mvn-');
+  fs.writeFileSync(path.join(dir, 'pom.xml'), '<project/>\n');
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(r.status, 1, 'an unscanned ecosystem must not exit 0 clean');
+  assert.ok(/INCOMPLETE/.test(json.status));
+  assert.ok(json.notChecked.some((n) => n.ecosystem === 'java/maven'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a C++ project is honestly reported not-checked, never a false pass', () => {
+  const dir = mkTmp('gru-lic-cpp-');
+  fs.writeFileSync(path.join(dir, 'vcpkg.json'), '{}\n');
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(r.status, 1);
+  assert.ok(json.notChecked.some((n) => n.ecosystem === 'c++'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a Cargo project is detected and scanned (real or honest not-checked), never dropped', () => {
+  const dir = mkTmp('gru-lic-cargo-');
+  fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[package]\nname = "x"\nversion = "0.1.0"\n');
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.ok(json.results.some((res) => res.ecosystem === 'rust/cargo'), 'the Cargo ecosystem must appear in the results, checked or not');
   fs.rmSync(dir, { recursive: true, force: true });
 });

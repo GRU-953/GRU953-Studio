@@ -224,16 +224,92 @@ function scanDartFlutter(root) {
   return { ecosystem: 'dart/flutter', checked: true, findings };
 }
 
+// Classify an SPDX licence EXPRESSION (Cargo/Maven can carry "MIT OR
+// Apache-2.0", "GPL-2.0 OR MIT", "Apache-2.0 AND MIT", etc.), not just a bare
+// id. A dual "A OR B" is usable if ANY alternative is fully permissive; an
+// "A AND B" alternative is permissive only if EVERY term is. Copyleft in a term
+// makes that term non-permissive. Returns true (allowed) / false (all
+// alternatives blocked) / null (a human should look) — the same three-way
+// shape as isAllowed(), erring toward review, never toward a silent pass.
+export function classifySpdxExpr(expr) {
+  if (!expr) return null;
+  const alternatives = String(expr).split(/\bOR\b/i).map((s) => s.trim()).filter(Boolean);
+  if (alternatives.length === 0) return null;
+  const verdicts = alternatives.map((alt) => {
+    const up = alt.toUpperCase();
+    if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false;
+    const andTerms = alt.split(/\bAND\b|\bWITH\b/i).map((t) => t.replace(/[()]/g, '').trim()).filter(Boolean);
+    if (andTerms.length && andTerms.every((t) => ALLOWED.has(t))) return true;
+    return null;
+  });
+  if (verdicts.some((v) => v === true)) return true;
+  if (verdicts.every((v) => v === false)) return false;
+  return null;
+}
+
+// Rust (Cargo): `cargo metadata` exposes each package's SPDX `license` field
+// directly (machine-readable, like npm's package.json), so this is a real scan,
+// not best-effort. Falls back to honest "not checked" when cargo is absent or
+// resolution fails, the same shape every other ecosystem uses.
+function scanCargo(root) {
+  let parsed;
+  try {
+    const raw = execFileSync('cargo', ['metadata', '--format-version', '1'], {
+      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
+    });
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ecosystem: 'rust/cargo', checked: false, findings: [], note: 'could not run `cargo metadata` (cargo not on PATH, or resolve failed) — run it and review each crate licence, or use `cargo deny check`, before publish' };
+  }
+  const findings = [];
+  const members = new Set(parsed.workspace_members || []);
+  for (const pkg of parsed.packages || []) {
+    if (members.has(pkg.id)) continue; // the project's own crate(s)
+    const licence = pkg.license || null;
+    if (licence) {
+      const verdict = classifySpdxExpr(licence);
+      if (verdict === false) findings.push({ package: `${pkg.name}@${pkg.version}`, licence, verdict: 'blocked' });
+      else if (verdict === null) findings.push({ package: `${pkg.name}@${pkg.version}`, licence, verdict: 'needs-review' });
+    } else {
+      findings.push({ package: `${pkg.name}@${pkg.version}`, licence: pkg.license_file ? 'license-file only (no SPDX field)' : 'unknown (no license field)', verdict: 'needs-review' });
+    }
+  }
+  return { ecosystem: 'rust/cargo', checked: true, findings };
+}
+
+// JVM (Maven/Gradle): dependency licences are not available from a single
+// zero-config command (they need a licence plugin), so this is honestly
+// reported as best-effort not-checked — surfaced as INCOMPLETE so a human runs
+// the ecosystem's own licence report and reviews it, never a false pass.
+function scanJvm(root, kind) {
+  return { ecosystem: kind, checked: false, findings: [], note: `${kind} project detected — dependency licences need the ecosystem's own report (e.g. \`mvn license:aggregate-third-party-report\` or a Gradle licence plugin, plus \`mvn dependency:tree\`/\`gradle dependencies\`); run it and review before publish` };
+}
+
+// C++ (vcpkg/Conan/vendored): no canonical machine-readable licence source, so
+// best-effort not-checked with a manual-review note, consistent with the "not
+// checked, never a false pass" principle.
+function scanCpp(root) {
+  return { ecosystem: 'c++', checked: false, findings: [], note: 'C++ project detected — dependency/vendored licences have no single canonical manifest; review vcpkg/Conan and any vendored third-party licences manually before publish' };
+}
+
 function main() {
   const root = process.argv[2] || process.cwd();
-  const hasPackageJson = fs.existsSync(path.join(root, 'package.json'));
-  const hasRequirements = fs.existsSync(path.join(root, 'requirements.txt')) || fs.existsSync(path.join(root, 'pyproject.toml'));
-  const hasPubspec = fs.existsSync(path.join(root, 'pubspec.yaml'));
+  const has = (f) => fs.existsSync(path.join(root, f));
+  const hasPackageJson = has('package.json');
+  const hasRequirements = has('requirements.txt') || has('pyproject.toml');
+  const hasPubspec = has('pubspec.yaml');
+  const hasCargo = has('Cargo.toml');
+  const hasMaven = has('pom.xml');
+  const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
+  const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
 
   const results = [];
   if (hasPackageJson) results.push(scanNode(root));
   if (hasRequirements) results.push(scanPython(root));
   if (hasPubspec) results.push(scanDartFlutter(root));
+  if (hasCargo) results.push(scanCargo(root));
+  if (hasMaven || hasGradle) results.push(scanJvm(root, hasMaven ? 'java/maven' : 'jvm/gradle'));
+  if (hasCpp) results.push(scanCpp(root));
 
   if (results.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'no recognised dependency manifests found', results: [] }, null, 2));

@@ -43,6 +43,8 @@ Also load and follow these companion skills as standing rules:
   any per-phase checkpoint commit and before Publish.
 - `yagni-rules` — the lean-coding ladder every builder must obey.
 - `cost-guard` — the confirmed cheapest-first spending default.
+- `model-router` — the automatic per-task choice of Claude model and effort
+  (cheapest that does the job; pauses only at the hard cost-ceiling).
 - `audit-loop` — the planned protocol for any review that needs more than
   one pass (Review/Fix, and any "audit until clean" request).
 
@@ -140,6 +142,7 @@ not size (2026-07-11 v2.0.0):
 | Hosting, packaging, or a deploy pipeline | `devops-engineer` (Standard+) |
 | Running as a live, long-lived service | `devops-engineer`'s reliability pass (health checks, structured logging, failure posture) |
 | More than one language (e.g. English + Bangla) | `localisation-specialist` |
+| The stack uses Dart/Flutter, Kotlin, Rust, Python, Java or C++ | the matching native language specialist (`flutter-dart-developer` / `kotlin-developer` / `rust-developer` / `python-developer` / `java-developer` / `cpp-developer`) for that language's build tasks, each loading its `lang-*` pack — `builder` still handles web/scripting defaults and glue (see `architect`) |
 | User-facing documentation for the built app | `technical-writer` (Standard+) |
 | A decision that turns on an external, current fact | `researcher` (on demand) |
 | A task would clearly benefit from an existing Claude Code skill/plugin GRU953-Studio has no native way to provide | `researcher` (any Tier, via the `ecosystem-finder` skill — recommends at most one or two, always confirmed with a pop-up before anything installs, never bundled into GRU953-Studio itself) |
@@ -167,14 +170,15 @@ Growth-guard note (confirmed 2026-07-10; count updated 2026-07-11 v2.0.0):
 Tiers, plus the feature-triggers above, are the *only* controls on TEAM SIZE
 PER PROJECT — there is no additional mechanical lock there, and a project
 only ever wakes the subset of roles its Tier and brief actually call for.
-Separately, the TOTAL ROLE COUNT (currently 23 — a deliberately lean,
-non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31
-by merging eight roles that overlapped or created artificial hand-offs) is
+Separately, the TOTAL ROLE COUNT (currently 29 — a deliberately lean,
+non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31 to
+23 by merging eight overlapping roles, and v3.6.0 added six native language
+specialists, each a distinct-ecosystem implementer) is
 guarded by `scope-guardian` running
 `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
 `Dev-Memory/decisions/*roster*.md` for a built project, falling back to the
 committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
-not skip scope-guardian on Standard/Complex Tier. Growing the roster past 23
+not skip scope-guardian on Standard/Complex Tier. Growing the roster past 29
 still requires a named, non-overlapping gap recorded in `ROSTER.md` (and, for
 contributions, an RFC — see `governance/GOVERNANCE.md`).
 

@@ -1,5 +1,47 @@
 # Changelog
 
+## 3.6.0 — 2026-07-19
+
+Phase 2 of the staged programme: the **automatic model+effort router** and
+**native language specialists** (features 4 and 3).
+
+**New: `model-router` skill — the best model and effort per task, automatically.**
+The studio now picks a Claude model (Haiku / Sonnet / Opus / Fable) and effort
+level (low / medium / high / **xhigh** / max) per individual task, scoring five
+signals (reasoning depth, reversibility, risk, breadth, creativity-vs-rigour)
+and choosing the cheapest that reliably does the job. Each role's declared model
+is the default and floor; the router escalates only where justified. It runs
+**fully automatically and silently**, with the single exception of `cost-guard`'s
+hard per-task cost ceiling, which still pauses for one unusually expensive task.
+`cost-monitor` logs the model/effort actually used per task so a silent choice
+stays reviewable. "Ultracode" is documented as the opt-in heavy multi-agent
+mode, never entered silently. The router never raises model/effort to route
+around a safety gate, and degrades to today's fixed tiers where a surface can't
+set a subagent's model.
+
+**New: six native language specialists + shared `lang-*` packs (roster 23 → 29).**
+Dedicated agents — `flutter-dart-developer`, `kotlin-developer`, `rust-developer`,
+`python-developer`, `java-developer`, `cpp-developer` — each carrying its
+ecosystem's toolchain, idioms, testing and dependency norms that the generic
+`builder` does not. Each stays thin by loading a shared `lang-*` skill pack
+(the exact build/test/lint/format/dependency commands). `architect`'s stack menu
+routes a chosen language to its specialist; `builder` still handles web/scripting
+defaults, glue, and Build-Swarm coordination. Recorded as a named-gap roster
+decision under `governance/GOVERNANCE.md` (owner-directed; owner is Maintainer +
+Steering). All six are sonnet-tier implementers (3 haiku · 22 sonnet · 4 opus).
+
+**`licence-scan.mjs` grows to five ecosystems + SPDX expressions.** Adds Rust
+(Cargo — a real scan via `cargo metadata`'s SPDX `license` field), and
+best-effort **not-checked** detection for JVM (Maven/Gradle) and C++
+(vcpkg/Conan/CMake) — honestly surfaced as INCOMPLETE so a human runs the
+ecosystem's own report, never a false pass. A new `classifySpdxExpr` correctly
+handles dual licences: "MIT OR GPL-2.0" is usable (a permissive alternative
+exists), "GPL-2.0 OR LGPL-3.0" is blocked (all copyleft), "MIT AND GPL-2.0" is
+blocked.
+
+9 new behavioural tests; `repo-integrity`, `roster` and `licence` gates green.
+README role count 23 → 29, skill count 16 → 23; version 3.5.0 → 3.6.0.
+
 ## 3.5.0 — 2026-07-19
 
 Phase 1 of the staged programme: the **memory & command-centre foundations**

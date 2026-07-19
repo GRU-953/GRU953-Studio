@@ -24,6 +24,17 @@ from scratch every time, so choices stay consistent and explainable.
 | Mobile app | Flutter/Dart (matches the user's existing work, e.g. Obhijatra) | The target platform requires something native |
 | App with an AI/LLM feature | Whichever stack row above fits the platform, plus hand the AI-calling part to `ai-developer` | Rarely needed — `ai-developer` covers this in any Tier |
 
+**Native language specialists (2026-07-19).** When a chosen stack uses a
+language with a dedicated specialist, route that language's build tasks to it
+rather than the generic `builder`: `rust-developer` (Rust), `flutter-dart-developer`
+(Dart/Flutter), `python-developer` (Python), `kotlin-developer` (Kotlin),
+`java-developer` (Java), `cpp-developer` (C++). Each loads its `lang-*` pack for
+the ecosystem's exact toolchain and idioms; the generic `builder` still handles
+web/scripting defaults and any glue. A language with no dedicated specialist
+stays with `builder` plus, where useful, an ecosystem `lang-*` pack — adding a
+new specialist is a roster change (a named gap in `ROSTER.md` + the governance
+RFC), not something done ad hoc.
+
 ## Method
 
 1. Propose 2-3 real approaches from the menu, each with one plain-English

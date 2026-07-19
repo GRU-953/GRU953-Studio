@@ -1,6 +1,6 @@
 # GRU953-Studio role roster (committed baseline)
 
-**role count: 23**
+**role count: 29**
 
 This file is the committed baseline the roster checks read. `roster-check.mjs`
 verifies the number of `agents/*.md` files against it; `repo-integrity.mjs`
@@ -60,6 +60,28 @@ cost-monitor · publisher · memory-keeper
 | localisation-specialist | More than one language (i18n/l10n; English + Bangla) | Brief needs multiple languages |
 | researcher | External fact-finding on current evidence | On demand in Brainstorm/Ideate/Design |
 
+## Native language specialists (6), added v3.6.0 (2026-07-19)
+
+Owner-directed expansion (feature request: "add native support for dart/flutter,
+kotlin, rust, python, java, C++ with dedicated agents"). Recorded here as the
+required named-gap decision under `governance/GOVERNANCE.md`; the owner is
+Maintainer + Steering. Each is a distinct, **non-overlapping** gap: the generic
+`builder` is the default implementer (web/scripting) and coordinates the Build
+Swarm, but it does not carry a given ecosystem's toolchain, idioms, testing and
+dependency/licence norms — each specialist below does, backed by a shared
+`lang-*` skill pack so the agents stay thin (no duplicated logic). A language
+with no specialist stays with `builder`; adding one is a roster change like this,
+never ad hoc.
+
+| Role | Distinct gap it fills | Activates when | Pack |
+| :-- | :-- | :-- | :-- |
+| flutter-dart-developer | Dart/Flutter toolchain (pub), null-safety and widget/state idioms | A task is in Dart/Flutter (default mobile stack) | `lang-dart` |
+| kotlin-developer | Kotlin/Gradle toolchain, coroutine and null-safety idioms (JVM/Android) | A task is in Kotlin | `lang-kotlin` |
+| rust-developer | Cargo toolchain, ownership/borrow and error idioms, minimal `unsafe` | A task is in Rust | `lang-rust` |
+| python-developer | venvs, pytest/ruff/mypy toolchain, typing idioms | A task is in Python | `lang-python` |
+| java-developer | Maven/Gradle toolchain, immutability and resource-handling idioms | A task is in Java | `lang-java` |
+| cpp-developer | CMake/CTest, RAII/smart-pointer memory idioms, sanitizers | A task is in C++ | `lang-cpp` |
+
 ## Model tiers (deliberate, cheapest-first)
 
 Every role declares a model — none inherits the surface default — so cost is
@@ -78,9 +100,17 @@ hard to undo.
   `tester`, `security-compliance-auditor`, `fixer`, `publisher`,
   `maintenance-agent`, `ai-developer`, `ux-designer`,
   `accessibility-specialist`, `technical-writer`, `data-engineer`,
-  `localisation-specialist`, `devops-engineer`, `researcher`.
+  `localisation-specialist`, `devops-engineer`, `researcher`, and the six
+  native language specialists (`flutter-dart-developer`, `kotlin-developer`,
+  `rust-developer`, `python-developer`, `java-developer`, `cpp-developer`) —
+  each an implementer like `builder`, so the same sonnet tier, not opus.
 - **opus** (most capable, most expensive) — reserved for the hardest
   reasoning only: `project-lead` (orchestration), `architect` (design),
   `reviewer` (correctness), `responsible-ai-reviewer` (safety judgement).
 
-Count: 3 haiku · 16 sonnet · 4 opus = 23.
+Count: 3 haiku · 22 sonnet · 4 opus = 29.
+
+Per-task model choice (v3.6.0, `model-router` skill): the declared model above
+is each role's DEFAULT and FLOOR; the router may pick a cheaper model for a
+mechanical sub-task or spend up for a genuinely hard one, automatically, within
+that floor — cost stays a decision, now per task, not only per role.
