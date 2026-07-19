@@ -292,6 +292,20 @@ function scanCpp(root) {
   return { ecosystem: 'c++', checked: false, findings: [], note: 'C++ project detected — dependency/vendored licences have no single canonical manifest; review vcpkg/Conan and any vendored third-party licences manually before publish' };
 }
 
+// Swift (SwiftPM), .NET (NuGet), Go (modules): each is best-effort not-checked —
+// none exposes dependency licences from a single zero-config command — reported
+// honestly as INCOMPLETE so a human runs the ecosystem's own report, never a
+// false pass. (TypeScript is npm, already covered by scanNode.)
+function scanSwift(root) {
+  return { ecosystem: 'swift/spm', checked: false, findings: [], note: 'Swift package project detected — SwiftPM dependency licences need a manual review (Package.resolved lists the packages; check each licence) before publish' };
+}
+function scanDotnet(root) {
+  return { ecosystem: '.net/nuget', checked: false, findings: [], note: '.NET project detected — run `dotnet list package` and review NuGet licences before publish' };
+}
+function scanGo(root) {
+  return { ecosystem: 'go/modules', checked: false, findings: [], note: 'Go module project detected — run `go list -m all` (or `go-licenses`) and review module licences before publish' };
+}
+
 function main() {
   const root = process.argv[2] || process.cwd();
   const has = (f) => fs.existsSync(path.join(root, f));
@@ -302,6 +316,9 @@ function main() {
   const hasMaven = has('pom.xml');
   const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
   const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
+  const hasSwift = has('Package.swift') || has('Package.resolved');
+  const hasDotnet = fs.readdirSync(root).some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
+  const hasGo = has('go.mod');
 
   const results = [];
   if (hasPackageJson) results.push(scanNode(root));
@@ -310,6 +327,9 @@ function main() {
   if (hasCargo) results.push(scanCargo(root));
   if (hasMaven || hasGradle) results.push(scanJvm(root, hasMaven ? 'java/maven' : 'jvm/gradle'));
   if (hasCpp) results.push(scanCpp(root));
+  if (hasSwift) results.push(scanSwift(root));
+  if (hasDotnet) results.push(scanDotnet(root));
+  if (hasGo) results.push(scanGo(root));
 
   if (results.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'no recognised dependency manifests found', results: [] }, null, 2));

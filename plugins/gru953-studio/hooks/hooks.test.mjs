@@ -459,13 +459,13 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '34 specialist roles in total',
-    'We once evaluated 34 specialist roles for a sibling product; 99 specialist roles in total'
+    '38 specialist roles in total',
+    'We once evaluated 38 specialist roles for a sibling product; 99 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a conflicting later role-count mention must not be masked by an earlier correct one');
-  assert.ok(r.json.problems.some((p) => p.includes('34') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
+  assert.ok(r.json.problems.some((p) => p.includes('38') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -475,8 +475,8 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '34 specialist roles in total',
-    '(the studio grew from 16 roles in early versions) 34 specialist roles in total'
+    '38 specialist roles in total',
+    '(the studio grew from 16 roles in early versions) 38 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
@@ -1904,3 +1904,20 @@ test('content-check.mjs: an asset with no rights note is blocked', () => {
   assert.ok(r.json.problems.some((p) => /rights/i.test(p)));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 (v4.1.0 Phase B) licence-scan grows to Swift (SwiftPM), .NET
+// (NuGet) and Go (modules) — best-effort not-checked, honestly INCOMPLETE,
+// never a false pass. TypeScript is npm (already covered).
+// ---------------------------------------------------------------------------
+for (const [label, file] of [['swift/spm', 'Package.swift'], ['.net/nuget', 'app.csproj'], ['go/modules', 'go.mod']]) {
+  test(`licence-scan.mjs: a ${label} project is honestly reported not-checked`, () => {
+    const dir = mkTmp('gru-lic-newlang-');
+    fs.writeFileSync(path.join(dir, file), file === 'go.mod' ? 'module x\n' : '\n');
+    const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+    const json = JSON.parse(r.stdout);
+    assert.equal(r.status, 1, 'an unscanned ecosystem must not exit 0 clean');
+    assert.ok(json.notChecked.some((n) => n.ecosystem === label), `expected ${label} in notChecked: ${r.stdout}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+}

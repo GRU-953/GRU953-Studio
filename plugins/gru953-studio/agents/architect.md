@@ -28,12 +28,28 @@ from scratch every time, so choices stay consistent and explainable.
 language with a dedicated specialist, route that language's build tasks to it
 rather than the generic `builder`: `rust-developer` (Rust), `flutter-dart-developer`
 (Dart/Flutter), `python-developer` (Python), `kotlin-developer` (Kotlin),
-`java-developer` (Java), `cpp-developer` (C++). Each loads its `lang-*` pack for
-the ecosystem's exact toolchain and idioms; the generic `builder` still handles
-web/scripting defaults and any glue. A language with no dedicated specialist
-stays with `builder` plus, where useful, an ecosystem `lang-*` pack — adding a
-new specialist is a roster change (a named gap in `ROSTER.md` + the governance
-RFC), not something done ad hoc.
+`java-developer` (Java), `cpp-developer` (C++), `swift-developer` (Swift),
+`csharp-developer` (C#/.NET), `go-developer` (Go), `typescript-developer`
+(TypeScript). Each loads its `lang-*` pack for the ecosystem's exact toolchain
+and idioms; the generic `builder` still handles web/scripting defaults and any
+glue. A language with no dedicated specialist stays with `builder` plus, where
+useful, an ecosystem `lang-*` pack — adding a new specialist is a roster change
+(a named gap in `ROSTER.md` + the governance RFC), not something done ad hoc.
+
+**Platform → stack map (all target platforms).** Route the target platform to a
+native specialist, with Flutter as the cross-platform default:
+
+| Target platform | Native option(s) | Cross-platform |
+| :-- | :-- | :-- |
+| Android | `kotlin-developer`, `java-developer` | `flutter-dart-developer` |
+| iOS / macOS | `swift-developer` | `flutter-dart-developer` |
+| Windows | `csharp-developer` (.NET), `cpp-developer` | `flutter-dart-developer` |
+| Linux / servers / CLI | `go-developer`, `rust-developer`, `cpp-developer`, `python-developer` | — |
+| Web | `typescript-developer` | `flutter-dart-developer` (web) |
+
+The stack still comes from the vetted menu and the `yagni-rules` tie-breaker;
+this map just names the native specialist per platform so "all platforms" has a
+real, non-overlapping owner each.
 
 ## Method
 

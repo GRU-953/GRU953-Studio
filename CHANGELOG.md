@@ -1,11 +1,20 @@
 # Changelog
 
-## 4.1.0 — 2026-07-19 (in progress)
+## 4.1.0 — 2026-07-19
 
 Adds a **Content Creation** capability so the studio produces the app's real
-content, not just the shell — and (Phase B, next) completes native platform
-coverage. Phase A: the Content stage, the content team, and the opt-in Gemini
-integration.
+content, not just the shell, and completes **native coverage of every target
+platform**.
+
+**All-platform language specialists (roster 34 → 38).** Four new specialists +
+`lang-*` packs — `swift-developer` (iOS/macOS), `csharp-developer` (Windows/.NET,
+cross-platform), `go-developer` (services/CLI/Linux), `typescript-developer`
+(web, React Native/Electron/Node) — so Android, iOS, macOS, Windows, Linux and
+web each have a distinct-ecosystem native owner, with Flutter the cross-platform
+default. `architect` gains an explicit platform → stack map; `licence-scan.mjs`
+detects SwiftPM, .NET and Go (best-effort, honestly INCOMPLETE; TypeScript is
+npm, already scanned). The INV11 language-pack contract keeps all ten packs
+honest.
 
 **New: Content stage + team (roster 29 → 34).** After the approved prototype, a
 new **Content** stage (`content-creation` skill) plans and generates the app's

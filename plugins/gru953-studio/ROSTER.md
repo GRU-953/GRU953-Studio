@@ -1,6 +1,6 @@
 # GRU953-Studio role roster (committed baseline)
 
-**role count: 34**
+**role count: 38**
 
 This file is the committed baseline the roster checks read. `roster-check.mjs`
 verifies the number of `agents/*.md` files against it; `repo-integrity.mjs`
@@ -81,6 +81,15 @@ never ad hoc.
 | python-developer | venvs, pytest/ruff/mypy toolchain, typing idioms | A task is in Python | `lang-python` |
 | java-developer | Maven/Gradle toolchain, immutability and resource-handling idioms | A task is in Java | `lang-java` |
 | cpp-developer | CMake/CTest, RAII/smart-pointer memory idioms, sanitizers | A task is in C++ | `lang-cpp` |
+| swift-developer | SwiftPM/Xcode toolchain, value-type and optional-safety idioms (iOS/macOS) | A task is in Swift | `lang-swift` |
+| csharp-developer | dotnet toolchain, nullable/immutability and async idioms (Windows/.NET, cross-platform) | A task is in C# | `lang-csharp` |
+| go-developer | go toolchain, explicit-error and small-interface idioms (services/CLI/Linux) | A task is in Go | `lang-go` |
+| typescript-developer | tsc/npm toolchain, strict-typing idioms (web, RN/Electron/Node) | A task is in TypeScript | `lang-typescript` |
+
+The four v4.1.0 additions (Swift, C#, Go, TypeScript) complete native coverage
+of every named platform — Android, iOS, macOS, Windows, Linux, web — each with a
+distinct-ecosystem owner, Flutter remaining the cross-platform default (see
+`architect`'s platform map).
 
 ## Content team (5), added v4.1.0 (2026-07-19)
 
@@ -126,12 +135,14 @@ hard to undo.
   each an implementer like `builder`, so the same sonnet tier, not opus. Plus
   the five-strong content team (`content-director`, `text-content-specialist`,
   `image-`/`audio-`/`video-content-specialist`) — content planning and
-  generation is bounded work, sonnet-tier.
+  generation is bounded work, sonnet-tier — and the four v4.1.0 language
+  specialists (`swift-developer`, `csharp-developer`, `go-developer`,
+  `typescript-developer`), implementers like `builder`.
 - **opus** (most capable, most expensive) — reserved for the hardest
   reasoning only: `project-lead` (orchestration), `architect` (design),
   `reviewer` (correctness), `responsible-ai-reviewer` (safety judgement).
 
-Count: 3 haiku · 27 sonnet · 4 opus = 34.
+Count: 3 haiku · 31 sonnet · 4 opus = 38.
 
 Per-task model choice (v3.6.0, `model-router` skill): the declared model above
 is each role's DEFAULT and FLOOR; the router may pick a cheaper model for a

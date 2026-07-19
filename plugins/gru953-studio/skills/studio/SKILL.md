@@ -172,7 +172,7 @@ Growth-guard note (confirmed 2026-07-10; count updated 2026-07-11 v2.0.0):
 Tiers, plus the feature-triggers above, are the *only* controls on TEAM SIZE
 PER PROJECT — there is no additional mechanical lock there, and a project
 only ever wakes the subset of roles its Tier and brief actually call for.
-Separately, the TOTAL ROLE COUNT (currently 34 — a deliberately lean,
+Separately, the TOTAL ROLE COUNT (currently 38 — a deliberately lean,
 non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31 to
 23 by merging eight overlapping roles, and v3.6.0 added six native language
 specialists, each a distinct-ecosystem implementer) is
@@ -180,7 +180,7 @@ guarded by `scope-guardian` running
 `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
 `Dev-Memory/decisions/*roster*.md` for a built project, falling back to the
 committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
-not skip scope-guardian on Standard/Complex Tier. Growing the roster past 34
+not skip scope-guardian on Standard/Complex Tier. Growing the roster past 38
 still requires a named, non-overlapping gap recorded in `ROSTER.md` (and, for
 contributions, an RFC — see `governance/GOVERNANCE.md`).
 

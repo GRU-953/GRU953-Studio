@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "gru953-studio",
-      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 34 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub — under your name, as sole author. Built for non-technical users, in plain UK English.",
+      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 38 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub — under your name, as sole author. Built for non-technical users, in plain UK English.",
       "author": {
         "name": "Aninda Sundar Howlader"
       },

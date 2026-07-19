@@ -246,7 +246,7 @@ DevOps Engineer, and Publisher) can also ask that same free local Ollama
 model for an independent second opinion on their own work — always your
 choice, same as everywhere else Ollama is offered.
 
-*(34 specialist roles in total, coordinated for you — never something you
+*(38 specialist roles in total, coordinated for you — never something you
 operate by hand.)*
 
 ---
@@ -317,7 +317,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 28 skills (step-by-step playbooks the coordinator
+  plugin, including its own 32 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).
