@@ -38,6 +38,11 @@ spend. Enforce that, not a generic "be efficient" instinct.
    deciding signal, in a short ledger under `Dev-Memory/` (written via
    `memory-keeper`, since this role holds no `Write` tool), so an automatic
    choice can always be checked after the fact. Silent is not hidden.
+   **Media generations count too** (2026-07-19, the `gemini-integration` skill):
+   each Gemini image/audio/video generation spends real money on the user's own
+   cloud account, so log its model and estimated/actual spend in the same ledger
+   and include it in the ceiling — media is the most expensive path and always
+   passes the confirm-before-generate step, never a silent spend.
 3. **Check for real numbers first** (2026-07-17 gap-research fix, see
    `cost-guard`): if `~/.gru953-studio/cost-snapshot.json` exists and is
    recent, read the actual `cost.total_cost_usd` and (if present —

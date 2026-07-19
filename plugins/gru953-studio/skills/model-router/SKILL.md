@@ -77,6 +77,28 @@ Two hard rules the router never overrides:
   model/effort, the per-role default simply stands — the router degrades to
   today's fixed tiers, never failing.
 
+## Content and media models (2026-07-19)
+
+The router also chooses models for the Content stage (the `content-creation`
+skill), so content generators plan, select and switch models and effort the same
+way the code side does:
+
+- **Text content** (Bangla/English copy) uses Claude tiers/effort by the same
+  five signals above — routine copy runs cheap, nuanced or safety-relevant
+  wording spends up — and runs **inline**, like any other Claude task.
+- **Image/audio/video** uses the **Gemini capability registry** (the
+  `gemini-integration` skill): the router picks the model for the capability
+  (image/video/audio) and the quality level, trading cost against fidelity, and
+  may switch models between drafts. But media generation is **not silent**: each
+  generation still passes through the confirm-before-generate step (cost + "sent
+  to Google"), because it spends real money and leaves the user's machine. Media
+  cost counts against the same `cost-guard` ceiling; `cost-monitor` logs each
+  media generation's model and spend.
+
+So the one automatic router covers Claude (code + text) and Gemini (media),
+cheapest-capable per task — with media carrying the extra per-generation
+approval its cost and privacy warrant.
+
 ## Logging (so an automatic choice stays reviewable)
 
 Because selection is silent, it must be auditable. `cost-monitor` records, per

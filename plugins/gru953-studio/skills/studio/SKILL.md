@@ -142,7 +142,8 @@ not size (2026-07-11 v2.0.0):
 | Hosting, packaging, or a deploy pipeline | `devops-engineer` (Standard+) |
 | Running as a live, long-lived service | `devops-engineer`'s reliability pass (health checks, structured logging, failure posture) |
 | More than one language (e.g. English + Bangla) | `localisation-specialist` |
-| The stack uses Dart/Flutter, Kotlin, Rust, Python, Java or C++ | the matching native language specialist (`flutter-dart-developer` / `kotlin-developer` / `rust-developer` / `python-developer` / `java-developer` / `cpp-developer`) for that language's build tasks, each loading its `lang-*` pack — `builder` still handles web/scripting defaults and glue (see `architect`) |
+| The stack uses Dart/Flutter, Kotlin, Rust, Python, Java, C++, Swift, C#, Go or TypeScript | the matching native language specialist (`flutter-dart-developer` / `kotlin-developer` / `rust-developer` / `python-developer` / `java-developer` / `cpp-developer` / `swift-developer` / `csharp-developer` / `go-developer` / `typescript-developer`) for that language's build tasks, each loading its `lang-*` pack — `builder` still handles web/scripting defaults and glue (see `architect`) |
+| The app needs real content — copy, images, audio or video | the content team at the Content stage (`content-director` + `text-content-specialist`; and `image-`/`audio-`/`video-content-specialist` when the brief needs media, via the opt-in `gemini-integration`) — see the `content-creation` skill |
 | User-facing documentation for the built app | `technical-writer` (Standard+) |
 | A decision that turns on an external, current fact | `researcher` (on demand) |
 | A task would clearly benefit from an existing Claude Code skill/plugin GRU953-Studio has no native way to provide | `researcher` (any Tier, via the `ecosystem-finder` skill — recommends at most one or two, always confirmed with a pop-up before anything installs, never bundled into GRU953-Studio itself) |
@@ -156,8 +157,9 @@ it is not scope creep; adding one the brief does not need is.
 `security-compliance-auditor` only appears in the table from Standard Tier
 up, but its Publish-gate checks (secrets/vulnerability/licence/progress-
 evidence, plus the `quality-gate` Definition of Done via
-`hooks/quality-gate.mjs` and requirements traceability via
-`hooks/traceability-check.mjs` — 2026-07-19) run before Publish on EVERY Tier,
+`hooks/quality-gate.mjs`, requirements traceability via
+`hooks/traceability-check.mjs`, and content approval/provenance/rights via
+`hooks/content-check.mjs` — 2026-07-19) run before Publish on EVERY Tier,
 including Tiny — the table
 lists which roles are part of day-to-day Build work; the Publish gate
 itself is universal and never skipped. The same applies to the roster
@@ -170,7 +172,7 @@ Growth-guard note (confirmed 2026-07-10; count updated 2026-07-11 v2.0.0):
 Tiers, plus the feature-triggers above, are the *only* controls on TEAM SIZE
 PER PROJECT — there is no additional mechanical lock there, and a project
 only ever wakes the subset of roles its Tier and brief actually call for.
-Separately, the TOTAL ROLE COUNT (currently 29 — a deliberately lean,
+Separately, the TOTAL ROLE COUNT (currently 34 — a deliberately lean,
 non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31 to
 23 by merging eight overlapping roles, and v3.6.0 added six native language
 specialists, each a distinct-ecosystem implementer) is
@@ -178,16 +180,28 @@ guarded by `scope-guardian` running
 `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
 `Dev-Memory/decisions/*roster*.md` for a built project, falling back to the
 committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
-not skip scope-guardian on Standard/Complex Tier. Growing the roster past 29
+not skip scope-guardian on Standard/Complex Tier. Growing the roster past 34
 still requires a named, non-overlapping gap recorded in `ROSTER.md` (and, for
 contributions, an RFC — see `governance/GOVERNANCE.md`).
 
 ## The lifecycle
 
-Brainstorm → Ideate → Design → **Prototype** → Plan → Build → Test → Fix →
-Review → Publish (plus Maintain for returning projects). Delegate each stage's
-work to the right specialist agents (parallel where independent); never do
-specialist work yourself.
+Brainstorm → Ideate → Design → **Prototype** → **Content** → Plan → Build →
+Test → Fix → Review → Publish (plus Maintain for returning projects). Delegate
+each stage's work to the right specialist agents (parallel where independent);
+never do specialist work yourself.
+
+**Content stage (2026-07-19, `content-creation` skill).** After the approved
+prototype, the `content-director` plans the app's real content (text, image,
+audio, video) from the spec + warframe and generates the bulk before Build
+consumes it; UI-dependent assets become content tasks in the phased plan. Text
+is written natively by `text-content-specialist` in **Bangla + English** via
+Claude; image/audio/video use the **opt-in** `gemini-integration` (the user's
+own Google key, a cost + "sent to Google" approval before *every* generation,
+graceful degrade with a step-by-step guide when a human must supply an asset).
+Every asset is recorded in `Dev-Memory/CONTENT.md` with approval, provenance,
+rights and alt-text — enforced by `hooks/content-check.mjs` before Publish. The
+`model-router` chooses/switches content and media models + effort.
 
 **Prototype stage (2026-07-19, `warframe-prototype` skill).** Between Design and
 Plan, before any real code: `ux-designer` + a `builder` produce a self-contained

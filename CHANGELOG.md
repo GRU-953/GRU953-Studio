@@ -1,5 +1,47 @@
 # Changelog
 
+## 4.1.0 — 2026-07-19 (in progress)
+
+Adds a **Content Creation** capability so the studio produces the app's real
+content, not just the shell — and (Phase B, next) completes native platform
+coverage. Phase A: the Content stage, the content team, and the opt-in Gemini
+integration.
+
+**New: Content stage + team (roster 29 → 34).** After the approved prototype, a
+new **Content** stage (`content-creation` skill) plans and generates the app's
+content from the spec + warframe, before Build consumes it. Five new agents:
+`content-director` (plans content, owns the manifest and the media opt-in),
+`text-content-specialist` (in-app copy & microcopy in **Bangla + English** via
+Claude), and `image-`/`audio-`/`video-content-specialist` (media via Gemini).
+Content is recorded in `Dev-Memory/CONTENT.md` with provenance, approval, rights
+and alt-text, and woven into the phased build.
+
+**New: `gemini-integration` skill — the studio's first external cloud service,
+handled with care.** Opt-in only; the **user's own Google API key** (never
+stored or committed — `scan.mjs` already blocks `AIza…` keys); models referenced
+**by capability + a small dated registry** (image/video/audio → current model,
+verified before use) so it stays correct as Google renames things; a plain-
+English **cost estimate + "sent to Google" notice + approval before every
+generation**; generation via REST/CLI (**no bundled SDK**, so "no third-party
+code dependencies" still holds); and **graceful degrade** with a step-by-step
+guide when a key/network is absent or a human must supply an asset.
+
+**New: `content-check.mjs`.** Before Publish, every asset in `CONTENT.md` must
+carry a recorded approval, provenance, a rights/licence note, and — for media —
+alt-text/caption; unattributed or unapproved content blocks the release. Added
+to the security auditor's Publish gate (now **seven** blocking checks). No-op on
+a project with no declared content.
+
+**Model router extended to content + media.** The one automatic router now also
+picks/switches content models + effort — Claude tiers for text, the Gemini
+capability registry for media — cost-ceiling-aware, with media still passing the
+per-generation approval. `cost-monitor` logs media spend. Accessibility and
+brand review, and the `reviewer` parity check, extend to content; the dashboard
+gains a **Content** section.
+
+6 new behavioural tests (108 → 114, all pass). `repo-integrity` clean (34
+agents, 28 skills, 20 hooks, 9 commands); roster and licence green.
+
 ## 4.0.0 — 2026-07-19
 
 Phase 5 (final) of the staged programme: **brainstormed hardening**, and the

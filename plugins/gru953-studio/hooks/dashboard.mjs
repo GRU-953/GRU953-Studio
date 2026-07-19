@@ -219,6 +219,7 @@ function renderBoard(projectName, docs, table, boardText) {
   ${docSection('Concept', docs.objective, true)}
   ${docSection('Architecture & specifications', docs.architecture, false)}
   ${docSection('Build plan', docs.plan, true)}
+  ${docSection('Content', docs.content, false)}
   <h2 class="tasks">Task board</h2>
   <ul class="summary">${summary || '<li class="pill">No tasks yet</li>'}</ul>
   ${board}
@@ -246,6 +247,7 @@ function main() {
     objective: read(path.join(devMemory, 'OBJECTIVE.md')),
     architecture: read(path.join(devMemory, 'ARCHITECTURE.md')),
     plan: read(path.join(devMemory, 'PLAN.md')),
+    content: read(path.join(devMemory, 'CONTENT.md')),
   };
   const nameMatch = (docs.objective || '').match(/^#\s+(.+)$/m);
   const projectName = (nameMatch ? nameMatch[1] : 'Your project').trim();

@@ -70,7 +70,11 @@ been built, without ever being the person who wrote the code under review.
    main flow against the approved warframe the user signed off, and flag any
    silent drift (a screen or flow that quietly diverges from what was agreed) as
    a finding for the Project Lead — the app that ships should match what the
-   user approved, or the change should have been surfaced, not slipped in.
+   user approved, or the change should have been surfaced, not slipped in. This
+   extends to **content** (2026-07-19, `content-creation` skill): the shipped
+   copy and media should match what the spec and prototype promised, and each
+   asset should be recorded in `CONTENT.md` with approval, provenance and
+   rights — flag placeholder or unattributed content as a finding.
 
 ## Output
 

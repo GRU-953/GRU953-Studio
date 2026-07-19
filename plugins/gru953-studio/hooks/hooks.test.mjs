@@ -459,13 +459,13 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '29 specialist roles in total',
-    'We once evaluated 29 specialist roles for a sibling product; 99 specialist roles in total'
+    '34 specialist roles in total',
+    'We once evaluated 34 specialist roles for a sibling product; 99 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a conflicting later role-count mention must not be masked by an earlier correct one');
-  assert.ok(r.json.problems.some((p) => p.includes('29') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
+  assert.ok(r.json.problems.some((p) => p.includes('34') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -475,8 +475,8 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '29 specialist roles in total',
-    '(the studio grew from 16 roles in early versions) 29 specialist roles in total'
+    '34 specialist roles in total',
+    '(the studio grew from 16 roles in early versions) 34 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
@@ -1838,5 +1838,69 @@ test('repo-integrity.mjs INV11: a language pack missing a command family is bloc
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED');
   assert.ok(r.json.problems.some((p) => /lang-rust/.test(p) && /format/.test(p)), `expected a missing-format finding: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Content Creation — content-check.mjs verifies every asset in
+// CONTENT.md has approval + provenance + rights (+ alt-text for media) before
+// Publish. No-op when no content is declared; fails closed on an incomplete row.
+// ---------------------------------------------------------------------------
+function writeContent(dir, table) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'CONTENT.md'), table);
+}
+const CONTENT_HEADER = '| Asset | Medium | Source | Approved | Rights | Alt |\n| :-- | :-- | :-- | :-- | :-- | :-- |\n';
+
+test('content-check.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-cc-nostudio-');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: no CONTENT.md is clean (no content declared)', () => {
+  const dir = mkTmp('gru-cc-none-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: a complete manifest is clean', () => {
+  const dir = mkTmp('gru-cc-clean-');
+  writeContent(dir, CONTENT_HEADER +
+    '| hero.png | image | Gemini image, prompt #4 | approved | AI-generated, user owns output | Family using the app |\n' +
+    '| onboarding | text | Claude bn+en | approved | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: an unapproved (pending) asset is blocked', () => {
+  const dir = mkTmp('gru-cc-pending-');
+  writeContent(dir, CONTENT_HEADER + '| clip.mp4 | video | Veo, prompt #7 | pending | AI-generated | captions attached |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /not approved/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: a media asset with no alt-text is blocked (accessibility)', () => {
+  const dir = mkTmp('gru-cc-alt-');
+  writeContent(dir, CONTENT_HEADER + '| hero.png | image | Gemini image | approved | AI-generated | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /alt-text|caption|transcript/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: an asset with no rights note is blocked', () => {
+  const dir = mkTmp('gru-cc-rights-');
+  writeContent(dir, CONTENT_HEADER + '| onboarding | text | Claude bn+en | approved | — | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /rights/i.test(p)));
   fs.rmSync(dir, { recursive: true, force: true });
 });

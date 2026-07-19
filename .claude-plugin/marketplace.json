@@ -5,12 +5,12 @@
   },
   "metadata": {
     "description": "A marketplace for GRU953-Studio: a Tier-sized team of specialised autonomous AI software developers, led by an AI project lead, that turns a plain-English idea and a short pop-up interview into a working, tested, privately-published app.",
-    "version": "4.0.0"
+    "version": "4.1.0"
   },
   "plugins": [
     {
       "name": "gru953-studio",
-      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 29 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub — under your name, as sole author. Built for non-technical users, in plain UK English.",
+      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 34 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub — under your name, as sole author. Built for non-technical users, in plain UK English.",
       "author": {
         "name": "Aninda Sundar Howlader"
       },

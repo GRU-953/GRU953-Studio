@@ -1,6 +1,6 @@
 # GRU953-Studio role roster (committed baseline)
 
-**role count: 29**
+**role count: 34**
 
 This file is the committed baseline the roster checks read. `roster-check.mjs`
 verifies the number of `agents/*.md` files against it; `repo-integrity.mjs`
@@ -82,6 +82,26 @@ never ad hoc.
 | java-developer | Maven/Gradle toolchain, immutability and resource-handling idioms | A task is in Java | `lang-java` |
 | cpp-developer | CMake/CTest, RAII/smart-pointer memory idioms, sanitizers | A task is in C++ | `lang-cpp` |
 
+## Content team (5), added v4.1.0 (2026-07-19)
+
+Owner-directed expansion (feature request: "add a content creation phase after
+prototyping with specialised roles to generate the app's content"). Recorded
+here as the required named-gap decision under `governance/GOVERNANCE.md`. Each is
+a distinct, **non-overlapping** gap: producing the app's actual content (copy,
+images, audio, video) is separate work from building the app shell (`builder`/
+language specialists), designing it (`architect`/`ux-designer`), translating
+existing strings (`localisation-specialist`), or documenting it for users
+(`technical-writer`). Text is generated natively by Claude; media via the opt-in
+`gemini-integration`.
+
+| Role | Distinct gap it fills | Activates when |
+| :-- | :-- | :-- |
+| content-director | Plans and orchestrates all content from the spec + prototype; owns the content plan, `CONTENT.md` and the media opt-in | The Content stage (any app needing real content) |
+| text-content-specialist | Writes the app's own in-app copy & microcopy in Bangla + English (not translation, not user docs) | Any app with in-app text |
+| image-content-specialist | Generates the app's images/icons/illustrations via Gemini, platform-appropriate, with alt-text | Brief needs images |
+| audio-content-specialist | Generates the app's audio/narration/speech via Gemini, with transcripts | Brief needs audio |
+| video-content-specialist | Generates the app's video/clips via Gemini, with captions | Brief needs video |
+
 ## Model tiers (deliberate, cheapest-first)
 
 Every role declares a model — none inherits the surface default — so cost is
@@ -103,12 +123,15 @@ hard to undo.
   `localisation-specialist`, `devops-engineer`, `researcher`, and the six
   native language specialists (`flutter-dart-developer`, `kotlin-developer`,
   `rust-developer`, `python-developer`, `java-developer`, `cpp-developer`) —
-  each an implementer like `builder`, so the same sonnet tier, not opus.
+  each an implementer like `builder`, so the same sonnet tier, not opus. Plus
+  the five-strong content team (`content-director`, `text-content-specialist`,
+  `image-`/`audio-`/`video-content-specialist`) — content planning and
+  generation is bounded work, sonnet-tier.
 - **opus** (most capable, most expensive) — reserved for the hardest
   reasoning only: `project-lead` (orchestration), `architect` (design),
   `reviewer` (correctness), `responsible-ai-reviewer` (safety judgement).
 
-Count: 3 haiku · 22 sonnet · 4 opus = 29.
+Count: 3 haiku · 27 sonnet · 4 opus = 34.
 
 Per-task model choice (v3.6.0, `model-router` skill): the declared model above
 is each role's DEFAULT and FLOOR; the router may pick a cheaper model for a
