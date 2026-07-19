@@ -132,6 +132,14 @@ or after it — never a silent promise to wake up that the environment cannot
 keep. A scheduled resume re-runs the normal re-orientation read and still never
 auto-publishes.
 
+**Scheduler safety (2026-07-19, Phase 5).** A fired scheduled resume is treated
+as a fresh session, not a pre-authorised one: it re-runs the `focus-guard`
+recall, and it never carries any standing authorisation to push or publish — the
+publish/checkpoint/memory-persist tokens are all short-lived (60-minute TTL) and
+long expired by the time a "later" schedule fires, so a scheduled wake-up can
+never silently trigger a push. Publishing always needs a fresh, explicit
+confirmation, exactly as from any other session.
+
 ## The HTML dashboard
 
 On request (`/studio-dashboard`), run `hooks/dashboard.mjs` to generate a
@@ -146,7 +154,10 @@ HTML-escaped so task text can never break the page — and the core table works
 with no JavaScript at all. It is a read-only view of the same source of truth
 (`PROGRESS.md` still wins); opening it changes nothing, and it lives under the
 private, never-shipped `Dev-Memory/`. Use the generator rather than writing the
-HTML by hand, so those guarantees always hold.
+HTML by hand, so those guarantees always hold. At **Publish**, generating the
+dashboard once more doubles as a human-readable snapshot of the finished project
+— concept, architecture, full plan and final task states in one page — for the
+record (2026-07-19, Phase 5).
 
 ## Who applies this
 

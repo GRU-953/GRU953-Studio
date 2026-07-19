@@ -1,5 +1,42 @@
 # Changelog
 
+## 4.0.0 — 2026-07-19
+
+Phase 5 (final) of the staged programme: **brainstormed hardening**, and the
+milestone release that completes the programme (features 0–10). Several Phase 5
+ideas already shipped in earlier phases — the model-router audit ledger
+(`cost-monitor`, 3.6.0) and the warframe→build parity check (`reviewer`, 3.8.0).
+This release adds the rest.
+
+**New: INV11 language-pack contract (`repo-integrity.mjs`).** A `lang-*` pack
+cannot land unless it declares all five standard command families (build, test,
+lint, format, deps) — so a native language can never ship half-wired, the same
+way a new agent cannot land without a roster entry. Locked in by a test.
+
+**Resume rehearsal on cloud.** The pre-Publish "prove the memory folder alone is
+enough to resume" rehearsal now, on a cloud session with persistence enabled,
+additionally proves the *branch-persisted* memory rehydrates a fresh container —
+not just the soon-to-be-wiped local copy.
+
+**Scheduler safety.** A fired "schedule for later" resume is treated as a fresh
+session with no standing push/publish authorisation — every auth token is
+60-minute TTL and long expired by the time a later schedule fires, so a
+scheduled wake-up can never silently push or publish.
+
+**Dashboard as publish snapshot.** At Publish, generating the dashboard once more
+doubles as a human-readable record of the finished project (concept,
+architecture, full plan, final task states).
+
+1 new behavioural test (107 → 108, all pass). `repo-integrity` clean (29 agents,
+26 skills, 19 hooks, 9 commands); roster and licence green.
+
+**Programme complete.** Across 3.4.0 → 4.0.0 this delivered: the guardrail &
+gold-standard spine (focus/drift/quality/traceability), the task command centre
++ HTML dashboard, indexed knowledge-graph memory, the automatic model+effort
+router, six native language specialists, the warframe Prototype stage,
+MVP-then-phases building, per-phase backup checkpoints, and Claude Code on the
+web support — each phase committed with all gates green.
+
 ## 3.9.0 — 2026-07-19
 
 Phase 4 of the staged programme: **Claude Code on the web / cloud support**

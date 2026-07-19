@@ -1819,3 +1819,24 @@ test('lib.mjs isConfirmScriptOnly: confirm-memory-persist.mjs itself is never tr
   assert.equal(isPushCapable('node /abs/hooks/confirm-memory-persist.mjs /proj'), false);
   assert.equal(isPushCapable('node confirm-memory-persist.mjs; git push'), true);
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 5 — INV11 language-pack contract: a lang-* pack that omits
+// one of the five standard command families (build/test/lint/format/deps) must
+// be caught, so a language can never ship half-wired.
+// ---------------------------------------------------------------------------
+test('repo-integrity.mjs INV11: a language pack missing a command family is blocked', () => {
+  const dir = mkTmp('gru-langpack-');
+  copyRepoTo(dir);
+  // A minimal lang-rust pack that mentions build/test/lint/deps but NOT format.
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'skills', 'lang-rust', 'SKILL.md'),
+    ['---', 'name: lang-rust', 'description: rust pack', '---', '', '# Rust', '',
+      'build with `cargo build`, test with `cargo test`, lint with `cargo clippy`,',
+      'dependencies live in `Cargo.toml`.'].join('\n') + '\n'
+  );
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /lang-rust/.test(p) && /format/.test(p)), `expected a missing-format finding: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

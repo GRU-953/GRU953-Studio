@@ -31,9 +31,12 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.8.0** — stable, and recommended for everyone
+## Latest version: **4.0.0** — stable, and recommended for everyone
 
-Version 3.8.0 adds a "see it before you build it" step and phased, backed-up
+Version 4.0.0 completes a staged upgrade programme: it now **runs on Claude Code
+on the web** (with opt-in, private, secret-scanned backup of your planning notes
+so a project resumes across sessions), on top of everything the 3.x series
+added. It also keeps the "see it before you build it" step and phased, backed-up
 building. Before any real code, the studio now builds a **warframe** — a
 clickable mock-up of your app you can open in a browser — plus a plain-English
 **phased plan**, and asks you to approve both before it starts. It then builds

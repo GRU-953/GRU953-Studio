@@ -381,6 +381,27 @@ if (hooksJsonText === null) {
   }
 }
 
+// ---- INV 11: every language pack declares the five standard commands ----------
+// 2026-07-19 (Phase 5 language-pack contract). Each `lang-*` skill is the shared
+// toolchain pack a native language specialist loads; a pack missing one of the
+// five standard command families (build / test / lint / format / deps) would let
+// a language ship half-wired — a specialist with no way to prove or check its
+// work. This makes the contract mechanical: a new `lang-*` pack cannot land
+// without all five, the same way a new agent cannot land without a roster entry.
+const REQUIRED_PACK_COMMANDS = [
+  { key: 'build', re: /\bbuild\b/i },
+  { key: 'test', re: /\btest\b/i },
+  { key: 'lint', re: /\blint\b|\banalys|clippy|ktlint|detekt|checkstyle|clang-tidy|\bruff\b|flake8/i },
+  { key: 'format', re: /\bformat\b|fmt|spotless|clang-format|\bblack\b/i },
+  { key: 'deps', re: /\bdepend|\bdeps\b|cargo\.toml|pubspec|requirements|pom\.xml|build\.gradle|vcpkg|conan|pip install|pub add|cargo add/i },
+];
+for (const s of skillDirs) {
+  if (!/^lang-/.test(s)) continue;
+  const text = read(path.join(skillsDir, s, 'SKILL.md')) || '';
+  const missing = REQUIRED_PACK_COMMANDS.filter((c) => !c.re.test(text)).map((c) => c.key);
+  if (missing.length) fail(`language pack 'skills/${s}' does not declare the required command famil${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')} — a lang-* pack must cover build, test, lint, format and deps.`);
+}
+
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {
   console.log(JSON.stringify({ status: 'clean', agentCount, skillCount, hookCount: hookFiles.length, commandCount: commandFiles.length }, null, 2));

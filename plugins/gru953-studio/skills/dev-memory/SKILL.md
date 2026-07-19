@@ -165,6 +165,14 @@ are enough to state, unambiguously, what is done and what the very next
 step is. If they are not, the memory is incomplete — fix it before
 Publish. Record that the rehearsal passed in `SESSION-LOG.md`.
 
+On a **cloud/ephemeral session with memory persistence enabled** (see "Cloud
+persistence" above), the rehearsal additionally proves the *branch-persisted*
+memory rehydrates a fresh container: confirm that a resume from the private
+memory branch alone — not this container's local files, which will not survive —
+is enough to state what's done and what's next. A project that only resumes from
+the soon-to-be-wiped local copy has not actually proven it resumes on the web
+(2026-07-19, Phase 5).
+
 ## Local-only, and never shipped (with one opt-in cloud exception)
 
 Dev-Memory lives on the user's own machine by default. It is never part of the
