@@ -31,19 +31,20 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.4.0** — stable, and recommended for everyone
+## Latest version: **3.5.0** — stable, and recommended for everyone
 
-Version 3.4.0 adds a guardrail spine so long, multi-session builds never
-lose their way. Every session now re-orients from a tiny always-current
-"focus" note before doing anything, so picking a project back up days later
-(or after the conversation has been trimmed to save memory) starts from
-exactly where it stood. A plain-English "requirements map" makes sure
-nothing you asked for is quietly dropped and nothing you didn't ask for is
-quietly added, and a gold-standard "done" checklist — tests, an independent
-review, security and licence checks, accessibility, up-to-date docs, and a
-build that works from a clean copy — must genuinely pass before anything is
-backed up or published. If you already have it, updating is a good idea; if
-you're new, you'll get this version automatically.
+Version 3.5.0 adds a native command centre and a cheaper memory. You can now
+**pause, resume, stop, skip, or schedule** any task with simple commands
+(`/studio-pause`, `/studio-resume`, `/studio-stop`, `/studio-skip`,
+`/studio-schedule`), and open a visual dashboard of your whole task board in a
+web browser (`/studio-dashboard`) — a single self-contained page that needs no
+internet. Behind the scenes, the studio now remembers projects with a compact
+index and a small "map" of how things connect, so picking a big project back up
+costs far less and recalls just what the current task needs. Work is also broken
+into the smallest sensible tasks (with sub-tasks), and progress is saved the
+instant each one is finished. This builds on 3.4.0's guardrail spine. If you
+already have it, updating is a good idea; if you're new, you'll get this version
+automatically.
 
 You don't need to read the technical details, but if you're curious, the full
 plain-English list of every change is in
@@ -305,7 +306,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 14 skills (step-by-step playbooks the coordinator
+  plugin, including its own 16 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).

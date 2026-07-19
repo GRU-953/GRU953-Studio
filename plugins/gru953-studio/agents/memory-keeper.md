@@ -46,7 +46,13 @@ demand," matching the behaviour described here exactly.)
    something is caught, flag it to the Project Lead rather than silently
    storing or silently discarding it; the user decides what happens to it.
 3. **Write after acting**: update `PROGRESS.md`, append to
-   `SESSION-LOG.md` (never edit or delete old entries), grow `INDEX.md`.
+   `SESSION-LOG.md` (never edit or delete old entries), and grow the recall
+   layer — the compact machine-readable `INDEX.md` (entity, where, summary,
+   tags, last-touched; the `Where` column names real files) and, on
+   Standard/Complex Tier, the `GRAPH.md` node and typed links for what changed
+   (2026-07-19, see the `memory-graph` skill; both are checked by
+   `hooks/memory-integrity.mjs`, and recall works by reading the index then
+   expanding only the graph nodes the task needs — least tokens by design).
    Also keep the three anti-drift/quality files current (2026-07-19, see the
    `focus-guard` and `quality-gate` skills): rewrite `FOCUS.md` in place
    whenever the active objective/phase/task changes (it is a tiny one-glance

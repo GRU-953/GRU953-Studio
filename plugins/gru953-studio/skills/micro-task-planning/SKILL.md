@@ -26,9 +26,20 @@ that was always implicitly needed between Design and Build.
    that function" is not a task, it's a step inside one — fragmenting
    further than a task actually needs is its own kind of waste
    (`yagni-rules`).
-2. **Record, per micro-task:** a short name, its one acceptance criterion,
-   the exact verification command that proves it, and its dependencies
-   (which other micro-tasks, if any, must be `done` first).
+2. **Record, per micro-task:** a short id and name, its one acceptance
+   criterion, the exact verification command that proves it, and its
+   dependencies (which other micro-tasks, if any, must be `done` first). The
+   id (e.g. `T1`, `T2`) is what `REQUIREMENTS.md` traces to and `GRAPH.md`
+   links from — give every task one.
+2b. **Subtasks, when a task has more than one provable part** (2026-07-19,
+   feature request: "break work into the smallest unit of tasks with all
+   subtasks listed"). If a right-sized micro-task genuinely needs two or three
+   separately-provable steps, list them as subtasks (`T3.1`, `T3.2`) each with
+   its own one acceptance criterion and one proving command, under the parent.
+   Stop there — a subtask is still a provable unit of behaviour, never "one
+   line inside a function" (the same over-fragmentation `yagni-rules` warns
+   against). The parent is `done` only when every subtask is `done` and
+   verified.
 3. **Scale by Tier:**
    - **Tiny:** an informal, short list (typically 2-6 tasks) stated
      plainly to the user and handed to the single builder in order — no
@@ -57,6 +68,21 @@ that was always implicitly needed between Design and Build.
    already applied to every other Dev-Memory file: a `done` status
    describes what a past step recorded, never licence to skip re-verifying
    it if something about it looks off.
+
+## Record immediately, then advance (the build loop)
+
+2026-07-19 (feature request: "once a task or subtask is done, immediately
+record the progress and lessons, update memory, then look to the plan for the
+next task"). The moment a task or subtask is verified `done`, before starting
+anything else, `memory-keeper` records it in the same write cycle: set the
+`PROGRESS.md` status with its `verified:` evidence, refresh the `▶ RESUME HERE`
+pointer, update the recall layer (`INDEX.md` and, on Standard/Complex, the
+`GRAPH.md` node/links — the `memory-graph` skill), and append any real lesson to
+`LESSONS.md`. Only then does `project-lead` read the plan for the next
+unblocked task (first `todo`/`doing` whose dependencies are all `done`, never a
+`blocked` one) and continue. This keeps an interrupted session losing nothing
+and the recall memory always current — never a batch of updates saved up for
+later, which is exactly what goes missing when a session ends unexpectedly.
 
 ## How this relates to `tdd-workflow`
 

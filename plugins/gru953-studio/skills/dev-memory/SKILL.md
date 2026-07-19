@@ -38,7 +38,8 @@ All live under `Dev-Memory/` in the project's working directory:
 | `PROGRESS.md` | The task table. Its **Status** column (`todo` / `doing` / `done` / `blocked`) is the single source of truth. Each `done` row carries the tester's `verified:` evidence cell. An optional `ID`/`Task ID` column enables two-way traceability against `REQUIREMENTS.md`. |
 | `QUALITY-GATE.md` | (2026-07-19, see `quality-gate` skill) The current phase's Definition of Done — each required quality dimension (acceptance, tests, review, security/licence/privacy, accessibility, docs, reproducible build) marked pass-with-evidence or n/a-with-reason. Audited by `hooks/quality-gate.mjs`; must be clean before a checkpoint commit or Publish. |
 | `SESSION-LOG.md` | An append-only diary — one entry per session/stage. Never edited or deleted, only added to. |
-| `INDEX.md` | A short, growing map of what is where, so a long project stays navigable. |
+| `INDEX.md` | A short, growing, machine-readable map of what is where — a compact table (entity, where, summary, tags, last-touched), most-recent first, read first for cheap recall (2026-07-19, see the `memory-graph` skill). Its `Where` column names real file paths, checked by `hooks/memory-integrity.mjs`. |
+| `GRAPH.md` | (2026-07-19, Standard/Complex Tier, see the `memory-graph` skill) The plain-text knowledge graph — nodes (requirements, tasks, decisions, files, lessons) and typed links (`implements`/`depends-on`/`relates-to`/`supersedes`/`caused-by`/`blocks`) — expanded on demand so a session recalls only what the current task needs. Links are checked for dangling nodes by `hooks/memory-integrity.mjs`. |
 | `decisions/*.md` | One small dated note per load-bearing decision (stack choices, Tier changes, the roster baseline — `*roster*.md` — and anything a future session must not re-litigate). |
 | `UNBUILT.md` | The append-only ledger of things deliberately **not** built (owned by `scope-guardian`), so a cut idea is never silently re-proposed. |
 | `PUBLISH-APPROVED` | Written by `confirm-publish.mjs` only after the user confirms publishing; read by `gate.mjs`. Deleted after a successful publish. Valid for 60 minutes from the moment it's written (2026-07-12 Round 7 audit fix — the deletion above is a prose instruction the agent must remember, not something any code enforces, so `gate.mjs` also checks a written-in timestamp and stops honouring the record on its own once the window passes, rather than relying solely on the delete step happening). |
@@ -63,7 +64,10 @@ plain line before acting. Then report the resume point back to the user in its
 first message, so the user always knows where things stood before being asked
 anything. (2026-07-19: `FOCUS.md` and the "restate the goal" checkpoint were
 added so a summarised or brand-new session rehydrates from the memory files,
-not from lost chat history — see the `focus-guard` skill.)
+not from lost chat history — see the `focus-guard` skill.) For recall beyond
+the resume point, follow the `memory-graph` skill's protocol: read the compact
+`INDEX.md`, then expand only the `GRAPH.md` nodes the current task touches —
+recall the least you need, not every file.
 
 ## Scan before every write — never skip
 
@@ -75,9 +79,10 @@ it and never silently discard it; the user decides what happens to it.
 ## Write after acting
 
 Update `PROGRESS.md` (including the `▶ RESUME HERE` pointer), **append** to
-`SESSION-LOG.md` (never rewrite history), and grow `INDEX.md`. Checkpoint
-at every stage boundary — before starting the next stage, never after — so
-an interrupted session loses nothing.
+`SESSION-LOG.md` (never rewrite history), and grow `INDEX.md` — and, on
+Standard/Complex Tier, the `GRAPH.md` node and links for what changed (see the
+`memory-graph` skill). Checkpoint at every stage boundary — before starting the
+next stage, never after — so an interrupted session loses nothing.
 
 ## Learning from mistakes (2026-07-11 addition)
 

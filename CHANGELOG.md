@@ -1,5 +1,49 @@
 # Changelog
 
+## 3.5.0 — 2026-07-19
+
+Phase 1 of the staged programme: the **memory & command-centre foundations**
+(features 1, 8, 9), building on 3.4.0's guardrail spine.
+
+**New: native command centre (`command-centre` skill + six commands).** Plan,
+track and control work with a small, durable task state machine over
+`PROGRESS.md` — the Status vocabulary gains `paused`, `skipped` and `scheduled`
+alongside `todo`/`doing`/`done`/`blocked`. New commands: `/studio-pause`,
+`/studio-resume`, `/studio-stop`, `/studio-skip`, `/studio-schedule`, and
+`/studio-dashboard`. A live plain-English `STATUS-BOARD.md` gives the
+at-a-glance picture. "Schedule for later" records the intent durably first, then
+arms whatever scheduler the session offers — and says so honestly when the
+environment has none, rather than promising a wake-up it cannot deliver. No
+control command ever touches Publish or a push.
+
+**New: self-contained HTML dashboard (`hooks/dashboard.mjs`).** `/studio-dashboard`
+renders `Dev-Memory/dashboard.html` from `PROGRESS.md` — every task grouped by
+status, colour-coded, with a summary bar and the board. A deterministic
+generator guarantees the two hard rules: **no external network calls** (all CSS
+inline) and every cell HTML-escaped so task text can't break the page or inject
+script; the core table works with no JavaScript. It lives under the private,
+never-shipped `Dev-Memory/`.
+
+**New: token-cheap indexed knowledge-graph memory (`memory-graph` skill +
+`hooks/memory-integrity.mjs`).** Recall now reads a compact machine-readable
+`INDEX.md` first, then expands only the `GRAPH.md` knowledge-graph nodes the
+current task touches (typed links: `implements`/`depends-on`/`relates-to`/
+`supersedes`/`caused-by`/`blocks`) — least tokens by construction, with an
+optional local Ollama semantic re-rank only when it is already present (never a
+dependency). `memory-integrity.mjs` keeps it honest: no stale index path, no
+dangling graph link. The session-start recall ritual and `memory-keeper` now use
+this layer.
+
+**Smallest-unit tasks + immediate record (`micro-task-planning`).** Micro-tasks
+decompose to sub-tasks (`T3.1`, `T3.2`), each still a provable unit with one
+acceptance criterion and one command; and the moment a task or sub-task is
+verified `done`, progress, lessons and the recall layer are recorded before the
+next task starts — never a batch saved for later that goes missing when a
+session ends.
+
+New behavioural tests cover both new hooks; `repo-integrity`, `roster` and
+`licence` gates stay green. README skill count 14 → 16; version 3.4.0 → 3.5.0.
+
 ## 3.4.0 — 2026-07-19
 
 Phase 0 of a planned, staged programme: the **guardrail & gold-standard

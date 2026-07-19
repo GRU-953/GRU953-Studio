@@ -1544,3 +1544,94 @@ test('traceability-check.mjs: without a PROGRESS id column the reverse check is 
   assert.ok(r.json.notes.some((n) => /reverse.*not run/i.test(n)), `expected a disclosed not-run note: ${JSON.stringify(r.json.notes)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 1 — memory-integrity.mjs (recall index + knowledge graph
+// consistency) and dashboard.mjs (self-contained HTML command centre).
+// Both no-op on a tree without Dev-Memory; memory-integrity is a consistency
+// check (validates what exists), dashboard is a deterministic renderer.
+// ---------------------------------------------------------------------------
+test('memory-integrity.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-mi-nostudio-');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: absent INDEX/GRAPH is clean (nothing to validate)', () => {
+  const dir = mkTmp('gru-mi-empty-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: an INDEX row pointing at a missing file is a stale entry', () => {
+  const dir = mkTmp('gru-mi-stale-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Gone | src/gone.js | deleted | x |\n| Note | (conceptual, not a path) | y | z |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /src\/gone\.js/.test(p)));
+  assert.ok(!r.json.problems.some((p) => /conceptual/.test(p)), 'a non-path cell must not be treated as a stale file');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: a GRAPH link to an undefined node is dangling', () => {
+  const dir = mkTmp('gru-mi-graph-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a {tags: x}\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n- T1 depends-on T9\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /undefined node "T9"/.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: a well-formed graph + index is clean', () => {
+  const dir = mkTmp('gru-mi-clean-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), 'x\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Tasks | Dev-Memory/PROGRESS.md | table | x |\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-db-nostudio-');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: renders a self-contained, injection-safe HTML page', () => {
+  const dir = mkTmp('gru-db-render-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# Expense Tracker\nbrief\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | done thing | done | verified: ok |\n| T2 | <script>alert(1)</script> | todo | & "q" |\n| T3 | export | scheduled | tomorrow |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written');
+  const html = fs.readFileSync(path.join(dir, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.ok(!/https?:\/\//i.test(html), 'the page must make no external references');
+  assert.ok(!/<script>alert\(1\)<\/script>/.test(html), 'task text must be HTML-escaped, not rendered as markup');
+  assert.ok(/&lt;script&gt;alert\(1\)&lt;\/script&gt;/.test(html), 'the escaped form must be present');
+  assert.ok(/Expense Tracker/.test(html), 'the project name from OBJECTIVE.md should appear');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: Dev-Memory present but PROGRESS.md unreadable is blocked, not a crash', () => {
+  const dir = mkTmp('gru-db-noprog-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

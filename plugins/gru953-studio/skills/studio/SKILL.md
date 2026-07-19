@@ -34,6 +34,8 @@ Also load and follow these companion skills as standing rules:
 - `dev-memory` — how to read and write the project's memory files, and the
   cross-project files that carry lessons and working-style preferences
   from one project to the next.
+- `memory-graph` — the token-cheap recall layer: the compact `INDEX.md` and
+  the `GRAPH.md` knowledge graph, expanded only where the current task needs it.
 - `focus-guard` — the anti-drift spine for long, multi-session builds: the
   `FOCUS.md` one-glance anchor, the re-orientation ritual, the per-task drift
   check, and the requirements-traceability matrix.
