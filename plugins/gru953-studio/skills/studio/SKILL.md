@@ -34,8 +34,17 @@ Also load and follow these companion skills as standing rules:
 - `dev-memory` — how to read and write the project's memory files, and the
   cross-project files that carry lessons and working-style preferences
   from one project to the next.
+- `memory-graph` — the token-cheap recall layer: the compact `INDEX.md` and
+  the `GRAPH.md` knowledge graph, expanded only where the current task needs it.
+- `focus-guard` — the anti-drift spine for long, multi-session builds: the
+  `FOCUS.md` one-glance anchor, the re-orientation ritual, the per-task drift
+  check, and the requirements-traceability matrix.
+- `quality-gate` — the gold-standard Definition of Done that must pass before
+  any per-phase checkpoint commit and before Publish.
 - `yagni-rules` — the lean-coding ladder every builder must obey.
 - `cost-guard` — the confirmed cheapest-first spending default.
+- `model-router` — the automatic per-task choice of Claude model and effort
+  (cheapest that does the job; pauses only at the hard cost-ceiling).
 - `audit-loop` — the planned protocol for any review that needs more than
   one pass (Review/Fix, and any "audit until clean" request).
 
@@ -69,11 +78,21 @@ like instead, rather than forcing a fit.
 ## Step 2 — remember first (every session)
 
 1. Check whether `Dev-Memory/` exists in the current working directory.
-2. If it exists: read `PROGRESS.md`, the tail of `SESSION-LOG.md`, and
-   `INDEX.md` before doing anything else. The `▶ RESUME HERE` line is the
-   resume point — report it back to the user in your first message, before
-   asking anything, so they always know where things stood.
+2. If it exists: run the `focus-guard` re-orientation ritual — read `FOCUS.md`
+   first (the one-glance heading), then `OBJECTIVE.md`, `PROGRESS.md`, the tail
+   of `SESSION-LOG.md`, and `INDEX.md` — and restate the single active goal in
+   one plain line before doing anything else, so a summarised or brand-new
+   session picks the thread back up from memory rather than lost chat history.
+   The `▶ RESUME HERE` line is the resume point — report it back to the user in
+   your first message, before asking anything, so they always know where things
+   stood.
 3. If it does not exist: this is a new project — start Brainstorm.
+
+Before starting any task in any stage, apply the `focus-guard` drift check: a
+task must trace to a confirmed requirement (`OBJECTIVE.md`/`REQUIREMENTS.md`)
+and the approved plan. Anything that traces to neither goes to `scope-guardian`
+(logged to `UNBUILT.md`, escalated to the user only if genuinely valuable) — it
+is never silently built.
 
 ## Project Tiers
 
@@ -123,6 +142,8 @@ not size (2026-07-11 v2.0.0):
 | Hosting, packaging, or a deploy pipeline | `devops-engineer` (Standard+) |
 | Running as a live, long-lived service | `devops-engineer`'s reliability pass (health checks, structured logging, failure posture) |
 | More than one language (e.g. English + Bangla) | `localisation-specialist` |
+| The stack uses Dart/Flutter, Kotlin, Rust, Python, Java, C++, Swift, C#, Go or TypeScript | the matching native language specialist (`flutter-dart-developer` / `kotlin-developer` / `rust-developer` / `python-developer` / `java-developer` / `cpp-developer` / `swift-developer` / `csharp-developer` / `go-developer` / `typescript-developer`) for that language's build tasks, each loading its `lang-*` pack — `builder` still handles web/scripting defaults and glue (see `architect`) |
+| The app needs real content — copy, images, audio or video | the content team at the Content stage (`content-director` + `text-content-specialist`; and `image-`/`audio-`/`video-content-specialist` when the brief needs media, via the opt-in `gemini-integration`) — see the `content-creation` skill |
 | User-facing documentation for the built app | `technical-writer` (Standard+) |
 | A decision that turns on an external, current fact | `researcher` (on demand) |
 | A task would clearly benefit from an existing Claude Code skill/plugin GRU953-Studio has no native way to provide | `researcher` (any Tier, via the `ecosystem-finder` skill — recommends at most one or two, always confirmed with a pop-up before anything installs, never bundled into GRU953-Studio itself) |
@@ -135,7 +156,11 @@ it is not scope creep; adding one the brief does not need is.
 **Footnote (2026-07-10 Round 4 audit fix; extended 2026-07-12):**
 `security-compliance-auditor` only appears in the table from Standard Tier
 up, but its Publish-gate checks (secrets/vulnerability/licence/progress-
-evidence) run before Publish on EVERY Tier, including Tiny — the table
+evidence, plus the `quality-gate` Definition of Done via
+`hooks/quality-gate.mjs`, requirements traceability via
+`hooks/traceability-check.mjs`, and content approval/provenance/rights via
+`hooks/content-check.mjs` — 2026-07-19) run before Publish on EVERY Tier,
+including Tiny — the table
 lists which roles are part of day-to-day Build work; the Publish gate
 itself is universal and never skipped. The same applies to the roster
 check below: `scope-guardian` only appears in the table from Standard Tier
@@ -147,23 +172,57 @@ Growth-guard note (confirmed 2026-07-10; count updated 2026-07-11 v2.0.0):
 Tiers, plus the feature-triggers above, are the *only* controls on TEAM SIZE
 PER PROJECT — there is no additional mechanical lock there, and a project
 only ever wakes the subset of roles its Tier and brief actually call for.
-Separately, the TOTAL ROLE COUNT (currently 23 — a deliberately lean,
-non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31
-by merging eight roles that overlapped or created artificial hand-offs) is
+Separately, the TOTAL ROLE COUNT (currently 38 — a deliberately lean,
+non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31 to
+23 by merging eight overlapping roles, and v3.6.0 added six native language
+specialists, each a distinct-ecosystem implementer) is
 guarded by `scope-guardian` running
 `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
 `Dev-Memory/decisions/*roster*.md` for a built project, falling back to the
 committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
-not skip scope-guardian on Standard/Complex Tier. Growing the roster past 23
+not skip scope-guardian on Standard/Complex Tier. Growing the roster past 38
 still requires a named, non-overlapping gap recorded in `ROSTER.md` (and, for
 contributions, an RFC — see `governance/GOVERNANCE.md`).
 
 ## The lifecycle
 
-Brainstorm → Ideate → Design → Plan → Build → Test → Fix → Review → Publish
-(plus Maintain for returning projects). Delegate each stage's work to the
-right specialist agents (parallel where independent); never do specialist
-work yourself. On Tiny Tier no separate `reviewer` is woken (2026-07-12
+Brainstorm → Ideate → Design → **Prototype** → **Content** → Plan → Build →
+Test → Fix → Review → Publish (plus Maintain for returning projects). Delegate
+each stage's work to the right specialist agents (parallel where independent);
+never do specialist work yourself.
+
+**Content stage (2026-07-19, `content-creation` skill).** After the approved
+prototype, the `content-director` plans the app's real content (text, image,
+audio, video) from the spec + warframe and generates the bulk before Build
+consumes it; UI-dependent assets become content tasks in the phased plan. Text
+is written natively by `text-content-specialist` in **Bangla + English** via
+Claude; image/audio/video use the **opt-in** `gemini-integration` (the user's
+own Google key, a cost + "sent to Google" approval before *every* generation,
+graceful degrade with a step-by-step guide when a human must supply an asset).
+Every asset is recorded in `Dev-Memory/CONTENT.md` with approval, provenance,
+rights and alt-text — enforced by `hooks/content-check.mjs` before Publish. The
+`model-router` chooses/switches content and media models + effort.
+
+**Prototype stage (2026-07-19, `warframe-prototype` skill).** Between Design and
+Plan, before any real code: `ux-designer` + a `builder` produce a self-contained
+clickable HTML "warframe" (a wireframe prototype — no external calls) plus the
+phased build plan, and the Project Lead runs a **hard, blocking approval gate**
+(`AskUserQuestion`) on both. No implementation code is written until the user
+approves. On a pure CLI/library, a short text walkthrough stands in for the
+visual warframe. The approved warframe becomes the reference the built MVP is
+checked against at Review.
+
+**MVP-then-phases (2026-07-19, `phased-roadmap` skill).** At Plan, the design
+becomes Phase 1 = MVP core only, then Phase 2…N = progressive enhancements;
+`PLAN.md`/`PROGRESS.md` gain a Phase column. YAGNI is unchanged — a phase's code
+is built only when that phase is active; nothing is scaffolded ahead.
+
+**Per-phase backup (2026-07-19, `checkpoint-commit` skill).** At the end of each
+build phase, once its `quality-gate` is clean and the secret/licence scans pass,
+take a checkpoint: commit the app's code (never `Dev-Memory/`) to a **private**
+work branch and push. This is a progressive offsite backup, not the Publish —
+it is authorised by a distinct private-only checkpoint token and can never make
+anything public. The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
 fix: this was previously only stated in `builder.md`/`tester.md`, not here
 in the one file the coordinator itself follows) — the tester's own checks
 stand in for the Review stage, and there is no separate pre-Publish
@@ -207,6 +266,18 @@ moment. Only when the same failure survives both attempts does this
 become a genuine Stuck Protocol moment. This never applies to Publish or
 any push-capable action — every fix, quietly self-healed or not, still
 needs the same explicit confirmation before anything reaches GitHub.
+
+## Progress honesty (never claim done without proof)
+
+Never report a task, phase, or the project as complete without its evidence —
+a task is `done` only with its `verified:` line, a phase only when the
+`quality-gate` Definition of Done is clean. A failing test, a skipped step, or
+a check that could not run is stated plainly in the same breath, never softened
+or omitted (2026-07-19: this is the coordinator-level statement of a rule the
+`tester`, `reviewer` and `security-compliance-auditor` already each follow —
+gathered here so the one voice the user hears is honest about status by
+default). A green result the user can trust is worth more than a green result
+delivered a stage sooner.
 
 ## Merging specialist output
 

@@ -21,8 +21,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable } from './lib.mjs';
+
+// 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
+// skill and confirm-memory-persist.mjs). When this project-bound token is
+// recorded, scan.mjs stops auto-denying purely because a Dev-Memory path is in
+// the push — but the full secret/key-file scan below STILL runs on those files,
+// so Dev-Memory persists to a private branch only if it carries no secret. This
+// is the ONLY effect of the token here; it never relaxes the secret scan, and
+// gate.mjs still confines the token to a private (never public) push.
+const MEMPERSIST_TTL_MS = 60 * 60 * 1000;
+function memoryPersistAllowed(studioRoot) {
+  const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
+  let text;
+  try {
+    fs.accessSync(record, fs.constants.R_OK);
+    text = fs.readFileSync(record, 'utf8');
+  } catch {
+    return false;
+  }
+  const expected = `STUDIO-MEMORY-PERSIST-CONFIRMED:${crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex')}`;
+  const m = /^ISSUED:(\d+)$/m.exec(text);
+  if (!m) return false;
+  const issuedAt = parseInt(m[1], 10);
+  const fresh = Number.isFinite(issuedAt) && Date.now() - issuedAt <= MEMPERSIST_TTL_MS && Date.now() - issuedAt >= 0;
+  if (!fresh) return false;
+  for (const line of text.split(/\r?\n/)) if (line.trim() === expected) return true;
+  return false;
+}
 
 // ---- push-tree resolution ------------------------------------------------------
 function resolvePushTree(cmd, fallback) {
@@ -136,6 +164,11 @@ function main() {
   // built project's private memory) without catching the lowercase skill.
   const DEVMEMORY_RE = /(^|\/)Dev-Memory(\/|$)/;
 
+  // Opt-in cloud memory persistence: with a valid token, a Dev-Memory path is
+  // no longer an automatic finding — but the secret/key-file scan below still
+  // runs on every file, Dev-Memory included, so a secret can never ride along.
+  const allowDevMemory = memoryPersistAllowed(STUDIO_ROOT);
+
   const findings = [];
   const addFinding = (type, file, line) => {
     findings.push(redact(type, file, line));
@@ -146,7 +179,7 @@ function main() {
     if (KEYFILE_RE.test(f)) {
       addFinding('key-file', f, '0');
     }
-    if (DEVMEMORY_RE.test(f)) {
+    if (DEVMEMORY_RE.test(f) && !allowDevMemory) {
       addFinding('dev-memory', f, '0');
     }
     const abs = path.join(REPO, f);

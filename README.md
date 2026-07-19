@@ -31,17 +31,25 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.3.0** — stable, and recommended for everyone
+## Latest version: **4.1.0** — stable, and recommended for everyone
 
-Version 3.3.0 adds self-healing: when something breaks while building, the
-Fixer now quietly tries a couple of small repairs on its own first, and
-only interrupts you if that doesn't work — every fix still needs your
-explicit yes before it ever reaches GitHub, exactly as before. This
-version also adds several small, optional refinements found by a deeper
-review (real spending figures for Cost Monitor, a visible-screen check for
-bigger projects, and a few other small hardenings) — none change how you
-use GRU953-Studio day to day. If you already have it, updating is a good
-idea; if you're new, you'll get this version automatically.
+Version 4.1.0 teaches the studio to create your app's **actual content**, not
+just the app itself. After you approve the mock-up, it now plans and writes the
+app's real **text** — buttons, onboarding, messages — in **Bangla and English**,
+and can generate **images, audio and video** for you using Google's Gemini (this
+part is entirely optional, uses your own Google account and key, always shows
+you the cost and asks before making anything, and if it can't, it hands you a
+simple step-by-step guide instead). It also now builds natively for **every
+platform** — Android, iPhone/iPad, Mac, Windows and Linux — adding Swift, C#, Go
+and TypeScript to the languages it already spoke.
+
+Earlier 4.x/3.x versions added: running **on Claude Code on the web**; a
+**warframe** mock-up + phased plan you approve before any code; phased building
+with a **private backup after each phase**; a **command centre** (pause/resume/
+stop/skip/schedule + a visual dashboard of your app's concept, design, plan and
+content); a cheaper memory; and an automatic best-model-for-each-task chooser. If
+you already have it, updating is a good idea; if you're new, you'll get this
+version automatically.
 
 You don't need to read the technical details, but if you're curious, the full
 plain-English list of every change is in
@@ -137,6 +145,14 @@ or want a specific version):
 
 If either is missing when it's needed, GRU953-Studio will stop and tell you
 exactly what to install, in plain English — it won't fail silently.
+
+**Optional — only if you want generated images, audio or video:** a
+[Google Gemini](https://ai.google.dev) API key of your own. This is entirely
+optional and **off unless you turn it on**: the studio uses your own key, always
+shows the cost and asks before generating anything, and never stores or uploads
+your key. Written content (in Bangla and English) needs none of this — it's
+produced by Claude directly. If you don't set it up, the studio simply gives you
+a step-by-step guide to add media yourself.
 
 ---
 
@@ -236,7 +252,7 @@ DevOps Engineer, and Publisher) can also ask that same free local Ollama
 model for an independent second opinion on their own work — always your
 choice, same as everywhere else Ollama is offered.
 
-*(23 specialist roles in total, coordinated for you — never something you
+*(38 specialist roles in total, coordinated for you — never something you
 operate by hand.)*
 
 ---
@@ -269,7 +285,11 @@ We'd rather tell you the boundaries up front than let you discover them the hard
 way:
 
 - **Claude Code only.** It does not run in Claude Desktop, or on its own. If you
-  don't use Claude Code, this isn't the tool for you (yet).
+  don't use Claude Code, this isn't the tool for you (yet). It works both in
+  desktop Claude Code **and on Claude Code on the web** — on the web, where the
+  workspace is temporary, it can (only if you say yes) back your project's
+  planning notes up to a private branch so you can carry on later, and any
+  free-local-AI (Ollama) features simply switch themselves off with a note.
 - **It's an AI tool, so it needs a connection and has usage limits.** On a long
   build you may hit your Claude usage cap for the day — that's fine, it saves
   progress and you continue later.
@@ -303,7 +323,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 12 skills (step-by-step playbooks the coordinator
+  plugin, including its own 32 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).

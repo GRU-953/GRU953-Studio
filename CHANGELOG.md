@@ -1,5 +1,342 @@
 # Changelog
 
+## 4.1.0 — 2026-07-19
+
+Adds a **Content Creation** capability so the studio produces the app's real
+content, not just the shell, and completes **native coverage of every target
+platform**.
+
+**All-platform language specialists (roster 34 → 38).** Four new specialists +
+`lang-*` packs — `swift-developer` (iOS/macOS), `csharp-developer` (Windows/.NET,
+cross-platform), `go-developer` (services/CLI/Linux), `typescript-developer`
+(web, React Native/Electron/Node) — so Android, iOS, macOS, Windows, Linux and
+web each have a distinct-ecosystem native owner, with Flutter the cross-platform
+default. `architect` gains an explicit platform → stack map; `licence-scan.mjs`
+detects SwiftPM, .NET and Go (best-effort, honestly INCOMPLETE; TypeScript is
+npm, already scanned). The INV11 language-pack contract keeps all ten packs
+honest.
+
+**New: Content stage + team (roster 29 → 34).** After the approved prototype, a
+new **Content** stage (`content-creation` skill) plans and generates the app's
+content from the spec + warframe, before Build consumes it. Five new agents:
+`content-director` (plans content, owns the manifest and the media opt-in),
+`text-content-specialist` (in-app copy & microcopy in **Bangla + English** via
+Claude), and `image-`/`audio-`/`video-content-specialist` (media via Gemini).
+Content is recorded in `Dev-Memory/CONTENT.md` with provenance, approval, rights
+and alt-text, and woven into the phased build.
+
+**New: `gemini-integration` skill — the studio's first external cloud service,
+handled with care.** Opt-in only; the **user's own Google API key** (never
+stored or committed — `scan.mjs` already blocks `AIza…` keys); models referenced
+**by capability + a small dated registry** (image/video/audio → current model,
+verified before use) so it stays correct as Google renames things; a plain-
+English **cost estimate + "sent to Google" notice + approval before every
+generation**; generation via REST/CLI (**no bundled SDK**, so "no third-party
+code dependencies" still holds); and **graceful degrade** with a step-by-step
+guide when a key/network is absent or a human must supply an asset.
+
+**New: `content-check.mjs`.** Before Publish, every asset in `CONTENT.md` must
+carry a recorded approval, provenance, a rights/licence note, and — for media —
+alt-text/caption; unattributed or unapproved content blocks the release. Added
+to the security auditor's Publish gate (now **seven** blocking checks). No-op on
+a project with no declared content.
+
+**Model router extended to content + media.** The one automatic router now also
+picks/switches content models + effort — Claude tiers for text, the Gemini
+capability registry for media — cost-ceiling-aware, with media still passing the
+per-generation approval. `cost-monitor` logs media spend. Accessibility and
+brand review, and the `reviewer` parity check, extend to content; the dashboard
+gains a **Content** section.
+
+6 new behavioural tests (108 → 114, all pass). `repo-integrity` clean (34
+agents, 28 skills, 20 hooks, 9 commands); roster and licence green.
+
+## 4.0.0 — 2026-07-19
+
+Phase 5 (final) of the staged programme: **brainstormed hardening**, and the
+milestone release that completes the programme (features 0–10). Several Phase 5
+ideas already shipped in earlier phases — the model-router audit ledger
+(`cost-monitor`, 3.6.0) and the warframe→build parity check (`reviewer`, 3.8.0).
+This release adds the rest.
+
+**New: INV11 language-pack contract (`repo-integrity.mjs`).** A `lang-*` pack
+cannot land unless it declares all five standard command families (build, test,
+lint, format, deps) — so a native language can never ship half-wired, the same
+way a new agent cannot land without a roster entry. Locked in by a test.
+
+**Resume rehearsal on cloud.** The pre-Publish "prove the memory folder alone is
+enough to resume" rehearsal now, on a cloud session with persistence enabled,
+additionally proves the *branch-persisted* memory rehydrates a fresh container —
+not just the soon-to-be-wiped local copy.
+
+**Scheduler safety.** A fired "schedule for later" resume is treated as a fresh
+session with no standing push/publish authorisation — every auth token is
+60-minute TTL and long expired by the time a later schedule fires, so a
+scheduled wake-up can never silently push or publish.
+
+**Dashboard as publish snapshot.** At Publish, generating the dashboard once more
+doubles as a human-readable record of the finished project (concept,
+architecture, full plan, final task states).
+
+1 new behavioural test (107 → 108, all pass). `repo-integrity` clean (29 agents,
+26 skills, 19 hooks, 9 commands); roster and licence green.
+
+**Programme complete.** Across 3.4.0 → 4.0.0 this delivered: the guardrail &
+gold-standard spine (focus/drift/quality/traceability), the task command centre
++ HTML dashboard, indexed knowledge-graph memory, the automatic model+effort
+router, six native language specialists, the warframe Prototype stage,
+MVP-then-phases building, per-phase backup checkpoints, and Claude Code on the
+web support — each phase committed with all gates green.
+
+## 3.9.0 — 2026-07-19
+
+Phase 4 of the staged programme: **Claude Code on the web / cloud support**
+(feature 2).
+
+**New: `session-start.mjs` SessionStart hook.** On any surface, when a session
+starts inside a studio project it injects a reminder to run the `focus-guard`
+re-orientation ritual and recall via the `memory-graph` protocol — so a resumed
+project picks itself back up automatically. It stands down silently outside
+studio projects, and adds a cloud/persistence note when the environment looks
+ephemeral. Wired into `hooks.json` under `SessionStart`.
+
+**Opt-in cloud memory persistence — private-only, still secret-scanned.** On
+Claude Code on the web the container is reclaimed between sessions, so
+Dev-Memory would be lost. The studio can now (only if the user opts in for the
+project) persist Dev-Memory to a **private branch** so resume survives. The
+safety envelope is the narrowest possible relaxation of the "Dev-Memory never
+ships" guard:
+
+- A distinct project-bound `MEMORY-PERSIST-APPROVED` token
+  (`confirm-memory-persist.mjs`) tells `scan.mjs` not to block purely on a
+  Dev-Memory path — but `scan.mjs` **still runs its full secret scan** on those
+  files, so a secret in memory is blocked exactly as before.
+- `gate.mjs` accepts the token for an ordinary (private) push only; it is
+  checked after the go-public gate and never satisfies it, so persisted memory
+  can **never** reach a public repository.
+- Desktop sessions are unchanged — Dev-Memory stays strictly local. The product
+  Publish path is unchanged (still deletes Dev-Memory, ships a clean orphan
+  commit).
+
+**Graceful degrade.** Ollama-dependent features (local second opinion, optional
+semantic re-rank) **self-disable with a plain note** on cloud/ephemeral sessions
+rather than failing, and the studio prefers the session's available GitHub tools
+where a local `gh` CLI is absent. README/`dev-memory`/`memory-keeper`/
+`ollama-integration` updated for web support.
+
+5 new behavioural tests (102 → 107, all pass), including the two critical
+guarantees: a secret inside Dev-Memory is still blocked under the persist token,
+and the persist token never authorises going public. `repo-integrity` clean (29
+agents, 26 skills, 19 hooks); roster and licence green. Version 3.8.0 → 3.9.0.
+
+## 3.8.0 — 2026-07-19
+
+Phase 3 of the staged programme: the **warframe Prototype stage**, the
+**MVP-then-phases roadmap**, and **per-phase backup checkpoint commits**
+(features 5, 6, 7).
+
+**New: `warframe-prototype` skill — a real Prototype stage.** Between Design and
+Plan, `ux-designer` + a `builder` produce a **self-contained clickable HTML
+warframe** (a wireframe prototype — all inline, no external calls) plus the
+phased build plan, and the Project Lead runs a **hard, blocking approval gate**:
+no implementation code is written until the user approves both. A pure
+CLI/library gets a text walkthrough instead. The approved warframe is the
+reference the built MVP is checked against at Review (a new `reviewer` parity
+step flags silent drift).
+
+**New: `phased-roadmap` skill — MVP first, then progressive phases.** The design
+becomes Phase 1 (MVP core only), then Phase 2…N (enhancements in priority
+order); `PLAN.md`/`PROGRESS.md` gain a **Phase** column. YAGNI is unchanged — a
+phase's code is built only when that phase is active, nothing scaffolded ahead.
+Each phase is independently shippable and ends in a clean, backed-up boundary.
+
+**New: `checkpoint-commit` skill + `confirm-checkpoint.mjs` — per-phase backup.**
+At the end of each phase (once its `quality-gate` is clean and the secret/licence
+scans pass), the app's code — never `Dev-Memory/` — is committed to a **private
+work branch** and pushed, as a progressive offsite backup. The final Publish is
+unchanged: still the separate, clean, confirmed release.
+
+**Security: the publish gate now recognises a distinct checkpoint token.**
+`gate.mjs` accepts a project-bound `CHECKPOINT-APPROVED` token for an ORDINARY
+(private) push only. It is checked AFTER the go-public gate and never satisfies
+it — so **a checkpoint can never make a repository public** (the guarantee that
+matters most is untouched), and `scan.mjs` still blocks secrets and `Dev-Memory/`
+on every push regardless of any token. `confirm-checkpoint.mjs` joins the
+confirm-writers exempted from the push matcher (exact-basename only, so a chained
+push after it is still caught). Four new gate tests lock the private-only and
+never-public guarantees in.
+
+5 new behavioural tests (97 → 102, all pass). `repo-integrity`, `roster` and
+`licence` gates green. README skill count 23 → 26; version 3.7.0 → 3.8.0.
+
+## 3.7.0 — 2026-07-19
+
+Command-centre hardening (owner request): control states reflect into the
+build plan, and the command centre presents the whole software — concept,
+architecture, specifications and complete build plan — organised.
+
+**Control states now reflect into the build plan.** A pause, stop, skip or
+schedule is a real change to the plan of work, so every control command
+(`/studio-pause|stop|skip|schedule`) now updates `PLAN.md` (the build plan) in
+the same write as `PROGRESS.md` and `STATUS-BOARD.md` — the plan always shows
+the true state (`paused`/`skipped`/`scheduled`, with any time) and its
+next-actionable task is recomputed, so plan and board never drift and a skipped
+task is set aside in the plan, never lost.
+
+**The command centre surfaces concept + architecture + build plan, organised.**
+`/studio-dashboard` (`hooks/dashboard.mjs`) now renders, in one self-contained
+page: the **Concept** (`OBJECTIVE.md`), the **Architecture & specifications**
+(`ARCHITECTURE.md`), the complete **Build plan** (`PLAN.md`, phases and all),
+and the live task board — each document rendered by a small **safe** markdown
+renderer (headings, tables, lists, inline code) that HTML-escapes everything, so
+project text can never break the page or inject script, and the page still makes
+no network requests. `/studio-status` now opens with what the app is and points
+to the dashboard for the full architecture and plan.
+
+New behavioural test for the organised sections and the renderer's escaping
+(97 → 98). All gates green; version 3.6.0 → 3.7.0.
+
+## 3.6.0 — 2026-07-19
+
+Phase 2 of the staged programme: the **automatic model+effort router** and
+**native language specialists** (features 4 and 3).
+
+**New: `model-router` skill — the best model and effort per task, automatically.**
+The studio now picks a Claude model (Haiku / Sonnet / Opus / Fable) and effort
+level (low / medium / high / **xhigh** / max) per individual task, scoring five
+signals (reasoning depth, reversibility, risk, breadth, creativity-vs-rigour)
+and choosing the cheapest that reliably does the job. Each role's declared model
+is the default and floor; the router escalates only where justified. It runs
+**fully automatically and silently**, with the single exception of `cost-guard`'s
+hard per-task cost ceiling, which still pauses for one unusually expensive task.
+`cost-monitor` logs the model/effort actually used per task so a silent choice
+stays reviewable. "Ultracode" is documented as the opt-in heavy multi-agent
+mode, never entered silently. The router never raises model/effort to route
+around a safety gate, and degrades to today's fixed tiers where a surface can't
+set a subagent's model.
+
+**New: six native language specialists + shared `lang-*` packs (roster 23 → 29).**
+Dedicated agents — `flutter-dart-developer`, `kotlin-developer`, `rust-developer`,
+`python-developer`, `java-developer`, `cpp-developer` — each carrying its
+ecosystem's toolchain, idioms, testing and dependency norms that the generic
+`builder` does not. Each stays thin by loading a shared `lang-*` skill pack
+(the exact build/test/lint/format/dependency commands). `architect`'s stack menu
+routes a chosen language to its specialist; `builder` still handles web/scripting
+defaults, glue, and Build-Swarm coordination. Recorded as a named-gap roster
+decision under `governance/GOVERNANCE.md` (owner-directed; owner is Maintainer +
+Steering). All six are sonnet-tier implementers (3 haiku · 22 sonnet · 4 opus).
+
+**`licence-scan.mjs` grows to five ecosystems + SPDX expressions.** Adds Rust
+(Cargo — a real scan via `cargo metadata`'s SPDX `license` field), and
+best-effort **not-checked** detection for JVM (Maven/Gradle) and C++
+(vcpkg/Conan/CMake) — honestly surfaced as INCOMPLETE so a human runs the
+ecosystem's own report, never a false pass. A new `classifySpdxExpr` correctly
+handles dual licences: "MIT OR GPL-2.0" is usable (a permissive alternative
+exists), "GPL-2.0 OR LGPL-3.0" is blocked (all copyleft), "MIT AND GPL-2.0" is
+blocked.
+
+9 new behavioural tests; `repo-integrity`, `roster` and `licence` gates green.
+README role count 23 → 29, skill count 16 → 23; version 3.5.0 → 3.6.0.
+
+## 3.5.0 — 2026-07-19
+
+Phase 1 of the staged programme: the **memory & command-centre foundations**
+(features 1, 8, 9), building on 3.4.0's guardrail spine.
+
+**New: native command centre (`command-centre` skill + six commands).** Plan,
+track and control work with a small, durable task state machine over
+`PROGRESS.md` — the Status vocabulary gains `paused`, `skipped` and `scheduled`
+alongside `todo`/`doing`/`done`/`blocked`. New commands: `/studio-pause`,
+`/studio-resume`, `/studio-stop`, `/studio-skip`, `/studio-schedule`, and
+`/studio-dashboard`. A live plain-English `STATUS-BOARD.md` gives the
+at-a-glance picture. "Schedule for later" records the intent durably first, then
+arms whatever scheduler the session offers — and says so honestly when the
+environment has none, rather than promising a wake-up it cannot deliver. No
+control command ever touches Publish or a push.
+
+**New: self-contained HTML dashboard (`hooks/dashboard.mjs`).** `/studio-dashboard`
+renders `Dev-Memory/dashboard.html` from `PROGRESS.md` — every task grouped by
+status, colour-coded, with a summary bar and the board. A deterministic
+generator guarantees the two hard rules: **no external network calls** (all CSS
+inline) and every cell HTML-escaped so task text can't break the page or inject
+script; the core table works with no JavaScript. It lives under the private,
+never-shipped `Dev-Memory/`.
+
+**New: token-cheap indexed knowledge-graph memory (`memory-graph` skill +
+`hooks/memory-integrity.mjs`).** Recall now reads a compact machine-readable
+`INDEX.md` first, then expands only the `GRAPH.md` knowledge-graph nodes the
+current task touches (typed links: `implements`/`depends-on`/`relates-to`/
+`supersedes`/`caused-by`/`blocks`) — least tokens by construction, with an
+optional local Ollama semantic re-rank only when it is already present (never a
+dependency). `memory-integrity.mjs` keeps it honest: no stale index path, no
+dangling graph link. The session-start recall ritual and `memory-keeper` now use
+this layer.
+
+**Smallest-unit tasks + immediate record (`micro-task-planning`).** Micro-tasks
+decompose to sub-tasks (`T3.1`, `T3.2`), each still a provable unit with one
+acceptance criterion and one command; and the moment a task or sub-task is
+verified `done`, progress, lessons and the recall layer are recorded before the
+next task starts — never a batch saved for later that goes missing when a
+session ends.
+
+New behavioural tests cover both new hooks; `repo-integrity`, `roster` and
+`licence` gates stay green. README skill count 14 → 16; version 3.4.0 → 3.5.0.
+
+## 3.4.0 — 2026-07-19
+
+Phase 0 of a planned, staged programme: the **guardrail & gold-standard
+spine** for long, multi-session, complex builds — the backbone that stops
+Claude and the team losing focus or drifting off the agreed target over
+time. Built first, before the rest of the programme, so every later phase
+and every user project inherits it. All gates fail closed.
+
+**New: `focus-guard` skill.** The anti-drift half of a gold-standard result
+(code quality is only the other half). Adds `Dev-Memory/FOCUS.md` — a tiny,
+always-current one-glance anchor (objective, active phase, active task, top
+constraints) rewritten in place — read first at every session start and
+stage boundary, with an explicit "restate the single active goal" step, so a
+summarised or brand-new session rehydrates from the memory files rather than
+lost chat history. Adds a per-task **drift check** (a task must trace to a
+confirmed requirement and the approved plan, or it goes to `scope-guardian`,
+never silently built) and `Dev-Memory/REQUIREMENTS.md`, a two-way
+traceability matrix.
+
+**New: `quality-gate` skill + `hooks/quality-gate.mjs`.** A codified
+Definition of Done — acceptance criteria, tests, independent review,
+security/licence/privacy, accessibility, documentation, and a reproducible
+build — recorded per phase in `Dev-Memory/QUALITY-GATE.md` and mechanically
+enforced before every backup checkpoint and before Publish. Its one
+gold-standard rule: a dimension may be marked *not-applicable with a reason*
+but never silently omitted — the required list lives in the hook, so
+deleting a row BLOCKS rather than passes. Fails closed, because a false
+"clean" is worse than a false block: nobody re-checks a green result before
+shipping.
+
+**New: `hooks/traceability-check.mjs`.** Audits `REQUIREMENTS.md` both ways —
+every confirmed requirement maps to at least one task (nothing agreed is
+dropped) and, when `PROGRESS.md` carries a task-id column, every task traces
+back to a requirement or is explicitly marked `[chore]`/`[infra]` (nothing
+unagreed is built). Where it cannot run the reverse check it says so, never a
+false pass — the same honesty `licence-scan.mjs` uses for an ecosystem it
+cannot inspect.
+
+**New: anti-derail loop guard.** `self-healing` gains a repeat-failure
+detector: the 2-attempt ceiling bounds a single failure; this bounds a
+recurring one — a task that keeps coming back after being "fixed" escalates
+to the user as a systemic pattern rather than looping through another quiet
+round.
+
+**Progress-honesty rule** stated at the coordinator level: never report a
+task or phase complete without its evidence; a failure, a skip, or a check
+that could not run is stated plainly, never softened.
+
+Wired through the load-bearing roles — `project-lead` (the re-orientation
+ritual), `memory-keeper` (owns the three new files), `scope-guardian` (the
+drift check and traceability script), and `security-compliance-auditor`
+(now six blocking pre-Publish checks, adding the Definition-of-Done and
+traceability gates). New behavioural tests lock every hook's logic in; the
+repository-integrity, roster, and licence gates stay green.
+
 ## 3.3.0 — 2026-07-17
 
 Self-healing, plus six small refinements found by a bounded, fact-checked

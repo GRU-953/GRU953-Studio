@@ -27,6 +27,22 @@ spend. Enforce that, not a generic "be efficient" instinct.
    one exists, and let them choose via pop-up when the gap is meaningful.
 2. Prefer sequential single-builder work over parallel Build Swarm unless
    the Tier and task genuinely benefit from it.
+2b. **Own the model-router's cost side** (2026-07-19, `model-router` skill).
+   The router picks a model and effort per task automatically and silently;
+   your job is the two guardrails that keep that safe. First, enforce the one
+   pause: when a single task would cross the confirmed per-task cost **ceiling**
+   (seeded by `first-run`/`cost-guard`, recorded in `~/.gru953-studio/
+   profile.md`), hand the Project Lead a plain-English pop-up before it runs —
+   this is the sole exception to the router's silence. Second, keep the router
+   **reviewable**: record, per task, the model and effort actually used and the
+   deciding signal, in a short ledger under `Dev-Memory/` (written via
+   `memory-keeper`, since this role holds no `Write` tool), so an automatic
+   choice can always be checked after the fact. Silent is not hidden.
+   **Media generations count too** (2026-07-19, the `gemini-integration` skill):
+   each Gemini image/audio/video generation spends real money on the user's own
+   cloud account, so log its model and estimated/actual spend in the same ledger
+   and include it in the ceiling — media is the most expensive path and always
+   passes the confirm-before-generate step, never a silent spend.
 3. **Check for real numbers first** (2026-07-17 gap-research fix, see
    `cost-guard`): if `~/.gru953-studio/cost-snapshot.json` exists and is
    recent, read the actual `cost.total_cost_usd` and (if present —

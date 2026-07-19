@@ -1,6 +1,6 @@
 # GRU953-Studio role roster (committed baseline)
 
-**role count: 23**
+**role count: 38**
 
 This file is the committed baseline the roster checks read. `roster-check.mjs`
 verifies the number of `agents/*.md` files against it; `repo-integrity.mjs`
@@ -60,6 +60,57 @@ cost-monitor · publisher · memory-keeper
 | localisation-specialist | More than one language (i18n/l10n; English + Bangla) | Brief needs multiple languages |
 | researcher | External fact-finding on current evidence | On demand in Brainstorm/Ideate/Design |
 
+## Native language specialists (6), added v3.6.0 (2026-07-19)
+
+Owner-directed expansion (feature request: "add native support for dart/flutter,
+kotlin, rust, python, java, C++ with dedicated agents"). Recorded here as the
+required named-gap decision under `governance/GOVERNANCE.md`; the owner is
+Maintainer + Steering. Each is a distinct, **non-overlapping** gap: the generic
+`builder` is the default implementer (web/scripting) and coordinates the Build
+Swarm, but it does not carry a given ecosystem's toolchain, idioms, testing and
+dependency/licence norms — each specialist below does, backed by a shared
+`lang-*` skill pack so the agents stay thin (no duplicated logic). A language
+with no specialist stays with `builder`; adding one is a roster change like this,
+never ad hoc.
+
+| Role | Distinct gap it fills | Activates when | Pack |
+| :-- | :-- | :-- | :-- |
+| flutter-dart-developer | Dart/Flutter toolchain (pub), null-safety and widget/state idioms | A task is in Dart/Flutter (default mobile stack) | `lang-dart` |
+| kotlin-developer | Kotlin/Gradle toolchain, coroutine and null-safety idioms (JVM/Android) | A task is in Kotlin | `lang-kotlin` |
+| rust-developer | Cargo toolchain, ownership/borrow and error idioms, minimal `unsafe` | A task is in Rust | `lang-rust` |
+| python-developer | venvs, pytest/ruff/mypy toolchain, typing idioms | A task is in Python | `lang-python` |
+| java-developer | Maven/Gradle toolchain, immutability and resource-handling idioms | A task is in Java | `lang-java` |
+| cpp-developer | CMake/CTest, RAII/smart-pointer memory idioms, sanitizers | A task is in C++ | `lang-cpp` |
+| swift-developer | SwiftPM/Xcode toolchain, value-type and optional-safety idioms (iOS/macOS) | A task is in Swift | `lang-swift` |
+| csharp-developer | dotnet toolchain, nullable/immutability and async idioms (Windows/.NET, cross-platform) | A task is in C# | `lang-csharp` |
+| go-developer | go toolchain, explicit-error and small-interface idioms (services/CLI/Linux) | A task is in Go | `lang-go` |
+| typescript-developer | tsc/npm toolchain, strict-typing idioms (web, RN/Electron/Node) | A task is in TypeScript | `lang-typescript` |
+
+The four v4.1.0 additions (Swift, C#, Go, TypeScript) complete native coverage
+of every named platform — Android, iOS, macOS, Windows, Linux, web — each with a
+distinct-ecosystem owner, Flutter remaining the cross-platform default (see
+`architect`'s platform map).
+
+## Content team (5), added v4.1.0 (2026-07-19)
+
+Owner-directed expansion (feature request: "add a content creation phase after
+prototyping with specialised roles to generate the app's content"). Recorded
+here as the required named-gap decision under `governance/GOVERNANCE.md`. Each is
+a distinct, **non-overlapping** gap: producing the app's actual content (copy,
+images, audio, video) is separate work from building the app shell (`builder`/
+language specialists), designing it (`architect`/`ux-designer`), translating
+existing strings (`localisation-specialist`), or documenting it for users
+(`technical-writer`). Text is generated natively by Claude; media via the opt-in
+`gemini-integration`.
+
+| Role | Distinct gap it fills | Activates when |
+| :-- | :-- | :-- |
+| content-director | Plans and orchestrates all content from the spec + prototype; owns the content plan, `CONTENT.md` and the media opt-in | The Content stage (any app needing real content) |
+| text-content-specialist | Writes the app's own in-app copy & microcopy in Bangla + English (not translation, not user docs) | Any app with in-app text |
+| image-content-specialist | Generates the app's images/icons/illustrations via Gemini, platform-appropriate, with alt-text | Brief needs images |
+| audio-content-specialist | Generates the app's audio/narration/speech via Gemini, with transcripts | Brief needs audio |
+| video-content-specialist | Generates the app's video/clips via Gemini, with captions | Brief needs video |
+
 ## Model tiers (deliberate, cheapest-first)
 
 Every role declares a model — none inherits the surface default — so cost is
@@ -78,9 +129,22 @@ hard to undo.
   `tester`, `security-compliance-auditor`, `fixer`, `publisher`,
   `maintenance-agent`, `ai-developer`, `ux-designer`,
   `accessibility-specialist`, `technical-writer`, `data-engineer`,
-  `localisation-specialist`, `devops-engineer`, `researcher`.
+  `localisation-specialist`, `devops-engineer`, `researcher`, and the six
+  native language specialists (`flutter-dart-developer`, `kotlin-developer`,
+  `rust-developer`, `python-developer`, `java-developer`, `cpp-developer`) —
+  each an implementer like `builder`, so the same sonnet tier, not opus. Plus
+  the five-strong content team (`content-director`, `text-content-specialist`,
+  `image-`/`audio-`/`video-content-specialist`) — content planning and
+  generation is bounded work, sonnet-tier — and the four v4.1.0 language
+  specialists (`swift-developer`, `csharp-developer`, `go-developer`,
+  `typescript-developer`), implementers like `builder`.
 - **opus** (most capable, most expensive) — reserved for the hardest
   reasoning only: `project-lead` (orchestration), `architect` (design),
   `reviewer` (correctness), `responsible-ai-reviewer` (safety judgement).
 
-Count: 3 haiku · 16 sonnet · 4 opus = 23.
+Count: 3 haiku · 31 sonnet · 4 opus = 38.
+
+Per-task model choice (v3.6.0, `model-router` skill): the declared model above
+is each role's DEFAULT and FLOOR; the router may pick a cheaper model for a
+mechanical sub-task or spend up for a genuinely hard one, automatically, within
+that floor — cost stays a decision, now per task, not only per role.

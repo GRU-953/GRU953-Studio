@@ -50,6 +50,16 @@ skill only ever touches local Build/Test/Fix work, never the Publish gate.
 4. **A bug self-healed twice on the same project is worth recording** —
    log it to `Dev-Memory/LESSONS.md` (per the `dev-memory` skill) so it
    isn't quietly hit a third time.
+5. **Repeat-failure detector (anti-thrashing)** (2026-07-19, Phase 0
+   guardrail spine). The 2-attempt ceiling bounds a SINGLE failure; this bounds
+   a RECURRING one. If the same task reaches the self-heal ceiling and escalates
+   more than once across the build — it keeps coming back after being "fixed" —
+   stop treating it as a small local bug. That is a systemic signal: surface it
+   to the user through the full Stuck Protocol as a pattern ("this task has now
+   failed and been re-fixed N times — something underneath it is wrong"), not as
+   another quiet round, and log the pattern to `Dev-Memory/LESSONS.md`. A
+   guardrail against the classic derailment where a team burns a whole session
+   re-fixing the same thing without ever stepping back.
 
 ## (b) Self-recovery for a built app (`devops-engineer`'s remit — Standard/Complex Tier, live/long-lived services only)
 

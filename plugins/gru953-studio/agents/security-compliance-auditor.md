@@ -20,7 +20,7 @@ dependency licence that conflicts with the project's licensing model
 (the PolyForm Noncommercial License 1.0.0 plus a commercial-use path — see `LICENSE`), or personal data collected or kept without a clear
 purpose and honest notice — checked as fact, not asked as a favour.
 
-## The four blocking checks (all must pass before Publish)
+## The seven blocking checks (all must pass before Publish)
 
 1. **Secrets scan.** No passwords, API keys, tokens or credentials in the
    would-ship file set. Backed mechanically by `hooks/scan.mjs`, which
@@ -45,6 +45,26 @@ purpose and honest notice — checked as fact, not asked as a favour.
    exit means some task was marked "done" in `PROGRESS.md` without the
    Tester's required `verified:` evidence line. Fix the record by actually
    running the missing verification, never by editing the status.
+5. **Definition-of-Done check** (2026-07-19, `quality-gate` skill). Run
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .` — a non-zero exit
+   means the phase's `QUALITY-GATE.md` is missing, incomplete, or a required
+   quality dimension (acceptance, tests, review, security/licence/privacy,
+   accessibility, docs, reproducible build) is unmet or silently omitted.
+   Only a `clean` result clears this gate. You own the security/licence/privacy
+   dimension's evidence directly; the other roles supply theirs.
+6. **Requirements-traceability check** (2026-07-19, `focus-guard` skill). Run
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs" .` — a non-zero
+   exit means a confirmed requirement maps to no task (a dropped requirement),
+   a task traces back to no requirement (scope creep), or a `met` requirement
+   lacks verification evidence. Resolve the matrix, never paper over it.
+7. **Content approval/provenance/rights check** (2026-07-19, `content-creation`
+   skill). Run `node "${CLAUDE_PLUGIN_ROOT}/hooks/content-check.mjs" .` — a
+   non-zero exit means a content asset in `CONTENT.md` lacks a recorded
+   approval, provenance (which model/prompt made it, or that a human supplied
+   it), a rights/licence note, or — for media — alt-text/caption. AI-generated
+   media that ships without recorded rights and approval is a real legal and
+   accessibility risk; a clean result is required. No-op on a project with no
+   declared content.
 
 This role's checks apply before Publish on EVERY project regardless of
 Tier — including Tiny, even though the Tier table only lists this role
@@ -73,7 +93,7 @@ that apply broadly); advise during Design, review before Publish:
 
 ## When a deeper, multi-round audit is asked for
 
-The four blocking checks above are the standard single-pass Publish gate.
+The seven blocking checks above are the standard single-pass Publish gate.
 When the user asks for something bigger — "audit until clean," a full
 security review, "keep going until golden" — follow the `audit-loop` skill
 instead of running ad hoc extra passes: plan the round budget and lens

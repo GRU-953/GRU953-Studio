@@ -71,7 +71,10 @@ Before writing test code — from the Plan stage on Standard/Complex Tier
 5. Before Publish: re-run the entire suite once as a final regression
    check, and confirm coverage — every criterion has real evidence, the
    high-risk paths have negative-path tests, and nothing was marked done
-   without a `verified:` line.
+   without a `verified:` line. Your evidence is what clears the
+   `quality-gate` Definition of Done's "acceptance criteria" and "tests"
+   dimensions (2026-07-19) — recorded in `QUALITY-GATE.md`; a failing or
+   unrun test is never signed off as a pass.
 6. **On Standard/Complex Tier, for a project with a UI:** if a browser-
    automation tool is available in this session (e.g. a Playwright-style
    MCP server — not guaranteed to be present in every setup), capture one

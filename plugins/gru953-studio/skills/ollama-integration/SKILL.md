@@ -15,6 +15,18 @@ would be a shipped bug, the same discipline `researcher` already applies
 to anything time-sensitive. Re-verify before reusing any of this if much
 time has passed.
 
+## Not available on cloud/ephemeral sessions — self-disable, don't fail
+
+Ollama runs a model on the local machine, so it is unavailable on Claude Code on
+the web (and any cloud/ephemeral container). On such a session, every
+Ollama-dependent step here **self-disables with a plain-English note** — the
+studio never tries to install or reach a local Ollama that cannot exist there,
+and never blocks on its absence. The local second opinion is simply skipped
+(the role's own review still stands), and a built app that offered Ollama as a
+backend falls back to its other configured option. Absence is the normal path,
+never an error (2026-07-19, Phase 4). The `session-start` hook flags a likely
+cloud session so this is applied from the first turn.
+
 ## Two distinct uses, one shared mechanism
 
 **(a) A backend option for a built app.** `ai-developer` may offer Ollama

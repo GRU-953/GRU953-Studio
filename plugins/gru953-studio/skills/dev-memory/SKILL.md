@@ -31,15 +31,21 @@ All live under `Dev-Memory/` in the project's working directory:
 | File | What it holds |
 | :-- | :-- |
 | `OBJECTIVE.md` | The confirmed one-page brief, the three Tier questions and their Y/N answers, and the resulting Tier — so the Tier is auditable, not just asserted. |
+| `FOCUS.md` | (2026-07-19, see `focus-guard` skill) The tiny always-current anchor — objective, active phase, active task, top constraints — rewritten in place, read first every session so the team re-orients in almost no tokens even after a summarised or brand-new session. |
+| `REQUIREMENTS.md` | (2026-07-19, see `focus-guard` skill) The traceability matrix: every confirmed requirement mapped to its tasks, verification, and status, so nothing agreed is dropped and no task exceeds the brief. Audited by `hooks/traceability-check.mjs`. Standard/Complex Tier — a short inline list suffices on Tiny. |
 | `ARCHITECTURE.md` | The chosen stack, components, data flow, interface contracts, decisions, and deliberate omissions (written by `architect`). |
-| `PLAN.md` | (Standard/Complex Tier — see `micro-task-planning` skill) The ordered list of small "micro-tasks" `architect` breaks the design into: each with one acceptance criterion, the exact verification command that proves it, and its dependencies. `builder`/`tester` read task specifics from here; `project-lead` reads the dependency graph to decide what may run in the parallel Build Swarm versus what must wait. Not used on Tiny Tier — the task list there is short enough to state plainly instead. |
-| `PROGRESS.md` | The task table. Its **Status** column (`todo` / `doing` / `done` / `blocked`) is the single source of truth. Each `done` row carries the tester's `verified:` evidence cell. |
+| `PLAN.md` | (Standard/Complex Tier — see `micro-task-planning` skill) The ordered list of small "micro-tasks" `architect` breaks the design into: each with one acceptance criterion, the exact verification command that proves it, and its dependencies. Gains a **Phase** column (MVP → progressive phases, see `phased-roadmap`) and reflects the command-centre control state of each task. `builder`/`tester` read task specifics from here; `project-lead` reads the dependency graph to decide what may run in the parallel Build Swarm versus what must wait. Not used on Tiny Tier — the task list there is short enough to state plainly instead. |
+| `PROGRESS.md` | The task table. Its **Status** column (`todo` / `doing` / `done` / `blocked`) is the single source of truth. Each `done` row carries the tester's `verified:` evidence cell. An optional `ID`/`Task ID` column enables two-way traceability against `REQUIREMENTS.md`. |
+| `CONTENT.md` | (2026-07-19, see `content-creation` skill) The content manifest — every text/image/audio/video asset the app ships, each with its medium, source model + prompt (provenance), approval, a rights/licence note, and (for media) alt-text/caption. Audited by `hooks/content-check.mjs` before Publish. Absent on projects with no generated content. |
+| `QUALITY-GATE.md` | (2026-07-19, see `quality-gate` skill) The current phase's Definition of Done — each required quality dimension (acceptance, tests, review, security/licence/privacy, accessibility, docs, reproducible build) marked pass-with-evidence or n/a-with-reason. Audited by `hooks/quality-gate.mjs`; must be clean before a checkpoint commit or Publish. |
 | `SESSION-LOG.md` | An append-only diary — one entry per session/stage. Never edited or deleted, only added to. |
-| `INDEX.md` | A short, growing map of what is where, so a long project stays navigable. |
+| `INDEX.md` | A short, growing, machine-readable map of what is where — a compact table (entity, where, summary, tags, last-touched), most-recent first, read first for cheap recall (2026-07-19, see the `memory-graph` skill). Its `Where` column names real file paths, checked by `hooks/memory-integrity.mjs`. |
+| `GRAPH.md` | (2026-07-19, Standard/Complex Tier, see the `memory-graph` skill) The plain-text knowledge graph — nodes (requirements, tasks, decisions, files, lessons) and typed links (`implements`/`depends-on`/`relates-to`/`supersedes`/`caused-by`/`blocks`) — expanded on demand so a session recalls only what the current task needs. Links are checked for dangling nodes by `hooks/memory-integrity.mjs`. |
 | `decisions/*.md` | One small dated note per load-bearing decision (stack choices, Tier changes, the roster baseline — `*roster*.md` — and anything a future session must not re-litigate). |
 | `UNBUILT.md` | The append-only ledger of things deliberately **not** built (owned by `scope-guardian`), so a cut idea is never silently re-proposed. |
 | `PUBLISH-APPROVED` | Written by `confirm-publish.mjs` only after the user confirms publishing; read by `gate.mjs`. Deleted after a successful publish. Valid for 60 minutes from the moment it's written (2026-07-12 Round 7 audit fix — the deletion above is a prose instruction the agent must remember, not something any code enforces, so `gate.mjs` also checks a written-in timestamp and stops honouring the record on its own once the window passes, rather than relying solely on the delete step happening). |
 | `GO-PUBLIC-APPROVED` | Written by `confirm-go-public.mjs` only after the separate "go public" confirmation; read by `gate.mjs`. Also valid for 60 minutes from being written, enforced the same way — this file was never deleted by anything until the 2026-07-12 Round 7 fix added the time-bound check, so a single confirmation would otherwise have authorised every later visibility-changing command in the project, indefinitely. |
+| `CHECKPOINT-APPROVED` | (2026-07-19, see `checkpoint-commit` skill) Written by `confirm-checkpoint.mjs` to authorise a per-phase backup — an ordinary (private) push only; read by `gate.mjs`, TTL-bounded the same 60 minutes. A distinct, project-bound token that can never satisfy the go-public gate, so a checkpoint can never make anything public. |
 | `LESSONS.md` | (2026-07-11 addition) An append-only log of real mistakes made on THIS project and what to do differently — see "Learning from mistakes" below. Distinct from `SESSION-LOG.md` (a diary of what happened) and `UNBUILT.md` (things deliberately cut): this is specifically things that went WRONG and the corrected rule going forward. |
 
 ## The ▶ RESUME HERE pointer
@@ -52,10 +58,18 @@ task is the first `todo`/`doing` row whose dependencies are all `done`; a
 
 ## Read before acting — every session
 
-Before doing anything else, the Project Lead reads, in this order:
-`PROGRESS.md`, the tail of `SESSION-LOG.md`, then `INDEX.md` — then reports
-the resume point back to the user in its first message, so the user always
-knows where things stood before being asked anything.
+Before doing anything else, the Project Lead runs the `focus-guard`
+re-orientation ritual: read `FOCUS.md` first (the cheapest one-glance
+heading), then `OBJECTIVE.md`, then `PROGRESS.md`, the tail of
+`SESSION-LOG.md`, and `INDEX.md` — and restate the single active goal in one
+plain line before acting. Then report the resume point back to the user in its
+first message, so the user always knows where things stood before being asked
+anything. (2026-07-19: `FOCUS.md` and the "restate the goal" checkpoint were
+added so a summarised or brand-new session rehydrates from the memory files,
+not from lost chat history — see the `focus-guard` skill.) For recall beyond
+the resume point, follow the `memory-graph` skill's protocol: read the compact
+`INDEX.md`, then expand only the `GRAPH.md` nodes the current task touches —
+recall the least you need, not every file.
 
 ## Scan before every write — never skip
 
@@ -67,9 +81,10 @@ it and never silently discard it; the user decides what happens to it.
 ## Write after acting
 
 Update `PROGRESS.md` (including the `▶ RESUME HERE` pointer), **append** to
-`SESSION-LOG.md` (never rewrite history), and grow `INDEX.md`. Checkpoint
-at every stage boundary — before starting the next stage, never after — so
-an interrupted session loses nothing.
+`SESSION-LOG.md` (never rewrite history), and grow `INDEX.md` — and, on
+Standard/Complex Tier, the `GRAPH.md` node and links for what changed (see the
+`memory-graph` skill). Checkpoint at every stage boundary — before starting the
+next stage, never after — so an interrupted session loses nothing.
 
 ## Learning from mistakes (2026-07-11 addition)
 
@@ -151,19 +166,54 @@ are enough to state, unambiguously, what is done and what the very next
 step is. If they are not, the memory is incomplete — fix it before
 Publish. Record that the rehearsal passed in `SESSION-LOG.md`.
 
-## Local-only, and never shipped
+On a **cloud/ephemeral session with memory persistence enabled** (see "Cloud
+persistence" above), the rehearsal additionally proves the *branch-persisted*
+memory rehydrates a fresh container: confirm that a resume from the private
+memory branch alone — not this container's local files, which will not survive —
+is enough to state what's done and what's next. A project that only resumes from
+the soon-to-be-wiped local copy has not actually proven it resumes on the web
+(2026-07-19, Phase 5).
 
-Dev-Memory lives **only** on the user's own machine. There is no GitHub
-mirror and no automatic backup — if the user wants an offsite copy, that is
-their own general backup routine, not something this tool does (confirmed
-with the user; earlier drafts wrongly described a mirror that was never
-built). Two rules keep it private:
+## Local-only, and never shipped (with one opt-in cloud exception)
+
+Dev-Memory lives on the user's own machine by default. It is never part of the
+published product, and there is no *automatic* backup. Two rules keep it
+private:
 
 1. Add `Dev-Memory/` to the project's `.gitignore` the moment the folder is
    created.
-2. It must never enter the publisher's would-ship set — backed mechanically
+2. It must never enter the **publisher's** would-ship set — backed mechanically
    by `hooks/scan.mjs`, which blocks any push whose file set contains a
-   `Dev-Memory/` path.
+   `Dev-Memory/` path. The product Publish always deletes Dev-Memory and ships a
+   clean orphan commit; this is unchanged.
+
+## Cloud persistence (opt-in; cloud/ephemeral sessions only)
+
+On Claude Code on the web (and any ephemeral container that is reclaimed between
+sessions), Dev-Memory would be lost when the container recycles — so a project
+could not resume days later, the whole point of this skill. To keep resume
+working there, the studio offers an **opt-in** persistence of Dev-Memory (and
+the cross-project `~/.gru953-studio/` files) to a **private branch** on the
+user's own GitHub. It is **off by default** and only ever happens after the user
+says yes for that project (`project-lead` asks once, plainly, on a cloud
+session; the answer is recorded). The safety envelope is deliberately narrow
+(2026-07-19):
+
+- **Private only, never public.** Authorised by a distinct, project-bound
+  `MEMORY-PERSIST-APPROVED` token (`hooks/confirm-memory-persist.mjs`) that
+  `gate.mjs` accepts for an ordinary (private) push only — checked *after* the
+  go-public gate, which it never satisfies. Persisted memory can never reach a
+  public repository.
+- **Still fully secret-scanned.** The token tells `scan.mjs` not to block purely
+  because a `Dev-Memory/` path is present — but `scan.mjs` still runs its full
+  secret/key-file scan on those files, so Dev-Memory persists only if it carries
+  no password, key or token. A secret in memory is blocked exactly as before.
+- **Desktop is unchanged.** On a normal local machine there is no persistence
+  push; Dev-Memory stays local-only as above.
+
+This is the owner-approved, scoped variant of the "memory never leaves the
+machine" rule — narrowed to: opt-in, cloud-only, private-branch-only, and still
+secret-scanned. Everything not covered by that one exception is unchanged.
 
 ## One schema, every session
 

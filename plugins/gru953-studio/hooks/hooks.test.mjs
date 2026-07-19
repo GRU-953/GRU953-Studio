@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { isPushCapable } from './lib.mjs';
-import { detectLicenceFromText, findPubCacheRoot } from './licence-scan.mjs';
+import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -459,13 +459,13 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '23 specialist roles in total',
-    'We once evaluated 23 specialist roles for a sibling product; 99 specialist roles in total'
+    '38 specialist roles in total',
+    'We once evaluated 38 specialist roles for a sibling product; 99 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a conflicting later role-count mention must not be masked by an earlier correct one');
-  assert.ok(r.json.problems.some((p) => p.includes('23') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
+  assert.ok(r.json.problems.some((p) => p.includes('38') && p.includes('99')), `expected a problem naming both counts, got: ${JSON.stringify(r.json.problems)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -475,8 +475,8 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
   readme = readme.replace(
-    '23 specialist roles in total',
-    '(the studio grew from 16 roles in early versions) 23 specialist roles in total'
+    '38 specialist roles in total',
+    '(the studio grew from 16 roles in early versions) 38 specialist roles in total'
   );
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
@@ -1361,3 +1361,563 @@ test('lib.mjs deny(): exits 0, not 2, so Claude Code actually reads the JSON den
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 0 guardrail spine — quality-gate.mjs (Definition of Done)
+// and traceability-check.mjs (requirements ↔ tasks). Both are project-level
+// CI/pre-Publish checks like verify-progress.mjs: they run against a project's
+// Dev-Memory, no-op on a tree without one, and fail CLOSED on ambiguity.
+// ---------------------------------------------------------------------------
+function runScript(script, dir) {
+  const r = spawnSync('node', [path.join(HERE, script), dir], { encoding: 'utf8' });
+  let json = null;
+  try { json = JSON.parse(r.stdout); } catch {}
+  return { code: r.status, json, stdout: r.stdout, stderr: r.stderr };
+}
+function writeGate(dir, table) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'QUALITY-GATE.md'), table);
+}
+const FULL_DOD = [
+  '| Item | Status | Evidence |',
+  '| :-- | :-- | :-- |',
+  '| Acceptance criteria | pass | all criteria proven |',
+  '| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |',
+  '| Independent code review | pass | reviewer sign-off, 0 open findings |',
+  '| Security / licence / privacy | pass | scan clean; licence-scan clean |',
+  '| Accessibility | n/a | no user interface — CLI only |',
+  '| Documentation | pass | README updated |',
+  '| Reproducible build | pass | `make build` -> exit 0 on clean clone |',
+  '',
+].join('\n');
+
+test('quality-gate.mjs: no Dev-Memory is a no-op (not a studio project), exit 0', () => {
+  const dir = mkTmp('gru-qg-nostudio-');
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json && r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: Dev-Memory but no QUALITY-GATE.md fails closed', () => {
+  const dir = mkTmp('gru-qg-nofile-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.code, 1, 'a real studio project with no DoD record must BLOCK, not pass by absence');
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a complete DoD (pass + reasoned n/a) is clean', () => {
+  const dir = mkTmp('gru-qg-clean-');
+  writeGate(dir, FULL_DOD);
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json && r.json.status, 'clean', `expected clean: ${r.stdout}`);
+  assert.equal(r.code, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a required dimension cannot be hidden by omission', () => {
+  const dir = mkTmp('gru-qg-omit-');
+  writeGate(dir, FULL_DOD.split('\n').filter((l) => !/Security/.test(l)).join('\n'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /missing required dimension: security/i.test(p)), `expected a missing-security finding: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a pass with placeholder evidence is not accepted', () => {
+  const dir = mkTmp('gru-qg-noevidence-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | — |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', 'a pass needs concrete evidence, not a placeholder');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: n/a without a reason is not accepted', () => {
+  const dir = mkTmp('gru-qg-nareason-');
+  writeGate(dir, FULL_DOD.replace('| Accessibility | n/a | no user interface — CLI only |', '| Accessibility | n/a | — |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', 'n/a must carry a stated reason');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a row that says it is currently failing invalidates its own pass', () => {
+  const dir = mkTmp('gru-qg-contradict-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | passed on old build, now fails with exit 1 |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', 'a self-contradicting row must not count as a pass');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function writeReq(dir, req, prog) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'REQUIREMENTS.md'), req);
+  if (prog !== undefined) fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), prog);
+}
+const REQ_HEADER = '| ID | Requirement | Phase | Tasks | Verification | Status |\n| :-- | :-- | :-- | :-- | :-- | :-- |\n';
+const PROG_HEADER = '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n';
+
+test('traceability-check.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-tr-nostudio-');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: Dev-Memory but no REQUIREMENTS.md fails closed', () => {
+  const dir = mkTmp('gru-tr-nofile-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a consistent two-way matrix is clean', () => {
+  const dir = mkTmp('gru-tr-clean-');
+  writeReq(dir,
+    REQ_HEADER +
+    '| R1 | Pause a task | 1 | T1 | `test_pause` -> exit 0 | met |\n' +
+    '| R2 | Resume a task | 1 | T2 | pending | todo |\n' +
+    '| R3 | Export to PDF | 3 | — | — | deferred |\n',
+    PROG_HEADER +
+    '| T1 | pause | done | verified: `test_pause` -> exit 0 (2026-07-19) |\n' +
+    '| T2 | resume | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `expected clean: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a live requirement with no task is a dropped requirement', () => {
+  const dir = mkTmp('gru-tr-dropped-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause a task | 1 | — | — | todo |\n', PROG_HEADER + '| T1 | something | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /maps to no task/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a deferred requirement may legitimately have no task', () => {
+  const dir = mkTmp('gru-tr-deferred-');
+  writeReq(dir, REQ_HEADER + '| R1 | Later feature | 3 | — | — | deferred |\n', PROG_HEADER + '| T1 | chore setup [chore] | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `deferred-with-no-task + chore-exempt task should be clean: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a task tracing back to no requirement is scope creep (unless [chore])', () => {
+  const dir = mkTmp('gru-tr-creep-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | test | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n| T9 | secret extra | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /T9.*no requirement/i.test(p)), `expected a scope-creep finding for T9: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a met requirement without verification evidence is blocked', () => {
+  const dir = mkTmp('gru-tr-noproof-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | — | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /no verification evidence/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a dangling task reference is caught', () => {
+  const dir = mkTmp('gru-tr-dangling-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1, T7 | test | todo |\n', PROG_HEADER + '| T1 | pause | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /T7.*does not exist/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: without a PROGRESS id column the reverse check is reported not-run, never a false pass', () => {
+  const dir = mkTmp('gru-tr-noidcol-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | test | todo |\n',
+    '| Task | Status | Notes |\n| :-- | :-- | :-- |\n| pause | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean');
+  assert.ok(r.json.notes.some((n) => /reverse.*not run/i.test(n)), `expected a disclosed not-run note: ${JSON.stringify(r.json.notes)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 1 — memory-integrity.mjs (recall index + knowledge graph
+// consistency) and dashboard.mjs (self-contained HTML command centre).
+// Both no-op on a tree without Dev-Memory; memory-integrity is a consistency
+// check (validates what exists), dashboard is a deterministic renderer.
+// ---------------------------------------------------------------------------
+test('memory-integrity.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-mi-nostudio-');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: absent INDEX/GRAPH is clean (nothing to validate)', () => {
+  const dir = mkTmp('gru-mi-empty-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: an INDEX row pointing at a missing file is a stale entry', () => {
+  const dir = mkTmp('gru-mi-stale-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Gone | src/gone.js | deleted | x |\n| Note | (conceptual, not a path) | y | z |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /src\/gone\.js/.test(p)));
+  assert.ok(!r.json.problems.some((p) => /conceptual/.test(p)), 'a non-path cell must not be treated as a stale file');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: a GRAPH link to an undefined node is dangling', () => {
+  const dir = mkTmp('gru-mi-graph-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a {tags: x}\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n- T1 depends-on T9\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /undefined node "T9"/.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: a well-formed graph + index is clean', () => {
+  const dir = mkTmp('gru-mi-clean-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), 'x\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Tasks | Dev-Memory/PROGRESS.md | table | x |\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-db-nostudio-');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: renders a self-contained, injection-safe HTML page', () => {
+  const dir = mkTmp('gru-db-render-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# Expense Tracker\nbrief\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | done thing | done | verified: ok |\n| T2 | <script>alert(1)</script> | todo | & "q" |\n| T3 | export | scheduled | tomorrow |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written');
+  const html = fs.readFileSync(path.join(dir, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.ok(!/https?:\/\//i.test(html), 'the page must make no external references');
+  assert.ok(!/<script>alert\(1\)<\/script>/.test(html), 'task text must be HTML-escaped, not rendered as markup');
+  assert.ok(/&lt;script&gt;alert\(1\)&lt;\/script&gt;/.test(html), 'the escaped form must be present');
+  assert.ok(/Expense Tracker/.test(html), 'the project name from OBJECTIVE.md should appear');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dashboard.mjs: Dev-Memory present but PROGRESS.md unreadable is blocked, not a crash', () => {
+  const dir = mkTmp('gru-db-noprog-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 2 — licence-scan.mjs grows beyond npm/Python/Dart to cover
+// Rust (Cargo, real SPDX scan), JVM (Maven/Gradle, best-effort not-checked) and
+// C++ (best-effort not-checked). SPDX EXPRESSION classification handles dual
+// licences ("A OR B") without a false pass or a false block.
+// ---------------------------------------------------------------------------
+test('licence-scan classifySpdxExpr: dual "OR" is usable if any alternative is permissive', () => {
+  assert.equal(classifySpdxExpr('MIT'), true);
+  assert.equal(classifySpdxExpr('MIT OR Apache-2.0'), true);
+  assert.equal(classifySpdxExpr('GPL-2.0 OR MIT'), true, 'a permissive alternative makes a dual licence usable');
+  assert.equal(classifySpdxExpr('Apache-2.0 AND MIT'), true);
+});
+
+test('licence-scan classifySpdxExpr: all-copyleft blocks; AND-with-copyleft blocks; unknown is review', () => {
+  assert.equal(classifySpdxExpr('GPL-3.0-only'), false);
+  assert.equal(classifySpdxExpr('GPL-2.0 OR LGPL-3.0'), false, 'every alternative copyleft => blocked');
+  assert.equal(classifySpdxExpr('MIT AND GPL-2.0'), false, 'AND with a copyleft term is not permissive');
+  assert.equal(classifySpdxExpr('SomethingUnrecognised'), null);
+  assert.equal(classifySpdxExpr(''), null);
+});
+
+test('licence-scan.mjs: a Maven project is honestly reported not-checked (INCOMPLETE), never a false pass', () => {
+  const dir = mkTmp('gru-lic-mvn-');
+  fs.writeFileSync(path.join(dir, 'pom.xml'), '<project/>\n');
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(r.status, 1, 'an unscanned ecosystem must not exit 0 clean');
+  assert.ok(/INCOMPLETE/.test(json.status));
+  assert.ok(json.notChecked.some((n) => n.ecosystem === 'java/maven'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a C++ project is honestly reported not-checked, never a false pass', () => {
+  const dir = mkTmp('gru-lic-cpp-');
+  fs.writeFileSync(path.join(dir, 'vcpkg.json'), '{}\n');
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(r.status, 1);
+  assert.ok(json.notChecked.some((n) => n.ecosystem === 'c++'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a Cargo project is detected and scanned (real or honest not-checked), never dropped', () => {
+  const dir = mkTmp('gru-lic-cargo-');
+  fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[package]\nname = "x"\nversion = "0.1.0"\n');
+  const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.ok(json.results.some((res) => res.ecosystem === 'rust/cargo'), 'the Cargo ecosystem must appear in the results, checked or not');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 command-centre enhancement — the dashboard is the organised
+// command centre: Concept (OBJECTIVE), Architecture & specs (ARCHITECTURE) and
+// the complete Build plan (PLAN), rendered by a small SAFE markdown renderer
+// (everything escaped; a code span or injected tag never emits raw markup).
+// ---------------------------------------------------------------------------
+test('dashboard.mjs: renders Concept, Architecture and Build plan sections, safely', () => {
+  const dir = mkTmp('gru-db-docs-');
+  const dm = path.join(dir, 'Dev-Memory');
+  fs.mkdirSync(dm, { recursive: true });
+  fs.writeFileSync(path.join(dm, 'OBJECTIVE.md'), '# Expense Tracker\nLog expenses. **Tier: Standard.**\n');
+  fs.writeFileSync(path.join(dm, 'ARCHITECTURE.md'), '# Architecture\n\n## Stack\n| Component | Choice |\n| :-- | :-- |\n| Store | local `sqlite` |\n| Evil | <img src=x onerror=alert(1)> |\n');
+  fs.writeFileSync(path.join(dm, 'PLAN.md'), '# Build plan\n\n## Phase 1 — MVP\n- T1: add expense\n');
+  fs.writeFileSync(path.join(dm, 'PROGRESS.md'), '| ID | Task | Status |\n| :-- | :-- | :-- |\n| T1 | add | done |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written');
+  assert.deepEqual(r.json.sections.sort(), ['architecture', 'objective', 'plan']);
+  const html = fs.readFileSync(path.join(dm, 'dashboard.html'), 'utf8');
+  assert.ok(!/https?:\/\//i.test(html), 'still self-contained');
+  assert.ok(/<summary>Concept<\/summary>/.test(html));
+  assert.ok(/<summary>Architecture &amp; specifications<\/summary>/.test(html));
+  assert.ok(/<summary>Build plan<\/summary>/.test(html));
+  assert.ok(/<th>Component<\/th>/.test(html), 'an architecture table should render as a real table');
+  assert.ok(/<code>sqlite<\/code>/.test(html), 'inline code should render');
+  assert.ok(!/<img src=x onerror/.test(html), 'an injected tag in a doc file must be escaped, never emitted raw');
+  assert.ok(/&lt;img src=x onerror/.test(html), 'the escaped form must be present');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 3 — per-phase checkpoint commits. A CHECKPOINT-APPROVED
+// token authorises an ORDINARY (private) push only; it must never satisfy the
+// go-public gate, and confirm-checkpoint.mjs itself must never be mistaken for
+// a push (bootstrap-deadlock guard, same as confirm-publish.mjs).
+// ---------------------------------------------------------------------------
+test('gate.mjs: a checkpoint token authorises a private push', () => {
+  const dir = mkTmp('gru-ckpt-allow-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny', 'no token => deny');
+  spawnSync('node', [path.join(HERE, 'confirm-checkpoint.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'checkpoint token => allow a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a checkpoint token does NOT authorise going public (critical)', () => {
+  const dir = mkTmp('gru-ckpt-public-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-checkpoint.mjs'), dir], { encoding: 'utf8' });
+  // With ONLY a checkpoint token, a visibility-changing command must still be denied.
+  for (const c of ['gh repo edit me/app --visibility public', 'gh repo create me/app --public', 'gh repo edit me/app --visibility="public"']) {
+    assert.equal(runHook('gate.mjs', c, dir).decision, 'deny', `checkpoint token must never authorise go-public: "${c}"`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a checkpoint token is distinct — a publish token does not require it and vice-versa', () => {
+  const dir = mkTmp('gru-ckpt-distinct-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // publish token alone still authorises a private push (unchanged behaviour)
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'publish token still authorises a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isConfirmScriptOnly: confirm-checkpoint.mjs itself is never treated as a push', () => {
+  assert.equal(isPushCapable('node confirm-checkpoint.mjs'), false);
+  assert.equal(isPushCapable('node /abs/path/hooks/confirm-checkpoint.mjs /proj/root'), false);
+  // The exemption is an EXACT basename match, not a substring: a chained push
+  // after the confirm invocation is still caught (the compound operator defeats
+  // the exemption), so the exemption can't be used to smuggle a real push.
+  assert.equal(isPushCapable('node confirm-checkpoint.mjs; git push'), true);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 4 — opt-in cloud memory persistence. A MEMORY-PERSIST token
+// lets Dev-Memory be pushed to a PRIVATE branch, but ONLY: (a) the secret scan
+// still runs on those files, so a secret in Dev-Memory is still blocked; and
+// (b) it authorises a private push only, never going public. Both are the whole
+// point of the "private only, still secret-scanned" design and are locked here.
+// ---------------------------------------------------------------------------
+function memPersistRepo() {
+  const dir = mkTmp('gru-mempersist-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'app.js'), 'console.log(1)\n');
+  git(['add', 'app.js'], dir);
+  git(['commit', '-qm', 'init'], dir);
+  return dir;
+}
+
+test('scan.mjs: a Dev-Memory push is denied without a memory-persist token (unchanged guard)', () => {
+  const dir = memPersistRepo();
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'my private brief\n');
+  git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'deny');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: with a memory-persist token, clean Dev-Memory may be pushed', () => {
+  const dir = memPersistRepo();
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'my private brief and decisions\n');
+  git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
+  spawnSync('node', [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'allow');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a memory-persist token NEVER lets a secret inside Dev-Memory ship (critical)', () => {
+  const dir = memPersistRepo();
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'brief\nAKIAIOSFODNN7EXAMPLE\n');
+  git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
+  spawnSync('node', [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'deny', 'the secret scan must still run on Dev-Memory files under the token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a memory-persist token authorises a private push but NEVER going public (critical)', () => {
+  const dir = mkTmp('gru-mempersist-gate-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'git push origin memory', dir).decision, 'allow', 'private push allowed by the persist token');
+  for (const c of ['gh repo edit me/app --visibility public', 'gh repo create me/app --public']) {
+    assert.equal(runHook('gate.mjs', c, dir).decision, 'deny', `persist token must never authorise go-public: "${c}"`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isConfirmScriptOnly: confirm-memory-persist.mjs itself is never treated as a push', () => {
+  assert.equal(isPushCapable('node confirm-memory-persist.mjs'), false);
+  assert.equal(isPushCapable('node /abs/hooks/confirm-memory-persist.mjs /proj'), false);
+  assert.equal(isPushCapable('node confirm-memory-persist.mjs; git push'), true);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 5 — INV11 language-pack contract: a lang-* pack that omits
+// one of the five standard command families (build/test/lint/format/deps) must
+// be caught, so a language can never ship half-wired.
+// ---------------------------------------------------------------------------
+test('repo-integrity.mjs INV11: a language pack missing a command family is blocked', () => {
+  const dir = mkTmp('gru-langpack-');
+  copyRepoTo(dir);
+  // A minimal lang-rust pack that mentions build/test/lint/deps but NOT format.
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'skills', 'lang-rust', 'SKILL.md'),
+    ['---', 'name: lang-rust', 'description: rust pack', '---', '', '# Rust', '',
+      'build with `cargo build`, test with `cargo test`, lint with `cargo clippy`,',
+      'dependencies live in `Cargo.toml`.'].join('\n') + '\n'
+  );
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /lang-rust/.test(p) && /format/.test(p)), `expected a missing-format finding: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Content Creation — content-check.mjs verifies every asset in
+// CONTENT.md has approval + provenance + rights (+ alt-text for media) before
+// Publish. No-op when no content is declared; fails closed on an incomplete row.
+// ---------------------------------------------------------------------------
+function writeContent(dir, table) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'CONTENT.md'), table);
+}
+const CONTENT_HEADER = '| Asset | Medium | Source | Approved | Rights | Alt |\n| :-- | :-- | :-- | :-- | :-- | :-- |\n';
+
+test('content-check.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-cc-nostudio-');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: no CONTENT.md is clean (no content declared)', () => {
+  const dir = mkTmp('gru-cc-none-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: a complete manifest is clean', () => {
+  const dir = mkTmp('gru-cc-clean-');
+  writeContent(dir, CONTENT_HEADER +
+    '| hero.png | image | Gemini image, prompt #4 | approved | AI-generated, user owns output | Family using the app |\n' +
+    '| onboarding | text | Claude bn+en | approved | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: an unapproved (pending) asset is blocked', () => {
+  const dir = mkTmp('gru-cc-pending-');
+  writeContent(dir, CONTENT_HEADER + '| clip.mp4 | video | Veo, prompt #7 | pending | AI-generated | captions attached |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /not approved/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: a media asset with no alt-text is blocked (accessibility)', () => {
+  const dir = mkTmp('gru-cc-alt-');
+  writeContent(dir, CONTENT_HEADER + '| hero.png | image | Gemini image | approved | AI-generated | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /alt-text|caption|transcript/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: an asset with no rights note is blocked', () => {
+  const dir = mkTmp('gru-cc-rights-');
+  writeContent(dir, CONTENT_HEADER + '| onboarding | text | Claude bn+en | approved | — | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /rights/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 (v4.1.0 Phase B) licence-scan grows to Swift (SwiftPM), .NET
+// (NuGet) and Go (modules) — best-effort not-checked, honestly INCOMPLETE,
+// never a false pass. TypeScript is npm (already covered).
+// ---------------------------------------------------------------------------
+for (const [label, file] of [['swift/spm', 'Package.swift'], ['.net/nuget', 'app.csproj'], ['go/modules', 'go.mod']]) {
+  test(`licence-scan.mjs: a ${label} project is honestly reported not-checked`, () => {
+    const dir = mkTmp('gru-lic-newlang-');
+    fs.writeFileSync(path.join(dir, file), file === 'go.mod' ? 'module x\n' : '\n');
+    const r = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+    const json = JSON.parse(r.stdout);
+    assert.equal(r.status, 1, 'an unscanned ecosystem must not exit 0 clean');
+    assert.ok(json.notChecked.some((n) => n.ecosystem === label), `expected ${label} in notChecked: ${r.stdout}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+}

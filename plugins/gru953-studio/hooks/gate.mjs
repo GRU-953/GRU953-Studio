@@ -131,6 +131,59 @@ function isGoPublicCommand(rawC) {
 function goPublicToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-go-public:${studioRoot}`).digest('hex');
 }
+
+// 2026-07-19 (Phase 3 — per-phase checkpoint commits, see the
+// `checkpoint-commit` skill). A checkpoint token authorises an ORDINARY
+// (private) push only — a per-phase backup of the app's code to a private work
+// branch. It is deliberately a DIFFERENT, project-bound token from the publish
+// one, and it is checked ONLY in the ordinary-push branch below, AFTER the
+// go-public gate. So a checkpoint token can never satisfy the go-public check
+// (that still needs its own GO-PUBLIC-APPROVED token, checked first), i.e. a
+// checkpoint can never make a repository public — the one guarantee that
+// matters most stays intact. scan.mjs still runs on every push regardless, so
+// a checkpoint can never ship a secret or the private Dev-Memory folder either.
+function checkpointToken(studioRoot) {
+  return crypto.createHash('sha256').update(`studio-checkpoint:${studioRoot}`).digest('hex');
+}
+function checkpointConfirmed(studioRoot) {
+  const record = path.join(studioRoot, 'Dev-Memory', 'CHECKPOINT-APPROVED');
+  let text;
+  try {
+    fs.accessSync(record, fs.constants.R_OK);
+    text = fs.readFileSync(record, 'utf8');
+  } catch {
+    return false;
+  }
+  const expected = `STUDIO-CHECKPOINT-CONFIRMED:${checkpointToken(studioRoot)}`;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === expected) return issuedWithinTtl(text);
+  }
+  return false;
+}
+
+// 2026-07-19 (Phase 4 — opt-in cloud memory persistence). Same shape and same
+// confinement as the checkpoint token: it authorises an ORDINARY (private) push
+// only, is checked AFTER the go-public gate below, and never satisfies it — so
+// persisted memory can never go to a PUBLIC repository. scan.mjs separately
+// still runs the full secret scan on the pushed Dev-Memory files.
+function memoryPersistToken(studioRoot) {
+  return crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex');
+}
+function memoryPersistConfirmed(studioRoot) {
+  const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
+  let text;
+  try {
+    fs.accessSync(record, fs.constants.R_OK);
+    text = fs.readFileSync(record, 'utf8');
+  } catch {
+    return false;
+  }
+  const expected = `STUDIO-MEMORY-PERSIST-CONFIRMED:${memoryPersistToken(studioRoot)}`;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === expected) return issuedWithinTtl(text);
+  }
+  return false;
+}
 function goPublicConfirmed(studioRoot) {
   const record = path.join(studioRoot, 'Dev-Memory', 'GO-PUBLIC-APPROVED');
   let text;
@@ -171,10 +224,14 @@ function main() {
     deny(`studio gate: refusing to change visibility to public — going public is a separate, explicit step from the private publish. Record it by running "node \\"${PLUGIN_ROOT}/hooks/confirm-go-public.mjs\\"" from the project root, only after the user has explicitly confirmed via its own pop-up (distinct from the private-publish confirmation).`);
   }
 
-  if (publishConfirmed(STUDIO_ROOT)) {
+  // An ordinary (private) push is allowed by a publish confirmation, a per-phase
+  // checkpoint confirmation, OR an opt-in memory-persistence confirmation. All
+  // three are private-only: the go-public gate above has already run and is
+  // unaffected by any of them.
+  if (publishConfirmed(STUDIO_ROOT) || checkpointConfirmed(STUDIO_ROOT) || memoryPersistConfirmed(STUDIO_ROOT)) {
     allow();
   }
-  deny(`studio gate: refusing to push — this is a studio project but the user's publish confirmation has not been recorded. Pushing happens only after the user confirms; record that by running "node \\"${PLUGIN_ROOT}/hooks/confirm-publish.mjs\\"" from the project root, which writes the project-bound line Dev-Memory/PUBLISH-APPROVED expects. Reach the Publish stage (or run /studio-publish) and confirm publishing first.`);
+  deny(`studio gate: refusing to push — this is a studio project but no push authorisation (publish or per-phase checkpoint) has been recorded. Pushing happens only after it is confirmed; record a publish by running "node \\"${PLUGIN_ROOT}/hooks/confirm-publish.mjs\\"" (reach the Publish stage or run /studio-publish first), or a per-phase backup checkpoint by running "node \\"${PLUGIN_ROOT}/hooks/confirm-checkpoint.mjs\\"" once the phase's quality gate is clean. Both write a project-bound record and authorise a PRIVATE push only.`);
 }
 
 main();
