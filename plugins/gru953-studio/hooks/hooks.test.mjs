@@ -1759,3 +1759,63 @@ test('lib.mjs isConfirmScriptOnly: confirm-checkpoint.mjs itself is never treate
   // the exemption), so the exemption can't be used to smuggle a real push.
   assert.equal(isPushCapable('node confirm-checkpoint.mjs; git push'), true);
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 4 — opt-in cloud memory persistence. A MEMORY-PERSIST token
+// lets Dev-Memory be pushed to a PRIVATE branch, but ONLY: (a) the secret scan
+// still runs on those files, so a secret in Dev-Memory is still blocked; and
+// (b) it authorises a private push only, never going public. Both are the whole
+// point of the "private only, still secret-scanned" design and are locked here.
+// ---------------------------------------------------------------------------
+function memPersistRepo() {
+  const dir = mkTmp('gru-mempersist-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'app.js'), 'console.log(1)\n');
+  git(['add', 'app.js'], dir);
+  git(['commit', '-qm', 'init'], dir);
+  return dir;
+}
+
+test('scan.mjs: a Dev-Memory push is denied without a memory-persist token (unchanged guard)', () => {
+  const dir = memPersistRepo();
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'my private brief\n');
+  git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'deny');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: with a memory-persist token, clean Dev-Memory may be pushed', () => {
+  const dir = memPersistRepo();
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'my private brief and decisions\n');
+  git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
+  spawnSync('node', [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'allow');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a memory-persist token NEVER lets a secret inside Dev-Memory ship (critical)', () => {
+  const dir = memPersistRepo();
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'brief\nAKIAIOSFODNN7EXAMPLE\n');
+  git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
+  spawnSync('node', [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'deny', 'the secret scan must still run on Dev-Memory files under the token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a memory-persist token authorises a private push but NEVER going public (critical)', () => {
+  const dir = mkTmp('gru-mempersist-gate-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'git push origin memory', dir).decision, 'allow', 'private push allowed by the persist token');
+  for (const c of ['gh repo edit me/app --visibility public', 'gh repo create me/app --public']) {
+    assert.equal(runHook('gate.mjs', c, dir).decision, 'deny', `persist token must never authorise go-public: "${c}"`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isConfirmScriptOnly: confirm-memory-persist.mjs itself is never treated as a push', () => {
+  assert.equal(isPushCapable('node confirm-memory-persist.mjs'), false);
+  assert.equal(isPushCapable('node /abs/hooks/confirm-memory-persist.mjs /proj'), false);
+  assert.equal(isPushCapable('node confirm-memory-persist.mjs; git push'), true);
+});

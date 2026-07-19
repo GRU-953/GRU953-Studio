@@ -1,5 +1,46 @@
 # Changelog
 
+## 3.9.0 — 2026-07-19
+
+Phase 4 of the staged programme: **Claude Code on the web / cloud support**
+(feature 2).
+
+**New: `session-start.mjs` SessionStart hook.** On any surface, when a session
+starts inside a studio project it injects a reminder to run the `focus-guard`
+re-orientation ritual and recall via the `memory-graph` protocol — so a resumed
+project picks itself back up automatically. It stands down silently outside
+studio projects, and adds a cloud/persistence note when the environment looks
+ephemeral. Wired into `hooks.json` under `SessionStart`.
+
+**Opt-in cloud memory persistence — private-only, still secret-scanned.** On
+Claude Code on the web the container is reclaimed between sessions, so
+Dev-Memory would be lost. The studio can now (only if the user opts in for the
+project) persist Dev-Memory to a **private branch** so resume survives. The
+safety envelope is the narrowest possible relaxation of the "Dev-Memory never
+ships" guard:
+
+- A distinct project-bound `MEMORY-PERSIST-APPROVED` token
+  (`confirm-memory-persist.mjs`) tells `scan.mjs` not to block purely on a
+  Dev-Memory path — but `scan.mjs` **still runs its full secret scan** on those
+  files, so a secret in memory is blocked exactly as before.
+- `gate.mjs` accepts the token for an ordinary (private) push only; it is
+  checked after the go-public gate and never satisfies it, so persisted memory
+  can **never** reach a public repository.
+- Desktop sessions are unchanged — Dev-Memory stays strictly local. The product
+  Publish path is unchanged (still deletes Dev-Memory, ships a clean orphan
+  commit).
+
+**Graceful degrade.** Ollama-dependent features (local second opinion, optional
+semantic re-rank) **self-disable with a plain note** on cloud/ephemeral sessions
+rather than failing, and the studio prefers the session's available GitHub tools
+where a local `gh` CLI is absent. README/`dev-memory`/`memory-keeper`/
+`ollama-integration` updated for web support.
+
+5 new behavioural tests (102 → 107, all pass), including the two critical
+guarantees: a secret inside Dev-Memory is still blocked under the persist token,
+and the persist token never authorises going public. `repo-integrity` clean (29
+agents, 26 skills, 19 hooks); roster and licence green. Version 3.8.0 → 3.9.0.
+
 ## 3.8.0 — 2026-07-19
 
 Phase 3 of the staged programme: the **warframe Prototype stage**, the

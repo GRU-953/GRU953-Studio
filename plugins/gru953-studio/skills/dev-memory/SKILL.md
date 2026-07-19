@@ -165,19 +165,46 @@ are enough to state, unambiguously, what is done and what the very next
 step is. If they are not, the memory is incomplete — fix it before
 Publish. Record that the rehearsal passed in `SESSION-LOG.md`.
 
-## Local-only, and never shipped
+## Local-only, and never shipped (with one opt-in cloud exception)
 
-Dev-Memory lives **only** on the user's own machine. There is no GitHub
-mirror and no automatic backup — if the user wants an offsite copy, that is
-their own general backup routine, not something this tool does (confirmed
-with the user; earlier drafts wrongly described a mirror that was never
-built). Two rules keep it private:
+Dev-Memory lives on the user's own machine by default. It is never part of the
+published product, and there is no *automatic* backup. Two rules keep it
+private:
 
 1. Add `Dev-Memory/` to the project's `.gitignore` the moment the folder is
    created.
-2. It must never enter the publisher's would-ship set — backed mechanically
+2. It must never enter the **publisher's** would-ship set — backed mechanically
    by `hooks/scan.mjs`, which blocks any push whose file set contains a
-   `Dev-Memory/` path.
+   `Dev-Memory/` path. The product Publish always deletes Dev-Memory and ships a
+   clean orphan commit; this is unchanged.
+
+## Cloud persistence (opt-in; cloud/ephemeral sessions only)
+
+On Claude Code on the web (and any ephemeral container that is reclaimed between
+sessions), Dev-Memory would be lost when the container recycles — so a project
+could not resume days later, the whole point of this skill. To keep resume
+working there, the studio offers an **opt-in** persistence of Dev-Memory (and
+the cross-project `~/.gru953-studio/` files) to a **private branch** on the
+user's own GitHub. It is **off by default** and only ever happens after the user
+says yes for that project (`project-lead` asks once, plainly, on a cloud
+session; the answer is recorded). The safety envelope is deliberately narrow
+(2026-07-19):
+
+- **Private only, never public.** Authorised by a distinct, project-bound
+  `MEMORY-PERSIST-APPROVED` token (`hooks/confirm-memory-persist.mjs`) that
+  `gate.mjs` accepts for an ordinary (private) push only — checked *after* the
+  go-public gate, which it never satisfies. Persisted memory can never reach a
+  public repository.
+- **Still fully secret-scanned.** The token tells `scan.mjs` not to block purely
+  because a `Dev-Memory/` path is present — but `scan.mjs` still runs its full
+  secret/key-file scan on those files, so Dev-Memory persists only if it carries
+  no password, key or token. A secret in memory is blocked exactly as before.
+- **Desktop is unchanged.** On a normal local machine there is no persistence
+  push; Dev-Memory stays local-only as above.
+
+This is the owner-approved, scoped variant of the "memory never leaves the
+machine" rule — narrowed to: opt-in, cloud-only, private-branch-only, and still
+secret-scanned. Everything not covered by that one exception is unchanged.
 
 ## One schema, every session
 

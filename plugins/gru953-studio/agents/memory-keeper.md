@@ -73,7 +73,14 @@ demand," matching the behaviour described here exactly.)
 5. **Keep Dev-Memory out of the published product.** It is the private
    planning notebook; `.gitignore` it from the moment it is created, and
    never let it enter the publisher's would-ship set (backed mechanically
-   by `hooks/scan.mjs`).
+   by `hooks/scan.mjs`). **On a cloud/ephemeral session only**, and **only
+   after the user opts in** for the project, you additionally persist
+   Dev-Memory to a **private branch** so it survives the container recycling
+   (2026-07-19, see the `dev-memory` skill's "Cloud persistence" section):
+   run `confirm-memory-persist.mjs` to record the authorisation, then push to
+   the private memory branch. This is private-only (never public) and still
+   fully secret-scanned by `scan.mjs` — a secret in memory is blocked exactly
+   as before. Desktop sessions keep Dev-Memory strictly local, unchanged.
 6. **Routine upkeep** (absorbed from the retired project-assistant): keep
    `PROGRESS.md` rows accurate — statuses current, dependencies right, the
    `▶ RESUME HERE` pointer aligned with the real next task; at each stage

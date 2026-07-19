@@ -276,7 +276,11 @@ We'd rather tell you the boundaries up front than let you discover them the hard
 way:
 
 - **Claude Code only.** It does not run in Claude Desktop, or on its own. If you
-  don't use Claude Code, this isn't the tool for you (yet).
+  don't use Claude Code, this isn't the tool for you (yet). It works both in
+  desktop Claude Code **and on Claude Code on the web** — on the web, where the
+  workspace is temporary, it can (only if you say yes) back your project's
+  planning notes up to a private branch so you can carry on later, and any
+  free-local-AI (Ollama) features simply switch themselves off with a note.
 - **It's an AI tool, so it needs a connection and has usage limits.** On a long
   build you may hit your Claude usage cap for the day — that's fine, it saves
   progress and you continue later.

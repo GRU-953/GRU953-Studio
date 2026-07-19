@@ -997,7 +997,7 @@ function isConfirmScriptOnly(c) {
   // filename contains no push keyword, but it is exempted here for the same
   // reason (it only writes a local marker file, never pushes), so running it to
   // RECORD a checkpoint authorisation is never itself mistaken for a push.
-  return base === 'confirm-publish.mjs' || base === 'confirm-go-public.mjs' || base === 'confirm-checkpoint.mjs';
+  return base === 'confirm-publish.mjs' || base === 'confirm-go-public.mjs' || base === 'confirm-checkpoint.mjs' || base === 'confirm-memory-persist.mjs';
 }
 export function isPushCapable(rawC) {
   if (!rawC) return true;
