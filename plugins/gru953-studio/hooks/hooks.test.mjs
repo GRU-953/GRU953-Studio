@@ -1715,3 +1715,47 @@ test('dashboard.mjs: renders Concept, Architecture and Build plan sections, safe
   assert.ok(/&lt;img src=x onerror/.test(html), 'the escaped form must be present');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 3 — per-phase checkpoint commits. A CHECKPOINT-APPROVED
+// token authorises an ORDINARY (private) push only; it must never satisfy the
+// go-public gate, and confirm-checkpoint.mjs itself must never be mistaken for
+// a push (bootstrap-deadlock guard, same as confirm-publish.mjs).
+// ---------------------------------------------------------------------------
+test('gate.mjs: a checkpoint token authorises a private push', () => {
+  const dir = mkTmp('gru-ckpt-allow-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny', 'no token => deny');
+  spawnSync('node', [path.join(HERE, 'confirm-checkpoint.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'checkpoint token => allow a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a checkpoint token does NOT authorise going public (critical)', () => {
+  const dir = mkTmp('gru-ckpt-public-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-checkpoint.mjs'), dir], { encoding: 'utf8' });
+  // With ONLY a checkpoint token, a visibility-changing command must still be denied.
+  for (const c of ['gh repo edit me/app --visibility public', 'gh repo create me/app --public', 'gh repo edit me/app --visibility="public"']) {
+    assert.equal(runHook('gate.mjs', c, dir).decision, 'deny', `checkpoint token must never authorise go-public: "${c}"`);
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a checkpoint token is distinct — a publish token does not require it and vice-versa', () => {
+  const dir = mkTmp('gru-ckpt-distinct-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // publish token alone still authorises a private push (unchanged behaviour)
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'publish token still authorises a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isConfirmScriptOnly: confirm-checkpoint.mjs itself is never treated as a push', () => {
+  assert.equal(isPushCapable('node confirm-checkpoint.mjs'), false);
+  assert.equal(isPushCapable('node /abs/path/hooks/confirm-checkpoint.mjs /proj/root'), false);
+  // The exemption is an EXACT basename match, not a substring: a chained push
+  // after the confirm invocation is still caught (the compound operator defeats
+  // the exemption), so the exemption can't be used to smuggle a real push.
+  assert.equal(isPushCapable('node confirm-checkpoint.mjs; git push'), true);
+});

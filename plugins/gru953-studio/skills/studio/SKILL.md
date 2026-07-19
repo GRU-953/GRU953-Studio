@@ -184,10 +184,31 @@ contributions, an RFC — see `governance/GOVERNANCE.md`).
 
 ## The lifecycle
 
-Brainstorm → Ideate → Design → Plan → Build → Test → Fix → Review → Publish
-(plus Maintain for returning projects). Delegate each stage's work to the
-right specialist agents (parallel where independent); never do specialist
-work yourself. On Tiny Tier no separate `reviewer` is woken (2026-07-12
+Brainstorm → Ideate → Design → **Prototype** → Plan → Build → Test → Fix →
+Review → Publish (plus Maintain for returning projects). Delegate each stage's
+work to the right specialist agents (parallel where independent); never do
+specialist work yourself.
+
+**Prototype stage (2026-07-19, `warframe-prototype` skill).** Between Design and
+Plan, before any real code: `ux-designer` + a `builder` produce a self-contained
+clickable HTML "warframe" (a wireframe prototype — no external calls) plus the
+phased build plan, and the Project Lead runs a **hard, blocking approval gate**
+(`AskUserQuestion`) on both. No implementation code is written until the user
+approves. On a pure CLI/library, a short text walkthrough stands in for the
+visual warframe. The approved warframe becomes the reference the built MVP is
+checked against at Review.
+
+**MVP-then-phases (2026-07-19, `phased-roadmap` skill).** At Plan, the design
+becomes Phase 1 = MVP core only, then Phase 2…N = progressive enhancements;
+`PLAN.md`/`PROGRESS.md` gain a Phase column. YAGNI is unchanged — a phase's code
+is built only when that phase is active; nothing is scaffolded ahead.
+
+**Per-phase backup (2026-07-19, `checkpoint-commit` skill).** At the end of each
+build phase, once its `quality-gate` is clean and the secret/licence scans pass,
+take a checkpoint: commit the app's code (never `Dev-Memory/`) to a **private**
+work branch and push. This is a progressive offsite backup, not the Publish —
+it is authorised by a distinct private-only checkpoint token and can never make
+anything public. The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
 fix: this was previously only stated in `builder.md`/`tester.md`, not here
 in the one file the coordinator itself follows) — the tester's own checks
 stand in for the Review stage, and there is no separate pre-Publish

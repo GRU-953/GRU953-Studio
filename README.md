@@ -31,20 +31,24 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.5.0** — stable, and recommended for everyone
+## Latest version: **3.8.0** — stable, and recommended for everyone
 
-Version 3.5.0 adds a native command centre and a cheaper memory. You can now
-**pause, resume, stop, skip, or schedule** any task with simple commands
-(`/studio-pause`, `/studio-resume`, `/studio-stop`, `/studio-skip`,
-`/studio-schedule`), and open a visual dashboard of your whole task board in a
-web browser (`/studio-dashboard`) — a single self-contained page that needs no
-internet. Behind the scenes, the studio now remembers projects with a compact
-index and a small "map" of how things connect, so picking a big project back up
-costs far less and recalls just what the current task needs. Work is also broken
-into the smallest sensible tasks (with sub-tasks), and progress is saved the
-instant each one is finished. This builds on 3.4.0's guardrail spine. If you
-already have it, updating is a good idea; if you're new, you'll get this version
-automatically.
+Version 3.8.0 adds a "see it before you build it" step and phased, backed-up
+building. Before any real code, the studio now builds a **warframe** — a
+clickable mock-up of your app you can open in a browser — plus a plain-English
+**phased plan**, and asks you to approve both before it starts. It then builds
+in **phases**: the smallest useful version first, then improvements in order,
+and after each phase it quietly **backs your app up to a private branch on your
+own GitHub** (never anything public, never your private planning notes).
+
+The recent 3.x versions also added: a **command centre** — pause, resume, stop,
+skip or schedule any task (`/studio-pause` … `/studio-schedule`) and a visual
+dashboard (`/studio-dashboard`) that now shows your app's concept, design and
+full plan in one self-contained page; a **cheaper memory** (a compact index and
+a small "map" of how things connect); an automatic **best-model-for-each-task**
+chooser; and **native support** for Dart/Flutter, Kotlin, Rust, Python, Java and
+C++. If you already have it, updating is a good idea; if you're new, you'll get
+this version automatically.
 
 You don't need to read the technical details, but if you're curious, the full
 plain-English list of every change is in
@@ -306,7 +310,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 23 skills (step-by-step playbooks the coordinator
+  plugin, including its own 26 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).

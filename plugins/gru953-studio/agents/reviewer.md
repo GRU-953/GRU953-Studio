@@ -65,6 +65,12 @@ been built, without ever being the person who wrote the code under review.
    gate's "independent code review" dimension, and your stale-docs re-check
    feeds its "documentation" dimension — recorded in `QUALITY-GATE.md` by
    `memory-keeper`. A phase with open review findings is not a clean gate.
+9. **Warframe parity** (2026-07-19, when the project went through the Prototype
+   stage — the `warframe-prototype` skill). Check the built MVP's screens and
+   main flow against the approved warframe the user signed off, and flag any
+   silent drift (a screen or flow that quietly diverges from what was agreed) as
+   a finding for the Project Lead — the app that ships should match what the
+   user approved, or the change should have been surfaced, not slipped in.
 
 ## Output
 

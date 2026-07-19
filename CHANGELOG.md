@@ -1,5 +1,45 @@
 # Changelog
 
+## 3.8.0 — 2026-07-19
+
+Phase 3 of the staged programme: the **warframe Prototype stage**, the
+**MVP-then-phases roadmap**, and **per-phase backup checkpoint commits**
+(features 5, 6, 7).
+
+**New: `warframe-prototype` skill — a real Prototype stage.** Between Design and
+Plan, `ux-designer` + a `builder` produce a **self-contained clickable HTML
+warframe** (a wireframe prototype — all inline, no external calls) plus the
+phased build plan, and the Project Lead runs a **hard, blocking approval gate**:
+no implementation code is written until the user approves both. A pure
+CLI/library gets a text walkthrough instead. The approved warframe is the
+reference the built MVP is checked against at Review (a new `reviewer` parity
+step flags silent drift).
+
+**New: `phased-roadmap` skill — MVP first, then progressive phases.** The design
+becomes Phase 1 (MVP core only), then Phase 2…N (enhancements in priority
+order); `PLAN.md`/`PROGRESS.md` gain a **Phase** column. YAGNI is unchanged — a
+phase's code is built only when that phase is active, nothing scaffolded ahead.
+Each phase is independently shippable and ends in a clean, backed-up boundary.
+
+**New: `checkpoint-commit` skill + `confirm-checkpoint.mjs` — per-phase backup.**
+At the end of each phase (once its `quality-gate` is clean and the secret/licence
+scans pass), the app's code — never `Dev-Memory/` — is committed to a **private
+work branch** and pushed, as a progressive offsite backup. The final Publish is
+unchanged: still the separate, clean, confirmed release.
+
+**Security: the publish gate now recognises a distinct checkpoint token.**
+`gate.mjs` accepts a project-bound `CHECKPOINT-APPROVED` token for an ORDINARY
+(private) push only. It is checked AFTER the go-public gate and never satisfies
+it — so **a checkpoint can never make a repository public** (the guarantee that
+matters most is untouched), and `scan.mjs` still blocks secrets and `Dev-Memory/`
+on every push regardless of any token. `confirm-checkpoint.mjs` joins the
+confirm-writers exempted from the push matcher (exact-basename only, so a chained
+push after it is still caught). Four new gate tests lock the private-only and
+never-public guarantees in.
+
+5 new behavioural tests (97 → 102, all pass). `repo-integrity`, `roster` and
+`licence` gates green. README skill count 23 → 26; version 3.7.0 → 3.8.0.
+
 ## 3.7.0 — 2026-07-19
 
 Command-centre hardening (owner request): control states reflect into the
