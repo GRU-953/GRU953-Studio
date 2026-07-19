@@ -213,7 +213,14 @@ function main() {
   if (findings.length === 0) {
     allow();
   }
-  deny('studio scan: refusing to push — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set (findings redacted to type+location). Remove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.');
+  // 2026-07-19 audit fix (real gap, found by execution): `findings` was fully
+  // computed (each entry already redacted to {type,file,line} by redact() —
+  // never the secret value itself) but never actually included in the deny
+  // message, despite the message's own wording claiming the findings were
+  // "redacted to type+location" — i.e. promising exactly this information.
+  // On a repo with many files this left no lead on where to look. Now
+  // included, still secret-safe (redact() never emits the matched value).
+  deny(`studio scan: refusing to push — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set. Findings (redacted to type+location, never the actual value):\n${findings.join('\n')}\nRemove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.`);
 }
 
 main();

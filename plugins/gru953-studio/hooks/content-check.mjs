@@ -29,7 +29,14 @@ import process from 'node:process';
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
 const APPROVED_RE = /^\s*(approved|yes|pass(ed)?|ok|done|signed[ -]?off|human|final)\b/i;
-const MEDIA_RE = /image|img|photo|icon|illustration|audio|sound|music|voice|speech|video|clip|animation/i;
+// Found 2026-07-19: matching FOR media by English keyword silently skipped
+// the alt-text/caption requirement for any non-English Medium value (e.g.
+// Bangla "ছবি" for "image") — a real accessibility gap given this project's
+// Bangla+English content. Inverted to fail closed: a row needs alt-text
+// unless its Medium is explicitly, recognisably TEXT (in English or
+// Bangla) — ambiguous or foreign-language values default to requiring it,
+// never to silently skipping it.
+const TEXT_ONLY_RE = /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[- ]?text\b|in-app[- ]?text\b|টেক্সট|লেখা|কপি)/i;
 
 function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } }
 function cells(line) {
@@ -101,7 +108,8 @@ function main() {
     if (idx.approved === -1 || !APPROVED_RE.test(approved)) problems.push(`content "${name}": not approved (status "${approved || '(none)'}") — every shipped asset needs a recorded approval.`);
     if (idx.source === -1 || ph(source)) problems.push(`content "${name}": no provenance recorded — which model/prompt made it, or that a human supplied it.`);
     if (idx.rights === -1 || ph(rights)) problems.push(`content "${name}": no rights/licence note — AI-generated or sourced media needs a plain rights note.`);
-    if (MEDIA_RE.test(medium + ' ' + name) && (idx.alt === -1 || ph(alt))) problems.push(`content "${name}": media asset has no alt-text/caption/transcript — required for accessibility.`);
+    const isTextOnly = idx.medium !== -1 && TEXT_ONLY_RE.test(medium.trim());
+    if (!isTextOnly && (idx.alt === -1 || ph(alt))) problems.push(`content "${name}": media asset has no alt-text/caption/transcript — required for accessibility.`);
   }
 
   if (problems.length === 0) {

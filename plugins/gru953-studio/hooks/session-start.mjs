@@ -29,9 +29,17 @@ import { readStdin, extractCwd, findStudioRoot } from './lib.mjs';
 // omits a hint. Checks documented signals for common hosted/CI environments and
 // a couple of container markers; deliberately conservative, never asserted as
 // certain.
+// Found 2026-07-19: a plain `||` truthy check treats ANY non-empty string as
+// true, including the literal text "false" — so explicitly disabling one of
+// these vars with a falsy-LOOKING string value still tripped this. Harmless
+// in practice (see the comment above — never used for a safety decision),
+// but a genuine logic bug relative to how env-var flags are normally read.
+function isTruthyEnv(v) {
+  return ['1', 'true', 'yes'].includes(String(v ?? '').trim().toLowerCase());
+}
 function isLikelyEphemeral() {
   const env = process.env;
-  if (env.CLAUDE_CODE_WEB || env.CLAUDE_CODE_CLOUD || env.CLAUDE_CODE_REMOTE) return true;
+  if (isTruthyEnv(env.CLAUDE_CODE_WEB) || isTruthyEnv(env.CLAUDE_CODE_CLOUD) || isTruthyEnv(env.CLAUDE_CODE_REMOTE)) return true;
   if (env.CODESPACES || env.GITPOD_WORKSPACE_ID || env.CI) return true;
   try {
     if (fs.existsSync('/.dockerenv')) return true; // common container marker

@@ -1,6 +1,6 @@
 ---
 name: technical-writer
-description: Writes the BUILT app's own user-facing documentation — a plain-English README for the user's app, a short "how to use it" guide, and any standalone help pages — so someone other than the builder can actually run and use it. Distinct from GRU953-Studio's own documentation, and from `ux-designer` (which owns wording shown INSIDE the running app — button labels, empty/error/loading microcopy); this role owns the standalone docs that ship alongside the finished app. Use on Standard/Complex Tier before Publish, and whenever the app needs usage docs.
+description: Writes the BUILT app's own user-facing documentation — a plain-English README for the user's app, a short "how to use it" guide, and any standalone help pages — so someone other than the builder can actually run and use it. Distinct from GRU953-Studio's own documentation, and from `text-content-specialist` (which owns the final, shipped bilingual Bangla+English wording shown INSIDE the running app — button labels, empty/error/loading microcopy); this role owns the standalone docs that ship alongside the finished app. Use on Standard/Complex Tier before Publish, and whenever the app needs usage docs.
 tools: Read, Grep, Glob, Write, Edit
 model: sonnet
 ---

@@ -500,12 +500,21 @@ export function normalizeForPushCheck(c) {
     }
     return /^\d+$/.test(e) ? e : null;
   }
-  const varAssignRe = /(?:^|[;\n]|&&)\s*(export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"]*)"|'([^']*)'|((?!\()[^\s;&|]*))/g;
+  // The optional `(\+)?` before `=` captures bash's scalar append-assignment
+  // operator (`NAME+=value`). Found live 2026-07-19: an unmatched `+=` left
+  // every append silently unresolved (frozen at the variable's FIRST plain
+  // assignment), defeating both isPushCapable() and isGoPublicCommand()
+  // simultaneously — e.g. `p=pu; p+=sh; git $p origin main` real-bash
+  // resolves to `git push origin main` but was previously read as `git pu`.
+  // This is distinct from the array `+=` case, which remains unsupported
+  // (see the module-level comment above).
+  const varAssignRe = /(?:^|[;\n]|&&)\s*(export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)(\+)?=(?:"([^"]*)"|'([^']*)'|((?!\()[^\s;&|]*))/g;
   const known = new Map();
   for (const am of n.matchAll(varAssignRe)) {
     const hadKeyword = Boolean(am[1]);
+    const isAppend = Boolean(am[3]);
     const varName = am[2];
-    let value = am[3] ?? am[4] ?? am[5] ?? '';
+    let value = am[4] ?? am[5] ?? am[6] ?? '';
     if (hadKeyword) value = resolveEmbeddedBraceList(value);
     for (const [kName, kValue] of known) {
       const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
@@ -521,6 +530,7 @@ export function normalizeForPushCheck(c) {
       const resolved = resolveSimpleArithmetic(value, (name) => known.get(name));
       if (resolved !== null) value = resolved;
     }
+    if (isAppend) value = (known.get(varName) ?? '') + value;
     known.set(varName, value);
   }
   // 2026-07-12 Round 7 audit fix (CRITICAL x2, found by execution, then

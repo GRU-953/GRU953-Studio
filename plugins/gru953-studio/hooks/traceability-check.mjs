@@ -40,8 +40,12 @@ import process from 'node:process';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
-// conventions the focus-guard skill's template uses.
-const TASK_ID_RE = /\b[A-Za-z]{1,4}-?\d+\b/g;
+// conventions the focus-guard skill's template uses. The trailing optional
+// group keeps a composite id like "P1-T3" ONE token — without it the plain
+// form below matched "P1" and "T3" as two separate ids, so an unrelated
+// bare "T3" elsewhere could collide with and silently overwrite the
+// composite's Map entry, hiding real scope creep (found 2026-07-19).
+const TASK_ID_RE = /\b[A-Za-z]{1,4}-?\d+(?:-[A-Za-z]{1,4}-?\d+)?\b/g;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 const DEFERRED_RE = /^\s*(deferred|future|backlog|later|parked|out[ \t]*of[ \t]*scope)\b/i;
 const MET_RE = /^\s*(met|done|complete[d]?|verified|pass(ed)?|shipped)\b/i;

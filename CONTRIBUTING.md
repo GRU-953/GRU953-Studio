@@ -35,6 +35,13 @@ node plugins/gru953-studio/hooks/licence-scan.mjs .
 # 7. every required file is present (see .github/workflows/ci.yml for the exact list)
 ```
 
+If your change touches a skill or hook that documents one of the five
+project-level gates (verify-progress.mjs, quality-gate.mjs, traceability-check.mjs,
+memory-integrity.mjs, content-check.mjs — these run against a *project built by*
+the plugin, not this repo itself, so they no-op here), also run that gate
+against a sample `Dev-Memory/` so the documented requirement and the script
+that enforces it never drift apart. See `CLAUDE.md` for the full list.
+
 Pull requests are expected to keep **continuous integration (CI) green** — CI
 is the automated set of checks that runs on every change (see
 `.github/workflows/ci.yml`).

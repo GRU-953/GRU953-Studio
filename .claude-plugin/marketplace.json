@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "A marketplace for GRU953-Studio: a Tier-sized team of specialised autonomous AI software developers, led by an AI project lead, that turns a plain-English idea and a short pop-up interview into a working, tested, privately-published app.",
-    "version": "4.1.0"
+    "version": "4.1.1"
   },
   "plugins": [
     {
@@ -29,7 +29,12 @@
         "claude-code-plugin",
         "ollama",
         "self-healing",
-        "tdd"
+        "tdd",
+        "content-creation",
+        "gemini",
+        "bangla",
+        "prototyping",
+        "command-centre"
       ],
       "source": "./plugins/gru953-studio"
     }

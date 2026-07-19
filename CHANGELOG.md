@@ -1,5 +1,71 @@
 # Changelog
 
+## 4.1.1 — 2026-07-19
+
+A hardening, documentation and website pass over 4.1.0 — no new agents or
+skills (roster stays at 38 agents / 32 skills); every change below is a bug
+fix, a clarity improvement, or new documentation/website content.
+
+**Real bugs fixed, found by a deep multi-lens audit (with adversarial
+verification against the live code, not just review):**
+- `traceability-check.mjs` — a composite task id like `P1-T3` was silently
+  split into two separate ids (`P1`, `T3`); an unrelated bare `T3` elsewhere
+  could then collide with and overwrite the composite's entry, hiding real
+  scope creep from the reverse (untraced-task) check. Now matched as one
+  token.
+- `hooks/lib.mjs` — bash's scalar append-assignment (`NAME+=value`) was not
+  resolved at all, so a push or go-public command built up this way (e.g.
+  `p=pu; p+=sh; git $p origin main`) bypassed both the push gate and the
+  private/public separation guarantee. Now resolved like every other
+  assignment form.
+- `content-check.mjs` — the media/alt-text check matched only English
+  keywords (image/audio/video/…), so a `CONTENT.md` row written in Bangla
+  (e.g. `ছবি` for "image") silently skipped the mandatory alt-text check.
+  Inverted to fail closed: alt-text is required unless a row is explicitly,
+  recognisably marked TEXT (English or Bangla).
+- `memory-integrity.mjs` — node/link ids and "does this look like a real
+  path" checks were ASCII-only, so a punctuated id (`T1.a`), a Bangla node
+  id, a bare non-ASCII filename, or a markdown-link-formatted `INDEX.md` cell
+  were silently skipped from validation even when genuinely dangling/stale.
+- `quality-gate.mjs` — the Definition-of-Done table parser swept rows from
+  *every* Item+Status-shaped table in the file, so an unrelated later table
+  (e.g. a backlog list) could leak a spurious row into a required
+  dimension's matching. Now reads only the first, intended table.
+- `session-start.mjs` — an ephemeral-environment env-var check treated any
+  non-empty string (including the literal text `"false"`) as true; now
+  compares against a real truthy value. This file also had zero test
+  coverage before this release; it now has six locked-in tests.
+- Two `lang-*/SKILL.md` packs (Kotlin, Java) overclaimed that
+  `licence-scan.mjs` reads Gradle/Maven manifests; corrected to the same
+  honest best-effort/INCOMPLETE wording already used for C++/Swift/Go/.NET.
+- `ux-designer.md`/`technical-writer.md`/`text-content-specialist.md` had
+  drifted out of sync on who owns final in-app button/error/empty-state
+  wording (introduced when the Content team was added in 4.1.0, never
+  reconciled). Now explicit: `ux-designer` drafts placeholder wording while
+  shaping the flow; `text-content-specialist` supplies the final, shipped
+  bilingual copy.
+- A handful of unexplained acronyms (MCQ, RFC, TDD, FOSS, LLM) expanded on
+  first use, per the project's own plain-English tone rule.
+- 18 new regression tests added alongside these fixes and to lock in
+  already-correct edge cases (117 → 135 behavioural tests, all pass).
+
+**Documentation & website (new):**
+- `README.md` rewritten as a full product description and user guide:
+  installation through every sample use case, the complete team, features
+  and skills, in plain UK English.
+- A new [GitHub Pages website](https://gru-953.github.io/GRU953-Studio/) —
+  a marketing landing page plus a non-technical guide, agents/skills
+  directories, an expanded use-case gallery, an FAQ and a troubleshooting
+  page — built from the project's real "Open Spectrum" brand palette and
+  typefaces, in both light and dark themes.
+- `SECURITY.md` gains a short plain-English "at a glance" summary; the
+  legal/policy documents (`LICENSE`, `governance/GOVERNANCE.md`,
+  `CODE_OF_CONDUCT.md`) were reviewed and kept as-is — their terms were
+  already clear and are unchanged.
+- `plugin.json`/`marketplace.json` keywords extended to reflect 4.1.0's new
+  capabilities (content-creation, gemini, bangla, prototyping,
+  command-centre).
+
 ## 4.1.0 — 2026-07-19
 
 Adds a **Content Creation** capability so the studio produces the app's real
@@ -48,8 +114,12 @@ per-generation approval. `cost-monitor` logs media spend. Accessibility and
 brand review, and the `reviewer` parity check, extend to content; the dashboard
 gains a **Content** section.
 
-6 new behavioural tests (108 → 114, all pass). `repo-integrity` clean (34
-agents, 28 skills, 20 hooks, 9 commands); roster and licence green.
+9 new behavioural tests across both additions (108 → 117, all pass).
+`repo-integrity` clean (**38 agents, 32 skills**, 20 hooks, 9 commands); roster
+and licence green. (2026-07-19 audit fix: this line previously stated only the
+content-team addition's own subtotal — 34 agents, 28 skills, 108→114 — and
+omitted the language-specialist addition described above it in this same
+entry, understating this release's real final state.)
 
 ## 4.0.0 — 2026-07-19
 

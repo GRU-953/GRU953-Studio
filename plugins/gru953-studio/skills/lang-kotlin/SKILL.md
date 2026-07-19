@@ -33,7 +33,10 @@ The shared toolchain knowledge for Kotlin work (JVM and Android), so the
 ## Dependencies & licences
 
 - Dependencies are declared in `build.gradle(.kts)` (or `pom.xml` on Maven).
-- `hooks/licence-scan.mjs` reads the Gradle/Maven manifests for the dependency
-  set; `security-compliance-auditor` runs it before Publish. `./gradlew
-  dependencies` gives the full resolved tree for a deeper check.
+- `hooks/licence-scan.mjs` detects Gradle/Maven projects but — like
+  C++/Swift/Go/.NET — has no single zero-config licence source for the JVM,
+  so it reports them best-effort/INCOMPLETE rather than a pass;
+  `security-compliance-auditor` must run the ecosystem's own report
+  (`./gradlew dependencies` plus a Gradle/Maven licence plugin) and review
+  before Publish.
 - Every added dependency passes the `yagni-rules` ladder.
