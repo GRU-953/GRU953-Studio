@@ -31,9 +31,12 @@ All live under `Dev-Memory/` in the project's working directory:
 | File | What it holds |
 | :-- | :-- |
 | `OBJECTIVE.md` | The confirmed one-page brief, the three Tier questions and their Y/N answers, and the resulting Tier — so the Tier is auditable, not just asserted. |
+| `FOCUS.md` | (2026-07-19, see `focus-guard` skill) The tiny always-current anchor — objective, active phase, active task, top constraints — rewritten in place, read first every session so the team re-orients in almost no tokens even after a summarised or brand-new session. |
+| `REQUIREMENTS.md` | (2026-07-19, see `focus-guard` skill) The traceability matrix: every confirmed requirement mapped to its tasks, verification, and status, so nothing agreed is dropped and no task exceeds the brief. Audited by `hooks/traceability-check.mjs`. Standard/Complex Tier — a short inline list suffices on Tiny. |
 | `ARCHITECTURE.md` | The chosen stack, components, data flow, interface contracts, decisions, and deliberate omissions (written by `architect`). |
 | `PLAN.md` | (Standard/Complex Tier — see `micro-task-planning` skill) The ordered list of small "micro-tasks" `architect` breaks the design into: each with one acceptance criterion, the exact verification command that proves it, and its dependencies. `builder`/`tester` read task specifics from here; `project-lead` reads the dependency graph to decide what may run in the parallel Build Swarm versus what must wait. Not used on Tiny Tier — the task list there is short enough to state plainly instead. |
-| `PROGRESS.md` | The task table. Its **Status** column (`todo` / `doing` / `done` / `blocked`) is the single source of truth. Each `done` row carries the tester's `verified:` evidence cell. |
+| `PROGRESS.md` | The task table. Its **Status** column (`todo` / `doing` / `done` / `blocked`) is the single source of truth. Each `done` row carries the tester's `verified:` evidence cell. An optional `ID`/`Task ID` column enables two-way traceability against `REQUIREMENTS.md`. |
+| `QUALITY-GATE.md` | (2026-07-19, see `quality-gate` skill) The current phase's Definition of Done — each required quality dimension (acceptance, tests, review, security/licence/privacy, accessibility, docs, reproducible build) marked pass-with-evidence or n/a-with-reason. Audited by `hooks/quality-gate.mjs`; must be clean before a checkpoint commit or Publish. |
 | `SESSION-LOG.md` | An append-only diary — one entry per session/stage. Never edited or deleted, only added to. |
 | `INDEX.md` | A short, growing map of what is where, so a long project stays navigable. |
 | `decisions/*.md` | One small dated note per load-bearing decision (stack choices, Tier changes, the roster baseline — `*roster*.md` — and anything a future session must not re-litigate). |
@@ -52,10 +55,15 @@ task is the first `todo`/`doing` row whose dependencies are all `done`; a
 
 ## Read before acting — every session
 
-Before doing anything else, the Project Lead reads, in this order:
-`PROGRESS.md`, the tail of `SESSION-LOG.md`, then `INDEX.md` — then reports
-the resume point back to the user in its first message, so the user always
-knows where things stood before being asked anything.
+Before doing anything else, the Project Lead runs the `focus-guard`
+re-orientation ritual: read `FOCUS.md` first (the cheapest one-glance
+heading), then `OBJECTIVE.md`, then `PROGRESS.md`, the tail of
+`SESSION-LOG.md`, and `INDEX.md` — and restate the single active goal in one
+plain line before acting. Then report the resume point back to the user in its
+first message, so the user always knows where things stood before being asked
+anything. (2026-07-19: `FOCUS.md` and the "restate the goal" checkpoint were
+added so a summarised or brand-new session rehydrates from the memory files,
+not from lost chat history — see the `focus-guard` skill.)
 
 ## Scan before every write — never skip
 

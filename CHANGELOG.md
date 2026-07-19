@@ -1,5 +1,60 @@
 # Changelog
 
+## 3.4.0 — 2026-07-19
+
+Phase 0 of a planned, staged programme: the **guardrail & gold-standard
+spine** for long, multi-session, complex builds — the backbone that stops
+Claude and the team losing focus or drifting off the agreed target over
+time. Built first, before the rest of the programme, so every later phase
+and every user project inherits it. All gates fail closed.
+
+**New: `focus-guard` skill.** The anti-drift half of a gold-standard result
+(code quality is only the other half). Adds `Dev-Memory/FOCUS.md` — a tiny,
+always-current one-glance anchor (objective, active phase, active task, top
+constraints) rewritten in place — read first at every session start and
+stage boundary, with an explicit "restate the single active goal" step, so a
+summarised or brand-new session rehydrates from the memory files rather than
+lost chat history. Adds a per-task **drift check** (a task must trace to a
+confirmed requirement and the approved plan, or it goes to `scope-guardian`,
+never silently built) and `Dev-Memory/REQUIREMENTS.md`, a two-way
+traceability matrix.
+
+**New: `quality-gate` skill + `hooks/quality-gate.mjs`.** A codified
+Definition of Done — acceptance criteria, tests, independent review,
+security/licence/privacy, accessibility, documentation, and a reproducible
+build — recorded per phase in `Dev-Memory/QUALITY-GATE.md` and mechanically
+enforced before every backup checkpoint and before Publish. Its one
+gold-standard rule: a dimension may be marked *not-applicable with a reason*
+but never silently omitted — the required list lives in the hook, so
+deleting a row BLOCKS rather than passes. Fails closed, because a false
+"clean" is worse than a false block: nobody re-checks a green result before
+shipping.
+
+**New: `hooks/traceability-check.mjs`.** Audits `REQUIREMENTS.md` both ways —
+every confirmed requirement maps to at least one task (nothing agreed is
+dropped) and, when `PROGRESS.md` carries a task-id column, every task traces
+back to a requirement or is explicitly marked `[chore]`/`[infra]` (nothing
+unagreed is built). Where it cannot run the reverse check it says so, never a
+false pass — the same honesty `licence-scan.mjs` uses for an ecosystem it
+cannot inspect.
+
+**New: anti-derail loop guard.** `self-healing` gains a repeat-failure
+detector: the 2-attempt ceiling bounds a single failure; this bounds a
+recurring one — a task that keeps coming back after being "fixed" escalates
+to the user as a systemic pattern rather than looping through another quiet
+round.
+
+**Progress-honesty rule** stated at the coordinator level: never report a
+task or phase complete without its evidence; a failure, a skip, or a check
+that could not run is stated plainly, never softened.
+
+Wired through the load-bearing roles — `project-lead` (the re-orientation
+ritual), `memory-keeper` (owns the three new files), `scope-guardian` (the
+drift check and traceability script), and `security-compliance-auditor`
+(now six blocking pre-Publish checks, adding the Definition-of-Done and
+traceability gates). New behavioural tests lock every hook's logic in; the
+repository-integrity, roster, and licence gates stay green.
+
 ## 3.3.0 — 2026-07-17
 
 Self-healing, plus six small refinements found by a bounded, fact-checked

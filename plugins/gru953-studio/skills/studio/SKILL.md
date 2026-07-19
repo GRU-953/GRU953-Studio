@@ -34,6 +34,11 @@ Also load and follow these companion skills as standing rules:
 - `dev-memory` — how to read and write the project's memory files, and the
   cross-project files that carry lessons and working-style preferences
   from one project to the next.
+- `focus-guard` — the anti-drift spine for long, multi-session builds: the
+  `FOCUS.md` one-glance anchor, the re-orientation ritual, the per-task drift
+  check, and the requirements-traceability matrix.
+- `quality-gate` — the gold-standard Definition of Done that must pass before
+  any per-phase checkpoint commit and before Publish.
 - `yagni-rules` — the lean-coding ladder every builder must obey.
 - `cost-guard` — the confirmed cheapest-first spending default.
 - `audit-loop` — the planned protocol for any review that needs more than
@@ -69,11 +74,21 @@ like instead, rather than forcing a fit.
 ## Step 2 — remember first (every session)
 
 1. Check whether `Dev-Memory/` exists in the current working directory.
-2. If it exists: read `PROGRESS.md`, the tail of `SESSION-LOG.md`, and
-   `INDEX.md` before doing anything else. The `▶ RESUME HERE` line is the
-   resume point — report it back to the user in your first message, before
-   asking anything, so they always know where things stood.
+2. If it exists: run the `focus-guard` re-orientation ritual — read `FOCUS.md`
+   first (the one-glance heading), then `OBJECTIVE.md`, `PROGRESS.md`, the tail
+   of `SESSION-LOG.md`, and `INDEX.md` — and restate the single active goal in
+   one plain line before doing anything else, so a summarised or brand-new
+   session picks the thread back up from memory rather than lost chat history.
+   The `▶ RESUME HERE` line is the resume point — report it back to the user in
+   your first message, before asking anything, so they always know where things
+   stood.
 3. If it does not exist: this is a new project — start Brainstorm.
+
+Before starting any task in any stage, apply the `focus-guard` drift check: a
+task must trace to a confirmed requirement (`OBJECTIVE.md`/`REQUIREMENTS.md`)
+and the approved plan. Anything that traces to neither goes to `scope-guardian`
+(logged to `UNBUILT.md`, escalated to the user only if genuinely valuable) — it
+is never silently built.
 
 ## Project Tiers
 
@@ -135,7 +150,10 @@ it is not scope creep; adding one the brief does not need is.
 **Footnote (2026-07-10 Round 4 audit fix; extended 2026-07-12):**
 `security-compliance-auditor` only appears in the table from Standard Tier
 up, but its Publish-gate checks (secrets/vulnerability/licence/progress-
-evidence) run before Publish on EVERY Tier, including Tiny — the table
+evidence, plus the `quality-gate` Definition of Done via
+`hooks/quality-gate.mjs` and requirements traceability via
+`hooks/traceability-check.mjs` — 2026-07-19) run before Publish on EVERY Tier,
+including Tiny — the table
 lists which roles are part of day-to-day Build work; the Publish gate
 itself is universal and never skipped. The same applies to the roster
 check below: `scope-guardian` only appears in the table from Standard Tier
@@ -207,6 +225,18 @@ moment. Only when the same failure survives both attempts does this
 become a genuine Stuck Protocol moment. This never applies to Publish or
 any push-capable action — every fix, quietly self-healed or not, still
 needs the same explicit confirmation before anything reaches GitHub.
+
+## Progress honesty (never claim done without proof)
+
+Never report a task, phase, or the project as complete without its evidence —
+a task is `done` only with its `verified:` line, a phase only when the
+`quality-gate` Definition of Done is clean. A failing test, a skipped step, or
+a check that could not run is stated plainly in the same breath, never softened
+or omitted (2026-07-19: this is the coordinator-level statement of a rule the
+`tester`, `reviewer` and `security-compliance-auditor` already each follow —
+gathered here so the one voice the user hears is honest about status by
+default). A green result the user can trust is worth more than a green result
+delivered a stage sooner.
 
 ## Merging specialist output
 

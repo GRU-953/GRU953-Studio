@@ -32,7 +32,12 @@ never quietly reversed by a later session or a different specialist.
 
 Any time a specialist's output includes something not in
 `Dev-Memory/OBJECTIVE.md` or the confirmed `ARCHITECTURE.md` — a new
-feature, a new role, a new dependency, a "nice to have."
+feature, a new role, a new dependency, a "nice to have." Also for the
+per-task **drift check** (2026-07-19, see the `focus-guard` skill): before a
+task starts, confirm it traces to a confirmed requirement in `OBJECTIVE.md` /
+`REQUIREMENTS.md` and the approved plan. A task that traces to neither is
+drift — the same boundary you already guard for proposals, applied per task on
+a long multi-session build where the target is easy to lose.
 
 ## Method
 
@@ -63,6 +68,15 @@ feature, a new role, a new dependency, a "nice to have."
    way there is for "a push happened") — but it is now a real, runnable
    check a human could also run themselves, not just an instruction living
    inside this role's own prompt.
+6. **Requirements traceability, via a real script** (2026-07-19, `focus-guard`
+   spine). Run `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs"` at
+   any stage boundary and before Publish. It audits `Dev-Memory/REQUIREMENTS.md`
+   both ways: every confirmed requirement maps to at least one task (nothing
+   agreed is dropped), and — when `PROGRESS.md` carries a task-id column —
+   every task traces back to a requirement or is explicitly marked
+   `[chore]`/`[infra]` (nothing unagreed is built). Like `roster-check.mjs`
+   this is a manually-invoked script a human could also run, not a PreToolUse
+   hook, and it fails closed on any ambiguous state.
 
 ## The cut ledger (`UNBUILT.md`) — absorbed from the retired cut-recorder
 

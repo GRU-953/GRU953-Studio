@@ -1361,3 +1361,186 @@ test('lib.mjs deny(): exits 0, not 2, so Claude Code actually reads the JSON den
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 Phase 0 guardrail spine — quality-gate.mjs (Definition of Done)
+// and traceability-check.mjs (requirements ↔ tasks). Both are project-level
+// CI/pre-Publish checks like verify-progress.mjs: they run against a project's
+// Dev-Memory, no-op on a tree without one, and fail CLOSED on ambiguity.
+// ---------------------------------------------------------------------------
+function runScript(script, dir) {
+  const r = spawnSync('node', [path.join(HERE, script), dir], { encoding: 'utf8' });
+  let json = null;
+  try { json = JSON.parse(r.stdout); } catch {}
+  return { code: r.status, json, stdout: r.stdout, stderr: r.stderr };
+}
+function writeGate(dir, table) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'QUALITY-GATE.md'), table);
+}
+const FULL_DOD = [
+  '| Item | Status | Evidence |',
+  '| :-- | :-- | :-- |',
+  '| Acceptance criteria | pass | all criteria proven |',
+  '| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |',
+  '| Independent code review | pass | reviewer sign-off, 0 open findings |',
+  '| Security / licence / privacy | pass | scan clean; licence-scan clean |',
+  '| Accessibility | n/a | no user interface — CLI only |',
+  '| Documentation | pass | README updated |',
+  '| Reproducible build | pass | `make build` -> exit 0 on clean clone |',
+  '',
+].join('\n');
+
+test('quality-gate.mjs: no Dev-Memory is a no-op (not a studio project), exit 0', () => {
+  const dir = mkTmp('gru-qg-nostudio-');
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json && r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: Dev-Memory but no QUALITY-GATE.md fails closed', () => {
+  const dir = mkTmp('gru-qg-nofile-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.code, 1, 'a real studio project with no DoD record must BLOCK, not pass by absence');
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a complete DoD (pass + reasoned n/a) is clean', () => {
+  const dir = mkTmp('gru-qg-clean-');
+  writeGate(dir, FULL_DOD);
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json && r.json.status, 'clean', `expected clean: ${r.stdout}`);
+  assert.equal(r.code, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a required dimension cannot be hidden by omission', () => {
+  const dir = mkTmp('gru-qg-omit-');
+  writeGate(dir, FULL_DOD.split('\n').filter((l) => !/Security/.test(l)).join('\n'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /missing required dimension: security/i.test(p)), `expected a missing-security finding: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a pass with placeholder evidence is not accepted', () => {
+  const dir = mkTmp('gru-qg-noevidence-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | — |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', 'a pass needs concrete evidence, not a placeholder');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: n/a without a reason is not accepted', () => {
+  const dir = mkTmp('gru-qg-nareason-');
+  writeGate(dir, FULL_DOD.replace('| Accessibility | n/a | no user interface — CLI only |', '| Accessibility | n/a | — |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', 'n/a must carry a stated reason');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a row that says it is currently failing invalidates its own pass', () => {
+  const dir = mkTmp('gru-qg-contradict-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | passed on old build, now fails with exit 1 |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', 'a self-contradicting row must not count as a pass');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function writeReq(dir, req, prog) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'REQUIREMENTS.md'), req);
+  if (prog !== undefined) fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), prog);
+}
+const REQ_HEADER = '| ID | Requirement | Phase | Tasks | Verification | Status |\n| :-- | :-- | :-- | :-- | :-- | :-- |\n';
+const PROG_HEADER = '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n';
+
+test('traceability-check.mjs: no Dev-Memory is a no-op, exit 0', () => {
+  const dir = mkTmp('gru-tr-nostudio-');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: Dev-Memory but no REQUIREMENTS.md fails closed', () => {
+  const dir = mkTmp('gru-tr-nofile-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a consistent two-way matrix is clean', () => {
+  const dir = mkTmp('gru-tr-clean-');
+  writeReq(dir,
+    REQ_HEADER +
+    '| R1 | Pause a task | 1 | T1 | `test_pause` -> exit 0 | met |\n' +
+    '| R2 | Resume a task | 1 | T2 | pending | todo |\n' +
+    '| R3 | Export to PDF | 3 | — | — | deferred |\n',
+    PROG_HEADER +
+    '| T1 | pause | done | verified: `test_pause` -> exit 0 (2026-07-19) |\n' +
+    '| T2 | resume | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `expected clean: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a live requirement with no task is a dropped requirement', () => {
+  const dir = mkTmp('gru-tr-dropped-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause a task | 1 | — | — | todo |\n', PROG_HEADER + '| T1 | something | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /maps to no task/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a deferred requirement may legitimately have no task', () => {
+  const dir = mkTmp('gru-tr-deferred-');
+  writeReq(dir, REQ_HEADER + '| R1 | Later feature | 3 | — | — | deferred |\n', PROG_HEADER + '| T1 | chore setup [chore] | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `deferred-with-no-task + chore-exempt task should be clean: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a task tracing back to no requirement is scope creep (unless [chore])', () => {
+  const dir = mkTmp('gru-tr-creep-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | test | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n| T9 | secret extra | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /T9.*no requirement/i.test(p)), `expected a scope-creep finding for T9: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a met requirement without verification evidence is blocked', () => {
+  const dir = mkTmp('gru-tr-noproof-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | — | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /no verification evidence/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a dangling task reference is caught', () => {
+  const dir = mkTmp('gru-tr-dangling-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1, T7 | test | todo |\n', PROG_HEADER + '| T1 | pause | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /T7.*does not exist/i.test(p)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: without a PROGRESS id column the reverse check is reported not-run, never a false pass', () => {
+  const dir = mkTmp('gru-tr-noidcol-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | test | todo |\n',
+    '| Task | Status | Notes |\n| :-- | :-- | :-- |\n| pause | todo | — |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean');
+  assert.ok(r.json.notes.some((n) => /reverse.*not run/i.test(n)), `expected a disclosed not-run note: ${JSON.stringify(r.json.notes)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

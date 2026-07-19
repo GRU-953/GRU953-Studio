@@ -31,17 +31,19 @@ one clear pop-up at a time, each with a recommended answer already marked.
 
 ---
 
-## Latest version: **3.3.0** — stable, and recommended for everyone
+## Latest version: **3.4.0** — stable, and recommended for everyone
 
-Version 3.3.0 adds self-healing: when something breaks while building, the
-Fixer now quietly tries a couple of small repairs on its own first, and
-only interrupts you if that doesn't work — every fix still needs your
-explicit yes before it ever reaches GitHub, exactly as before. This
-version also adds several small, optional refinements found by a deeper
-review (real spending figures for Cost Monitor, a visible-screen check for
-bigger projects, and a few other small hardenings) — none change how you
-use GRU953-Studio day to day. If you already have it, updating is a good
-idea; if you're new, you'll get this version automatically.
+Version 3.4.0 adds a guardrail spine so long, multi-session builds never
+lose their way. Every session now re-orients from a tiny always-current
+"focus" note before doing anything, so picking a project back up days later
+(or after the conversation has been trimmed to save memory) starts from
+exactly where it stood. A plain-English "requirements map" makes sure
+nothing you asked for is quietly dropped and nothing you didn't ask for is
+quietly added, and a gold-standard "done" checklist — tests, an independent
+review, security and licence checks, accessibility, up-to-date docs, and a
+build that works from a clean copy — must genuinely pass before anything is
+backed up or published. If you already have it, updating is a good idea; if
+you're new, you'll get this version automatically.
 
 You don't need to read the technical details, but if you're curious, the full
 plain-English list of every change is in
@@ -303,7 +305,7 @@ against:
   the [Claude Code docs](https://code.claude.com/docs),
   the [Claude Developer Platform docs](https://platform.claude.com/docs), and
   the [Agent Skills documentation](https://agentskills.io) — every part of this
-  plugin, including its own 12 skills (step-by-step playbooks the coordinator
+  plugin, including its own 14 skills (step-by-step playbooks the coordinator
   quietly follows behind the scenes), was checked, line by line, against these.
 - **Safety checks powered by:** [Node.js](https://nodejs.org) (its standard
   library only).

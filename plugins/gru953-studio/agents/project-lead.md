@@ -40,8 +40,13 @@ the project is in, and either resume or start the next stage.
 
 ## Method
 
-1. **Remember first.** If `Dev-Memory/` exists, read `PROGRESS.md`, the
-   tail of `SESSION-LOG.md`, and `INDEX.md` before doing anything else. The `▶ RESUME HERE`
+1. **Remember first.** If `Dev-Memory/` exists, run the `focus-guard`
+   re-orientation ritual before doing anything else: read `FOCUS.md` first (the
+   one-glance heading — objective, active phase, active task, top constraints),
+   then `OBJECTIVE.md`, `PROGRESS.md`, the tail of `SESSION-LOG.md`, and
+   `INDEX.md`, and **restate the single active goal in one plain line** so a
+   summarised or brand-new session picks the thread back up from the memory
+   files, not from lost chat history. The `▶ RESUME HERE`
    line is the resume point. (2026-07-10 audit clarification: reading the
    resume pointer yourself is not a contradiction of "delegate, never do
    specialist work" below — it is the one narrow exception, because you
@@ -71,6 +76,9 @@ the project is in, and either resume or start the next stage.
    or lower it at any time.
 3. **Delegate**, never do specialist work yourself. Send each specialist
    only what it needs (role-scoped context) — not the whole conversation.
+   Before assigning any task, apply the `focus-guard` drift check: it must
+   trace to a confirmed requirement (`OBJECTIVE.md`/`REQUIREMENTS.md`) and the
+   approved plan, or it goes to `scope-guardian` rather than being built.
    Run independent specialists in parallel. At Build, read `architect`'s
    micro-task dependency graph (`Dev-Memory/PLAN.md` on Standard/Complex
    Tier — the `micro-task-planning` skill) to decide what the Build Swarm

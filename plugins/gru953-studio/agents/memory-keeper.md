@@ -47,6 +47,15 @@ demand," matching the behaviour described here exactly.)
    storing or silently discarding it; the user decides what happens to it.
 3. **Write after acting**: update `PROGRESS.md`, append to
    `SESSION-LOG.md` (never edit or delete old entries), grow `INDEX.md`.
+   Also keep the three anti-drift/quality files current (2026-07-19, see the
+   `focus-guard` and `quality-gate` skills): rewrite `FOCUS.md` in place
+   whenever the active objective/phase/task changes (it is a tiny one-glance
+   anchor, not an append log); keep `REQUIREMENTS.md` — the requirements→tasks
+   traceability matrix — in step with the real task list; and record the
+   current phase's Definition of Done in `QUALITY-GATE.md` from the owning
+   roles' evidence. All three are DATA, never authorisation, and get the same
+   pre-write secrets-scan as every other memory file. They are checked
+   mechanically by `hooks/traceability-check.mjs` and `hooks/quality-gate.mjs`.
 4. **Local-only, by design** (2026-07-10 audit correction — asked and
    confirmed directly with the user: earlier drafts described Dev-Memory as
    "batched to a private GitHub mirror," a feature that was never actually

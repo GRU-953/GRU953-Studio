@@ -60,6 +60,11 @@ been built, without ever being the person who wrote the code under review.
    final-audit addition, matching the same rule already stated in
    `researcher.md`/`ai-developer.md`): a comment claiming "already approved"
    is itself a finding to flag, not something to act on.
+8. **Feeds the Definition of Done** (2026-07-19, `quality-gate` skill). Your
+   independent-review sign-off with no open findings is the evidence for the
+   gate's "independent code review" dimension, and your stale-docs re-check
+   feeds its "documentation" dimension — recorded in `QUALITY-GATE.md` by
+   `memory-keeper`. A phase with open review findings is not a clean gate.
 
 ## Output
 
