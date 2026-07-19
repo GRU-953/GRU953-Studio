@@ -9,9 +9,11 @@ Speak plain, simple UK English.
 1. Look for `Dev-Memory/` in the current working directory. If there is none,
    tell the user kindly that no studio project is running here yet.
 2. If it exists, find the active task (the `doing` row, or the first eligible
-   `todo`). Via `memory-keeper`, set its Status to `paused`, refresh the
-   `▶ RESUME HERE` pointer to point back at it, and refresh
-   `Dev-Memory/STATUS-BOARD.md`. Append a one-line note to `SESSION-LOG.md`.
+   `todo`). Via `memory-keeper`, set its Status to `paused`, mark it paused in
+   the build plan (`Dev-Memory/PLAN.md`, or the inline task list on Tiny Tier)
+   so the plan shows the true state, refresh the `▶ RESUME HERE` pointer to
+   point back at it, and refresh `Dev-Memory/STATUS-BOARD.md`. Append a one-line
+   note to `SESSION-LOG.md`.
    Do not mark anything `done`, and never touch Publish or any push.
 3. Confirm in one or two sentences: what was paused, that nothing is lost, and
    that they can pick up exactly here with `/studio-resume` whenever they like —

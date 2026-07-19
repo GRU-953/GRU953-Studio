@@ -12,8 +12,9 @@ plain, simple UK English.
    the user for a specific time or delay before doing anything else.
 3. Record the intent durably FIRST, so it can never be lost: via
    `memory-keeper`, set the target task's Status to `scheduled` with the chosen
-   time noted in `PROGRESS.md`, refresh `Dev-Memory/STATUS-BOARD.md`, and append
-   a one-line note to `SESSION-LOG.md`.
+   time noted in `PROGRESS.md`, reflect the scheduled state and time in the
+   build plan (`Dev-Memory/PLAN.md`, or the inline list on Tiny Tier), refresh
+   `Dev-Memory/STATUS-BOARD.md`, and append a one-line note to `SESSION-LOG.md`.
 4. Then arm whatever scheduling capability THIS session offers (a scheduled
    task, a wake-up, or a cron-style trigger the host exposes) to re-enter the
    project at that time and run `/studio-resume`. If the session offers no such

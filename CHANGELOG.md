@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.7.0 — 2026-07-19
+
+Command-centre hardening (owner request): control states reflect into the
+build plan, and the command centre presents the whole software — concept,
+architecture, specifications and complete build plan — organised.
+
+**Control states now reflect into the build plan.** A pause, stop, skip or
+schedule is a real change to the plan of work, so every control command
+(`/studio-pause|stop|skip|schedule`) now updates `PLAN.md` (the build plan) in
+the same write as `PROGRESS.md` and `STATUS-BOARD.md` — the plan always shows
+the true state (`paused`/`skipped`/`scheduled`, with any time) and its
+next-actionable task is recomputed, so plan and board never drift and a skipped
+task is set aside in the plan, never lost.
+
+**The command centre surfaces concept + architecture + build plan, organised.**
+`/studio-dashboard` (`hooks/dashboard.mjs`) now renders, in one self-contained
+page: the **Concept** (`OBJECTIVE.md`), the **Architecture & specifications**
+(`ARCHITECTURE.md`), the complete **Build plan** (`PLAN.md`, phases and all),
+and the live task board — each document rendered by a small **safe** markdown
+renderer (headings, tables, lists, inline code) that HTML-escapes everything, so
+project text can never break the page or inject script, and the page still makes
+no network requests. `/studio-status` now opens with what the app is and points
+to the dashboard for the full architecture and plan.
+
+New behavioural test for the organised sections and the renderer's escaping
+(97 → 98). All gates green; version 3.6.0 → 3.7.0.
+
 ## 3.6.0 — 2026-07-19
 
 Phase 2 of the staged programme: the **automatic model+effort router** and

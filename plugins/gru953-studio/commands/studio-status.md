@@ -17,7 +17,8 @@ technical jargon.
    Tier, which only `OBJECTIVE.md` records — the Tier's own log entry can
    scroll out of SESSION-LOG.md's tail on an older project, so it must not
    be the only source read for this).
-3. Reply with a short, friendly report covering exactly four things:
+3. Open with one plain line on **what the app is** (the concept, from
+   `OBJECTIVE.md`), then cover exactly four things:
    - **Done** — what is finished, described as things the app can now do.
    - **In progress** — what is being worked on right now, if anything.
    - **Next** — the very next step, worked out from the Status column (the
@@ -26,6 +27,8 @@ technical jargon.
    - **Blockers** — anything waiting on the user (a question, a sign-in),
      or "nothing is blocked" if all is clear.
 4. Also state the project's current Tier (Tiny/Standard/Complex) in one
-   clause.
+   clause, and mention that the full architecture, specifications and build plan
+   are available at a glance via `/studio-dashboard` (which renders them into a
+   single self-contained page).
 5. Keep the whole report under ten short sentences. Explain any unavoidable
    technical term in one brief clause. Do not change any files.

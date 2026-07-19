@@ -1686,3 +1686,32 @@ test('licence-scan.mjs: a Cargo project is detected and scanned (real or honest 
   assert.ok(json.results.some((res) => res.ecosystem === 'rust/cargo'), 'the Cargo ecosystem must appear in the results, checked or not');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-19 command-centre enhancement — the dashboard is the organised
+// command centre: Concept (OBJECTIVE), Architecture & specs (ARCHITECTURE) and
+// the complete Build plan (PLAN), rendered by a small SAFE markdown renderer
+// (everything escaped; a code span or injected tag never emits raw markup).
+// ---------------------------------------------------------------------------
+test('dashboard.mjs: renders Concept, Architecture and Build plan sections, safely', () => {
+  const dir = mkTmp('gru-db-docs-');
+  const dm = path.join(dir, 'Dev-Memory');
+  fs.mkdirSync(dm, { recursive: true });
+  fs.writeFileSync(path.join(dm, 'OBJECTIVE.md'), '# Expense Tracker\nLog expenses. **Tier: Standard.**\n');
+  fs.writeFileSync(path.join(dm, 'ARCHITECTURE.md'), '# Architecture\n\n## Stack\n| Component | Choice |\n| :-- | :-- |\n| Store | local `sqlite` |\n| Evil | <img src=x onerror=alert(1)> |\n');
+  fs.writeFileSync(path.join(dm, 'PLAN.md'), '# Build plan\n\n## Phase 1 — MVP\n- T1: add expense\n');
+  fs.writeFileSync(path.join(dm, 'PROGRESS.md'), '| ID | Task | Status |\n| :-- | :-- | :-- |\n| T1 | add | done |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written');
+  assert.deepEqual(r.json.sections.sort(), ['architecture', 'objective', 'plan']);
+  const html = fs.readFileSync(path.join(dm, 'dashboard.html'), 'utf8');
+  assert.ok(!/https?:\/\//i.test(html), 'still self-contained');
+  assert.ok(/<summary>Concept<\/summary>/.test(html));
+  assert.ok(/<summary>Architecture &amp; specifications<\/summary>/.test(html));
+  assert.ok(/<summary>Build plan<\/summary>/.test(html));
+  assert.ok(/<th>Component<\/th>/.test(html), 'an architecture table should render as a real table');
+  assert.ok(/<code>sqlite<\/code>/.test(html), 'inline code should render');
+  assert.ok(!/<img src=x onerror/.test(html), 'an injected tag in a doc file must be escaped, never emitted raw');
+  assert.ok(/&lt;img src=x onerror/.test(html), 'the escaped form must be present');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

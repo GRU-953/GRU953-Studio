@@ -32,7 +32,9 @@ control states:
 | `scheduled` | set to resume at a recorded time (see below) | no, until its time |
 
 Allowed transitions (each written by `memory-keeper`, with the usual
-secrets-scan, and mirrored to the board):
+secrets-scan, and reflected into the **build plan** `PLAN.md` and the board
+`STATUS-BOARD.md` in the same write — see "The build plan stays the source of
+truth" below):
 
 - `todo`/`doing` → `paused` (**pause**); `paused` → `doing` (**resume**).
 - `doing` → `todo` (**stop** — a clean set-down; nothing is left half-claimed
@@ -47,6 +49,46 @@ The "next task" rule everywhere (dev-memory, memory-keeper) already means "the
 first `todo`/`doing` row whose dependencies are all `done`" — it now also skips
 over `paused`, `skipped` and `scheduled` rows, which are consciously not-active,
 never `blocked`.
+
+## The build plan stays the source of truth — control states reflect into it
+
+A pause, stop, skip or schedule is not a transient board note — it is a real
+change to the plan of work, so it must show up **in the build plan itself**. On
+every control command, `memory-keeper` updates all three in one write, kept
+consistent:
+
+- **`PROGRESS.md`** — the authoritative Status cell (the new state).
+- **`PLAN.md`** — the ordered/phased build plan: the same task's row is marked
+  with its control state (`paused`/`skipped`/`scheduled` + any time), and the
+  plan's next-actionable task and ordering are recomputed so the plan never
+  reads as if a paused/skipped task were still the active one. On Standard/
+  Complex Tier `PLAN.md` is the file; on Tiny Tier the inline task list is
+  updated in place. (A `scheduled` task carries its time; a `skipped` task stays
+  in the plan, clearly set aside, never deleted — the plan is a faithful record,
+  not a rewrite.)
+- **`STATUS-BOARD.md`** — the rendered at-a-glance board (below).
+
+So anyone reading the build plan later — a new session, the user, the dashboard
+— sees the true, current state of every task without having to reconcile a
+separate control log against it. The plan and the board never drift.
+
+## What the command centre surfaces (organised, in one place)
+
+The command centre is more than a task list: it presents the whole shape of the
+software being built, organised, so the plan is always understood in the context
+of what is being built and why. It surfaces, from Dev-Memory:
+
+1. **Concept** — the confirmed brief, Tier and goal (`OBJECTIVE.md`).
+2. **Architecture & specifications** — the chosen stack, components, data flow,
+   interface contracts, decisions and deliberate omissions (`ARCHITECTURE.md`).
+3. **Build plan** — the complete, ordered/phased micro-task plan with each
+   task's state (`PLAN.md`), including MVP-then-phases structure.
+4. **Live task board** — Done / Doing / Paused / Scheduled / Skipped / Blocked /
+   Next up (`STATUS-BOARD.md` / `PROGRESS.md`).
+
+`/studio-status` gives this as a plain-English summary; `/studio-dashboard`
+renders all four together as the self-contained HTML dashboard (below). Both are
+read-only views of the same source of truth.
 
 ## STATUS-BOARD.md — the live board
 
@@ -93,9 +135,12 @@ auto-publishes.
 ## The HTML dashboard
 
 On request (`/studio-dashboard`), run `hooks/dashboard.mjs` to generate a
-**self-contained** `Dev-Memory/dashboard.html` from `PROGRESS.md` (and
-`STATUS-BOARD.md`): every task grouped by status, a summary count bar, the
-board, and colour-coded rows. The generator guarantees the two hard rules — all
+**self-contained** `Dev-Memory/dashboard.html` — the organised command centre:
+the **Concept** (`OBJECTIVE.md`), **Architecture & specifications**
+(`ARCHITECTURE.md`) and the complete **Build plan** (`PLAN.md`, phases and all)
+rendered as readable sections, followed by the live task board from
+`PROGRESS.md`/`STATUS-BOARD.md` — every task grouped by status, a summary count
+bar, and colour-coded rows. The generator guarantees the two hard rules — all
 CSS inline with **no external network calls, fonts or scripts**, and every cell
 HTML-escaped so task text can never break the page — and the core table works
 with no JavaScript at all. It is a read-only view of the same source of truth

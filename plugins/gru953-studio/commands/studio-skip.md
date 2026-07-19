@@ -12,7 +12,9 @@ skill. Speak plain, simple UK English.
    current active task. If skipping it would strand another task that depends on
    it, say so plainly and ask the user to confirm before proceeding.
 3. Via `memory-keeper`, set that task's Status to `skipped` (recorded, never
-   deleted — it resurfaces later), pick the next eligible task (first
+   deleted — it resurfaces later), mark it skipped in the build plan
+   (`Dev-Memory/PLAN.md`, or the inline list on Tiny Tier) so the plan shows it
+   set aside rather than active, pick the next eligible task (first
    `todo`/`doing` with all dependencies `done`, never a `blocked`/`paused`/
    `scheduled` one), refresh `Dev-Memory/STATUS-BOARD.md`, and append a one-line
    note to `SESSION-LOG.md`.
