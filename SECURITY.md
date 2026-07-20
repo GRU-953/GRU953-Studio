@@ -603,7 +603,14 @@ existing gate — each is additive.
   user`) stays allowed. **Residual, not closed:** a visibility value living only
   inside an `--input` file, and a raw `curl` to `api.github.com`, are not parsed —
   the same "this hook does not read referenced files or run arbitrary commands"
-  boundary as the command-substitution cases above.
+  boundary as the command-substitution cases above. More broadly, `gh api`
+  go-public detection matches GitHub's documented repo-creation endpoints
+  (`/user/repos`, `orgs/<org>/repos`, `repos/<owner>/<tmpl>/generate`) and the
+  `-f`/`-F`/`--field` private/visibility fields; like the shell-obfuscation matcher,
+  it is a best-effort **bar-raiser against realistic accidents, not an exhaustive
+  guarantee** against a novel or future `gh api` visibility mechanism. This is a
+  backstop only — the studio's own publish flow never reaches for `gh api`; it uses
+  `gh repo create --private` and `gh repo edit`, both fully covered.
 - **ReDoS removed from the core matcher.** The git-push regex used two
   fully-overlapping alternatives that backtracked exponentially on a long,
   flag-heavy, non-push `git` command (measured ~22 s at 28 flags) — and it runs on

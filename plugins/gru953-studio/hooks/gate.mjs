@@ -135,8 +135,14 @@ function isGoPublicCommand(rawC) {
   // reaches here; this makes a visibility-to-public write require the separate
   // GO-PUBLIC-APPROVED token, not merely the private-publish one.
   const isGhApi = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c);
-  const apiExplicitPublic = /visibility['"]?[ \t=:]+['"]?(public|internal)/i.test(c) || /private['"]?[ \t=:]+['"]?(false|0|no)\b/i.test(c);
-  const apiExplicitPrivate = /private['"]?[ \t=:]+['"]?(true|1|yes)\b/i.test(c) || /visibility['"]?[ \t=:]+['"]?private/i.test(c);
+  // 2026-07-21 Round 4 fix: only honour a private/visibility signal when it is an
+  // actual gh api FIELD flag (`-f private=true`, `-fprivate=true`,
+  // `--field visibility=private`), NOT an incidental substring inside some other
+  // field's VALUE (e.g. `-f description="toggle private=true"`), which previously
+  // over-matched and let a public repo-create ride the private-publish token.
+  const FIELD = `(?:-[fF]|--field|--raw-field)[ \\t]*['"]?`;
+  const apiExplicitPublic = new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?(public|internal)`, 'i').test(c) || new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(false|0|no)\\b`, 'i').test(c);
+  const apiExplicitPrivate = new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(true|1|yes)\\b`, 'i').test(c) || new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?private`, 'i').test(c);
   // 2026-07-21 Round 2 fix: GitHub's REST default for repo creation is
   // `private:false` = PUBLIC, so a `gh api` write to a repo-creation endpoint
   // (/user/repos or orgs/<org>/repos) with visibility OMITTED still makes a public

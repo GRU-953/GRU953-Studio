@@ -338,7 +338,14 @@ function main() {
   const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
   const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
   const hasSwift = has('Package.swift') || has('Package.resolved');
-  const hasDotnet = fs.readdirSync(root).some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
+  // 2026-07-21 Round 4 fix: guard this readdirSync — it was the only manifest probe
+  // not going through the safe has() helper, so a nonexistent or file-as-root path
+  // threw ENOENT/ENOTDIR out of main(), printing a raw stack trace and NO JSON
+  // (breaking this file's own "always emit a JSON result" contract). Fails to an
+  // empty list, matching every other probe's graceful behaviour.
+  let rootEntries = [];
+  try { rootEntries = fs.readdirSync(root); } catch { rootEntries = []; }
+  const hasDotnet = rootEntries.some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
   const hasGo = has('go.mod');
 
   const results = [];

@@ -2709,3 +2709,29 @@ test('quality-gate.mjs: a required dimension with a plain non-pass status (todo)
   assert.ok(r.json.problems.some((p) => /is not a pass/i.test(p)), 'a non-pass required dimension must be reported');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// --- Round 4 (2026-07-21): 2 findings, both fixed ---------------------------
+
+test('gate.mjs: an incidental "private=..." inside an unrelated field VALUE does not downgrade a public repo-create (2026-07-21 Round 4 fix)', () => {
+  const dir = mkTmp('gru-gate-fakepriv-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f description="toggle private=true to hide"', dir).decision, 'deny', 'a fake private= buried in a description value must not suppress the go-public gate');
+  // a REAL private field still rides the ordinary private-publish token
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'allow', 'an explicitly-private repo create is a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a nonexistent or file-as-root path emits JSON, never a raw crash (2026-07-21 Round 4 fix)', () => {
+  const missing = path.join(os.tmpdir(), 'gru-no-such-dir-' + process.pid + '-xyz');
+  const r1 = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), missing], { encoding: 'utf8' });
+  assert.doesNotThrow(() => JSON.parse(r1.stdout), `a nonexistent root must still emit parseable JSON, got stderr: ${r1.stderr}`);
+  assert.ok(!/ENOENT|scandir/.test(r1.stderr), 'must not crash with a raw scandir error');
+  const f = mkTmp('gru-lic-fileroot-');
+  const fp = path.join(f, 'afile.txt');
+  fs.writeFileSync(fp, 'x');
+  const r2 = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), fp], { encoding: 'utf8' });
+  assert.doesNotThrow(() => JSON.parse(r2.stdout), `a file-as-root must still emit parseable JSON, got stderr: ${r2.stderr}`);
+  assert.ok(!/ENOTDIR|scandir/.test(r2.stderr), 'must not crash with a raw scandir error on a file path');
+  fs.rmSync(f, { recursive: true, force: true });
+});
