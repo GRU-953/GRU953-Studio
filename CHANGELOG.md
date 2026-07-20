@@ -1,5 +1,52 @@
 # Changelog
 
+## 4.2.0 — 2026-07-21
+
+A **documentation and packaging release**. The whole GitHub repository was
+rebuilt to be clearer, more consistent, and easier for non-technical people to
+use — front to back. There are **no changes to how the tool behaves**: the roster
+stays at 38 agents / 32 skills, and no agent, skill, hook or safety gate was
+altered.
+
+**The wiki is now the main guide.** A new, plain-English
+[GitHub Wiki](https://github.com/GRU-953/GRU953-Studio/wiki) is the primary
+handbook — installing on every platform, connecting Ollama, connecting Gemini,
+the full team of specialists, all the skills, features, sample use cases,
+troubleshooting, an FAQ, and a sponsorship page. Each page was independently
+checked for accuracy and plain-English clarity.
+
+**The website is now a focused landing page.** The
+[website](https://gru-953.github.io/GRU953-Studio/) keeps its polished landing
+page and points to the wiki for depth; the old deep pages now redirect there, so
+no existing links break. Two brand-compliance fixes: the brand fonts are now
+**self-hosted** (previously loaded from a third-party font service, which the
+brand guidelines don't allow, and which also sent visitors' details to that
+service), and the colours were aligned to the official GRU953 "Open Spectrum"
+palette in both light and dark themes.
+
+**The licence file is now the exact, official text.** `LICENSE` now contains the
+verbatim, canonical PolyForm Noncommercial 1.0.0 text. The commercial-licensing
+terms moved to a dedicated, friendly [COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md),
+and [NOTICE](NOTICE) now explains honestly that GitHub may still label the licence
+"Other" — because PolyForm isn't in GitHub's built-in licence catalogue, a display
+limit on GitHub's side, not a fault in the file.
+
+**Sponsorship and support.** A new "Sponsor" button (`.github/FUNDING.yml`) links
+to a plain-English [Sponsorship](https://github.com/GRU-953/GRU953-Studio/wiki/Sponsorship)
+page covering how to support the project or arrange a commercial licence. A new
+[SUPPORT.md](SUPPORT.md) points people to the right place for help.
+
+**Community files, tidied for newcomers.** The README was rebuilt as a clear
+front page. `SECURITY.md` gained a stronger plain-English opening (with a clear
+"non-technical users need only the first part" signpost) and a currency note
+bringing it up to date — with none of its honest technical detail removed. The
+bug-report and feature-request forms are now guided, labelled forms that are
+easier to fill in, with a helpful chooser linking to Discussions, the guide and
+the security policy.
+
+**Repository housekeeping.** A stale, already-merged working branch was removed,
+and the repository's "About" details, topics and description were reviewed.
+
 ## 4.1.1 — 2026-07-19
 
 A hardening, documentation and website pass over 4.1.0 — no new agents or
