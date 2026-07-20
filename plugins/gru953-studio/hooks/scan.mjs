@@ -201,20 +201,30 @@ function main() {
     const r = git(['log', '-p', '-U0', '--no-color', '--no-textconv', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     let file = '(unpushed history)';
+    // 2026-07-21 Round 8 fix: parse the unified diff with minimal state instead of
+    // by bare prefix. A `+++ ` line is a real FILE HEADER only when it immediately
+    // follows a `--- a/`|`/dev/null` header; otherwise an ordinary added line whose
+    // own content starts with '+' (diff line '++…'/'+++…') was wrongly swallowed as
+    // a header or excluded — silently skipping its secret scan (a false-negative
+    // that also broke the working-tree/history parity this scanner documents).
+    // Content lines strip exactly ONE leading '+', so content beginning with '+' is
+    // still scanned.
+    let afterMinusHeader = false;
     for (const raw of r.stdout.toString('utf8').split('\n')) {
-      if (raw.startsWith('+++ ')) {
+      if (raw.startsWith('--- a/') || raw.startsWith('--- /dev/null')) { afterMinusHeader = true; continue; }
+      const isFileHeader = afterMinusHeader && raw.startsWith('+++ ');
+      afterMinusHeader = false;
+      if (isFileHeader) {
         file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, '');
-        // 2026-07-21 Round 2 fix: apply the same FILENAME-based blocks the
-        // working-tree scan uses, so a key file or Dev-Memory path committed then
-        // removed is still caught in unpushed history (content-only scanning
-        // missed key/credential files whose bytes match no secret pattern).
+        // Apply the same FILENAME-based blocks the working-tree scan uses, so a key
+        // file or Dev-Memory path committed then removed is still caught in history.
         if (file !== '/dev/null') {
           if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
           if (DEVMEMORY_RE.test(file) && !allowDevMemory) addFinding('dev-memory-history', file, '0');
         }
         continue;
       }
-      if (raw.startsWith('+') && !raw.startsWith('+++')) {
+      if (raw.startsWith('+')) {
         const ln = raw.slice(1);
         if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
         if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');

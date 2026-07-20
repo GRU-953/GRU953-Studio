@@ -2808,6 +2808,39 @@ test('lib.mjs isPushCapable: ${VAR:+alt} and ${VAR:?msg} parameter expansions ar
   assert.equal(isPushCapable('x=set; git ${x:+status} origin main'), false, 'a non-push alternative value must stay clear');
 });
 
+// --- Round 8 (2026-07-21 comprehensive): 2 findings, both fixed --------------
+
+test('gate.mjs: gh api attached-equals field forms (--field=visibility=public) still need the go-public token (2026-07-21 Round 8 fix)', () => {
+  const dir = mkTmp('gru-gate-fieldeq-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  for (const cmd of [
+    'gh api -X PATCH repos/me/app --field=visibility=public',
+    'gh api -X PATCH repos/me/app --raw-field=visibility=public',
+    'gh api -X PATCH repos/me/app -f=visibility=public',
+    'gh api -X PATCH repos/me/app --field=private=false',
+  ]) {
+    assert.equal(runHook('gate.mjs', cmd, dir).decision, 'deny', `attached-equals go-public must be gated: "${cmd}"`);
+  }
+  // a non-visibility private edit is an ordinary private push (allowed on the publish token)
+  assert.equal(runHook('gate.mjs', 'gh api -X PATCH repos/me/app --field=description=hi', dir).decision, 'allow', 'a non-visibility edit rides the publish token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret on a "++"-prefixed content line is caught in unpushed history (2026-07-21 Round 8 fix)', () => {
+  const dir = mkTmp('gru-scan-plusplus-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const secret = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'notes.txt'), '++ key = "' + secret + '"\n'); // content begins with ++
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'notes.txt'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'remove'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a secret on a "++"-prefixed content line in unpushed history must still be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('gate.mjs + scan.mjs: a pattern-substitution-obfuscated push/go-public is gated end-to-end (2026-07-21 Round 7 CRITICAL fix)', () => {
   const d1 = mkTmp('gru-r7-push-'); fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true }); initRepo(d1);
   fs.writeFileSync(path.join(d1, 'config.txt'), 'k = "' + 'AKIA' + 'IOSFODNN7EXAMPLE"\n');

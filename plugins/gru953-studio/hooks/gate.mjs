@@ -140,7 +140,11 @@ function isGoPublicCommand(rawC) {
   // `--field visibility=private`), NOT an incidental substring inside some other
   // field's VALUE (e.g. `-f description="toggle private=true"`), which previously
   // over-matched and let a public repo-create ride the private-publish token.
-  const FIELD = `(?:-[fF]|--field|--raw-field)[ \\t]*['"]?`;
+  // 2026-07-21 Round 8 fix: `[ \t=]*` (was `[ \t]*`) so the attached-equals long
+  // form `--field=visibility=public` / `-f=...` is consumed too — pflag accepts it,
+  // and it previously slipped past the go-public gate (a public change authorised on
+  // the private-publish token). Mirrors isPushCapable's `[ \t=]` field-flag tolerance.
+  const FIELD = `(?:-[fF]|--field|--raw-field)[ \\t=]*['"]?`;
   const apiExplicitPublic = new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?(public|internal)`, 'i').test(c) || new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(false|0|no)\\b`, 'i').test(c);
   const apiExplicitPrivate = new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(true|1|yes)\\b`, 'i').test(c) || new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?private`, 'i').test(c);
   // 2026-07-21 Round 2 fix: GitHub's REST default for repo creation is
