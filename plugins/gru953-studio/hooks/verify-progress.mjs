@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 function main() {
   const root = process.argv[2] || process.cwd();
@@ -87,7 +88,7 @@ function main() {
       statusColumnIndex = null;
       continue;
     }
-    const cells = line.split('|').map((c) => c.trim());
+    const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       // this is a new table's header row
       inTable = true;

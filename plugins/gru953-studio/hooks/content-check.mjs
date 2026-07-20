@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
@@ -40,7 +41,7 @@ const TEXT_ONLY_RE = /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[
 
 function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } }
 function cells(line) {
-  const c = line.split('|');
+  const c = splitPipeCells(line);
   if (c.length && c[0].trim() === '') c.shift();
   if (c.length && c[c.length - 1].trim() === '') c.pop();
   return c.map((x) => x.trim());
@@ -91,7 +92,11 @@ function main() {
         source: find(/^(source|provenance|model|origin|by)$/i),
         approved: find(/^(approved|approval|status|sign[- ]?off)$/i),
         rights: find(/^(rights|licen[cs]e|usage)$/i),
-        alt: find(/^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)$/i),
+        // 2026-07-21 Round 6 fix: also accept the documented template header
+        // "Alt/Caption" (and other slash/space-joined synonyms) — the anchored
+        // single-word regex rejected it, so content-check blocked every media
+        // asset that DID carry a caption. See content-creation/SKILL.md's template.
+        alt: find(/^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i),
       };
       if (found.asset !== -1 || found.medium !== -1) { idx = found; contentTableCaptured = true; } // the content table's columns
       continue;

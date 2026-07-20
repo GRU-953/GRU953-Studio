@@ -28,6 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
@@ -73,7 +74,7 @@ function inlineMd(s) {
   }).join('');
 }
 function tableCells(row) {
-  const cells = row.split('|');
+  const cells = splitPipeCells(row);
   if (cells.length && cells[0].trim() === '') cells.shift();
   if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
   return cells.map((c) => c.trim());

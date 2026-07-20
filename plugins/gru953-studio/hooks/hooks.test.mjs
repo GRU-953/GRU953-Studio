@@ -2735,3 +2735,43 @@ test('licence-scan.mjs: a nonexistent or file-as-root path emits JSON, never a r
   assert.ok(!/ENOTDIR|scandir/.test(r2.stderr), 'must not crash with a raw scandir error on a file path');
   fs.rmSync(f, { recursive: true, force: true });
 });
+
+// --- Round 6 (2026-07-21 adversarial red-team): 4 findings, all fixed --------
+
+test('verify-progress.mjs: an escaped pipe in a cell left of Status does not hide an unverified done row (2026-07-21 Round 6 false-clean fix)', () => {
+  const dir = mkTmp('gru-vp-pipe-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | add stdin \\| stdout piping | done | no evidence recorded |\n'
+  );
+  const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, 'a done row with a \\| in the Task cell and no verified evidence must still be caught');
+  assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: an escaped pipe in a cell left of Where does not hide a stale INDEX path (2026-07-21 Round 6 false-clean fix)', () => {
+  const dir = mkTmp('gru-mi-pipe-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Pause \\| resume | Dev-Memory/NONEXISTENT.md | task | tag |\n'
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a stale INDEX path must be caught even with an escaped pipe in an earlier cell: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => /NONEXISTENT/.test(p)), 'the stale path must be reported');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: the documented "Alt/Caption" header is recognised, not treated as missing alt-text (2026-07-21 Round 6 false-block fix)', () => {
+  const dir = mkTmp('gru-cc-altcap-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'CONTENT.md'),
+    '| Asset | Medium | Source | Approved | Rights | Alt/Caption |\n| :-- | :-- | :-- | :-- | :-- | :-- |\n| welcome_hero.png | image | Gemini, prompt #4 | approved | AI-generated, user owns | Family using the app |\n'
+  );
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a media asset with a caption under the documented Alt/Caption header must pass: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

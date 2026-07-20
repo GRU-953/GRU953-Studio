@@ -37,6 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
@@ -75,7 +76,7 @@ function parseTable(text, wantHeaderRe) {
       inTable = false;
       continue;
     }
-    const cells = line.split('|').map((c) => c.trim());
+    const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
       if (cells.some((c) => wantHeaderRe.test(c))) headers = cells;

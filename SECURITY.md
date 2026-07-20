@@ -545,14 +545,22 @@ attempts to diagnose and modify code on its own, before the Project
 Lead's Stuck Protocol tells the user anything — a genuine, disclosable
 increase in autonomy compared to every other code change in this
 product, which is always shown to a human before or as it happens. The
-bound is real and enforced by a dedicated hook
-(`hooks/self-heal-nudge.mjs`, wired on the `PostToolUseFailure` event
-with the same `Bash|PowerShell|Monitor` matcher as the publish-safety
-hooks): each attempt is logged to `Dev-Memory/SESSION-LOG.md` as it
-happens, and the third failure of the same problem always escalates to
-the full, user-visible Stuck Protocol. This mechanism never touches
-Publish or any push-capable action — confirmed directly with the user
-before it was built, and unchanged by anything in this document above.
+bound is enforced by instruction-following, not by the hook itself. The hook
+(`hooks/self-heal-nudge.mjs`, wired on the `PostToolUseFailure` event with the
+same `Bash|PowerShell|Monitor` matcher as the publish-safety hooks) reliably
+FIRES on every Build/Test shell failure inside a studio project and injects one
+fixed reminder — making the hand-off to `fixer` structural rather than dependent
+on the agent remembering. It is stateless: it does NOT itself count attempts,
+write to `Dev-Memory/SESSION-LOG.md`, or escalate (2026-07-21 Round 6 accuracy
+fix — this paragraph previously over-claimed those as hook-enforced). The
+2-attempt ceiling, the per-attempt logging to `SESSION-LOG.md`, and the
+third-failure escalation to the full, user-visible Stuck Protocol are specified
+in the `self-healing` skill (`skills/self-healing/SKILL.md`) and carried out by
+the `fixer`/`builder`/`tester`/`project-lead` roles — soft, instruction-level
+enforcement, the same honest hook-vs-instruction distinction this document draws
+for the memory-write secrets-scan gap above. This mechanism never touches
+Publish or any push-capable action — confirmed directly with the user before it
+was built, and unchanged by anything in this document above.
 
 ## Currency update (2026-07-21, through v4.2.0)
 

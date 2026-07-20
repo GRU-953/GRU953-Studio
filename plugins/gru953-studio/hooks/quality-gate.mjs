@@ -35,6 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 // The required Definition-of-Done dimensions. Each must appear as at least one
 // row in QUALITY-GATE.md whose Item cell contains the keyword, marked pass (with
@@ -116,7 +117,7 @@ function parseRows(text) {
       idx = { item: -1, status: -1, evidence: -1 };
       continue;
     }
-    const cells = line.split('|').map((c) => c.trim());
+    const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
       const find = (re) => cells.findIndex((c) => re.test(c));

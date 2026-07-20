@@ -204,6 +204,17 @@ export function findStudioRoot(start) {
 // negative lookahead for an identifier character treats any of ';|&)<>`\n'
 // or end-of-string as a valid boundary, while still rejecting a keyword
 // that's actually part of a longer word (`pushx`, `--publicity`).
+// 2026-07-21 Round 6 (red-team) fix: split a markdown table ROW into cells on
+// UNESCAPED pipes only, then unescape any GFM `\|` to a literal pipe. Naive
+// `line.split('|')` mis-columns any cell containing a pipe (raw, or the
+// GFM-correct `\|`), which in the index-based table parsers silently shifted the
+// Status/Where column and skipped the row entirely — a false-clean in
+// verify-progress and memory-integrity. Shared so every table-parsing hook splits
+// identically. Leading/trailing empty cells are preserved, exactly like split('|').
+export function splitPipeCells(line) {
+  return line.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|'));
+}
+
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
 export function normalizeForPushCheck(c) {
   let n = c;

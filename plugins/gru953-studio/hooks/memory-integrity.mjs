@@ -28,6 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
@@ -57,7 +58,7 @@ function checkIndex(root, devMemory, problems) {
   let whereCol = -1;
   for (const line of lines) {
     if (!/^\s*\|/.test(line)) { inTable = false; whereCol = -1; continue; }
-    const cells = line.split('|').map((c) => c.trim());
+    const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
       whereCol = cells.findIndex((c) => /^(file|path|where|location)$/i.test(c));
