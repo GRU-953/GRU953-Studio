@@ -134,8 +134,16 @@ function isGoPublicCommand(rawC) {
   // isPushCapable() now treats a `gh api` write as push-capable, so such a command
   // reaches here; this makes a visibility-to-public write require the separate
   // GO-PUBLIC-APPROVED token, not merely the private-publish one.
-  const apiVisibility = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c) &&
-    (/visibility['"]?[ \t=:]+['"]?(public|internal)/i.test(c) || /private['"]?[ \t=:]+['"]?(false|0|no)\b/i.test(c));
+  const isGhApi = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c);
+  const apiExplicitPublic = /visibility['"]?[ \t=:]+['"]?(public|internal)/i.test(c) || /private['"]?[ \t=:]+['"]?(false|0|no)\b/i.test(c);
+  const apiExplicitPrivate = /private['"]?[ \t=:]+['"]?(true|1|yes)\b/i.test(c) || /visibility['"]?[ \t=:]+['"]?private/i.test(c);
+  // 2026-07-21 Round 2 fix: GitHub's REST default for repo creation is
+  // `private:false` = PUBLIC, so a `gh api` write to a repo-creation endpoint
+  // (/user/repos or orgs/<org>/repos) with visibility OMITTED still makes a public
+  // repo — it must need the go-public token unless it explicitly asks for private.
+  // (isPushCapable has already established this is a gh api WRITE before we get here.)
+  const apiRepoCreate = /\/?(user\/repos|orgs\/[^ \t/'"]+\/repos)\b/i.test(c);
+  const apiVisibility = isGhApi && (apiExplicitPublic || (apiRepoCreate && !apiExplicitPrivate));
   return repoVisibility || apiVisibility;
 }
 function goPublicToken(studioRoot) {

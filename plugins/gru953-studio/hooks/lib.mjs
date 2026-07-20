@@ -1086,7 +1086,14 @@ export function isPushCapable(rawC) {
   // execute or read referenced files" boundary as elsewhere.)
   if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c) &&
       (/[ \t]['"]?(-X|--method)['"]?[ \t=]+['"]?(POST|PATCH|PUT|DELETE)['"]?/i.test(c) ||
-       /[ \t](-f|-F|--field|--raw-field|--input)[ \t=]/i.test(c))) return true;
+       /[ \t](--field|--raw-field|--input)[ \t=]/i.test(c) ||
+       // 2026-07-21 Round 2 fix: the earlier body-flag test required a separator
+       // right after -f/-F, so it missed pflag's standard ATTACHED-shorthand form
+       // `-fname=x` / `-Fname=x` (value glued to the flag) — a normal, documented
+       // gh api form, not obfuscation, that carries a POST body and so bypassed
+       // both gates. Match -f/-F followed by a separator OR immediately by a
+       // non-dash value character. Over-detection fails closed, so it is safe.
+       /[ \t]-[fF]([ \t=]|[^ \t-])/i.test(c))) return true;
   // git aliases that resolve to push (e.g. `git -c alias.p=push p`, or
   // `git config alias.foo push` followed later by `git foo`).
   if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/i.test(c)) return true;

@@ -1,5 +1,5 @@
 ---
-description: Publish the current GRU953-Studio project privately to the user's GitHub, after one confirmation and its blocking pre-flight checks (four security checks plus a roster check).
+description: Publish the current GRU953-Studio project privately to the user's GitHub, after one confirmation and its blocking pre-flight checks (seven blocking checks plus a roster check).
 argument-hint: (no arguments needed)
 ---
 

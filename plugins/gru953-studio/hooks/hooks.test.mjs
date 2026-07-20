@@ -2517,3 +2517,149 @@ test('repo-integrity.mjs INV12: the publish protocol must enumerate all seven pr
   assert.ok(r.json.problems.some((p) => p.includes('content-check.mjs')), `expected a problem naming the dropped check, got: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 2 — re-verify Round 1 fixes found some
+// incomplete (gh api shorthand, publish-count in maintenance-agent) and surfaced
+// new issues (licence-scan .bin false-block, roster-check first-match, etc.).
+// ---------------------------------------------------------------------------
+
+test('lib.mjs isPushCapable: gh api attached-shorthand body flags (-fname=x / -Fname=x) are caught (2026-07-21 Round 2 fix)', () => {
+  for (const c of [
+    'gh api /user/repos -fname=app',
+    'gh api /user/repos -Fname=app',
+    'gh api -Fprivate=false repos/o/r',
+    'gh api repos/o/r -fvisibility=public',
+  ]) {
+    assert.equal(isPushCapable(c), true, `gh api attached-shorthand write must be caught: "${c}"`);
+  }
+  // reads with no body flag stay allowed
+  assert.equal(isPushCapable('gh api user'), false);
+  assert.equal(isPushCapable('gh api repos/o/r'), false);
+});
+
+test('gate.mjs: gh api default-visibility repo creation needs the go-public token (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-gate-apicreate-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  // POST /user/repos with visibility omitted -> PUBLIC by GitHub default -> must need go-public.
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app', dir).decision, 'deny', 'default-visibility repo creation defaults to public and must need the go-public token');
+  assert.equal(runHook('gate.mjs', 'gh api /user/repos -fname=app', dir).decision, 'deny', 'attached-shorthand repo creation must also need go-public');
+  // explicitly private repo creation rides the ordinary private-publish token.
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'allow', 'an explicitly-private repo creation is a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a key-file committed then removed is still caught in unpushed history (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-scan-histkey-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // A deploy key whose *content* is innocuous base64 (matches no secret pattern),
+  // caught only by the key-file NAME rule — which the history scan must now apply.
+  fs.writeFileSync(path.join(dir, 'deploy.pem'), 'bm90LWEtcmVhbC1zZWNyZXQtanVzdC1iYXNlNjQ=\n');
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add key'], dir);
+  fs.rmSync(path.join(dir, 'deploy.pem'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'remove key'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a key file in unpushed history must block the push even when the working tree is clean');
+  assert.ok(/key-file-history/.test(r.stdout), 'the finding should be a key-file-history hit');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: each secret format and key-file name is caught (2026-07-21 coverage of the core scanner)', () => {
+  const mk = () => { const d = mkTmp('gru-scan-fmt-'); fs.mkdirSync(path.join(d, 'Dev-Memory'), { recursive: true }); initRepo(d); return d; };
+  const denies = (file, content) => {
+    const d = mk();
+    fs.writeFileSync(path.join(d, file), content);
+    const r = runHook('scan.mjs', 'git push origin main', d);
+    fs.rmSync(d, { recursive: true, force: true });
+    return r.decision === 'deny';
+  };
+  // secret CONTENT formats (built in parts so this test file isn't self-flagged)
+  assert.ok(denies('a.txt', 'key = "' + 'AIza' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"'), 'Google AIza key');
+  assert.ok(denies('b.txt', 'tok = "' + 'ghp_' + 'abcdef0123456789ABCDEF0123456789abcd"'), 'GitHub token');
+  assert.ok(denies('c.txt', 'k = "' + 'sk_live_' + '0123456789abcdefABCDEF"'), 'Stripe live key');
+  assert.ok(denies('d.txt', '-----BEGIN' + ' RSA PRIVATE KEY-----'), 'PEM private key header');
+  // key-file NAMES (content innocuous)
+  assert.ok(denies('.env', 'X=1\n'), '.env file');
+  assert.ok(denies('id_rsa', 'x\n'), 'id_rsa file');
+  assert.ok(denies('app.key', 'x\n'), '*.key file');
+  // a short AIza-like string is NOT a match (length bound holds)
+  const d = mk(); fs.writeFileSync(path.join(d, 'ok.txt'), 'note = "' + 'AIza' + 'short"');
+  assert.equal(runHook('scan.mjs', 'git push origin main', d).decision, 'allow', 'a too-short AIza string must not be flagged');
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: npm .bin/.cache tooling dirs are not treated as packages (2026-07-21 false-block fix)', () => {
+  const dir = mkTmp('gru-lic-bin-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"app","version":"1.0.0"}');
+  const nm = path.join(dir, 'node_modules');
+  fs.mkdirSync(path.join(nm, 'goodpkg'), { recursive: true });
+  fs.writeFileSync(path.join(nm, 'goodpkg', 'package.json'), '{"name":"goodpkg","license":"MIT"}');
+  fs.mkdirSync(path.join(nm, '.bin'), { recursive: true });
+  fs.writeFileSync(path.join(nm, '.bin', 'tsc'), '#!/bin/sh\n');
+  fs.mkdirSync(path.join(nm, '.cache', 'x'), { recursive: true });
+  const r = runScript('licence-scan.mjs', dir);
+  assert.equal(r.json.status, 'clean', `.bin/.cache must not be scanned as packages: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a copyleft npm dependency is BLOCKED; an all-permissive tree is clean (2026-07-21 coverage)', () => {
+  // blocked path
+  const b = mkTmp('gru-lic-gpl-');
+  fs.writeFileSync(path.join(b, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(b, 'node_modules', 'copyleft-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(b, 'node_modules', 'copyleft-pkg', 'package.json'), '{"name":"copyleft-pkg","license":"GPL-3.0-only"}');
+  const rb = runScript('licence-scan.mjs', b);
+  assert.equal(rb.json.status, 'BLOCKED', `a GPL dependency must block: ${rb.stdout}`);
+  assert.equal(rb.code, 1);
+  fs.rmSync(b, { recursive: true, force: true });
+  // clean path incl. object-form licence and a scoped package
+  const c = mkTmp('gru-lic-clean-');
+  fs.writeFileSync(path.join(c, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(c, 'node_modules', 'mit-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(c, 'node_modules', 'mit-pkg', 'package.json'), '{"name":"mit-pkg","license":"MIT"}');
+  fs.mkdirSync(path.join(c, 'node_modules', 'obj-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(c, 'node_modules', 'obj-pkg', 'package.json'), '{"name":"obj-pkg","license":{"type":"Apache-2.0"}}');
+  fs.mkdirSync(path.join(c, 'node_modules', '@scope', 'scoped-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(c, 'node_modules', '@scope', 'scoped-pkg', 'package.json'), '{"name":"@scope/scoped-pkg","license":"ISC"}');
+  const rc = runScript('licence-scan.mjs', c);
+  assert.equal(rc.json.status, 'clean', `an all-permissive tree must be clean: ${rc.stdout}`);
+  fs.rmSync(c, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: prose under a ## Links heading is not mis-parsed as a link (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-mi-prose-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n- All links use present-tense verbs like implements and blocks.\n'
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a real link + a prose bullet must be clean, not a false BLOCK: ${r.stdout}`);
+  // and a genuinely dangling documented link is still caught
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), '## Nodes\n- [T1] task: a\n\n## Links\n- T1 depends-on R9\n');
+  assert.equal(runScript('memory-integrity.mjs', dir).json.status, 'BLOCKED', 'a dangling documented link must still be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('roster-check.mjs: the LAST role-count in ROSTER.md wins, so a narrated earlier number cannot hide scope creep (2026-07-21 fix)', () => {
+  const plugin = mkTmp('gru-rc-last-'); writeAgents(plugin, 6);
+  // An earlier hypothetical number precedes the authoritative one.
+  fs.writeFileSync(path.join(plugin, 'ROSTER.md'), 'We considered 50 roles (role count: 50) but settled on\n**role count: 5**\n');
+  const noDm = mkTmp('gru-rc-last-dm-');
+  const r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), plugin, noDm], { encoding: 'utf8' });
+  assert.equal(JSON.parse(r.stdout).status, 'BLOCKED', '6 agents vs the authoritative baseline of 5 must BLOCK, not read the earlier 50');
+  fs.rmSync(plugin, { recursive: true, force: true }); fs.rmSync(noDm, { recursive: true, force: true });
+});
+
+test('repo-integrity.mjs INV12: a stale "four ... checks" on the publish path (maintenance-agent) is caught (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-repointeg-four-');
+  copyRepoTo(dir);
+  const p = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'maintenance-agent.md');
+  fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('seven blocking checks', 'four blocking checks'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale "four ... checks" on the publish path must be caught');
+  assert.ok(r.json.problems.some((p2) => /maintenance-agent\.md/.test(p2) && /four/.test(p2)), `expected a problem naming maintenance-agent, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -69,14 +69,18 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 4.2.0
+### Latest version: 4.3.0
 
-Version 4.2.0 is a **documentation and packaging release**: a rebuilt README, a
-new plain-English [wiki guide](https://github.com/GRU-953/GRU953-Studio/wiki) as
-the main handbook, a slimmer landing [website](https://gru-953.github.io/GRU953-Studio/),
-the official PolyForm Noncommercial licence text, self-hosted brand fonts, and
-tidied community files. Nothing about how the tool behaves has changed. See
-[CHANGELOG.md](CHANGELOG.md) for the full plain-English history of every release.
+Version 4.3.0 is a **quality-and-hardening release** from a deep, multi-round
+independent audit. It closes two security-gate gaps (a `gh api` publish-gate
+bypass and a slow-regex flaw), makes the licence check work correctly on real
+npm/TypeScript projects, corrects the AI model chooser's cost ordering, tightens
+several internal checks, and adds dozens of tests — with **no change to how you
+use the tool**. The previous release, 4.2.0, was a documentation and packaging
+update (a rebuilt README, a new
+[wiki guide](https://github.com/GRU-953/GRU953-Studio/wiki), a slimmer
+[website](https://gru-953.github.io/GRU953-Studio/), and the canonical licence
+text). See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
 
 ---
 

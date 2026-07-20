@@ -420,6 +420,18 @@ if (publishSkill === null) {
     }
   }
 }
+// 2026-07-21 Round 2 fix: INV12 above guarded publish-github/SKILL.md only, but
+// the "four vs seven" drift also lived in maintenance-agent.md and the
+// studio-publish command description. Guard every file on the publish path against
+// a stale "four ... checks" count so the reconciliation cannot silently regress.
+for (const rel of ['agents/maintenance-agent.md', 'commands/studio-publish.md', 'agents/publisher.md']) {
+  const t = read(path.join(pluginRoot, rel));
+  if (t === null) {
+    fail(`${rel} is missing or unreadable — cannot verify its publish pre-flight check count`);
+  } else if (/\bfour\b[^.\n]{0,40}(blocking|security|pre-?flight)[^.\n]{0,24}checks/i.test(t)) {
+    fail(`${rel} still describes "four ... checks" on the publish path — the Publish gate now has seven blocking checks (2026-07-21 reconciliation regressed)`);
+  }
+}
 
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {

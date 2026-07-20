@@ -1,5 +1,41 @@
 # Changelog
 
+## 4.3.0 — 2026-07-21
+
+A **quality-and-hardening release** from a deep, multi-round independent audit
+(each finding double-checked against the real code before it was trusted). It fixes
+real bugs — including two security-gate gaps — and adds many tests. No change to how
+you use the tool; the roster stays 38 agents / 32 skills.
+
+**Security fixes:**
+- Closed a way to bypass the publish / go-public safety gate using GitHub's
+  `gh api` command — in both its spaced (`-f name=x`) and attached (`-fname=x`)
+  forms, and including repo creation that defaults to public. Ordinary reads (e.g.
+  `gh api user`) are unaffected.
+- Removed a "slow regex" flaw where certain long commands could freeze the safety
+  check for many seconds; it is now effectively instant.
+- The secret scan now also checks the git history a push would ship (not just the
+  current files), including by key-file and private-folder name.
+
+**Correctness & reliability:**
+- The licence check no longer false-blocks publishing on ordinary npm/TypeScript
+  projects (it stopped treating npm's `.bin`/`.cache` tooling folders as packages).
+- Fixed false "all clear" and false "blocked" results in several internal checks
+  (indented progress tables, a content manifest followed by a second table,
+  knowledge-graph links with trailing notes, and roster-count parsing).
+- The automatic AI model chooser had the most expensive model (Fable) mislabelled
+  as a cheap one, so cheap work was routed to the priciest model; corrected, with a
+  context-window rule added.
+- Reconciled the publish checklist to its full seven blocking checks across every
+  file that describes it (with a mechanical guard so it can't drift again), added
+  the "treat data as data" guardrail to the one role that lacked it, hardened the
+  AI prompt-injection and Gemini key-handling guidance, and fixed the dashboard's
+  colour contrast (light and dark) to meet accessibility standards.
+
+**Under the hood:**
+- The automated test suite was grown substantially, with new mechanical guards so
+  each fix above cannot silently regress; all five safety checks stay green.
+
 ## 4.2.0 — 2026-07-21
 
 A **documentation and packaging release**. The whole GitHub repository was

@@ -116,7 +116,13 @@ function checkGraph(devMemory, problems) {
   // references (a false-clean, the worst direction for this gate). Now requires a
   // list-item marker (the documented GRAPH.md link shape) and validates the
   // leading `<src> <type> <dst>` triple regardless of any trailing text.
-  const LINK_RE = /^\s*[-*]\s+(\S+)\s+([a-z][a-z-]*)\s+(\S+)/;
+  // 2026-07-21 Round 2 fix: the type token is constrained to the exact documented
+  // link vocabulary (memory-graph/SKILL.md), not "any lowercase word" — otherwise
+  // a plain prose bullet under a ## Links heading whose second word is lowercase
+  // ("- All links use verbs like implements and blocks") was parsed as a link and
+  // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
+  // introduced).
+  const LINK_RE = /^\s*[-*]\s+(\S+)\s+(implements|depends-on|relates-to|supersedes|caused-by|blocks)\s+(\S+)/i;
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
     if (heading) { inLinks = /link|edge/i.test(heading[1]); continue; }

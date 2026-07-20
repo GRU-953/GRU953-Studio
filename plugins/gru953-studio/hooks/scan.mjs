@@ -202,7 +202,18 @@ function main() {
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     let file = '(unpushed history)';
     for (const raw of r.stdout.toString('utf8').split('\n')) {
-      if (raw.startsWith('+++ ')) { file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, ''); continue; }
+      if (raw.startsWith('+++ ')) {
+        file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, '');
+        // 2026-07-21 Round 2 fix: apply the same FILENAME-based blocks the
+        // working-tree scan uses, so a key file or Dev-Memory path committed then
+        // removed is still caught in unpushed history (content-only scanning
+        // missed key/credential files whose bytes match no secret pattern).
+        if (file !== '/dev/null') {
+          if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
+          if (DEVMEMORY_RE.test(file) && !allowDevMemory) addFinding('dev-memory-history', file, '0');
+        }
+        continue;
+      }
       if (raw.startsWith('+') && !raw.startsWith('+++')) {
         const ln = raw.slice(1);
         if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');

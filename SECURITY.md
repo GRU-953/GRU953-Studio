@@ -582,9 +582,10 @@ plus a step-by-step guide) when no key or network is available.
 rebuilt README, a new wiki guide, a slimmer landing website, the canonical
 PolyForm Noncommercial licence text, self-hosted brand fonts, and tidied
 community files. It changes **no** security-relevant behaviour, hook, gate, or
-confirmation flow described anywhere above.
+confirmation flow described anywhere above. (The gate changes described below
+shipped separately, in **v4.3.0** — see the next section.)
 
-## 2026-07-21 hardening (gold-standard audit) — new coverage and residuals
+## v4.3.0 hardening (2026-07-21 gold-standard audit) — new coverage and residuals
 
 A multi-lens audit (each finding adversarially verified against the real code)
 closed two previously-undisclosed gate weaknesses; both are now matched and
@@ -613,4 +614,15 @@ existing gate — each is additive.
   secret committed and then removed still shipped via a checkpoint/memory-persist
   branch push. It now also scans content added in unpushed commits (`HEAD --not
   --remotes`) — added coverage only. **Residual:** a value present only in a file
-  referenced by a command (not in committed content) is still not read.
+  referenced by a command (not in committed content) is still not read; and the
+  history scan applies the same content + key-file/Dev-Memory-name checks as the
+  working-tree scan (2026-07-21 Round 2 completion).
+- **Bounded, adversarial-only matcher cost (disclosed, not closed).**
+  `normalizeForPushCheck` (shared by both matchers, run on every command) resolves
+  in-command variable assignments in a way that is superlinear in the *number of
+  assignments in a single command* — negligible for real commands (<30 assignments,
+  sub-millisecond) but reaching a fraction of a second at ~2,000 same-command
+  assignments. Such input is machine-generated/adversarial, inside the
+  determined-adversary threat model this document already disclaims. The Round 1
+  ReDoS fix removed the separate input-*length* blow-up; this residual is the
+  assignment-*count* case, disclosed here rather than closed.

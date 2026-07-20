@@ -59,6 +59,16 @@ function scanNode(root) {
     if (d.name.startsWith('@')) {
       const scoped = fs.readdirSync(path.join(nm, d.name), { withFileTypes: true });
       for (const s of scoped) if (s.isDirectory()) pkgDirs.push(path.join(d.name, s.name));
+    } else if (d.name.startsWith('.') || d.name.startsWith('_')) {
+      // 2026-07-21 audit fix: npm's tooling directories are not packages. `.bin`
+      // (created whenever ANY dependency ships an executable — jest/eslint/tsc/
+      // vite/etc., i.e. almost every real project), plus `.cache`/`.vite`/`.pnpm`,
+      // have no package.json. An npm package name can never begin with '.' or '_',
+      // so these are always tooling artefacts. Previously they were treated as
+      // packages with a missing package.json -> 'needs-review' -> a NEEDS HUMAN
+      // REVIEW result that false-blocked Publish on essentially every real
+      // npm/TypeScript project (and trained users to ignore the licence gate).
+      continue;
     } else {
       pkgDirs.push(d.name);
     }
