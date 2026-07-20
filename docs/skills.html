@@ -3,166 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Skills directory — GRU953-Studio</title>
-<meta name="description" content="The 32 internal playbooks the GRU953-Studio team follows, explained in plain English.">
+<title>The skills directory has moved to the wiki — GRU953-Studio</title>
+<link rel="canonical" href="https://github.com/GRU-953/GRU953-Studio/wiki/Skills-and-Capabilities">
+<meta http-equiv="refresh" content="0; url=https://github.com/GRU-953/GRU953-Studio/wiki/Skills-and-Capabilities">
 <link rel="icon" href="brand/gru953-logo-colour.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&family=Noto+Sans+Bengali:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-
-<header class="site-header">
-  <div class="wrap bar">
-    <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">GRU953-Studio</a>
-    <nav class="site-nav" aria-label="Primary">
-      <a href="guide.html">Guide</a>
-      <a href="use-cases.html">Use cases</a>
-      <a href="agents.html">Agents</a>
-      <a href="skills.html" class="current">Skills</a>
-      <a href="faq.html">FAQ</a>
-      <a href="troubleshooting.html">Help</a>
-      <a href="https://github.com/GRU-953/GRU953-Studio">GitHub</a>
-    </nav>
-  </div>
-</header>
-
-<main>
-  <section class="tight">
-    <div class="doc-wrap">
-      <span class="eyebrow">Under the hood</span>
-      <h1>32 internal playbooks, in plain English</h1>
-      <p class="lede">A "skill" is a step-by-step playbook the team quietly follows — how a
-        mock-up gets approved, how content gets a rights check, how the cheapest AI model gets
-        picked. You never load or run these yourself; they're here purely for anyone curious
-        about how the reliability above is actually achieved.</p>
-    </div>
-  </section>
-
-  <section class="tight">
-    <div class="wrap" style="max-width:900px;">
-
-      <div class="role-group">
-        <h2>The coordinator</h2>
-        <dl class="role-list">
-          <div class="role"><dt>studio</dt><dd>The master playbook — how the Project Lead runs the whole nine-stage journey, assigns your project's size, and brings in specialists.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>Staying on track over a long build</h2>
-        <dl class="role-list">
-          <div class="role"><dt>focus-guard</dt><dd>Keeps a tiny, always-current note of the one active goal, so a long project never quietly drifts off course — even across many separate sessions.</dd></div>
-          <div class="role"><dt>quality-gate</dt><dd>A checklist nothing can skip before a stage is backed up or published — tests, an independent review, security and licence checks, accessibility, and up-to-date docs.</dd></div>
-          <div class="role"><dt>audit-loop</dt><dd>The systematic protocol for any "keep checking until it's clean" request — plans the full coverage upfront rather than adding one check at a time.</dd></div>
-          <div class="role"><dt>yagni-rules</dt><dd>The lean-coding rule the whole team follows: build only what's genuinely needed, nothing "just in case."</dd></div>
-          <div class="role"><dt>cost-guard</dt><dd>The confirmed cheapest-option-first spending default, and the plan for a long build that might span several days.</dd></div>
-          <div class="role"><dt>model-router</dt><dd>Automatically picks the right AI model and effort for each individual step, spending more only where it genuinely matters.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>Remembering everything between sessions</h2>
-        <dl class="role-list">
-          <div class="role"><dt>dev-memory</dt><dd>The plain-text notebook system that makes a project resumable — in the same session, or a brand-new one, days later.</dd></div>
-          <div class="role"><dt>memory-graph</dt><dd>A compact index and a small "map" of how everything connects, so recalling a big project costs far less and finds just what's relevant.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>Planning, mock-ups, and building in stages</h2>
-        <dl class="role-list">
-          <div class="role"><dt>warframe-prototype</dt><dd>The rule that a clickable mock-up must be shown and approved before any real code is written.</dd></div>
-          <div class="role"><dt>phased-roadmap</dt><dd>Turns the approved design into "smallest useful version first, then improvements in order."</dd></div>
-          <div class="role"><dt>micro-task-planning</dt><dd>Breaks the plan into small, independently checkable steps, each with one clear way to prove it's done.</dd></div>
-          <div class="role"><dt>tdd-workflow</dt><dd>On bigger projects, makes sure a test that must fail is written before the matching code exists — proof-first, not proof-after.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>The command centre</h2>
-        <dl class="role-list">
-          <div class="role"><dt>command-centre</dt><dd>Defines pause, resume, stop, skip, and schedule-for-later, plus the one-page dashboard showing your app's concept, design, plan and content.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>Real content, real AI, always with your consent</h2>
-        <dl class="role-list">
-          <div class="role"><dt>content-creation</dt><dd>The whole Content stage: planning your app's real text and media, and the manifest that tracks each asset's approval and rights.</dd></div>
-          <div class="role"><dt>gemini-integration</dt><dd>The opt-in protocol for generating images, audio and video with your own Google account — always a cost estimate and a yes first.</dd></div>
-          <div class="role"><dt>ollama-integration</dt><dd>The protocol for using a free, local AI model instead of the cloud — always your choice, always asking first.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>Shipping safely</h2>
-        <dl class="role-list">
-          <div class="role"><dt>publish-github</dt><dd>How a finished project is published privately to your own GitHub, with a separate, explicit step to make it public.</dd></div>
-          <div class="role"><dt>checkpoint-commit</dt><dd>The private backup taken after each build stage, so nothing is lost even before you're ready to publish.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>Fixing things quietly</h2>
-        <dl class="role-list">
-          <div class="role"><dt>self-healing</dt><dd>Lets the Fixer quietly try a couple of small repairs on its own first, and only interrupt you if that doesn't work.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>Getting started &amp; finding existing tools</h2>
-        <dl class="role-list">
-          <div class="role"><dt>first-run</dt><dd>The one-off "getting to know you" setup that runs before your very first project, never again after.</dd></div>
-          <div class="role"><dt>ecosystem-finder</dt><dd>Suggests an existing Claude Code tool when one already solves a specific need — always asking before installing anything.</dd></div>
-        </dl>
-      </div>
-
-      <div class="role-group">
-        <h2>A toolchain pack for every language</h2>
-        <p style="margin-bottom:14px;">Each pack holds the exact build, test, tidy-up and dependency
-          commands for one ecosystem, so its matching specialist (see the
-          <a href="agents.html">Agents directory</a>) stays focused on the actual work.</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Pack</th><th>Platform / use</th></tr></thead>
-            <tbody>
-              <tr><td>lang-dart</td><td>Dart &amp; Flutter — the cross-platform default</td></tr>
-              <tr><td>lang-kotlin</td><td>Android</td></tr>
-              <tr><td>lang-swift</td><td>iPhone, iPad &amp; Mac</td></tr>
-              <tr><td>lang-java</td><td>Android &amp; general Java software</td></tr>
-              <tr><td>lang-csharp</td><td>Windows &amp; cross-platform .NET</td></tr>
-              <tr><td>lang-python</td><td>Scripts, tools &amp; services</td></tr>
-              <tr><td>lang-rust</td><td>Fast, memory-safe software</td></tr>
-              <tr><td>lang-go</td><td>Services, command-line tools &amp; Linux</td></tr>
-              <tr><td>lang-cpp</td><td>Performance-critical desktop software</td></tr>
-              <tr><td>lang-typescript</td><td>Web apps &amp; cross-platform tools</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-  </section>
+<main id="main" class="wrap" style="padding:80px 24px;text-align:center;">
+<img src="brand/gru953-logo-colour.svg" alt="GRU953 logo" width="72" style="margin-bottom:20px;">
+<h1>The skills directory has moved</h1>
+<p class="lede" style="margin:0 auto 24px;max-width:48ch;">The full list of skills and capabilities now lives on the wiki. You should be taken there automatically — if not, use the link below.</p>
+<p><a class="btn btn-primary" href="https://github.com/GRU-953/GRU953-Studio/wiki/Skills-and-Capabilities">See the skills</a></p>
 </main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <div class="foot-grid">
-      <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">GRU953-Studio</a>
-      <nav aria-label="Footer">
-        <a href="guide.html">Guide</a>
-        <a href="use-cases.html">Use cases</a>
-        <a href="agents.html">Agents</a>
-        <a href="faq.html">FAQ</a>
-        <a href="troubleshooting.html">Troubleshooting</a>
-        <a href="https://github.com/GRU-953/GRU953-Studio">GitHub</a>
-      </nav>
-    </div>
-    <div class="fine"><p>Made by <a href="https://github.com/GRU-953">Aninda Sundar Howlader</a>.</p></div>
-  </div>
-</footer>
-
 </body>
 </html>

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & help
+    url: https://github.com/GRU-953/GRU953-Studio/discussions
+    about: Ask a "how do I…?" question, or just say hello. No technical detail needed.
+  - name: Read the guide
+    url: https://github.com/GRU-953/GRU953-Studio/wiki
+    about: The full plain-English handbook — installing, connecting Ollama & Gemini, troubleshooting and FAQ.
+  - name: Report a security concern (private)
+    url: https://github.com/GRU-953/GRU953-Studio/blob/main/SECURITY.md
+    about: Please do not post security issues in public — follow the private steps here instead.

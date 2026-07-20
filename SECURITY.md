@@ -14,11 +14,17 @@ report concerns responsibly rather than opening a public issue.
 > defence against a deliberately hostile, fully compromised agent session —
 > an honest limit explained in full under
 > ["Known limitations" below](#known-limitations-disclosed-not-hidden), not
-> hidden from you. If something below is unclear, the
-> [full non-technical FAQ](https://gru-953.github.io/GRU953-Studio/faq.html)
-> and [troubleshooting guide](https://gru-953.github.io/GRU953-Studio/troubleshooting.html)
-> answer the most common questions in everyday language. Everything past this
-> point is the full, detailed policy for anyone who wants it.
+> hidden from you. There is no "100% secure" here, and we won't pretend
+> otherwise. If something is unclear, the
+> [FAQ](https://github.com/GRU-953/GRU953-Studio/wiki/FAQ) and
+> [Troubleshooting](https://github.com/GRU-953/GRU953-Studio/wiki/Troubleshooting)
+> pages on the wiki answer the most common questions in everyday language.
+>
+> **If you're a non-technical user, that paragraph is all you need** — the rest
+> of this page is the full, deeply detailed policy written for security
+> researchers. You are welcome to read it, but you don't have to. To report a
+> concern, use the [private steps below](#reporting-a-vulnerability); please
+> don't post it in public.
 
 ## Reporting a vulnerability
 
@@ -547,3 +553,33 @@ happens, and the third failure of the same problem always escalates to
 the full, user-visible Stuck Protocol. This mechanism never touches
 Publish or any push-capable action — confirmed directly with the user
 before it was built, and unchanged by anything in this document above.
+
+## Currency update (2026-07-21, through v4.2.0)
+
+A brief note bringing this document current, so it does not silently go
+stale — a gap this file has flagged against itself before. None of the
+items below weaken the push/go-public protections above; each ships with
+its own already-designed confirmation gate.
+
+**Real content generation (`content-creation` skill, v3.4.0–v4.1.x).** After
+an approved prototype, the studio can generate an app's own content. Text is
+produced natively by Claude. Images, audio and video are opt-in only, via the
+Gemini integration below. Every generated asset is recorded in the project's
+`Dev-Memory/CONTENT.md` with its approval, provenance, rights and alt-text,
+and `hooks/content-check.mjs` blocks Publish if that record is incomplete.
+
+**Google Gemini media generation (`gemini-integration` skill, v4.1.x).** This
+is the studio's first optional external cloud service. It is off unless the
+user turns it on, and it uses the **user's own Google API key read from their
+environment** — never written to a project file, never printed, never
+committed. `scan.mjs` independently blocks Google `AIza…` keys and key-file
+names from any push, so a key that ever slipped into a file could not ship.
+Each generation is confirmed first, with a plain cost estimate and an explicit
+"this content is sent to Google" notice; it degrades gracefully (a placeholder
+plus a step-by-step guide) when no key or network is available.
+
+**This release (v4.2.0)** is a documentation and packaging update only — a
+rebuilt README, a new wiki guide, a slimmer landing website, the canonical
+PolyForm Noncommercial licence text, self-hosted brand fonts, and tidied
+community files. It changes **no** security-relevant behaviour, hook, gate, or
+confirmation flow described anywhere above.

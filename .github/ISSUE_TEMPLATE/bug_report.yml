@@ -1,0 +1,63 @@
+name: Bug report
+description: Something didn't work the way GRU953-Studio said it would
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve GRU953-Studio. **No technical detail is needed** — describe everything in your own words. If you just have a "how do I…?" question, please use [Discussions](https://github.com/GRU-953/GRU953-Studio/discussions) instead.
+  - type: textarea
+    id: what-you-did
+    attributes:
+      label: What did you ask GRU953-Studio to do?
+      description: For example — "I typed [ a simple recipe app ] and answered the first-run questions."
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw, in your own words. If there was an on-screen message, paste it if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What did you expect to happen instead?
+    validations:
+      required: false
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Which computer are you using?
+      options:
+        - Windows
+        - macOS (Apple Mac)
+        - Linux
+        - Claude Code on the web (in a browser)
+        - Not sure
+    validations:
+      required: false
+  - type: input
+    id: cc-version
+    attributes:
+      label: Claude Code version (optional)
+      description: If you're comfortable, type `claude --version` in Claude Code and paste the result here. Skip this if you're unsure.
+    validations:
+      required: false
+  - type: dropdown
+    id: new-or-resume
+    attributes:
+      label: Was this a new project, or resuming one?
+      options:
+        - A new project
+        - Resuming an existing project
+        - Not sure
+    validations:
+      required: false
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else worth mentioning?
+    validations:
+      required: false

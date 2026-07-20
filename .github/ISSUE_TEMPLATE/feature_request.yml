@@ -1,0 +1,26 @@
+name: Feature request / idea
+description: Suggest something you'd like GRU953-Studio to do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. If this is a general question rather than a suggestion, please use [Discussions](https://github.com/GRU-953/GRU953-Studio/discussions) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like GRU953-Studio to do that it doesn't today?
+      description: Describe it in your own words — no technical detail needed.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve for you?
+      description: A little about why it would help makes ideas much easier to act on.
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        **A note on new specialist roles:** this project deliberately keeps its team small and bounded. A request to add a whole new role needs to name a specific, real gap an existing role can't cover — extending an existing role is usually a better fit. See [CONTRIBUTING.md](https://github.com/GRU-953/GRU953-Studio/blob/main/CONTRIBUTING.md).

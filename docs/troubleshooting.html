@@ -3,92 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Troubleshooting — GRU953-Studio</title>
-<meta name="description" content="Plain-English fixes for the most common GRU953-Studio bumps.">
+<title>Troubleshooting has moved to the wiki — GRU953-Studio</title>
+<link rel="canonical" href="https://github.com/GRU-953/GRU953-Studio/wiki/Troubleshooting">
+<meta http-equiv="refresh" content="0; url=https://github.com/GRU-953/GRU953-Studio/wiki/Troubleshooting">
 <link rel="icon" href="brand/gru953-logo-colour.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&family=Noto+Sans+Bengali:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-
-<header class="site-header">
-  <div class="wrap bar">
-    <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">GRU953-Studio</a>
-    <nav class="site-nav" aria-label="Primary">
-      <a href="guide.html">Guide</a>
-      <a href="use-cases.html">Use cases</a>
-      <a href="agents.html">Agents</a>
-      <a href="skills.html">Skills</a>
-      <a href="faq.html">FAQ</a>
-      <a href="troubleshooting.html" class="current">Help</a>
-      <a href="https://github.com/GRU-953/GRU953-Studio">GitHub</a>
-    </nav>
-  </div>
-</header>
-
-<main>
-  <section class="tight">
-    <div class="doc-wrap">
-      <span class="eyebrow">Troubleshooting</span>
-      <h1>Plain fixes for common bumps</h1>
-      <p class="lede">GRU953-Studio is built to explain problems in plain English rather than show
-        scary error text. If something below doesn't match what you're seeing, open an issue on
-        the <a href="https://github.com/GRU-953/GRU953-Studio/issues">GitHub issues page</a> —
-        describe what you did and what happened, no technical detail required.</p>
-    </div>
-  </section>
-
-  <section class="tight">
-    <div class="wrap" style="max-width:960px;">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>What you see or notice</th><th>What it means</th><th>What to do</th></tr></thead>
-          <tbody>
-            <tr><td><code>command not found: claude</code></td><td>Claude Code isn't installed yet</td><td>Install <a href="https://claude.com/claude-code">Claude Code</a> first, then try again</td></tr>
-            <tr><td>It won't work in the <strong>Claude Desktop</strong> app</td><td>GRU953-Studio needs Claude <strong>Code</strong>, a different (though related) tool</td><td>Use Claude Code, not the Desktop chat app</td></tr>
-            <tr><td><code>/plugin install</code> didn't seem to take effect</td><td>The plugin list sometimes needs a refresh</td><td>Close and reopen Claude Code, then try the install line again</td></tr>
-            <tr><td>A message about <strong>Node.js</strong> or a missing safety check</td><td>Node.js isn't installed</td><td>Install <a href="https://nodejs.org">Node.js</a> (free), then retry</td></tr>
-            <tr><td>It says it <strong>can't publish</strong> / mentions <code>gh</code> or "not signed in"</td><td>The GitHub tool isn't set up</td><td>Install the <a href="https://cli.github.com">GitHub CLI</a>, run <code>gh auth login</code>, follow the prompts</td></tr>
-            <tr><td>It <strong>stopped part-way</strong> (e.g. you ran out of daily usage)</td><td>Nothing is lost — it saves progress constantly</td><td>Come back later and say "continue" or run <code>/studio</code> again; it resumes exactly where it stopped</td></tr>
-            <tr><td>It <strong>refused to publish</strong> unexpectedly</td><td>A safety check did its job (an unconfirmed publish, or a password spotted in the files)</td><td>Read the plain-English reason it gives, fix that one thing, and try again — this is protection, not a fault</td></tr>
-            <tr><td>It <strong>asked before generating an image/audio/video</strong></td><td>The Gemini cost/privacy check is working as designed</td><td>Say yes if you're happy with the cost, or ask it to try a different description</td></tr>
-            <tr><td>It says <strong>Gemini isn't available here</strong></td><td>No Google account/key is set up, or the session can't reach the internet</td><td>Follow the step-by-step guide it gives you, or skip generated media — written content needs none of it</td></tr>
-            <tr><td>A pop-up used a word you didn't know</td><td>It should explain every term once</td><td>Ask it "what does that mean?" in plain words — it's happy to explain</td></tr>
-            <tr><td>It says your <strong>project is bigger than it should take on</strong></td><td>An honest limit, not a failure — very large, complex systems aren't what this tool is for</td><td>Ask for the smallest useful first version instead, and grow it from there in stages</td></tr>
-            <tr><td>A generated illustration or clip isn't quite right</td><td>Generated media is a first attempt, not guaranteed perfect</td><td>Ask for it to be regenerated with a different description — you're asked before each attempt, so nothing repeats without your yes</td></tr>
-            <tr><td>You're not sure what stage your project is at</td><td>Easy to lose track over a long build</td><td>Run <code>/studio-status</code> for a plain-English report, or <code>/studio-dashboard</code> for the full visual picture</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="callout" style="margin-top:32px;">
-        <p><strong>Still stuck?</strong> Open an issue on the
-          <a href="https://github.com/GRU-953/GRU953-Studio/issues">GitHub issues page</a>
-          describing what you did and what happened. You don't need to know any technical terms —
-          just describe it the way you would to a friend.</p>
-      </div>
-    </div>
-  </section>
+<main id="main" class="wrap" style="padding:80px 24px;text-align:center;">
+<img src="brand/gru953-logo-colour.svg" alt="GRU953 logo" width="72" style="margin-bottom:20px;">
+<h1>Troubleshooting has moved</h1>
+<p class="lede" style="margin:0 auto 24px;max-width:48ch;">The troubleshooting guide now lives on the wiki. You should be taken there automatically — if not, use the link below.</p>
+<p><a class="btn btn-primary" href="https://github.com/GRU-953/GRU953-Studio/wiki/Troubleshooting">Open troubleshooting</a></p>
 </main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <div class="foot-grid">
-      <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">GRU953-Studio</a>
-      <nav aria-label="Footer">
-        <a href="guide.html">Guide</a>
-        <a href="use-cases.html">Use cases</a>
-        <a href="agents.html">Agents</a>
-        <a href="skills.html">Skills</a>
-        <a href="faq.html">FAQ</a>
-        <a href="https://github.com/GRU-953/GRU953-Studio">GitHub</a>
-      </nav>
-    </div>
-    <div class="fine"><p>Made by <a href="https://github.com/GRU-953">Aninda Sundar Howlader</a>.</p></div>
-  </div>
-</footer>
-
 </body>
 </html>

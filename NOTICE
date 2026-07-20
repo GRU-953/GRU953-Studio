@@ -7,24 +7,25 @@ Aninda Sundar Howlader (GRU-953) <aninda.sh15@gmail.com>.
 Licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE):
 free for any noncommercial purpose — personal use, research, hobby
 projects, and use by charities, schools, and public-benefit
-organisations. Commercial use requires a separate paid licence — see the
-"Commercial use" section at the end of LICENSE, or contact
-aninda.sh15@gmail.com.
+organisations. Commercial use requires a separate paid licence — see
+COMMERCIAL-LICENCE.md, or contact aninda.sh15@gmail.com.
 
-(2026-07-11: chosen over the GRU953 Community Licence 1.0 used elsewhere
-in the GRU953 brand — PolyForm Noncommercial is a professionally drafted,
-independently reviewed licence template recognised by name by
-dependency-compliance tooling, which matters for a publicly-distributed
-developer tool. Same free-noncommercial/paid-commercial intent as the
-brand's own licence. 2026-07-16: this file and LICENSE moved from
-governance/ to the repository root, so GitHub's own automatic
-licence-detector badge and Community Standards checklist now recognise
-them correctly.)
+Why this licence: PolyForm Noncommercial 1.0.0 is a professionally
+drafted, independently reviewed licence template with a stable SPDX
+identifier (PolyForm-Noncommercial-1.0.0), which matters for a publicly
+distributed developer tool. Note: GitHub's automatic licence detector
+recognises only the ~47 licences in its built-in catalogue, which does
+not include PolyForm, so GitHub may label this repository's licence
+"Other". This is a display limitation on GitHub's side, not a defect in
+this file — the LICENSE text is the exact, canonical PolyForm Noncommercial
+1.0.0. The full plain-English explanation of what the licence allows lives
+in README.md and COMMERCIAL-LICENCE.md.
 
 The GRU953 name and the Soaring Bird logo are brand identifiers and are
 not licensed for identity use; see governance/TRADEMARKS.md and
 governance/LOGO-USAGE.md.
 
-"Claude" and "Claude Code" are trademarks of Anthropic PBC. GRU953-Studio
-is an independent, unofficial plugin and is not affiliated with, sponsored
-by, or endorsed by Anthropic.
+"Claude" and "Claude Code" are trademarks of Anthropic PBC. "Gemini" is a
+trademark of Google LLC. GRU953-Studio is an independent, unofficial
+plugin and is not affiliated with, sponsored by, or endorsed by Anthropic
+or Google.
