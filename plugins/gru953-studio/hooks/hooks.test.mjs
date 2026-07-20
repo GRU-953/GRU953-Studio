@@ -309,6 +309,63 @@ test('gate.mjs: private-publish token does NOT authorise going public', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('lib.mjs isPushCapable: `gh api` writes are push-capable; reads stay allowed (2026-07-21 audit fix)', () => {
+  // `gh api` (the GitHub CLI's raw REST interface) was an undisclosed bypass of
+  // BOTH gates: a write short-circuited gate.mjs's `if (!isPushCapable(CMD))
+  // allow()` before the go-public gate ran. Writes (an explicit method, or a
+  // body flag that only a write uses) must be caught; reads (GET, the default)
+  // must stay allowed — the studio itself relies on `gh api user` and similar.
+  for (const c of [
+    'gh api -X PATCH repos/me/app -f visibility=public',
+    'gh api --method PATCH repos/me/app -f private=false',
+    'gh api -X POST /user/repos -f name=app -F private=false',
+    'gh api repos/me/app -f visibility=public',        // -f implies a POST body
+    'cd /tmp/x && gh api -X DELETE repos/me/app',
+  ]) {
+    assert.equal(isPushCapable(c), true, `gh api write must be caught: "${c}"`);
+  }
+  for (const c of [
+    'gh api user',
+    'gh api repos/me/app',
+    'gh api -X GET repos/me/app',
+    "gh api user --jq '.login'",
+    'gh api /rate_limit',
+  ]) {
+    assert.equal(isPushCapable(c), false, `gh api read must stay allowed: "${c}"`);
+  }
+});
+
+test('gate.mjs: a `gh api` visibility-to-public write needs the go-public token, not just the publish one (2026-07-21 audit fix)', () => {
+  const dir = mkTmp('gru-gate-ghapi-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // Record ONLY the private-publish confirmation.
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  // A gh-api visibility change must still be denied (needs its own go-public token).
+  const denied = runHook('gate.mjs', 'gh api -X PATCH repos/me/app -f visibility=public', dir);
+  assert.equal(denied.decision, 'deny', 'gh api visibility=public must not ride the private-publish token');
+  const deniedPriv = runHook('gate.mjs', 'gh api --method PATCH repos/me/app -F private=false', dir);
+  assert.equal(deniedPriv.decision, 'deny', 'gh api private=false must not ride the private-publish token');
+  // After recording the go-public confirmation, it is allowed.
+  spawnSync('node', [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
+  const allowed = runHook('gate.mjs', 'gh api -X PATCH repos/me/app -f visibility=public', dir);
+  assert.equal(allowed.decision, 'allow');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: no catastrophic backtracking on a flag-heavy non-push git command (2026-07-21 ReDoS fix)', () => {
+  // The git-push token repetition used two fully-overlapping alternatives, so a
+  // long flag-heavy `git` command with no trailing `push` triggered exponential
+  // backtracking (measured n=28 -> 22s), running on every Bash/PowerShell/Monitor
+  // command. It must now complete effectively instantly regardless of length,
+  // while still classifying correctly.
+  const evil = 'git ' + '-a '.repeat(80) + 'origin';
+  const start = process.hrtime.bigint();
+  const got = isPushCapable(evil);
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+  assert.equal(got, false, 'a flag-heavy non-push git command is not push-capable');
+  assert.ok(ms < 100, `matcher must not backtrack exponentially (took ${ms.toFixed(1)}ms)`);
+});
+
 test('lib.mjs isPushCapable: catches quote/IFS-obfuscated gh commands, not just git push (2026-07-11 Round 5 CRITICAL fix)', () => {
   // The gh regexes required the literal, unquoted text "gh" — a quoted "gh"
   // token or $IFS word-splitting made isPushCapable return false, so
@@ -1888,7 +1945,7 @@ test('dashboard.mjs: renders Concept, Architecture and Build plan sections, safe
   assert.ok(/<summary>Concept<\/summary>/.test(html));
   assert.ok(/<summary>Architecture &amp; specifications<\/summary>/.test(html));
   assert.ok(/<summary>Build plan<\/summary>/.test(html));
-  assert.ok(/<th>Component<\/th>/.test(html), 'an architecture table should render as a real table');
+  assert.ok(/<th scope="col">Component<\/th>/.test(html), 'an architecture table should render as a real table with scoped (accessible) headers');
   assert.ok(/<code>sqlite<\/code>/.test(html), 'inline code should render');
   assert.ok(!/<img src=x onerror/.test(html), 'an injected tag in a doc file must be escaped, never emitted raw');
   assert.ok(/&lt;img src=x onerror/.test(html), 'the escaped form must be present');
@@ -2217,5 +2274,246 @@ test('quality-gate.mjs: a Bangla-only Item label is reported as a missing dimens
   const r = runScript('quality-gate.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /missing required dimension: acceptance/i.test(p)), 'a Bangla-only label must be reported missing, never silently passed');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 1 — a 7-lens panel (each finding
+// adversarially verified against the real code) fixed 2 HIGH security issues
+// (gh api gate bypass + ReDoS, tested above), and the correctness/coverage
+// fixes locked in below.
+// ---------------------------------------------------------------------------
+
+test('verify-progress.mjs: an INDENTED table with an unverified "done" row is still caught (2026-07-21 false-clean fix)', () => {
+  const dir = mkTmp('gru-vp-indent-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '  | # | Task | Status | Notes |',
+      '  | :-- | :-- | :-- | :-- |',
+      '  | 1 | Real task | done | shipped it, looks fine |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, 'a 2-space-indented done row with no verified: evidence must still be caught');
+  assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: a second, non-content table does not change the verdict (2026-07-21 spurious-block fix)', () => {
+  const dir = mkTmp('gru-cc-2tab-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const manifest = [
+    '# Content',
+    '| Asset | Medium | Source | Approved | Rights | Alt |',
+    '| :-- | :-- | :-- | :-- | :-- | :-- |',
+    '| welcome-copy | text | Claude (prompt: greet) | approved | original content | n/a |',
+  ].join('\n') + '\n';
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'CONTENT.md'), manifest);
+  const single = runScript('content-check.mjs', dir);
+  assert.equal(single.json.status, 'clean', `manifest alone should be clean: ${single.stdout}`);
+  // Append an unrelated second table; the verdict MUST stay clean (previously its
+  // rows were swept into the content check against the first table's columns).
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'CONTENT.md'),
+    manifest + '\n## Rejected drafts\n| Draft | Reason |\n| :-- | :-- |\n| hero-v1 | too busy |\n| hero-v2 | wrong colour |\n'
+  );
+  const withSecond = runScript('content-check.mjs', dir);
+  assert.equal(withSecond.json.status, 'clean', `a second unrelated table must not cause a spurious BLOCK: ${withSecond.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: a dangling GRAPH link with a trailing annotation is still caught (2026-07-21 false-clean fix)', () => {
+  // LINK_RE was end-anchored, so any link row with a fourth token (a trailing
+  // parenthetical note, an extra word) failed to match and was silently skipped.
+  const dir = mkTmp('gru-mi-trailing-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a\n\n## Links\n- T1 depends-on R99 (the payment module, not yet defined)\n'
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /undefined node "R99"/.test(p)), 'a dangling link with a trailing note must still be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('session-start.mjs: CI=false no longer falsely triggers the ephemeral note; CI=true does (2026-07-21 fix)', () => {
+  const dirFalse = mkTmp('gru-ss-cifalse-');
+  fs.mkdirSync(path.join(dirFalse, 'Dev-Memory'), { recursive: true });
+  const rFalse = runSessionStart(dirFalse, cleanEphemeralEnv({ CI: 'false' }));
+  assert.ok(rFalse.context && !/cloud\/ephemeral session/i.test(rFalse.context), 'CI=false must NOT add the cloud-persistence note');
+  const dirTrue = mkTmp('gru-ss-citrue-');
+  fs.mkdirSync(path.join(dirTrue, 'Dev-Memory'), { recursive: true });
+  const rTrue = runSessionStart(dirTrue, cleanEphemeralEnv({ CI: 'true' }));
+  assert.ok(rTrue.context && /cloud\/ephemeral session/i.test(rTrue.context), 'CI=true must add the cloud-persistence note');
+  fs.rmSync(dirFalse, { recursive: true, force: true });
+  fs.rmSync(dirTrue, { recursive: true, force: true });
+});
+
+// --- subagent-statusline.mjs (2026-07-21: previously ZERO test coverage) -----
+function runStatusline(input) {
+  const r = spawnSync('node', [path.join(HERE, 'subagent-statusline.mjs')], { input: JSON.stringify(input), encoding: 'utf8' });
+  const lines = r.stdout.trim() ? r.stdout.trim().split('\n').map((l) => JSON.parse(l)) : [];
+  return { code: r.status, stdout: r.stdout, lines };
+}
+
+test('subagent-statusline.mjs: renders a friendly line for current studio roles, incl. the newer ones (2026-07-21 drift fix)', () => {
+  // The ROLES set is now derived from agents/ at runtime, so a role added since
+  // v3.6.0/v4.1.0 (content-director, python-developer, …) is recognised too —
+  // the previous hardcoded 23-name Set had silently dropped 15 current roles.
+  const out = runStatusline({
+    columns: 80,
+    tasks: [
+      { id: 't1', name: 'builder', status: 'running' },
+      { id: 't2', name: 'content-director', status: 'running' },        // added v4.1.0
+      { id: 't3', name: 'python-developer', status: 'completed' },      // added v3.6.0
+      { id: 't4', name: 'gru953-studio:tester', status: 'running' },    // qualified form
+    ],
+  });
+  assert.equal(out.code, 0);
+  const byId = Object.fromEntries(out.lines.map((l) => [l.id, l.content]));
+  assert.equal(byId.t1, 'GRU953-Studio — builder (working)');
+  assert.ok(byId.t2 && /content director \(working\)/.test(byId.t2), 'a role added in v4.1.0 must now be recognised');
+  assert.ok(byId.t3 && /python developer \(done\)/.test(byId.t3), 'a language specialist must be recognised, and completed -> (done)');
+  assert.ok(byId.t4 && /tester \(working\)/.test(byId.t4), 'the qualified plugin:role form must match');
+});
+
+test('subagent-statusline.mjs: leaves non-studio agents, id-less tasks and bad input at the default (2026-07-21 coverage)', () => {
+  const out = runStatusline({
+    columns: 80,
+    tasks: [
+      { id: 'x1', name: 'some-other-plugin-agent', status: 'running' }, // not ours
+      { name: 'builder', status: 'running' },                            // no id -> skipped
+    ],
+  });
+  assert.equal(out.lines.length, 0, 'no output line for a non-studio agent or an id-less task');
+  const bad = spawnSync('node', [path.join(HERE, 'subagent-statusline.mjs')], { input: 'not json{{', encoding: 'utf8' });
+  assert.equal(bad.status, 0, 'unparseable stdin must not crash');
+  assert.equal(bad.stdout.trim(), '', 'unparseable stdin emits nothing');
+});
+
+// --- self-heal-nudge.mjs (2026-07-21: previously ZERO test coverage) ---------
+function runSelfHeal(input) {
+  const r = spawnSync('node', [path.join(HERE, 'self-heal-nudge.mjs')], { input: JSON.stringify(input), encoding: 'utf8' });
+  let ctx = null;
+  try { ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext; } catch { ctx = null; }
+  return { code: r.status, stdout: r.stdout, ctx };
+}
+
+test('self-heal-nudge.mjs: emits the bounded self-heal nudge inside a studio project (2026-07-21 coverage)', () => {
+  const dir = mkTmp('gru-shn-studio-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runSelfHeal({ tool_input: { command: 'npm test' }, cwd: dir });
+  assert.equal(r.code, 0);
+  assert.ok(r.ctx && /fixer/i.test(r.ctx), 'must hand the failure to the fixer role');
+  assert.ok(r.ctx && /\b2\b/.test(r.ctx), 'must mention the bound of 2 quiet attempts (the SECURITY.md-documented behaviour)');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('self-heal-nudge.mjs: stays silent outside a studio project and on a user interrupt (2026-07-21 coverage)', () => {
+  const outside = mkTmp('gru-shn-outside-');
+  const rOutside = runSelfHeal({ tool_input: { command: 'npm test' }, cwd: outside });
+  assert.equal(rOutside.stdout.trim(), '', 'must not inject studio instructions into an unrelated project failure');
+  assert.equal(rOutside.code, 0);
+  const dir = mkTmp('gru-shn-interrupt-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const rInterrupt = runSelfHeal({ tool_input: { command: 'npm test' }, cwd: dir, is_interrupt: true });
+  assert.equal(rInterrupt.stdout.trim(), '', 'a user interrupt (Ctrl+C) is not a bug to auto-fix');
+  const rBad = spawnSync('node', [path.join(HERE, 'self-heal-nudge.mjs')], { input: 'not json{{', encoding: 'utf8' });
+  assert.equal(rBad.status, 0, 'unparseable stdin must not crash');
+  assert.equal(rBad.stdout.trim(), '', 'unparseable stdin emits nothing');
+  fs.rmSync(outside, { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- gate.mjs TTL fail-closed guards (2026-07-21 coverage) -------------------
+test('gate.mjs: a confirmation token with no ISSUED line is not honoured (fail-closed)', () => {
+  const dir = mkTmp('gru-gate-noissued-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const token = crypto.createHash('sha256').update(`studio-publish:${dir}`).digest('hex');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `STUDIO-PUBLISH-CONFIRMED:${token}\n`, 'utf8');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny', 'a token with no ISSUED timestamp must fail closed');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a confirmation token with a FUTURE ISSUED timestamp is not honoured', () => {
+  const dir = mkTmp('gru-gate-future-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const token = crypto.createHash('sha256').update(`studio-publish:${dir}`).digest('hex');
+  const future = Date.now() + 10 * 24 * 60 * 60 * 1000;
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${future}\n`, 'utf8');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny', 'a far-future timestamp must not satisfy the TTL forever');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- roster-check.mjs ROSTER.md fallback (the product-repo CI path) ----------
+function writeAgents(dir, n) {
+  const a = path.join(dir, 'agents');
+  fs.mkdirSync(a, { recursive: true });
+  for (let i = 0; i < n; i++) fs.writeFileSync(path.join(a, `role-${i}.md`), `---\nname: role-${i}\ndescription: x\n---\n`);
+}
+
+test('roster-check.mjs: ROSTER.md fallback is clean when count <= baseline (2026-07-21 coverage of the CI path)', () => {
+  const plugin = mkTmp('gru-rc-clean-'); writeAgents(plugin, 5);
+  fs.writeFileSync(path.join(plugin, 'ROSTER.md'), '# roster\n\n**role count: 5**\n');
+  const noDm = mkTmp('gru-rc-clean-dm-');
+  const r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), plugin, noDm], { encoding: 'utf8' });
+  const j = JSON.parse(r.stdout);
+  assert.equal(r.status, 0); assert.equal(j.status, 'clean'); assert.equal(j.source, 'ROSTER.md');
+  fs.rmSync(plugin, { recursive: true, force: true }); fs.rmSync(noDm, { recursive: true, force: true });
+});
+
+test('roster-check.mjs: ROSTER.md fallback BLOCKS when agents exceed the baseline / count is missing / ROSTER.md is absent', () => {
+  const noDm = mkTmp('gru-rc-block-dm-');
+  // (a) over-grown
+  const over = mkTmp('gru-rc-over-'); writeAgents(over, 7);
+  fs.writeFileSync(path.join(over, 'ROSTER.md'), '**role count: 5**\n');
+  let r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), over, noDm], { encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  // (b) ROSTER.md present but no numeric count
+  const noCount = mkTmp('gru-rc-nocount-'); writeAgents(noCount, 3);
+  fs.writeFileSync(path.join(noCount, 'ROSTER.md'), '# a roster file with no stated number\n');
+  r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), noCount, noDm], { encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  // (c) no ROSTER.md and no decision files
+  const noRoster = mkTmp('gru-rc-noroster-'); writeAgents(noRoster, 3);
+  r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), noRoster, noDm], { encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  fs.rmSync(noDm, { recursive: true, force: true });
+  fs.rmSync(over, { recursive: true, force: true });
+  fs.rmSync(noCount, { recursive: true, force: true });
+  fs.rmSync(noRoster, { recursive: true, force: true });
+});
+
+// --- scan.mjs unpushed-history secret scan (2026-07-21 fix) ------------------
+test('scan.mjs: a secret committed then removed from the working tree is still caught in unpushed history', () => {
+  const dir = mkTmp('gru-scan-history-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // Build the AWS reserved example key in parts so this test file's own source
+  // line does not contain the contiguous literal (which scan.mjs would flag).
+  const secret = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'config.txt'), `aws_key = "${secret}"\n`);
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add config'], dir);
+  // Remove it from the working tree in a later commit — tree is now clean.
+  fs.rmSync(path.join(dir, 'config.txt'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'remove config'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a secret still present in unpushed history must block the push even when the working tree is clean');
+  assert.ok(/history/i.test(r.stdout), 'the finding should be attributed to unpushed history');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('repo-integrity.mjs INV12: the publish protocol must enumerate all seven pre-flight check hooks (2026-07-21 fix)', () => {
+  const dir = mkTmp('gru-repointeg-publish7-');
+  copyRepoTo(dir);
+  const skillPath = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'publish-github', 'SKILL.md');
+  // Simulate the exact drift the fix prevents: drop a required check reference.
+  fs.writeFileSync(skillPath, fs.readFileSync(skillPath, 'utf8').replace(/content-check\.mjs/g, 'REMOVED-check'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping a required pre-flight check from the publish protocol must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('content-check.mjs')), `expected a problem naming the dropped check, got: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });

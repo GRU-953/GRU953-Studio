@@ -62,15 +62,25 @@ function main() {
   }
 
   // Parse the content table; locate its columns by header. `idx` is captured
-  // once for the content table and persists after the table ends (the row scan
-  // below runs after the loop), so it is not reset when a non-`|` line closes
-  // the table — only `inTable` is.
+  // once, for the content table (the one with an asset/medium column). After that
+  // table ends, every later table is ignored (see the break below), so a second,
+  // unrelated table's rows are never validated against the content table's columns.
   const lines = text.split(/\r?\n/);
   let inTable = false;
   let idx = null;
+  let contentTableCaptured = false;
   const rows = [];
   for (const line of lines) {
-    if (!/^\s*\|/.test(line)) { inTable = false; continue; }
+    if (!/^\s*\|/.test(line)) {
+      // 2026-07-21 audit fix: once the content table has ended, ignore every LATER
+      // table. Previously `idx` persisted and a subsequent unrelated table's rows
+      // were validated against the content table's column map — a spurious BLOCK
+      // (and, with two content-shaped tables, a possible mis-aligned false-clean).
+      // Mirrors quality-gate.mjs's "stop after the first matching table" fix.
+      if (contentTableCaptured) break;
+      inTable = false;
+      continue;
+    }
     const c = cells(line);
     if (!inTable) {
       inTable = true;
@@ -83,7 +93,7 @@ function main() {
         rights: find(/^(rights|licen[cs]e|usage)$/i),
         alt: find(/^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)$/i),
       };
-      if (found.asset !== -1 || found.medium !== -1) idx = found; // the content table's columns
+      if (found.asset !== -1 || found.medium !== -1) { idx = found; contentTableCaptured = true; } // the content table's columns
       continue;
     }
     if (SEPARATOR_ROW_RE.test(line)) continue;

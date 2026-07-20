@@ -51,8 +51,9 @@ published safely to your own GitHub account, under your name.<br>
 
 ## What is GRU953-Studio?
 
-GRU953-Studio is a helper you talk to in plain English, inside a free tool called
-**Claude Code** (Anthropic's coding assistant that you talk to). You tell it what
+GRU953-Studio is a helper you talk to in plain English, inside **Claude Code** —
+Anthropic's coding assistant (which needs a paid Claude plan or pay-as-you-go API
+credits to run). You tell it what
 you want — "a habit tracker for my phone", "a page that lists my recipes" — it
 asks a few multiple-choice questions to understand exactly what you mean, and then
 a team of behind-the-scenes AI specialists **designs it, shows you a clickable
@@ -64,7 +65,8 @@ clear pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
 roles** · **32 skills** (the internal playbooks the team follows) · **9 simple
-commands** · **20 automatic safety checks** · **zero third-party code
+commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
+and CI integrity checks) · **zero third-party code
 dependencies**.
 
 ### Latest version: 4.2.0

@@ -22,10 +22,20 @@ or a mistake is costly to undo. It is the cheapest-first principle
 
 | Model | Best for |
 | :-- | :-- |
-| **Haiku** | Mechanical/clerical work with little open reasoning — status updates, simple edits, list upkeep, brand/format checks. |
-| **Fable** | Fast drafting and creative or exploratory passes where speed and breadth matter more than deep rigour — first-draft copy, brainstorming variants, quick scaffolding. |
-| **Sonnet** | The balanced workhorse — real but bounded reasoning: most building, testing, and review-support tasks. The default when nothing points clearly higher or lower. |
-| **Opus** | The hardest reasoning only — architecture, independent correctness review, safety/fairness judgement, and any decision that is costly and hard to undo. |
+| **Haiku** | Cheapest. Mechanical/clerical work with little open reasoning — status updates, simple edits, list upkeep, brand/format checks. Has the smallest context window of the four, so not for very large inputs (see signal 6). |
+| **Sonnet** | The balanced workhorse — real but bounded reasoning: most building, testing, drafting and review-support tasks. The default when nothing points clearly higher or lower. |
+| **Opus** | Hard reasoning — architecture, independent correctness review, safety/fairness judgement, and any decision that is costly and hard to undo. |
+| **Fable** | The frontier tier: the **most capable and most expensive** model of the four (above Opus, with always-on deeper thinking and slower responses). Reserved only for the very hardest problems where Opus is genuinely not enough — **never** for routine drafting, which is cheap work. |
+
+> **Verify before relying on this cost ordering (2026-07-21).** Model names,
+> tiers, context sizes and prices change. Fable is the top tier here because it is
+> both the most capable and the most expensive — confirm the current
+> cheapest→most-capable order and each model's context window against Anthropic's
+> own current documentation before treating this table as authoritative, the same
+> currency discipline `gemini-integration` and `ollama-integration` already apply.
+> (This corrects a 2026-07-21 audit finding: Fable had been mis-listed as a cheap
+> second tier, which routed the cheapest kind of work — drafting/ideation — to the
+> single most expensive model, inverting the cheapest-first principle.)
 
 **Effort levels** map the owner's requested names to what the platform exposes:
 `low` → low, `medium` → medium, `high` → high, **`extra` → xhigh**, `max` → max.
@@ -37,7 +47,7 @@ user asks to go all-out on; it is never entered silently.
 
 ## How a task is scored (silent, automatic)
 
-For each task, weigh five signals and pick the cheapest model + lowest effort
+For each task, weigh six signals and pick the cheapest model + lowest effort
 that clears them:
 
 1. **Reasoning depth** — routine/mechanical → Haiku/low; genuinely novel or
@@ -49,8 +59,16 @@ that clears them:
    never the floor; give it more model and effort.
 4. **Breadth** — a narrow local change → cheap; a wide cross-cutting one →
    higher.
-5. **Creativity vs rigour** — divergent drafting/ideation → Fable; convergent
-   correctness → Sonnet/Opus.
+5. **Creativity vs rigour** — divergent drafting/ideation is still ordinary work:
+   route it to a **cheap** tier (Haiku for simple variants, Sonnet for nuanced
+   copy), never to Fable. Convergent correctness → Sonnet/Opus. Fable (the most
+   expensive tier) is reserved for signal 1's "genuinely novel or subtle" extreme
+   where even Opus underperforms — never chosen merely because a task is
+   "creative".
+6. **Input size / context** — a task whose input approaches or exceeds Haiku's
+   smaller context window must **not** be routed to Haiku however mechanical it is
+   (it would truncate or fail); escalate to a larger-context tier (Sonnet or
+   above). Verify current context sizes per the currency note above.
 
 The per-role `model:` in each agent's frontmatter is the **default and the
 floor**: the router may escalate a task above it when the signals justify it,
@@ -84,7 +102,7 @@ skill), so content generators plan, select and switch models and effort the same
 way the code side does:
 
 - **Text content** (Bangla/English copy) uses Claude tiers/effort by the same
-  five signals above — routine copy runs cheap, nuanced or safety-relevant
+  six signals above — routine copy runs cheap, nuanced or safety-relevant
   wording spends up — and runs **inline**, like any other Claude task.
 - **Image/audio/video** uses the **Gemini capability registry** (the
   `gemini-integration` skill): the router picks the model for the capability

@@ -1042,7 +1042,20 @@ export function isPushCapable(rawC) {
   // name, subcommand, or keyword — matching the same `/i` this project
   // already added to the script-extension check and the confirm-script
   // basename comparison, for the identical reason.
-  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?git['"]?([ \\t]+-[^ \\t]+|[ \\t]+[^ \\t]+)*[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
+  // 2026-07-21 audit fix (ReDoS — catastrophic backtracking): the token
+  // repetition between `git` and `push` was `([ \t]+-[^ \t]+|[ \t]+[^ \t]+)*` —
+  // two FULLY OVERLAPPING alternatives (a dash-prefixed token matches BOTH
+  // branches), so `(A|B)*` over n tokens with no trailing `push` explored 2^n
+  // backtracking paths. This regex runs on EVERY Bash/PowerShell/Monitor command,
+  // so a flag-heavy but non-push `git` command (e.g. `git log` with ~26 `--flags`)
+  // hung the PreToolUse hook for 15+ seconds (measured: n=28 -> 22s, doubling per
+  // token), and a pathological input could push the hook past the harness timeout.
+  // The `-flag` branch is fully subsumed by the general `[ \t]+[^ \t]+` branch, so
+  // a single lazy token repetition matches exactly the same commands with no
+  // exponential blowup (verified: evil n=60 -> ~0ms; `git push`, `git -c a=b push`,
+  // `GIT push`, `git "push"` still match; `git pushx`, `git status`, `git log
+  // --all` still do not).
+  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?git['"]?(?:[ \\t]+[^ \\t]+)*?[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
   // 2026-07-11 Round 5 audit fix (CRITICAL, found live via gate.mjs's real
   // isGoPublicCommand()): every `gh ...` regex below required the literal,
   // unquoted text "gh" — `"gh" repo edit ...` or `gh "repo" "edit" ...`
@@ -1056,6 +1069,24 @@ export function isPushCapable(rawC) {
   // token and sub-token.
   if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+(['"]?repo['"]?[ \t]+['"]?(create|edit|sync|clone)['"]?|['"]?pr['"]?[ \t]+['"]?create['"]?|['"]?release['"]?[ \t]+['"]?(create|upload)['"]?|['"]?gist['"]?[ \t]+['"]?create['"]?)/i.test(c)) return true;
   if (new RegExp(`(^|[^A-Za-z0-9_])['"]?gh['"]?[ \\t].*--push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
+  // 2026-07-21 audit fix (undisclosed bypass of BOTH gates): `gh api` is the
+  // GitHub CLI's raw REST interface — a documented, non-obfuscated way to create
+  // repos, change a repo's visibility, push refs, etc., i.e. everything these
+  // gates control. It was not detected at all, so `gh api -X PATCH repos/me/app
+  // -f visibility=public` (and `-f private=false`, `-X POST /user/repos ...`)
+  // short-circuited at gate.mjs's `if (!isPushCapable(CMD)) allow()` before the
+  // go-public gate ever ran. Same class as the `git send-pack` plumbing
+  // alternative already covered above. A READ (GET, the default — e.g. the
+  // studio's own `gh api user`) stays ALLOWED; only a WRITE is push-capable,
+  // signalled by an explicit write method (`-X`/`--method` POST|PATCH|PUT|DELETE)
+  // or by any request-body flag (`-f`/`-F`/`--field`/`--raw-field`/`--input`),
+  // which `gh api` uses only to send a body. (Residual, disclosed in SECURITY.md:
+  // a visibility change whose value lives only inside an `--input` file, and a raw
+  // `curl` to api.github.com, are not parsed here — the same "this hook does not
+  // execute or read referenced files" boundary as elsewhere.)
+  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c) &&
+      (/[ \t]['"]?(-X|--method)['"]?[ \t=]+['"]?(POST|PATCH|PUT|DELETE)['"]?/i.test(c) ||
+       /[ \t](-f|-F|--field|--raw-field|--input)[ \t=]/i.test(c))) return true;
   // git aliases that resolve to push (e.g. `git -c alias.p=push p`, or
   // `git config alias.foo push` followed later by `git foo`).
   if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/i.test(c)) return true;

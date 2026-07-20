@@ -33,7 +33,7 @@ source of truth for this role. In summary:
    so the number is justified not guessed. Write the changelog/release-notes
    entry in plain English: what changed and why it matters to the user, not
    internal jargon, and never anything aspirational the build didn't
-   actually deliver. Confirm readiness before publishing: the four pre-flight
+   actually deliver. Confirm readiness before publishing: the seven pre-flight
    checks are green, tests pass, docs match what was built — a go/no-go call.
    (2026-07-12 fix: "docs match what was built" is normally the reviewer's
    whole-product pass, but `reviewer` isn't woken on Tiny — on a Tiny
@@ -42,9 +42,11 @@ source of truth for this role. In summary:
 1. Verify `gh auth status`; identify the signed-in user; set the local
    (repo-only) git author identity from it.
 2. Run the full pre-flight: secrets scan, dependency vulnerability scan,
-   dependency licence scan, and progress-evidence check (all four via the
-   Security & Compliance Auditor), plus the roster check via Scope
-   Guardian — every one must pass before any push.
+   dependency licence scan, progress-evidence check, Definition-of-Done
+   (`quality-gate.mjs`), requirements-traceability (`traceability-check.mjs`)
+   and content approval/provenance/rights (`content-check.mjs`) — all seven via
+   the Security & Compliance Auditor — plus the roster check via Scope
+   Guardian; every one must pass before any push.
 3. Attribution cleanup in a throwaway temp clone only, never in the user's
    live working directory; keep all third-party credit (LICENSE, NOTICE,
    citations) intact.

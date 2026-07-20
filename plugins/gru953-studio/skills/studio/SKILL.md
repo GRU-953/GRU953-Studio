@@ -174,8 +174,10 @@ PER PROJECT — there is no additional mechanical lock there, and a project
 only ever wakes the subset of roles its Tier and brief actually call for.
 Separately, the TOTAL ROLE COUNT (currently 38 — a deliberately lean,
 non-overlapping specialist set; v3.0.0 consolidated the v2.0.0 roster of 31 to
-23 by merging eight overlapping roles, and v3.6.0 added six native language
-specialists, each a distinct-ecosystem implementer) is
+23 by merging eight overlapping roles, v3.6.0 added six native language
+specialists, and v4.1.0 added four more language specialists (Swift, C#, Go,
+TypeScript) plus a five-strong content team — reaching 38, each a
+distinct-ecosystem or distinct-discipline implementer) is
 guarded by `scope-guardian` running
 `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
 `Dev-Memory/decisions/*roster*.md` for a built project, falling back to the

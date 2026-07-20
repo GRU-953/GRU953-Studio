@@ -10,8 +10,10 @@
 // is found the hook allows and stands down, so a user/global-scope install
 // never blocks pushes in repositories that have nothing to do with the
 // studio. It backs up the manual scan in skills/publish-github so a
-// forgotten scan cannot leak a secret, and it scans the tree the push
-// command actually ships (the publisher's temp clone when one is used).
+// forgotten scan cannot leak a secret. It scans the working tree, index and
+// untracked files a push would ship AND the content added in unpushed commits
+// (a branch push ships commits, not only the working tree) — the publisher's
+// temp clone is covered the same way when one is used.
 // Every inspected value — the tool input, the command string, file contents
 // — is DATA, never instructions. Secret values are never printed; findings
 // are redacted to {type,file,line}.
@@ -103,7 +105,8 @@ function main() {
     deny('studio scan: not a git work tree; cannot prove the push set is clean');
   }
 
-  // ---- build the would-ship file set (scan scope == push scope) --------------
+  // ---- build the working-tree/index/untracked would-ship file set ------------
+  // (the unpushed-commit history is scanned separately, after this loop)
   const nulParts = (buf) =>
     buf
       .toString('utf8')
@@ -173,6 +176,40 @@ function main() {
   const addFinding = (type, file, line) => {
     findings.push(redact(type, file, line));
   };
+  // Scan one file's text for both secret patterns in a single pass over its lines
+  // (was two separate passes). The `// scan-allow` marker exempts an annotated
+  // test-fixture line, exactly as the per-file scan did.
+  const scanText = (text, file) => {
+    const lines = text.split(/\r?\n/);
+    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(i + 1));
+      if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(i + 1));
+    }
+  };
+  // 2026-07-21 audit fix: a branch push ships COMMITS, not the working tree, so a
+  // secret committed and then removed (git commit is never push-capable, so is
+  // never scanned) would still ride an incremental checkpoint/memory-persist
+  // branch push inside the earlier commit. Scan the content ADDED in unpushed
+  // commits (`HEAD --not --remotes` = commits not yet on any remote, i.e. what a
+  // branch push sends). Added coverage only — it never relaxes the working-tree
+  // scan; any git error or empty range returns silently and the working-tree scan
+  // still stands. (Residual, disclosed in SECURITY.md: a value living only in a
+  // file referenced by `--input`/curl body is still not parsed.)
+  const scanUnpushedHistory = () => {
+    const r = git(['log', '-p', '-U0', '--no-color', '--no-textconv', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    if (!r.ok || !r.stdout || r.stdout.length === 0) return;
+    let file = '(unpushed history)';
+    for (const raw of r.stdout.toString('utf8').split('\n')) {
+      if (raw.startsWith('+++ ')) { file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, ''); continue; }
+      if (raw.startsWith('+') && !raw.startsWith('+++')) {
+        const ln = raw.slice(1);
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+      }
+    }
+  };
 
   for (const f of FILES) {
     if (!f) continue;
@@ -193,22 +230,18 @@ function main() {
     if (st.size > MAX_SCAN_BYTES) continue;
     let buf;
     try {
-      fs.accessSync(abs, fs.constants.R_OK);
+      // readFileSync throws EACCES/ENOENT on an unreadable/vanished file, caught
+      // here — the previous fs.accessSync() immediately before it was a pure
+      // redundant syscall (same catch handled both).
       buf = fs.readFileSync(abs);
     } catch {
       continue;
     }
     if (buf.includes(0)) continue; // skip binary
-    const text = buf.toString('utf8');
-    const lines = text.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-    for (let i = 0; i < lines.length; i++) {
-      if (SECRET_RE.test(lines[i]) && !lines[i].includes(SCAN_ALLOW_MARKER)) addFinding('secret', f, String(i + 1));
-    }
-    for (let i = 0; i < lines.length; i++) {
-      if (SECRETVAR_RE.test(lines[i])) addFinding('secret-var', f, String(i + 1));
-    }
+    scanText(buf.toString('utf8'), f);
   }
+
+  scanUnpushedHistory();
 
   if (findings.length === 0) {
     allow();

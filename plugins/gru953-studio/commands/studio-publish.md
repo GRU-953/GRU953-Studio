@@ -14,16 +14,19 @@ Publish the current project's working app to a private GitHub repository.
    how clean its code is (2026-07-12 fix: this step used to be listed AFTER
    the checks below, contradicting `publish-github/SKILL.md`'s own Round 9
    fix, which reordered it to run first for the same reason).
-   Then run the security-compliance-auditor's four blocking pre-flight
+   Then run the security-compliance-auditor's seven blocking pre-flight
    checks BEFORE asking to publish: secrets scan, dependency vulnerability
-   scan, `node "${CLAUDE_PLUGIN_ROOT}/hooks/licence-scan.mjs" .`, and
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/verify-progress.mjs" .`. Also run
+   scan, `node "${CLAUDE_PLUGIN_ROOT}/hooks/licence-scan.mjs" .`,
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/verify-progress.mjs" .`,
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .`,
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs" .`, and
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/content-check.mjs" .`. Also run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` via
    `scope-guardian` — a non-zero exit means the agent roster grew without a
    recorded reason; resolve that first too.
    Report each result plainly. Stop here, without asking to publish, if any
    of these fails — explain what needs fixing first.
-3. Only once all four checks (plus the roster check) pass, ask ONE
+3. Only once all seven checks (plus the roster check) pass, ask ONE
    confirmation with AskUserQuestion:
    "Publish this app privately to your GitHub now? This step is permanent
    and irreversible — you can always make it public later, but the private

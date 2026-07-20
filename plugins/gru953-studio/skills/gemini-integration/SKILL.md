@@ -38,6 +38,12 @@ never a silent Gemini call.
   `hooks/scan.mjs` already blocks Google `AIza…` keys and key-file names from any
   push, so a key that slips into a file cannot ship — but the rule here is that
   it never goes into a file in the first place.
+- **Keep the key out of the request URL and the command line, too.** Pass it in a
+  request header (`x-goog-api-key: <key>`) or via curl `--config`/stdin — never in
+  the `?key=...` URL query string (secrets must never go in URLs), and never echo
+  the resolved command. A key placed in a URL or in a command's arguments can leak
+  to other local processes and to any command log — exposure the file-only secret
+  scan would not catch.
 - If no key is set, do not ask the user to paste it anywhere the studio writes;
   give a numbered step-by-step guide to set the environment variable in their
   own shell, then continue.

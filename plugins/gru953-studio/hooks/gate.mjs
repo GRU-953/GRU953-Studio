@@ -125,8 +125,18 @@ function publishConfirmed(studioRoot) {
 // full explanation of why `([ \t]|$)` was too narrow a boundary.
 function isGoPublicCommand(rawC) {
   const c = normalizeForPushCheck(rawC);
-  return /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
+  // `gh repo create|edit ... --public` / `--visibility public|internal`
+  const repoVisibility = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
     (new RegExp(`--public['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
+  // 2026-07-21 audit fix: the same visibility change performed via `gh api` (the
+  // raw REST interface) — e.g. `gh api -X PATCH repos/me/app -f visibility=public`,
+  // `-F private=false`, or an inline JSON body `{"visibility":"public"}`.
+  // isPushCapable() now treats a `gh api` write as push-capable, so such a command
+  // reaches here; this makes a visibility-to-public write require the separate
+  // GO-PUBLIC-APPROVED token, not merely the private-publish one.
+  const apiVisibility = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c) &&
+    (/visibility['"]?[ \t=:]+['"]?(public|internal)/i.test(c) || /private['"]?[ \t=:]+['"]?(false|0|no)\b/i.test(c));
+  return repoVisibility || apiVisibility;
 }
 function goPublicToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-go-public:${studioRoot}`).digest('hex');

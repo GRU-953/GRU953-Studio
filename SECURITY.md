@@ -583,3 +583,34 @@ rebuilt README, a new wiki guide, a slimmer landing website, the canonical
 PolyForm Noncommercial licence text, self-hosted brand fonts, and tidied
 community files. It changes **no** security-relevant behaviour, hook, gate, or
 confirmation flow described anywhere above.
+
+## 2026-07-21 hardening (gold-standard audit) — new coverage and residuals
+
+A multi-lens audit (each finding adversarially verified against the real code)
+closed two previously-undisclosed gate weaknesses; both are now matched and
+regression-tested. The residual limits they leave behind are disclosed here in
+the same spirit as the shell-obfuscation list above. None of these weaken any
+existing gate — each is additive.
+
+- **`gh api` writes are now gated.** `isPushCapable()` and `isGoPublicCommand()`
+  previously ignored `gh api` (the GitHub CLI's raw REST interface), so a write
+  such as `gh api -X PATCH repos/me/app -f visibility=public` bypassed BOTH the
+  publish and go-public gates. Now a `gh api` call with a write method
+  (`-X`/`--method` POST|PATCH|PUT|DELETE) or a body flag
+  (`-f`/`-F`/`--field`/`--raw-field`/`--input`) is push-capable, and a
+  visibility-to-public one needs the GO-PUBLIC-APPROVED token; a read (`gh api
+  user`) stays allowed. **Residual, not closed:** a visibility value living only
+  inside an `--input` file, and a raw `curl` to `api.github.com`, are not parsed —
+  the same "this hook does not read referenced files or run arbitrary commands"
+  boundary as the command-substitution cases above.
+- **ReDoS removed from the core matcher.** The git-push regex used two
+  fully-overlapping alternatives that backtracked exponentially on a long,
+  flag-heavy, non-push `git` command (measured ~22 s at 28 flags) — and it runs on
+  every Bash/PowerShell/Monitor command. Replaced with a linear pattern that
+  classifies identically; a timing regression test guards it.
+- **The secret scan now also covers unpushed history.** `scan.mjs` scanned only
+  the working tree, index and untracked files; a branch push ships commits, so a
+  secret committed and then removed still shipped via a checkpoint/memory-persist
+  branch push. It now also scans content added in unpushed commits (`HEAD --not
+  --remotes`) — added coverage only. **Residual:** a value present only in a file
+  referenced by a command (not in committed content) is still not read.

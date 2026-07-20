@@ -58,7 +58,7 @@ function main() {
   // VERIFIED_RE match — a row can honestly narrate old history, but not
   // also claim to be currently failing/unverified and still count as done.
   const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
-  const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+  const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
   const problems = [];
   // 2026-07-12 audit fix (MAJOR false-block, found by execution): this used
   // to check EVERY cell in a row via .find(cell => /^done\b/i.test(cell)),
@@ -76,7 +76,13 @@ function main() {
   let inTable = false;
   let statusColumnIndex = null;
   for (const line of lines) {
-    if (!/^\|/.test(line)) {
+    // 2026-07-21 audit fix: was `/^\|/` (pipe must be the very first character),
+    // the sole outlier — all five sibling gate hooks use `/^\s*\|/`. A markdown
+    // table indented 1-3 spaces (which GFM still renders) never entered `inTable`,
+    // so verify-progress checked zero rows and returned clean — a false-clean in
+    // the very gate that exists to stop an unverified "done". Now tolerates
+    // leading whitespace, matching the siblings and SEPARATOR_ROW_RE above.
+    if (!/^\s*\|/.test(line)) {
       inTable = false;
       statusColumnIndex = null;
       continue;
