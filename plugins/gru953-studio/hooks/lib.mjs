@@ -732,6 +732,34 @@ export function normalizeForPushCheck(c) {
     const offset = parseInt(off, 10);
     return len !== undefined ? v.substr(offset, parseInt(len, 10)) : v.slice(offset);
   });
+  // 2026-07-21 Round 7 audit fix (CRITICAL, reproduced end-to-end against the real
+  // gates before fixing): bash pattern-substitution `${v//pat/repl}` (replace all),
+  // `${v/pat/repl}` (replace first), and pattern-removal `${v#pat}`/`${v##pat}`
+  // (strip prefix) / `${v%pat}`/`${v%%pat}` (strip suffix) are the same class of
+  // same-command-resolvable scalar transform as the case-mod/@/substring passes
+  // above — no execution or persistent state needed — yet were unmodelled, so
+  // `x=puXsh; git ${x//X/} origin main` (and the go-public `${v//X/}` analogue)
+  // resolved to a real push/visibility-change in bash while both gates saw no
+  // literal `push`/`public` and failed OPEN. Resolved here for the same `known`
+  // scalar map; the pattern is treated as a LITERAL string (a bar-raiser — bash
+  // glob metacharacters in the pattern are not interpreted, consistent with this
+  // matcher's stated "raises the bar, not a determined-adversary sandbox" scope).
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(\/\/?)([^/}]*)(?:\/([^}]*))?\}/g, (m, name, op, pat, repl) => {
+    if (!known.has(name) || pat === '') return m;
+    const v = known.get(name);
+    const r = repl === undefined ? '' : repl;
+    if (op === '//') return v.split(pat).join(r); // replace all
+    const i = v.indexOf(pat); // replace first
+    return i === -1 ? v : v.slice(0, i) + r + v.slice(i + pat.length);
+  });
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(#{1,2}|%{1,2})([^}]*)\}/g, (m, name, op, pat) => {
+    if (!known.has(name) || pat === '') return m;
+    const v = known.get(name);
+    // literal prefix (# / ##) or suffix (% / %%) removal — for a literal
+    // (non-glob) pattern, shortest and longest match are identical.
+    if (op[0] === '#') return v.startsWith(pat) ? v.slice(pat.length) : v;
+    return v.endsWith(pat) ? v.slice(0, v.length - pat.length) : v;
+  });
   // 2026-07-12 Round 8 audit fix (real gap, found by a re-attack pass,
   // then independently reproduced live before fixing): the subscript
   // resolver only ever accepted a LITERAL digit (`${arr[1]}`) — a
@@ -816,6 +844,20 @@ export function normalizeForPushCheck(c) {
   // of the real element-0 value "push" — the wrong direction for a
   // security match (under-detecting a real push), confirmed live before
   // fixing.
+  // 2026-07-21 Round 7 audit fix (proactively closing the rest of the
+  // same-command-resolvable parameter-expansion family alongside the CRITICAL
+  // pattern-substitution fix above, so the class converges in one sweep rather
+  // than one operator per round). `${VAR:+alt}`/`${VAR+alt}` expands to `alt` when
+  // VAR is set (`:` also requires non-empty). Fail closed for the matcher: use
+  // `alt` unless we positively know VAR is empty (so `${x:+push}` is caught).
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(:?)\+([^{}]*)\}/g, (_m, name, colon, alt) => {
+    if (colon === ':' && known.has(name) && known.get(name) === '') return '';
+    return alt;
+  });
+  // `${VAR:?msg}`/`${VAR?msg}` expands to VAR's value when set (msg only prints to
+  // stderr on unset); the payload is the VALUE, not msg. Resolve to the known
+  // value, else leave literal (we don't have the value to over-detect).
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?\?[^{}]*\}/g, (m, name) => (known.has(name) ? known.get(name) : m));
   n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?[-=]([^{}]*)\}/g, (_m, name, def) => {
     if (knownArrays.has(name)) {
       const el = knownArrays.get(name)[0];

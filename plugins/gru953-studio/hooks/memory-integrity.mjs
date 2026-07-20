@@ -30,7 +30,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { splitPipeCells } from './lib.mjs';
 
-const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
 // A cell that names a real filesystem path: has a dotted extension or a slash.
 // The filename stem uses `[^/\s]` rather than the ASCII-only `\w`, found

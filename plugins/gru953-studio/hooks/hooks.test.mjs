@@ -2775,3 +2775,57 @@ test('content-check.mjs: the documented "Alt/Caption" header is recognised, not 
   assert.equal(r.json.status, 'clean', `a media asset with a caption under the documented Alt/Caption header must pass: ${r.stdout}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// --- Round 7 (2026-07-21 adversarial): 3 findings, all fixed -----------------
+
+test('lib.mjs isPushCapable: bash pattern-substitution/removal expansions no longer bypass detection (2026-07-21 Round 7 CRITICAL fix)', () => {
+  for (const c of [
+    'x=puXsh; git ${x//X/} origin main',
+    'x=puXsh; git ${x/X/} origin main',
+    'x=xxpush; git ${x##xx} origin main',
+    'x=Xpush; git ${x#X} origin main',
+    'x=pushyy; git ${x%%yy} origin main',
+    'x=pushX; git ${x%X} origin main',
+    'v=pubXlic; gh repo edit me/app --visibility=${v//X/}',
+  ]) {
+    assert.equal(isPushCapable(c), true, `pattern-substitution push must be caught: "${c}"`);
+  }
+  for (const c of ['git status', 'x=logs; git ${x//X/} status']) {
+    assert.equal(isPushCapable(c), false, `must stay clear: "${c}"`);
+  }
+});
+
+test('lib.mjs isPushCapable: ${VAR:+alt} and ${VAR:?msg} parameter expansions are resolved (2026-07-21 Round 7 family-closure)', () => {
+  for (const c of [
+    'x=set; git ${x:+push} origin main',
+    'x=set; git ${x+push} origin main',
+    'x=push; git ${x:?err} origin main',
+    'x=push; git ${x?err} origin main',
+    'v=1; gh repo edit me/app --visibility=${v:+public}',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must be caught: "${c}"`);
+  }
+  assert.equal(isPushCapable('x=set; git ${x:+status} origin main'), false, 'a non-push alternative value must stay clear');
+});
+
+test('gate.mjs + scan.mjs: a pattern-substitution-obfuscated push/go-public is gated end-to-end (2026-07-21 Round 7 CRITICAL fix)', () => {
+  const d1 = mkTmp('gru-r7-push-'); fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true }); initRepo(d1);
+  fs.writeFileSync(path.join(d1, 'config.txt'), 'k = "' + 'AKIA' + 'IOSFODNN7EXAMPLE"\n');
+  git(['add', '-A'], d1); git(['commit', '-qm', 'x'], d1);
+  assert.equal(runHook('scan.mjs', 'x=puXsh; git ${x//X/} origin main', d1).decision, 'deny', 'an obfuscated push must not ship a secret undetected');
+  assert.equal(runHook('gate.mjs', 'x=puXsh; git ${x//X/} origin main', d1).decision, 'deny', 'an obfuscated push must not be authorised without a token');
+  fs.rmSync(d1, { recursive: true, force: true });
+  const d2 = mkTmp('gru-r7-gopublic-'); fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), d2], { encoding: 'utf8' }); // private-publish token only
+  assert.equal(runHook('gate.mjs', 'v=pubXlic; gh repo edit me/app --visibility=${v//X/}', d2).decision, 'deny', 'an obfuscated go-public must not ride the private-publish token');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a 1-3 space indented GFM table is not false-blocked with a phantom "---" requirement (2026-07-21 Round 7 fix)', () => {
+  const dir = mkTmp('gru-trace-indent-');
+  const indentedReq = '  | ID | Requirement | Phase | Tasks | Verification | Status |\n  | --- | --- | --- | --- | --- | --- |\n  | R1 | Log in | 1 | T1 | verified: npm test -> exit 0 | met |\n';
+  writeReq(dir, indentedReq, PROG_HEADER + '| T1 | log in | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `an indented but consistent matrix must be clean, not false-blocked with a phantom "---" requirement: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
