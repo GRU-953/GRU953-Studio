@@ -209,21 +209,37 @@ function main() {
     // that also broke the working-tree/history parity this scanner documents).
     // Content lines strip exactly ONE leading '+', so content beginning with '+' is
     // still scanned.
+    // 2026-07-21 Round 9 fix: track hunk state so `--- `/`+++ ` are treated as FILE
+    // HEADERS only in the pre-hunk header region (between `diff --git` and the first
+    // `@@`), never inside a hunk body. The Round 8 single-boolean parser had no hunk
+    // tracking, so a REMOVED content line whose text is `-- a/z` (diff `--- a/z`)
+    // inside a hunk masqueraded as a header and made the next ADDED secret line
+    // (diff `+++ …`) be consumed as a header and skipped — a history false-negative.
+    // In a hunk, every `+` line is added content (scanned) and every `-` line is
+    // removed content (ignored); neither can be a header.
+    let inHunk = false;
     let afterMinusHeader = false;
     for (const raw of r.stdout.toString('utf8').split('\n')) {
-      if (raw.startsWith('--- a/') || raw.startsWith('--- /dev/null')) { afterMinusHeader = true; continue; }
-      const isFileHeader = afterMinusHeader && raw.startsWith('+++ ');
-      afterMinusHeader = false;
-      if (isFileHeader) {
-        file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, '');
-        // Apply the same FILENAME-based blocks the working-tree scan uses, so a key
-        // file or Dev-Memory path committed then removed is still caught in history.
-        if (file !== '/dev/null') {
-          if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
-          if (DEVMEMORY_RE.test(file) && !allowDevMemory) addFinding('dev-memory-history', file, '0');
+      if (raw.startsWith('diff --git ')) { inHunk = false; afterMinusHeader = false; continue; }
+      if (raw.startsWith('@@')) { inHunk = true; afterMinusHeader = false; continue; }
+      if (!inHunk) {
+        // pre-hunk header region: the only place `--- `/`+++ ` are real file headers
+        if (raw.startsWith('--- a/') || raw.startsWith('--- /dev/null')) { afterMinusHeader = true; continue; }
+        if (afterMinusHeader && raw.startsWith('+++ ')) {
+          afterMinusHeader = false;
+          file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, '');
+          // Apply the same FILENAME-based blocks the working-tree scan uses, so a key
+          // file or Dev-Memory path committed then removed is still caught in history.
+          if (file !== '/dev/null') {
+            if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
+            if (DEVMEMORY_RE.test(file) && !allowDevMemory) addFinding('dev-memory-history', file, '0');
+          }
+          continue;
         }
-        continue;
+        afterMinusHeader = false;
+        continue; // other pre-hunk metadata (index, mode, rename, etc.)
       }
+      // in a hunk body: only added ('+') lines carry shippable new content
       if (raw.startsWith('+')) {
         const ln = raw.slice(1);
         if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');

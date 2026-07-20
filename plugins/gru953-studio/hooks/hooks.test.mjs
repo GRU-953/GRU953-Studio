@@ -2841,6 +2841,35 @@ test('scan.mjs: a secret on a "++"-prefixed content line is caught in unpushed h
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// --- Round 9 (2026-07-21 final adversarial): 2 findings, both fixed ----------
+
+test('scan.mjs: a removed "-- a/z" line does not let the next added secret line masquerade as a diff header (2026-07-21 Round 9 fix)', () => {
+  const dir = mkTmp('gru-scan-hunkhdr-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const secret = 'ghp_' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345'; // gh-token shaped, built in parts
+  fs.writeFileSync(path.join(dir, 'vic.txt'), '-- a/z\n');
+  git(['add', '-A'], dir); git(['commit', '-qm', 'c1'], dir);
+  fs.writeFileSync(path.join(dir, 'vic.txt'), '++ b/' + secret + '\n'); // hunk: '--- a/z' then '+++ b/ghp_…'
+  git(['add', '-A'], dir); git(['commit', '-qm', 'c2'], dir);
+  fs.writeFileSync(path.join(dir, 'vic.txt'), 'clean now\n'); // secret gone from working tree, still in history
+  git(['add', '-A'], dir); git(['commit', '-qm', 'c3'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a secret added after a "-- a/z" removed line must still be caught in unpushed history');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('classifySpdxExpr: parentheses and AND/OR precedence are honoured (2026-07-21 Round 9 fix)', () => {
+  assert.equal(classifySpdxExpr('GPL-3.0-only AND (MIT OR Apache-2.0)'), false, 'a mandatory copyleft term inside AND must BLOCK');
+  assert.equal(classifySpdxExpr('(MIT OR Apache-2.0) AND GPL-3.0'), false);
+  assert.equal(classifySpdxExpr('LGPL-3.0-only AND (Apache-2.0 OR MIT)'), false);
+  assert.equal(classifySpdxExpr('MIT OR Apache-2.0'), true);
+  assert.equal(classifySpdxExpr('MIT AND Apache-2.0'), true);
+  assert.equal(classifySpdxExpr('MIT AND GPL-2.0'), false);
+  assert.equal(classifySpdxExpr('GPL-2.0 AND MIT OR BSD-3-Clause'), true, 'satisfiable via the permissive OR alternative');
+  assert.equal(classifySpdxExpr('(MIT OR Apache-2.0) AND Unicode-DFS-2016'), null, 'an unknown mandatory term -> needs review, not a silent pass');
+});
+
 test('gate.mjs + scan.mjs: a pattern-substitution-obfuscated push/go-public is gated end-to-end (2026-07-21 Round 7 CRITICAL fix)', () => {
   const d1 = mkTmp('gru-r7-push-'); fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true }); initRepo(d1);
   fs.writeFileSync(path.join(d1, 'config.txt'), 'k = "' + 'AKIA' + 'IOSFODNN7EXAMPLE"\n');

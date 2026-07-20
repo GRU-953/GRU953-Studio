@@ -254,18 +254,44 @@ function scanDartFlutter(root) {
 // shape as isAllowed(), erring toward review, never toward a silent pass.
 export function classifySpdxExpr(expr) {
   if (!expr) return null;
-  const alternatives = String(expr).split(/\bOR\b/i).map((s) => s.trim()).filter(Boolean);
-  if (alternatives.length === 0) return null;
-  const verdicts = alternatives.map((alt) => {
-    const up = alt.toUpperCase();
-    if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false;
-    const andTerms = alt.split(/\bAND\b|\bWITH\b/i).map((t) => t.replace(/[()]/g, '').trim()).filter(Boolean);
-    if (andTerms.length && andTerms.every((t) => ALLOWED.has(t))) return true;
-    return null;
-  });
-  if (verdicts.some((v) => v === true)) return true;
-  if (verdicts.every((v) => v === false)) return false;
-  return null;
+  // 2026-07-21 Round 9 fix: a proper precedence- and parenthesis-aware evaluator.
+  // The previous version flat-split on top-level OR before honouring parentheses or
+  // SPDX precedence (AND binds tighter than OR), so `GPL AND (MIT OR Apache)` — where
+  // the copyleft term is MANDATORY — was wrongly classified ALLOWED (a false-clean in
+  // a hard-stop gate). This recursive-descent parser evaluates OR (lowest precedence),
+  // then AND, then parenthesised groups / licence refs, in a three-way (allowed=true /
+  // blocked=false / review=null) logic that errs toward review, never a silent pass.
+  const tokens = String(expr).replace(/\(/g, ' ( ').replace(/\)/g, ' ) ').trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const AND = (a, b) => (a === false || b === false) ? false : (a === true && b === true) ? true : null;
+  const OR = (a, b) => (a === true || b === true) ? true : (a === false && b === false) ? false : null;
+  const classifyId = (id, withExc) => {
+    const up = (id + (withExc ? ' WITH ' + withExc : '')).toUpperCase();
+    if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false; // copyleft/flagged
+    return ALLOWED.has(id) ? true : null; // permissive-allowed, else unknown -> review
+  };
+  const parseOr = () => {
+    let v = parseAnd();
+    while (peek() && /^OR$/i.test(peek())) { pos++; v = OR(v, parseAnd()); }
+    return v;
+  };
+  function parseAnd() {
+    let v = parseFactor();
+    while (peek() && /^AND$/i.test(peek())) { pos++; v = AND(v, parseFactor()); }
+    return v;
+  }
+  function parseFactor() {
+    if (peek() === '(') { pos++; const v = parseOr(); if (peek() === ')') pos++; return v; }
+    const id = tokens[pos++];
+    if (id === undefined) return null;
+    let withExc;
+    if (peek() && /^WITH$/i.test(peek())) { pos++; withExc = tokens[pos++]; }
+    return classifyId(id, withExc);
+  }
+  const result = parseOr();
+  return result === undefined ? null : result;
 }
 
 // Rust (Cargo): `cargo metadata` exposes each package's SPDX `license` field
