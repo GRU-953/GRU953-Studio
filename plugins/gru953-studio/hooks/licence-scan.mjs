@@ -54,11 +54,22 @@ function scanNode(root) {
   const findings = [];
   const dirs = fs.readdirSync(nm, { withFileTypes: true });
   const pkgDirs = [];
+  // 2026-07-21 Round 3 fix: pnpm places each DIRECT dependency in node_modules as a
+  // SYMLINK into node_modules/.pnpm; a symlink Dirent is not isDirectory(), so those
+  // packages were skipped — which, once the dot-dir skip below removed the old
+  // accidental .pnpm needs-review, turned a pnpm licence scan into a false-clean
+  // (copyleft deps unseen). Treat a symlink-to-a-directory as a directory
+  // (readFileSync follows it transparently to the real package.json in the store).
+  const isDirLike = (dirent, full) => {
+    if (dirent.isDirectory()) return true;
+    if (dirent.isSymbolicLink()) { try { return fs.statSync(full).isDirectory(); } catch { return false; } }
+    return false;
+  };
   for (const d of dirs) {
-    if (!d.isDirectory()) continue;
+    if (!isDirLike(d, path.join(nm, d.name))) continue;
     if (d.name.startsWith('@')) {
       const scoped = fs.readdirSync(path.join(nm, d.name), { withFileTypes: true });
-      for (const s of scoped) if (s.isDirectory()) pkgDirs.push(path.join(d.name, s.name));
+      for (const s of scoped) if (isDirLike(s, path.join(nm, d.name, s.name))) pkgDirs.push(path.join(d.name, s.name));
     } else if (d.name.startsWith('.') || d.name.startsWith('_')) {
       // 2026-07-21 audit fix: npm's tooling directories are not packages. `.bin`
       // (created whenever ANY dependency ships an executable — jest/eslint/tsc/

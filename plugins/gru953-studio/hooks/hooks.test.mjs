@@ -798,6 +798,7 @@ test('licence-scan.mjs: a package with no readable package.json is surfaced as n
   const json = JSON.parse(r.stdout);
   assert.notEqual(json.status, 'clean', 'a package with no readable package.json must not report clean');
   assert.ok(json.needsReview.some((f) => f.package === 'broken-pkg'), 'the unreadable package must be surfaced in needsReview, not dropped');
+  assert.equal(r.status, 1, 'a needs-review verdict must block Publish via a non-zero exit code, not just report the status string');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -2661,5 +2662,50 @@ test('repo-integrity.mjs INV12: a stale "four ... checks" on the publish path (m
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale "four ... checks" on the publish path must be caught');
   assert.ok(r.json.problems.some((p2) => /maintenance-agent\.md/.test(p2) && /four/.test(p2)), `expected a problem naming maintenance-agent, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 3 — fewer findings (5), all fixed here.
+// ---------------------------------------------------------------------------
+
+test('licence-scan.mjs: a pnpm-layout copyleft dependency (symlinked direct dep) is BLOCKED, not false-clean (2026-07-21 Round 3 regression fix)', () => {
+  const dir = mkTmp('gru-lic-pnpm-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"app"}');
+  const store = path.join(dir, 'node_modules', '.pnpm', 'evil-gpl@1.0.0', 'node_modules', 'evil-gpl');
+  fs.mkdirSync(store, { recursive: true });
+  fs.writeFileSync(path.join(store, 'package.json'), '{"name":"evil-gpl","license":"GPL-3.0"}');
+  fs.mkdirSync(path.join(dir, 'node_modules', '.bin'), { recursive: true }); // tooling dir must still be skipped
+  fs.symlinkSync(path.join('.pnpm', 'evil-gpl@1.0.0', 'node_modules', 'evil-gpl'), path.join(dir, 'node_modules', 'evil-gpl'), 'dir');
+  const r = runScript('licence-scan.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a pnpm-symlinked GPL dep must be caught, not skipped: ${r.stdout}`);
+  assert.equal(r.code, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: gh api create-from-template also needs the go-public token (2026-07-21 Round 3 fix)', () => {
+  const dir = mkTmp('gru-gate-gen-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  const denied = runHook('gate.mjs', 'gh api -X POST repos/octocat/tmpl/generate -f owner=me -f name=new', dir);
+  assert.equal(denied.decision, 'deny', 'template-generate defaults to a PUBLIC repo and must need the go-public token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a met requirement whose own row admits it is failing is caught (2026-07-21 coverage)', () => {
+  const dir = mkTmp('gru-trace-contra-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | verified: was ok, now fails with exit 1 | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /marked met but its own row|currently failing\/unverified/i.test(p)), 'the contradiction branch must fire');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a required dimension with a plain non-pass status (todo) is BLOCKED (2026-07-21 coverage)', () => {
+  const dir = mkTmp('gru-qg-nonpass-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | todo | not run yet |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /is not a pass/i.test(p)), 'a non-pass required dimension must be reported');
   fs.rmSync(dir, { recursive: true, force: true });
 });

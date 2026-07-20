@@ -142,7 +142,11 @@ function isGoPublicCommand(rawC) {
   // (/user/repos or orgs/<org>/repos) with visibility OMITTED still makes a public
   // repo — it must need the go-public token unless it explicitly asks for private.
   // (isPushCapable has already established this is a gh api WRITE before we get here.)
-  const apiRepoCreate = /\/?(user\/repos|orgs\/[^ \t/'"]+\/repos)\b/i.test(c);
+  // 2026-07-21 Round 3 fix: also match the THIRD repo-creation endpoint,
+  // POST /repos/<owner>/<template>/generate (create-from-template), whose `private`
+  // default is also false = PUBLIC — the Round 2 fix covered only /user/repos and
+  // orgs/<org>/repos.
+  const apiRepoCreate = /\/?(user\/repos|orgs\/[^ \t/'"]+\/repos|repos\/[^ \t/'"]+\/[^ \t/'"]+\/generate)\b/i.test(c);
   const apiVisibility = isGhApi && (apiExplicitPublic || (apiRepoCreate && !apiExplicitPrivate));
   return repoVisibility || apiVisibility;
 }
