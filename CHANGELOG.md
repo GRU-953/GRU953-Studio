@@ -32,6 +32,12 @@ you use the tool; the roster stays 38 agents / 32 skills.
   genuine picture/video/binary files are still skipped. It also now catches a
   secret sitting on the same line as a stray non-text byte in the git history,
   matching how the current-files check already behaved.
+- Closed a gap where a secret in a file you'd told Git to ignore could still ship
+  if it was force-added, committed and pushed all in one command — those
+  force-added files are now checked too, while an ordinary push still leaves your
+  ignored files alone.
+- The history check now also looks inside **merge** commits, so a secret pasted in
+  while resolving a merge conflict (and later removed) can't slip through.
 
 **Correctness & reliability:**
 - The licence check no longer false-blocks publishing on ordinary npm/TypeScript

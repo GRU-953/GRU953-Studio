@@ -3106,3 +3106,82 @@ test('verify-progress.mjs: a decorated `done` VALUE (**done**, `done`, "✅ done
   assert.equal(r.code, 1, `a decorated done value under a non-Status header must fail closed: ${r.stdout}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 13 — a fresh red-team found 3 distinct
+// defects (2 high + 1 medium; a 4th was the same merge issue via a 2nd lens):
+// (1) the R12 history classifier tested the WHOLE added content while the
+// working-tree path head-samples, so a text-headed/binary-tailed dump was caught
+// in the tree but skipped in history; (2) a gitignored secret force-added in a
+// compound `git add -f X && commit && push` bypassed both scans; (3) `git log -p`
+// omits merge diffs, so a secret unique to a merge resolution shipped undetected.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a text-headed, binary-tailed file (committed then removed) is caught in history, matching the working-tree scan (2026-07-21 Round 13 head-sample parity fix)', () => {
+  const dir = mkTmp('gru-scan-r13-headsample-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  const head = Buffer.from('config value line xyz\n'.repeat(4000) + 'apikey=' + akia + '\n' + 'more config here\n'.repeat(500), 'utf8');
+  const tail = Buffer.alloc(100 * 1024, 0); // whole-content text fraction < 0.85, but head = 1.0
+  fs.writeFileSync(path.join(dir, 'dump.sql'), Buffer.concat([head, tail]));
+  git(['add', 'dump.sql'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'dump.sql')); git(['add', '-A'], dir); git(['commit', '-qm', 'rm'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a text-headed/binary-tailed dump's history secret must be caught (head-sample parity): ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a gitignored secret force-added in a compound command is caught; a normal push does not scan gitignored files (2026-07-21 Round 13 HIGH fix)', () => {
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  // (a) force-add of a gitignored secret in one compound command -> deny
+  const d1 = mkTmp('gru-scan-r13-forceadd-');
+  fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true });
+  initRepo(d1);
+  fs.writeFileSync(path.join(d1, '.gitignore'), '*.secret\nnode_modules/\n');
+  git(['add', '.gitignore'], d1); git(['commit', '-qm', 'ig'], d1);
+  fs.writeFileSync(path.join(d1, 'prod.secret'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f prod.secret && git commit -m x && git push origin main', d1).decision, 'deny', 'a force-added gitignored secret must be caught');
+  assert.equal(runHook('scan.mjs', 'git add -f . && git commit -m x && git push origin main', d1).decision, 'deny', 'git add -f . must catch the ignored secret it sweeps in');
+  fs.rmSync(d1, { recursive: true, force: true });
+  // (b) NO false positive: a normal push must not scan gitignored files at all
+  const d2 = mkTmp('gru-scan-r13-normalpush-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  initRepo(d2);
+  fs.writeFileSync(path.join(d2, '.gitignore'), '*.secret\n');
+  git(['add', '.gitignore'], d2); git(['commit', '-qm', 'ig'], d2);
+  fs.writeFileSync(path.join(d2, 'prod.secret'), 'K="' + akia + '"\n'); // ignored, NOT shipped
+  fs.writeFileSync(path.join(d2, 'app.js'), 'ok\n'); git(['add', 'app.js'], d2); git(['commit', '-qm', 'app'], d2);
+  assert.equal(runHook('scan.mjs', 'git push origin main', d2).decision, 'allow', 'a normal push must not flag a gitignored file that is not being shipped');
+  fs.rmSync(d2, { recursive: true, force: true });
+  // (c) scoping: force-adding one harmless file must not scan an unrelated ignored secret
+  const d3 = mkTmp('gru-scan-r13-scope-');
+  fs.mkdirSync(path.join(d3, 'Dev-Memory'), { recursive: true });
+  initRepo(d3);
+  fs.writeFileSync(path.join(d3, '.gitignore'), '*.log\nnode_modules/\n');
+  git(['add', '.gitignore'], d3); git(['commit', '-qm', 'ig'], d3);
+  fs.writeFileSync(path.join(d3, 'debug.log'), 'nothing secret here\n');
+  fs.mkdirSync(path.join(d3, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(d3, 'node_modules', 'pkg', 'leak.log'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f debug.log && git commit -m x && git push origin main', d3).decision, 'allow', 'force-adding one harmless file must not sweep in an unrelated ignored secret');
+  fs.rmSync(d3, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret unique to a merge commit (later removed) is caught in unpushed history (2026-07-21 Round 13 merge-diff fix)', () => {
+  const dir = mkTmp('gru-scan-r13-merge-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'line-A\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'base'], dir);
+  git(['checkout', '-qb', 'branchB'], dir);
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'line-B\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'B'], dir);
+  git(['checkout', '-q', 'main'], dir);
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'line-A2\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'A2'], dir);
+  git(['merge', '--no-commit', '--no-ff', 'branchB'], dir); // conflict
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'resolved ' + akia + '\n'); // secret unique to the merge
+  git(['add', '-A'], dir); git(['commit', '-qm', 'merge resolve'], dir);
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'clean\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'cleanup'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a secret unique to a merge resolution (later removed) must be caught with git log -m: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

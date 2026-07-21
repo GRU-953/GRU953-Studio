@@ -706,3 +706,29 @@ existing gate — each is additive.
   the header, and normalises GFM's optional outer pipes so a row written in a
   different pipe style from the header is not column-shifted; a row whose columns
   cannot be lined up fails closed. Quality/integrity gate, as above.
+- **A force-added gitignored secret is no longer invisible to the scan (2026-07-21
+  Round 13, HIGH).** The would-ship file set is built with `git ls-files --others
+  --exclude-standard`, which omits gitignored files. A single compound `git add -f
+  <ignored-secret> && git commit && git push` therefore slipped BOTH scans — at
+  check time the file is untracked+ignored (in none of the three list calls) and no
+  commit exists yet (empty history range). Now, when the command itself force-adds
+  (`-f`/`--force`, run through the same obfuscation normaliser as the push matcher),
+  the gitignored files that force-add would stage are enumerated and scanned too,
+  **scoped to the force-add pathspecs** so an ordinary push — and a force-add of one
+  file — never sweeps in unrelated ignored trees such as `node_modules`. **Residual,
+  disclosed:** a force-add pathspec that survives only as a runtime shell expansion
+  the normaliser does not resolve — the same command-parsing boundary the other
+  disclosed shell cases carry.
+- **The history scan now surfaces merge-commit content (2026-07-21 Round 13,
+  HIGH).** `git log -p` emits no diff for a merge commit by default, so a secret
+  unique to a merge resolution (present in neither parent — an "evil merge"), later
+  removed, shipped in the merge commit's tree undetected. The invocation now uses
+  `-m` (per-parent diffs, the ordinary single-`+` format the parser already
+  handles), so merge-unique added content — secret, key-file name, or Dev-Memory
+  path — is scanned like any other commit.
+- **History secret scan brought to true head-sample parity (2026-07-21 Round 13).**
+  The Round 12 per-file history classifier tested the *whole* added content while
+  the working-tree path samples the first ~64 KB; the two disagreed for a
+  text-headed but binary-tailed file (a DB dump), which the tree scan caught and the
+  history scan skipped. The history classifier now head-samples too, so both paths
+  make the identical text/binary decision.

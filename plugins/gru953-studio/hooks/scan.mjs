@@ -25,7 +25,7 @@ import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable } from './lib.mjs';
+import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck } from './lib.mjs';
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
 // skill and confirm-memory-persist.mjs). When this project-bound token is
@@ -61,6 +61,46 @@ function resolvePushTree(cmd, fallback) {
   m = /^[ \t]*cd[ \t]+(?:"([^"]+)"|'([^']+)'|([^ \t;&|]+))[ \t]*(?:&&|;)/.exec(cmd);
   if (m) return m[1] || m[2] || m[3];
   return fallback;
+}
+
+// ---- force-add pathspec extraction -------------------------------------------
+// 2026-07-21 Round 12/13 audit fix (HIGH): the would-ship file set is built with
+// `git ls-files --others --exclude-standard`, which OMITS gitignored files. A
+// single compound `git add -f <ignored-secret> && git commit && git push` slips
+// BOTH scans — at PreToolUse the file is untracked+ignored (absent from all three
+// git calls) and no commit exists yet (the history range is empty). When the
+// command force-adds (`-f`/`--force`), enumerate the ignored files the force-add
+// would stage and scan them too. Scoped to the actual pathspecs so an ordinary
+// push, and a force-add of one file, never sweep in unrelated ignored trees
+// (e.g. node_modules). Runs on the obfuscation-resolved command, like the other
+// hooks. Residual (disclosed in SECURITY.md): a force-add pathspec that survives
+// only as a runtime shell expansion this normaliser does not resolve.
+function extractForceAddPathspecs(cmd) {
+  const norm = normalizeForPushCheck(cmd);
+  const specs = [];
+  for (const seg of norm.split(/&&|\|\||[;\n|&]/)) {
+    if (!/(?:^|[^A-Za-z0-9_])git(?:[ \t]|$)/.test(seg)) continue;
+    const m = /(?:^|[^A-Za-z0-9_])add(?:[ \t]|$)/.exec(seg);
+    if (!m) continue;
+    // a force flag: --force, or a short-flag cluster containing 'f' (-f, -Af, -fA)
+    const hasForce = /(?:^|[ \t])--force(?:[ \t=]|$)/.test(seg) || /(?:^|[ \t])-[A-Za-z]*f[A-Za-z]*(?:[ \t]|$)/.test(seg);
+    if (!hasForce) continue;
+    const hasAll = /(?:^|[ \t])(?:--all|-[A-Za-z]*A[A-Za-z]*)(?:[ \t]|$)/.test(seg);
+    let sawDashDash = false;
+    let anyPath = false;
+    for (const t of seg.slice(m.index + m[0].length).split(/[ \t]+/)) {
+      const tok = t.replace(/^['"]+|['"]+$/g, '').trim();
+      if (!tok) continue;
+      if (!sawDashDash && tok === '--') { sawDashDash = true; continue; }
+      if (!sawDashDash && tok.startsWith('-')) continue; // an option, not a pathspec
+      specs.push(tok);
+      anyPath = true;
+    }
+    // `git add -A -f` / `git add --all -f` with no explicit path stages everything,
+    // ignored included; scope that to the whole tree.
+    if (!anyPath && hasAll) specs.push('.');
+  }
+  return Array.from(new Set(specs));
 }
 
 // ---- redaction ---------------------------------------------------------------
@@ -142,6 +182,15 @@ function main() {
   for (const p of nulParts(git(['ls-files', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
   for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
   for (const p of nulParts(git(['ls-files', '--others', '--exclude-standard', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
+  // 2026-07-21 Round 13 audit fix (HIGH): if THIS command force-adds ignored
+  // files (`git add -f <path>` / `git add -A -f`), include the gitignored files
+  // it would stage — otherwise a compound add+commit+push ships them unscanned.
+  // Scoped to the force-add pathspecs, so a normal push (and a force-add of a
+  // single file) never sweeps in unrelated ignored trees such as node_modules.
+  for (const spec of extractForceAddPathspecs(CMD)) {
+    const out = git(['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', spec], REPO, 'buffer');
+    if (out.ok) for (const p of nulParts(out.stdout)) fileSet.add(p);
+  }
   const FILES = Array.from(fileSet).sort();
 
   const MAX_SCAN_BYTES = 4 * 1024 * 1024;
@@ -280,7 +329,13 @@ function main() {
     // (git's binary heuristic suppressed the diff). The added content is then
     // classified PER FILE below (see flushHistory), so a genuine binary blob that
     // `--text` dumps as pseudo-lines is not regex-scanned.
-    const r = git(['log', '-p', '-U0', '--no-color', '--no-textconv', '--text', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    // 2026-07-21 Round 13 audit fix: `-m` emits a per-parent diff for MERGE
+    // commits. Without it `git log -p` shows NO diff for a merge, so a secret
+    // unique to a merge resolution (present in neither parent — an "evil merge"),
+    // later removed, shipped in the merge commit's tree undetected. `-m` uses the
+    // ordinary single-`+` diff format the parser below already handles; merged-in
+    // side-branch content is re-scanned redundantly but harmlessly.
+    const r = git(['log', '-p', '-m', '-U0', '--no-color', '--no-textconv', '--text', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     let file = '(unpushed history)';
     // 2026-07-21 Round 8 fix: parse the unified diff with minimal state instead of
@@ -317,7 +372,12 @@ function main() {
       if (added.length === 0) return;
       const content = added.join('\n');
       added = [];
-      if (!strIsTextish(content)) return; // genuine binary file — not content-scanned
+      // 2026-07-21 Round 13 audit fix: classify from the HEAD of the added content
+      // (first 64 KB), mirroring the working-tree bufIsTextish head sample. Testing
+      // the WHOLE content diverged from the working-tree scan for a text-headed but
+      // binary-tailed file (e.g. a DB dump): the tree scan caught its secret, the
+      // history scan skipped it. Head-sampling restores true parity.
+      if (!strIsTextish(content.length > 65536 ? content.slice(0, 65536) : content)) return; // genuine binary file — not content-scanned
       for (const ln of content.split(String.fromCharCode(0)).join('\n').split('\n')) {
         if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
         if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
