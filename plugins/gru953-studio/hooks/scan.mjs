@@ -88,8 +88,20 @@ function extractForceAddPathspecs(cmd) {
     const hasAll = /(?:^|[ \t])(?:--all|-[A-Za-z]*A[A-Za-z]*)(?:[ \t]|$)/.test(seg);
     let sawDashDash = false;
     let anyPath = false;
-    for (const t of seg.slice(m.index + m[0].length).split(/[ \t]+/)) {
-      const tok = t.replace(/^['"]+|['"]+$/g, '').trim();
+    // 2026-07-21 Round 14 audit fix: tokenise quote-AWARE. A plain whitespace
+    // split broke a quoted pathspec that contains a space (`git add -f "prod
+    // copy.secret"`) into two bogus tokens, so the ignored file matched nothing
+    // and shipped unscanned. Keep single/double-quoted spans together (as the
+    // shell hands them to git), then strip one surrounding quote pair. Spaced
+    // filenames are ordinary on macOS/Windows, so this is a realistic case, not
+    // obfuscation. (Residual, disclosed: a backslash-escaped space is unescaped
+    // by normalizeForPushCheck before this runs — the disclosed normaliser boundary.)
+    for (const raw of seg.slice(m.index + m[0].length).match(/"[^"]*"|'[^']*'|[^\s'"]+/g) || []) {
+      let tok = raw;
+      if ((tok.startsWith('"') && tok.endsWith('"')) || (tok.startsWith("'") && tok.endsWith("'"))) {
+        tok = tok.slice(1, -1);
+      }
+      tok = tok.trim();
       if (!tok) continue;
       if (!sawDashDash && tok === '--') { sawDashDash = true; continue; }
       if (!sawDashDash && tok.startsWith('-')) continue; // an option, not a pathspec
@@ -316,11 +328,12 @@ function main() {
   // secret committed and then removed (git commit is never push-capable, so is
   // never scanned) would still ride an incremental checkpoint/memory-persist
   // branch push inside the earlier commit. Scan the content ADDED in unpushed
-  // commits (`HEAD --not --remotes` = commits not yet on any remote, i.e. what a
-  // branch push sends). Added coverage only — it never relaxes the working-tree
-  // scan; any git error or empty range returns silently and the working-tree scan
-  // still stands. (Residual, disclosed in SECURITY.md: a value living only in a
-  // file referenced by `--input`/curl body is still not parsed.)
+  // commits across ALL local branches and tags (`--branches --tags HEAD --not
+  // --remotes` = every pushable local ref not yet on any remote — see the Round 14
+  // note on the git invocation below). Added coverage only — it never relaxes the
+  // working-tree scan; any git error or empty range returns silently and the
+  // working-tree scan still stands. (Residual, disclosed in SECURITY.md: a value
+  // living only in a file referenced by `--input`/curl body is still not parsed.)
   const scanUnpushedHistory = () => {
     // 2026-07-21 Round 11 audit fix: `--text` forces git to emit the real added
     // content of NUL-containing blobs instead of rendering them as "Binary files
@@ -335,7 +348,15 @@ function main() {
     // later removed, shipped in the merge commit's tree undetected. `-m` uses the
     // ordinary single-`+` diff format the parser below already handles; merged-in
     // side-branch content is re-scanned redundantly but harmlessly.
-    const r = git(['log', '-p', '-m', '-U0', '--no-color', '--no-textconv', '--text', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    // 2026-07-21 Round 14 audit fix: walk ALL local branches and tags, not only
+    // HEAD. `HEAD --not --remotes` only equals "what a push sends" when the pushed
+    // ref is the current checkout — but `git push --all`, `git push --mirror`, and
+    // `git push origin <branch>` (while standing on a different branch) all ship
+    // commits on NON-HEAD refs, which HEAD-only excluded (and the working-tree scan
+    // reflects only the checkout, so both paths missed them). `--branches --tags
+    // HEAD --not --remotes` is the finite superset of every pushable local ref not
+    // already on a remote (HEAD kept explicitly to cover a detached-HEAD push).
+    const r = git(['log', '-p', '-m', '-U0', '--no-color', '--no-textconv', '--text', '--branches', '--tags', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     let file = '(unpushed history)';
     // 2026-07-21 Round 8 fix: parse the unified diff with minimal state instead of

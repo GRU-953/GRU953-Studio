@@ -715,10 +715,12 @@ existing gate — each is additive.
   (`-f`/`--force`, run through the same obfuscation normaliser as the push matcher),
   the gitignored files that force-add would stage are enumerated and scanned too,
   **scoped to the force-add pathspecs** so an ordinary push — and a force-add of one
-  file — never sweeps in unrelated ignored trees such as `node_modules`. **Residual,
-  disclosed:** a force-add pathspec that survives only as a runtime shell expansion
-  the normaliser does not resolve — the same command-parsing boundary the other
-  disclosed shell cases carry.
+  file — never sweeps in unrelated ignored trees such as `node_modules`. The pathspec
+  parser is quote-aware (Round 14), so a quoted filename containing spaces (`git add
+  -f "prod copy.secret"`) is kept as one pathspec. **Residual, disclosed:** a
+  force-add pathspec that survives only as a runtime shell expansion, or a
+  backslash-escaped space that `normalizeForPushCheck` unescapes before the parser
+  runs — the same command-parsing boundary the other disclosed shell cases carry.
 - **The history scan now surfaces merge-commit content (2026-07-21 Round 13,
   HIGH).** `git log -p` emits no diff for a merge commit by default, so a secret
   unique to a merge resolution (present in neither parent — an "evil merge"), later
@@ -732,3 +734,13 @@ existing gate — each is additive.
   text-headed but binary-tailed file (a DB dump), which the tree scan caught and the
   history scan skipped. The history classifier now head-samples too, so both paths
   make the identical text/binary decision.
+- **The history scan walks every pushable local ref, not just HEAD (2026-07-21
+  Round 14, HIGH).** It previously ran `git log … HEAD --not --remotes`, which only
+  equals "what a push sends" when the pushed ref is the current checkout. `git push
+  --all`, `git push --mirror`, and `git push origin <branch>` (while standing on a
+  different branch) all ship commits on non-HEAD refs, which HEAD-only excluded (and
+  the working-tree scan reflects only the checkout, so both paths missed them). The
+  range is now `--branches --tags HEAD --not --remotes` — the finite superset of
+  every pushable local ref not already on a remote (HEAD kept explicitly for a
+  detached-HEAD push). A clean unpushed branch is still allowed; anything already on
+  a remote is still excluded.

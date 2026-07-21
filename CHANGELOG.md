@@ -38,6 +38,10 @@ you use the tool; the roster stays 38 agents / 32 skills.
   ignored files alone.
 - The history check now also looks inside **merge** commits, so a secret pasted in
   while resolving a merge conflict (and later removed) can't slip through.
+- The force-add check now understands filenames with spaces (e.g. a file named
+  "prod copy.secret"), and the history check now covers **every** local branch you
+  might push — including `git push --all`, `git push --mirror`, or pushing a branch
+  you're not currently on — not just the one you have checked out.
 
 **Correctness & reliability:**
 - The licence check no longer false-blocks publishing on ordinary npm/TypeScript

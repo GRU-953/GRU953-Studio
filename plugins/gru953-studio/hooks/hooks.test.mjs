@@ -3185,3 +3185,71 @@ test('scan.mjs: a secret unique to a merge commit (later removed) is caught in u
   assert.equal(r.decision, 'deny', `a secret unique to a merge resolution (later removed) must be caught with git log -m: ${r.stdout}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 14 — 2 distinct defects (both HIGH; the
+// quote-blind one was found by three lenses): (1) the R13 force-add pathspec
+// parser whitespace-split QUOTED pathspecs, so `git add -f "prod copy.secret"`
+// shipped the ignored secret unscanned; (2) the history scan walked only HEAD, so
+// `git push --all` / `--mirror` / pushing a non-checked-out branch shipped a
+// committed secret undetected. Both closed (quote-aware tokenizer; --branches
+// --tags HEAD range).
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a force-added gitignored secret whose filename contains a space is caught (2026-07-21 Round 14 quote-aware parse fix)', () => {
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  const mk = () => {
+    const dir = mkTmp('gru-scan-r14-space-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    initRepo(dir);
+    fs.writeFileSync(path.join(dir, '.gitignore'), '*.secret\nnode_modules/\n');
+    git(['add', '.gitignore'], dir); git(['commit', '-qm', 'ig'], dir);
+    return dir;
+  };
+  const d1 = mk();
+  fs.writeFileSync(path.join(d1, 'prod copy.secret'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f "prod copy.secret" && git commit -m x && git push origin main', d1).decision, 'deny', 'a double-quoted spaced force-add must be caught');
+  fs.rmSync(d1, { recursive: true, force: true });
+  const d2 = mk();
+  fs.writeFileSync(path.join(d2, 'AWS access keys.secret'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', "git add -f 'AWS access keys.secret' && git commit -m x && git push origin main", d2).decision, 'deny', 'a single-quoted spaced force-add must be caught');
+  fs.rmSync(d2, { recursive: true, force: true });
+  // scoping/no-false-positive: force-adding a harmless spaced file must not sweep an unrelated ignored secret
+  const d3 = mkTmp('gru-scan-r14-spacescope-');
+  fs.mkdirSync(path.join(d3, 'Dev-Memory'), { recursive: true });
+  initRepo(d3);
+  fs.writeFileSync(path.join(d3, '.gitignore'), '*.log\nnode_modules/\n');
+  git(['add', '.gitignore'], d3); git(['commit', '-qm', 'ig'], d3);
+  fs.writeFileSync(path.join(d3, 'debug output.log'), 'nothing secret\n');
+  fs.mkdirSync(path.join(d3, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(d3, 'node_modules', 'pkg', 'leak.log'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f "debug output.log" && git commit -m x && git push origin main', d3).decision, 'allow', 'a quoted force-add of one harmless file must not sweep in unrelated ignored trees');
+  fs.rmSync(d3, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret on a non-HEAD local branch is caught for git push --all / --mirror / push <branch> (2026-07-21 Round 14 ref-range fix)', () => {
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  const mk = (withSecret) => {
+    const bare = mkTmp('gru-scan-r14-bare-') + path.sep + 'r.git';
+    git(['init', '-q', '--bare', bare], os.tmpdir());
+    const dir = mkTmp('gru-scan-r14-branch-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    git(['init', '-q', '-b', 'main'], dir); git(['config', 'user.email', 't@e.com'], dir); git(['config', 'user.name', 'T'], dir);
+    git(['remote', 'add', 'origin', bare], dir);
+    fs.writeFileSync(path.join(dir, 'base.txt'), 'base\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'init'], dir);
+    git(['push', '-q', 'origin', 'main'], dir);
+    git(['checkout', '-qb', 'side'], dir);
+    fs.writeFileSync(path.join(dir, 'side.txt'), withSecret ? 'k = "' + akia + '"\n' : 'ordinary code\n');
+    git(['add', '-A'], dir); git(['commit', '-qm', 'side'], dir);
+    git(['checkout', '-q', 'main'], dir); // stand on main; side is non-HEAD
+    return dir;
+  };
+  const d1 = mk(true);
+  assert.equal(runHook('scan.mjs', 'git push --all', d1).decision, 'deny', 'git push --all must scan non-HEAD branches');
+  assert.equal(runHook('scan.mjs', 'git push --mirror', d1).decision, 'deny', 'git push --mirror must scan non-HEAD branches');
+  assert.equal(runHook('scan.mjs', 'git push origin side', d1).decision, 'deny', 'pushing a non-checked-out branch by name must scan it');
+  fs.rmSync(d1, { recursive: true, force: true });
+  const d2 = mk(false);
+  assert.equal(runHook('scan.mjs', 'git push --all', d2).decision, 'allow', 'a clean non-HEAD branch must not be false-blocked');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
