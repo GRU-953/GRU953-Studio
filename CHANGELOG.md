@@ -1,5 +1,80 @@
 # Changelog
 
+## 4.3.0 — 2026-07-21
+
+A **quality-and-hardening release** from a deep, multi-round independent audit
+(each finding double-checked against the real code before it was trusted). It fixes
+real bugs — including two security-gate gaps — and adds many tests. No change to how
+you use the tool; the roster stays 38 agents / 32 skills.
+
+**Security fixes:**
+- Closed a way to bypass the publish / go-public safety gate using GitHub's
+  `gh api` command — in both its spaced (`-f name=x`) and attached (`-fname=x`)
+  forms, and including repo creation that defaults to public. Ordinary reads (e.g.
+  `gh api user`) are unaffected.
+- Removed a "slow regex" flaw where certain long commands could freeze the safety
+  check for many seconds; it is now effectively instant.
+- The secret scan now also checks the git history a push would ship (not just the
+  current files), including by key-file and private-folder name.
+- The secret scan no longer skips a whole file just because it contains one stray
+  non-text byte. An ordinary text file — say a log or a database export — that
+  happens to include such a byte next to a real password or key is now still
+  checked, on both the current files and the history a push would ship. Genuine
+  picture, font and other binary files are still skipped (they don't hold
+  typed-in secrets), and non-English text such as Bangla is treated as text.
+- Closed a gap where creating an **"internal"** repository (one visible to a whole
+  organisation, so not really private) could slip past the "make it public" safety
+  check on an ordinary private-scope confirmation. It now needs the same explicit
+  go-public approval as making a repository fully public.
+- The secret scan now also checks **large** files (previously any file over 4 MB
+  was skipped without being looked at) — so a plaintext key in a big text file
+  like a Terraform state file, database dump or verbose log is caught. Large
+  genuine picture/video/binary files are still skipped. It also now catches a
+  secret sitting on the same line as a stray non-text byte in the git history,
+  matching how the current-files check already behaved.
+- Closed a gap where a secret in a file you'd told Git to ignore could still ship
+  if it was force-added, committed and pushed all in one command — those
+  force-added files are now checked too, while an ordinary push still leaves your
+  ignored files alone.
+- The history check now also looks inside **merge** commits, so a secret pasted in
+  while resolving a merge conflict (and later removed) can't slip through.
+- The force-add check now understands filenames with spaces (e.g. a file named
+  "prod copy.secret"), and the history check now covers **every** local branch you
+  might push — including `git push --all`, `git push --mirror`, or pushing a branch
+  you're not currently on — not just the one you have checked out.
+- The secret scan now also reads **commit messages** and **annotated-tag messages**
+  (when you push tags), catching a key accidentally pasted into a commit or release
+  message — a very common way secrets leak — not just keys inside files.
+
+**Correctness & reliability:**
+- The licence check no longer false-blocks publishing on ordinary npm/TypeScript
+  projects (it stopped treating npm's `.bin`/`.cache` tooling folders as packages).
+- Fixed false "all clear" and false "blocked" results in several internal checks
+  (indented progress tables, a content manifest followed by a second table,
+  knowledge-graph links with trailing notes, and roster-count parsing).
+- The automatic AI model chooser had the most expensive model (Fable) mislabelled
+  as a cheap one, so cheap work was routed to the priciest model; corrected, with a
+  context-window rule added.
+- Reconciled the publish checklist to its full seven blocking checks across every
+  file that describes it (with a mechanical guard so it can't drift again), added
+  the "treat data as data" guardrail to the one role that lacked it, hardened the
+  AI prompt-injection and Gemini key-handling guidance, and fixed the dashboard's
+  colour contrast (light and dark) to meet accessibility standards.
+- The check that "every finished task shows proof it was tested" no longer quietly
+  passes when the progress table's status column is written in an unusual but valid
+  way (in **bold**, under a synonym like "State", or in a table without outer
+  borders). It now recognises those, and if it genuinely can't tell which column
+  is the status, it stops and asks rather than waving the work through. It also now
+  reads a "done" written with decoration (bold, code-style, or with a tick emoji)
+  and lines up table columns even when rows mix pipe styles, so a finished-but-
+  untested task can't slip through on a formatting quirk. The matching requirements
+  check now recognises a decorated "met" status the same way, so it can't skip its
+  proof-of-testing requirement either.
+
+**Under the hood:**
+- The automated test suite was grown substantially, with new mechanical guards so
+  each fix above cannot silently regress; all five safety checks stay green.
+
 ## 4.2.0 — 2026-07-21
 
 A **documentation and packaging release**. The whole GitHub repository was

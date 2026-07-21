@@ -125,8 +125,49 @@ function publishConfirmed(studioRoot) {
 // full explanation of why `([ \t]|$)` was too narrow a boundary.
 function isGoPublicCommand(rawC) {
   const c = normalizeForPushCheck(rawC);
-  return /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
-    (new RegExp(`--public['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
+  // `gh repo create|edit ... --public` / `--visibility public|internal`
+  // 2026-07-21 Round 12 audit fix (HIGH): the standalone `--internal` flag was
+  // NOT matched — only `--public` and `--visibility public|internal` were. But
+  // `gh repo create` has no `--visibility` flag; its three standalone visibility
+  // flags are `--public`/`--private`/`--internal`, and an internal repo is
+  // visible to the whole org/enterprise, i.e. NOT private. The project already
+  // treats internal as go-public (`--visibility internal` and the gh api
+  // public|internal fields are in the go-public set), so a private-scope token
+  // (including a routine checkpoint) must not authorise `gh repo create --internal`.
+  // `--private` stays out (the studio's own publish uses `gh repo create --private`).
+  const repoVisibility = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
+    (new RegExp(`--(public|internal)['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
+  // 2026-07-21 audit fix: the same visibility change performed via `gh api` (the
+  // raw REST interface) — e.g. `gh api -X PATCH repos/me/app -f visibility=public`,
+  // `-F private=false`, or an inline JSON body `{"visibility":"public"}`.
+  // isPushCapable() now treats a `gh api` write as push-capable, so such a command
+  // reaches here; this makes a visibility-to-public write require the separate
+  // GO-PUBLIC-APPROVED token, not merely the private-publish one.
+  const isGhApi = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c);
+  // 2026-07-21 Round 4 fix: only honour a private/visibility signal when it is an
+  // actual gh api FIELD flag (`-f private=true`, `-fprivate=true`,
+  // `--field visibility=private`), NOT an incidental substring inside some other
+  // field's VALUE (e.g. `-f description="toggle private=true"`), which previously
+  // over-matched and let a public repo-create ride the private-publish token.
+  // 2026-07-21 Round 8 fix: `[ \t=]*` (was `[ \t]*`) so the attached-equals long
+  // form `--field=visibility=public` / `-f=...` is consumed too — pflag accepts it,
+  // and it previously slipped past the go-public gate (a public change authorised on
+  // the private-publish token). Mirrors isPushCapable's `[ \t=]` field-flag tolerance.
+  const FIELD = `(?:-[fF]|--field|--raw-field)[ \\t=]*['"]?`;
+  const apiExplicitPublic = new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?(public|internal)`, 'i').test(c) || new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(false|0|no)\\b`, 'i').test(c);
+  const apiExplicitPrivate = new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(true|1|yes)\\b`, 'i').test(c) || new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?private`, 'i').test(c);
+  // 2026-07-21 Round 2 fix: GitHub's REST default for repo creation is
+  // `private:false` = PUBLIC, so a `gh api` write to a repo-creation endpoint
+  // (/user/repos or orgs/<org>/repos) with visibility OMITTED still makes a public
+  // repo — it must need the go-public token unless it explicitly asks for private.
+  // (isPushCapable has already established this is a gh api WRITE before we get here.)
+  // 2026-07-21 Round 3 fix: also match the THIRD repo-creation endpoint,
+  // POST /repos/<owner>/<template>/generate (create-from-template), whose `private`
+  // default is also false = PUBLIC — the Round 2 fix covered only /user/repos and
+  // orgs/<org>/repos.
+  const apiRepoCreate = /\/?(user\/repos|orgs\/[^ \t/'"]+\/repos|repos\/[^ \t/'"]+\/[^ \t/'"]+\/generate)\b/i.test(c);
+  const apiVisibility = isGhApi && (apiExplicitPublic || (apiRepoCreate && !apiExplicitPrivate));
+  return repoVisibility || apiVisibility;
 }
 function goPublicToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-go-public:${studioRoot}`).digest('hex');

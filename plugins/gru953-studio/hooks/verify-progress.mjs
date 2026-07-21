@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 function main() {
   const root = process.argv[2] || process.cwd();
@@ -58,58 +59,120 @@ function main() {
   // VERIFIED_RE match — a row can honestly narrate old history, but not
   // also claim to be currently failing/unverified and still count as done.
   const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
-  const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
-  const problems = [];
-  // 2026-07-12 audit fix (MAJOR false-block, found by execution): this used
-  // to check EVERY cell in a row via .find(cell => /^done\b/i.test(cell)),
-  // not specifically the Status column — a genuinely in-progress task whose
-  // Notes cell simply started with the word "Done" ("Done except manual QA
-  // still pending, no verification yet") was misclassified as a completed
-  // row and blocked for lacking evidence it was never expected to have,
-  // even though its actual Status cell plainly said "In Progress". Each
-  // markdown table's own header row is now used to find that table's
-  // Status column index once; only that specific cell is checked for data
-  // rows in that table. `inTable`/`statusColumnIndex` reset whenever a
-  // non-`|` line ends a table, so a file with more than one table (a
-  // different column order in each) is handled correctly rather than
-  // reusing the first table's column index everywhere.
-  let inTable = false;
-  let statusColumnIndex = null;
-  for (const line of lines) {
-    if (!/^\|/.test(line)) {
-      inTable = false;
-      statusColumnIndex = null;
-      continue;
+  const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+  // 2026-07-21 Round 11 audit fix (fail-open on unrecognised table shape,
+  // medium): this hook is the SOLE mechanical enforcer of "a task may only be
+  // marked done with a verified: line", yet it used to fail OPEN whenever it
+  // could not name the Status column — silently returning clean and shipping a
+  // done-but-unverified task. Two gaps: (1) it matched the header cell only as
+  // the exact bare word `status`, so a bolded `**Status**`, a synonym `State`,
+  // or a composite `Task Status` header made the column unfindable → every row
+  // skipped → clean; (2) it required a leading pipe, so a pipe-less GFM table
+  // (outer pipes omitted — valid, renders on GitHub) never entered table mode at
+  // all → clean. Its four sibling publish gates (quality-gate,
+  // traceability-check, …) all fail CLOSED on the same ambiguity; this one now
+  // does too. Fixes: broaden Status detection (strip emphasis, accept
+  // Status/State incl. a composite last word), recognise pipe-less GFM tables
+  // (a header line immediately followed by a separator row), and fail CLOSED
+  // when a task table carries a "done" cell but no identifiable Status column.
+  //
+  // De-emphasise a header cell (strip surrounding **bold**/__bold__/*italic*/
+  // _italic_/`code`), then treat it as the Status column if its LAST word is
+  // "status" or "state" — so "Status", "**Status**", "`State`", "Task Status"
+  // and "Build State" all qualify. "Progress" is deliberately NOT a synonym: a
+  // Progress column may hold "100%" rather than a status word, and accepting it
+  // could shadow a real Status column and re-open a false-clean.
+  const deEmphasise = (c) => c.replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '');
+  const isStatusHeader = (c) => {
+    const w = deEmphasise(c).toLowerCase().split(/\s+/).filter(Boolean);
+    const last = w[w.length - 1];
+    return last === 'status' || last === 'state';
+  };
+  // 2026-07-21 Round 12 audit fix (medium): recognise a "done" status VALUE even
+  // when it carries markdown emphasis or a leading decoration — **done**,
+  // `done`, _done_, "✅ done". R11 de-emphasised only HEADER cells, so a decorated
+  // VALUE slipped past BOTH the row check AND the fail-closed backstop, leaving
+  // this gate failing OPEN. Strip surrounding emphasis, then any leading run of
+  // non-alphanumeric decoration, before the "starts with the word done" test —
+  // still rejecting "undone"/"donee" (Round 7) and tolerating "Done ✅"/"DONE!".
+  const isDoneValue = (c) => /^done\b/i.test(deEmphasise(String(c == null ? '' : c)).replace(/^[^A-Za-z0-9]+/, ''));
+  // 2026-07-21 Round 12 audit fix (medium): GFM outer pipes are OPTIONAL per row,
+  // so a piped `| a | b |` and a pipe-less `a | b` render identically but
+  // splitPipeCells yields ['',a,b,''] vs [a,b]. If a data row's outer-pipe style
+  // differed from the header's, the Status cell was read from the WRONG column and
+  // an unverified "done" slipped through (a false-clean the R11 backstop missed —
+  // the index was valid-but-wrong, not -1). Normalise by dropping the single
+  // leading/trailing empty cell an outer pipe produces, so indices align
+  // regardless of per-row style.
+  const normCells = (line) => {
+    const cells = splitPipeCells(line).map((c) => c.trim());
+    const t = line.trim();
+    if (t.startsWith('|')) cells.shift();
+    if (t.endsWith('|') && cells.length) cells.pop();
+    return cells;
+  };
+  // A table row is any non-blank line containing a pipe (covers both the piped
+  // `| a | b |` form and the pipe-less `a | b` form); a blank or pipe-less line
+  // ends the table.
+  const looksLikeRow = (l) => l.trim() !== '' && l.includes('|');
+
+  const problems = [];      // "done" rows carrying no verified: evidence
+  const unidentified = [];  // task table(s) with a "done" claim we cannot verify (fail CLOSED)
+
+  for (let i = 0; i < lines.length; i++) {
+    const header = lines[i];
+    const next = i + 1 < lines.length ? lines[i + 1] : '';
+    // A GFM table header is a non-blank, non-separator line with at least one
+    // pipe that is EITHER immediately followed by a separator row (true GFM —
+    // works with or without outer pipes) OR itself starts with a leading pipe
+    // (a piped table, as before). This is what lets pipe-less tables be seen.
+    const isHeader =
+      header.trim() !== '' &&
+      header.includes('|') &&
+      !SEPARATOR_ROW_RE.test(header) &&
+      (SEPARATOR_ROW_RE.test(next) || /^\s*\|/.test(header));
+    if (!isHeader) continue;
+
+    const headerCells = normCells(header);
+    const statusColumnIndex = headerCells.findIndex(isStatusHeader);
+    let sawDoneUnknown = false;
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const row = lines[j];
+      if (!looksLikeRow(row)) break; // a blank / pipe-less line ends the table
+      if (SEPARATOR_ROW_RE.test(row)) continue; // the `| :-- | :-- |` divider
+      const cells = normCells(row);
+      // Fail CLOSED when we cannot reliably locate this row's status: no Status
+      // column in the header, OR a row whose column count does not match the
+      // header (a ragged/ambiguous row). If such a row makes a "done" claim we
+      // record it as unverifiable rather than silently skipping it. A row with no
+      // "done" claim is left alone (no false block).
+      if (statusColumnIndex === -1 || cells.length !== headerCells.length) {
+        if (cells.some(isDoneValue)) sawDoneUnknown = true;
+        continue;
+      }
+      if (!isDoneValue(cells[statusColumnIndex])) continue;
+      if (!VERIFIED_RE.test(row) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
     }
-    const cells = line.split('|').map((c) => c.trim());
-    if (!inTable) {
-      // this is a new table's header row
-      inTable = true;
-      statusColumnIndex = cells.findIndex((c) => /^status$/i.test(c));
-      continue;
-    }
-    if (SEPARATOR_ROW_RE.test(line)) continue; // the `| :-- | :-- |` header divider
-    if (statusColumnIndex === null || statusColumnIndex === -1) continue; // this table has no Status column
-    // 2026-07-11 Round 7 audit fix (real, found by execution): the exact
-    // `/^(done)$/i` match required the status cell to be the literal string
-    // "done" and nothing else. A perfectly plausible real edit — "Done ✅",
-    // "Done.", "DONE!" — no longer equals "done" exactly, so the row was
-    // silently skipped even with zero verified-evidence text: the exact
-    // failure mode this whole script exists to catch. Loosened to "starts
-    // with the word done", tolerating trailing decoration, while still
-    // rejecting a genuinely different word like "undone" (doesn't start
-    // with "done") or "donee" (the word-boundary after "done" isn't met).
-    const statusCell = cells[statusColumnIndex];
-    if (!statusCell || !/^done\b/i.test(statusCell)) continue;
-    if (!VERIFIED_RE.test(line) || CONTRADICTION_RE.test(line)) {
-      problems.push(line.trim());
-    }
+    if (sawDoneUnknown) unidentified.push(header.trim());
+    i = j - 1; // resume after this table (the for-loop's i++ advances to j)
   }
-  if (problems.length === 0) {
+
+  if (problems.length === 0 && unidentified.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'every "done" row has a verified: cell' }, null, 2));
     process.exit(0);
   }
-  console.log(JSON.stringify({ status: 'BLOCKED', reason: '"done" rows missing a verified: cell', rows: problems }, null, 2));
+  const out = { status: 'BLOCKED' };
+  if (problems.length) {
+    out.reason = '"done" rows missing a verified: cell';
+    out.rows = problems;
+  }
+  if (unidentified.length) {
+    if (!out.reason) out.reason = 'a task table makes a "done" claim that cannot be verified (no identifiable Status column, or a row whose columns do not line up with the header)';
+    out.unverifiableTables = unidentified;
+    out.hint = 'Give the task table a clear "Status" (or "State") column and keep every row to the same columns, so "done" rows can be checked for verified: evidence. Failing closed.';
+  }
+  console.log(JSON.stringify(out, null, 2));
   process.exit(1);
 }
 

@@ -402,6 +402,37 @@ for (const s of skillDirs) {
   if (missing.length) fail(`language pack 'skills/${s}' does not declare the required command famil${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')} — a lang-* pack must cover build, test, lint, format and deps.`);
 }
 
+// ---- INV 12: the publish protocol enumerates all seven pre-flight checks -----
+// 2026-07-21 audit fix: publish-github/SKILL.md listed only FOUR pre-flight
+// checks while security-compliance-auditor.md (the gate's owner) declares SEVEN
+// — quality-gate.mjs, traceability-check.mjs and content-check.mjs were never
+// enumerated, so an agent following the protocol as written ran four and honestly
+// reported success while silently skipping three mandatory gates. Guard the
+// reconciliation mechanically so the most safety-critical flow cannot drift again:
+// the publish protocol must name every mandatory check hook by filename.
+const publishSkill = read(path.join(pluginRoot, 'skills', 'publish-github', 'SKILL.md'));
+if (publishSkill === null) {
+  fail('skills/publish-github/SKILL.md is missing or unreadable — cannot verify the Publish gate');
+} else {
+  for (const h of ['scan.mjs', 'licence-scan.mjs', 'verify-progress.mjs', 'quality-gate.mjs', 'traceability-check.mjs', 'content-check.mjs', 'roster-check.mjs']) {
+    if (!publishSkill.includes(h)) {
+      fail(`publish-github/SKILL.md no longer references ${h} — the Publish protocol must enumerate all seven blocking checks plus the roster check (2026-07-21 reconciliation regressed)`);
+    }
+  }
+}
+// 2026-07-21 Round 2 fix: INV12 above guarded publish-github/SKILL.md only, but
+// the "four vs seven" drift also lived in maintenance-agent.md and the
+// studio-publish command description. Guard every file on the publish path against
+// a stale "four ... checks" count so the reconciliation cannot silently regress.
+for (const rel of ['agents/maintenance-agent.md', 'commands/studio-publish.md', 'agents/publisher.md']) {
+  const t = read(path.join(pluginRoot, rel));
+  if (t === null) {
+    fail(`${rel} is missing or unreadable — cannot verify its publish pre-flight check count`);
+  } else if (/\bfour\b[^.\n]{0,40}(blocking|security|pre-?flight)[^.\n]{0,24}checks/i.test(t)) {
+    fail(`${rel} still describes "four ... checks" on the publish path — the Publish gate now has seven blocking checks (2026-07-21 reconciliation regressed)`);
+  }
+}
+
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {
   console.log(JSON.stringify({ status: 'clean', agentCount, skillCount, hookCount: hookFiles.length, commandCount: commandFiles.length }, null, 2));

@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
@@ -40,7 +41,7 @@ const TEXT_ONLY_RE = /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[
 
 function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } }
 function cells(line) {
-  const c = line.split('|');
+  const c = splitPipeCells(line);
   if (c.length && c[0].trim() === '') c.shift();
   if (c.length && c[c.length - 1].trim() === '') c.pop();
   return c.map((x) => x.trim());
@@ -62,15 +63,25 @@ function main() {
   }
 
   // Parse the content table; locate its columns by header. `idx` is captured
-  // once for the content table and persists after the table ends (the row scan
-  // below runs after the loop), so it is not reset when a non-`|` line closes
-  // the table — only `inTable` is.
+  // once, for the content table (the one with an asset/medium column). After that
+  // table ends, every later table is ignored (see the break below), so a second,
+  // unrelated table's rows are never validated against the content table's columns.
   const lines = text.split(/\r?\n/);
   let inTable = false;
   let idx = null;
+  let contentTableCaptured = false;
   const rows = [];
   for (const line of lines) {
-    if (!/^\s*\|/.test(line)) { inTable = false; continue; }
+    if (!/^\s*\|/.test(line)) {
+      // 2026-07-21 audit fix: once the content table has ended, ignore every LATER
+      // table. Previously `idx` persisted and a subsequent unrelated table's rows
+      // were validated against the content table's column map — a spurious BLOCK
+      // (and, with two content-shaped tables, a possible mis-aligned false-clean).
+      // Mirrors quality-gate.mjs's "stop after the first matching table" fix.
+      if (contentTableCaptured) break;
+      inTable = false;
+      continue;
+    }
     const c = cells(line);
     if (!inTable) {
       inTable = true;
@@ -81,9 +92,13 @@ function main() {
         source: find(/^(source|provenance|model|origin|by)$/i),
         approved: find(/^(approved|approval|status|sign[- ]?off)$/i),
         rights: find(/^(rights|licen[cs]e|usage)$/i),
-        alt: find(/^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)$/i),
+        // 2026-07-21 Round 6 fix: also accept the documented template header
+        // "Alt/Caption" (and other slash/space-joined synonyms) — the anchored
+        // single-word regex rejected it, so content-check blocked every media
+        // asset that DID carry a caption. See content-creation/SKILL.md's template.
+        alt: find(/^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i),
       };
-      if (found.asset !== -1 || found.medium !== -1) idx = found; // the content table's columns
+      if (found.asset !== -1 || found.medium !== -1) { idx = found; contentTableCaptured = true; } // the content table's columns
       continue;
     }
     if (SEPARATOR_ROW_RE.test(line)) continue;

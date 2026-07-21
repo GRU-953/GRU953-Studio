@@ -54,11 +54,32 @@ function scanNode(root) {
   const findings = [];
   const dirs = fs.readdirSync(nm, { withFileTypes: true });
   const pkgDirs = [];
+  // 2026-07-21 Round 3 fix: pnpm places each DIRECT dependency in node_modules as a
+  // SYMLINK into node_modules/.pnpm; a symlink Dirent is not isDirectory(), so those
+  // packages were skipped — which, once the dot-dir skip below removed the old
+  // accidental .pnpm needs-review, turned a pnpm licence scan into a false-clean
+  // (copyleft deps unseen). Treat a symlink-to-a-directory as a directory
+  // (readFileSync follows it transparently to the real package.json in the store).
+  const isDirLike = (dirent, full) => {
+    if (dirent.isDirectory()) return true;
+    if (dirent.isSymbolicLink()) { try { return fs.statSync(full).isDirectory(); } catch { return false; } }
+    return false;
+  };
   for (const d of dirs) {
-    if (!d.isDirectory()) continue;
+    if (!isDirLike(d, path.join(nm, d.name))) continue;
     if (d.name.startsWith('@')) {
       const scoped = fs.readdirSync(path.join(nm, d.name), { withFileTypes: true });
-      for (const s of scoped) if (s.isDirectory()) pkgDirs.push(path.join(d.name, s.name));
+      for (const s of scoped) if (isDirLike(s, path.join(nm, d.name, s.name))) pkgDirs.push(path.join(d.name, s.name));
+    } else if (d.name.startsWith('.') || d.name.startsWith('_')) {
+      // 2026-07-21 audit fix: npm's tooling directories are not packages. `.bin`
+      // (created whenever ANY dependency ships an executable — jest/eslint/tsc/
+      // vite/etc., i.e. almost every real project), plus `.cache`/`.vite`/`.pnpm`,
+      // have no package.json. An npm package name can never begin with '.' or '_',
+      // so these are always tooling artefacts. Previously they were treated as
+      // packages with a missing package.json -> 'needs-review' -> a NEEDS HUMAN
+      // REVIEW result that false-blocked Publish on essentially every real
+      // npm/TypeScript project (and trained users to ignore the licence gate).
+      continue;
     } else {
       pkgDirs.push(d.name);
     }
@@ -233,18 +254,44 @@ function scanDartFlutter(root) {
 // shape as isAllowed(), erring toward review, never toward a silent pass.
 export function classifySpdxExpr(expr) {
   if (!expr) return null;
-  const alternatives = String(expr).split(/\bOR\b/i).map((s) => s.trim()).filter(Boolean);
-  if (alternatives.length === 0) return null;
-  const verdicts = alternatives.map((alt) => {
-    const up = alt.toUpperCase();
-    if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false;
-    const andTerms = alt.split(/\bAND\b|\bWITH\b/i).map((t) => t.replace(/[()]/g, '').trim()).filter(Boolean);
-    if (andTerms.length && andTerms.every((t) => ALLOWED.has(t))) return true;
-    return null;
-  });
-  if (verdicts.some((v) => v === true)) return true;
-  if (verdicts.every((v) => v === false)) return false;
-  return null;
+  // 2026-07-21 Round 9 fix: a proper precedence- and parenthesis-aware evaluator.
+  // The previous version flat-split on top-level OR before honouring parentheses or
+  // SPDX precedence (AND binds tighter than OR), so `GPL AND (MIT OR Apache)` — where
+  // the copyleft term is MANDATORY — was wrongly classified ALLOWED (a false-clean in
+  // a hard-stop gate). This recursive-descent parser evaluates OR (lowest precedence),
+  // then AND, then parenthesised groups / licence refs, in a three-way (allowed=true /
+  // blocked=false / review=null) logic that errs toward review, never a silent pass.
+  const tokens = String(expr).replace(/\(/g, ' ( ').replace(/\)/g, ' ) ').trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const AND = (a, b) => (a === false || b === false) ? false : (a === true && b === true) ? true : null;
+  const OR = (a, b) => (a === true || b === true) ? true : (a === false && b === false) ? false : null;
+  const classifyId = (id, withExc) => {
+    const up = (id + (withExc ? ' WITH ' + withExc : '')).toUpperCase();
+    if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false; // copyleft/flagged
+    return ALLOWED.has(id) ? true : null; // permissive-allowed, else unknown -> review
+  };
+  const parseOr = () => {
+    let v = parseAnd();
+    while (peek() && /^OR$/i.test(peek())) { pos++; v = OR(v, parseAnd()); }
+    return v;
+  };
+  function parseAnd() {
+    let v = parseFactor();
+    while (peek() && /^AND$/i.test(peek())) { pos++; v = AND(v, parseFactor()); }
+    return v;
+  }
+  function parseFactor() {
+    if (peek() === '(') { pos++; const v = parseOr(); if (peek() === ')') pos++; return v; }
+    const id = tokens[pos++];
+    if (id === undefined) return null;
+    let withExc;
+    if (peek() && /^WITH$/i.test(peek())) { pos++; withExc = tokens[pos++]; }
+    return classifyId(id, withExc);
+  }
+  const result = parseOr();
+  return result === undefined ? null : result;
 }
 
 // Rust (Cargo): `cargo metadata` exposes each package's SPDX `license` field
@@ -317,7 +364,14 @@ function main() {
   const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
   const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
   const hasSwift = has('Package.swift') || has('Package.resolved');
-  const hasDotnet = fs.readdirSync(root).some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
+  // 2026-07-21 Round 4 fix: guard this readdirSync — it was the only manifest probe
+  // not going through the safe has() helper, so a nonexistent or file-as-root path
+  // threw ENOENT/ENOTDIR out of main(), printing a raw stack trace and NO JSON
+  // (breaking this file's own "always emit a JSON result" contract). Fails to an
+  // empty list, matching every other probe's graceful behaviour.
+  let rootEntries = [];
+  try { rootEntries = fs.readdirSync(root); } catch { rootEntries = []; }
+  const hasDotnet = rootEntries.some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
   const hasGo = has('go.mod');
 
   const results = [];

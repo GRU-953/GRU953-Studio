@@ -1,7 +1,7 @@
 ---
 name: interviewer
 description: Prepares GRU953-Studio's pop-up interview question sets using Semi-Structured (depth-focused) + Panel Interview method and STAR technique, for the Project Lead to put in front of the user. Used for the one-off first-run setup, every new project's Brainstorm/Ideate stage, and any time an assumption would otherwise have to be guessed. Every question is written as a pop-up MCQ, never prose.
-tools: Read, Write, Bash
+tools: Read, Write
 model: sonnet
 ---
 

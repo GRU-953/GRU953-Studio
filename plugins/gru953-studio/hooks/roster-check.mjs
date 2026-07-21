@@ -66,7 +66,12 @@ function main() {
     // false-blocked legitimate longer prose around the count — tightened to
     // require immediate adjacency (see repo-integrity.mjs's matching INV 8
     // comment for the full reproduction and rationale).
-    const rm = /(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/i.exec(rosterText);
+    // 2026-07-21 audit fix: take the LAST match, not the first — a ROSTER.md that
+    // narrates an earlier/hypothetical count before the authoritative one ("...50
+    // considered (role count: 50) but settled on baseline = 5") would otherwise
+    // read the wrong number, which in one direction hides real scope creep.
+    const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/ig)];
+    const rm = rmAll.length ? rmAll[rmAll.length - 1] : null;
     if (!rm) {
       console.log(JSON.stringify({ status: 'BLOCKED', reason: `ROSTER.md exists but states no numeric "role count: <n>"`, currentCount }, null, 2));
       process.exit(1);
@@ -114,7 +119,11 @@ function main() {
   // above — checked this project's own real Dev-Memory decision files
   // (e.g. "agent role count = 16") to confirm the tighter pattern still
   // matches the actual phrasing used, not just ROSTER.md's.
-  const m = /(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/i.exec(text);
+  // 2026-07-21 audit fix: last match wins (see the ROSTER.md fallback above) so a
+  // decision file that mentions an earlier count before the authoritative one
+  // cannot silently set the wrong baseline.
+  const mAll = [...text.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/ig)];
+  const m = mAll.length ? mAll[mAll.length - 1] : null;
   if (!m) {
     console.log(JSON.stringify({ status: 'BLOCKED', reason: `latest roster decision file (${latest}) doesn't state a numeric baseline`, currentCount }, null, 2));
     process.exit(1);

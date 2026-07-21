@@ -173,11 +173,12 @@ keep growing as real cases are found, not be treated as closed.
 `hooks/licence-scan.mjs` currently checks top-level `node_modules/*` only,
 not each dependency's own nested `node_modules`.
 
-`gate.mjs`'s two internal scripts, `confirm-publish.mjs` and
-`confirm-go-public.mjs`, are exempted from push-capable detection so the
+`gate.mjs`'s four internal confirm scripts — `confirm-publish.mjs`,
+`confirm-go-public.mjs`, `confirm-checkpoint.mjs` and
+`confirm-memory-persist.mjs` — are exempted from push-capable detection so the
 studio can record a user's confirmation at all (see `isConfirmScriptOnly`
 in `hooks/lib.mjs`). That exemption checks an exact filename
-(`path.basename()` match against the two known script names) — it trusts a
+(`path.basename()` match against the four known script names) — it trusts a
 FILENAME, not a cryptographic identity. A file deliberately created with
 one of those exact names, anywhere the session can run `node` against it,
 would receive the same exemption as the real script. This is the same
@@ -545,14 +546,22 @@ attempts to diagnose and modify code on its own, before the Project
 Lead's Stuck Protocol tells the user anything — a genuine, disclosable
 increase in autonomy compared to every other code change in this
 product, which is always shown to a human before or as it happens. The
-bound is real and enforced by a dedicated hook
-(`hooks/self-heal-nudge.mjs`, wired on the `PostToolUseFailure` event
-with the same `Bash|PowerShell|Monitor` matcher as the publish-safety
-hooks): each attempt is logged to `Dev-Memory/SESSION-LOG.md` as it
-happens, and the third failure of the same problem always escalates to
-the full, user-visible Stuck Protocol. This mechanism never touches
-Publish or any push-capable action — confirmed directly with the user
-before it was built, and unchanged by anything in this document above.
+bound is enforced by instruction-following, not by the hook itself. The hook
+(`hooks/self-heal-nudge.mjs`, wired on the `PostToolUseFailure` event with the
+same `Bash|PowerShell|Monitor` matcher as the publish-safety hooks) reliably
+FIRES on every Build/Test shell failure inside a studio project and injects one
+fixed reminder — making the hand-off to `fixer` structural rather than dependent
+on the agent remembering. It is stateless: it does NOT itself count attempts,
+write to `Dev-Memory/SESSION-LOG.md`, or escalate (2026-07-21 Round 6 accuracy
+fix — this paragraph previously over-claimed those as hook-enforced). The
+2-attempt ceiling, the per-attempt logging to `SESSION-LOG.md`, and the
+third-failure escalation to the full, user-visible Stuck Protocol are specified
+in the `self-healing` skill (`skills/self-healing/SKILL.md`) and carried out by
+the `fixer`/`builder`/`tester`/`project-lead` roles — soft, instruction-level
+enforcement, the same honest hook-vs-instruction distinction this document draws
+for the memory-write secrets-scan gap above. This mechanism never touches
+Publish or any push-capable action — confirmed directly with the user before it
+was built, and unchanged by anything in this document above.
 
 ## Currency update (2026-07-21, through v4.2.0)
 
@@ -582,4 +591,173 @@ plus a step-by-step guide) when no key or network is available.
 rebuilt README, a new wiki guide, a slimmer landing website, the canonical
 PolyForm Noncommercial licence text, self-hosted brand fonts, and tidied
 community files. It changes **no** security-relevant behaviour, hook, gate, or
-confirmation flow described anywhere above.
+confirmation flow described anywhere above. (The gate changes described below
+shipped separately, in **v4.3.0** — see the next section.)
+
+## v4.3.0 hardening (2026-07-21 gold-standard audit) — new coverage and residuals
+
+A multi-lens audit (each finding adversarially verified against the real code)
+closed two previously-undisclosed gate weaknesses; both are now matched and
+regression-tested. The residual limits they leave behind are disclosed here in
+the same spirit as the shell-obfuscation list above. None of these weaken any
+existing gate — each is additive.
+
+- **`gh api` writes are now gated.** `isPushCapable()` and `isGoPublicCommand()`
+  previously ignored `gh api` (the GitHub CLI's raw REST interface), so a write
+  such as `gh api -X PATCH repos/me/app -f visibility=public` bypassed BOTH the
+  publish and go-public gates. Now a `gh api` call with a write method
+  (`-X`/`--method` POST|PATCH|PUT|DELETE) or a body flag
+  (`-f`/`-F`/`--field`/`--raw-field`/`--input`) is push-capable, and a
+  visibility-to-public one needs the GO-PUBLIC-APPROVED token; a read (`gh api
+  user`) stays allowed. **Residual, not closed:** a visibility value living only
+  inside an `--input` file, and a raw `curl` to `api.github.com`, are not parsed —
+  the same "this hook does not read referenced files or run arbitrary commands"
+  boundary as the command-substitution cases above. More broadly, `gh api`
+  go-public detection matches GitHub's documented repo-creation endpoints
+  (`/user/repos`, `orgs/<org>/repos`, `repos/<owner>/<tmpl>/generate`) and the
+  `-f`/`-F`/`--field` private/visibility fields; like the shell-obfuscation matcher,
+  it is a best-effort **bar-raiser against realistic accidents, not an exhaustive
+  guarantee** against a novel or future `gh api` visibility mechanism. This is a
+  backstop only — the studio's own publish flow never reaches for `gh api`; it uses
+  `gh repo create --private` and `gh repo edit`, both fully covered.
+- **ReDoS removed from the core matcher.** The git-push regex used two
+  fully-overlapping alternatives that backtracked exponentially on a long,
+  flag-heavy, non-push `git` command (measured ~22 s at 28 flags) — and it runs on
+  every Bash/PowerShell/Monitor command. Replaced with a linear pattern that
+  classifies identically; a timing regression test guards it.
+- **The secret scan now also covers unpushed history.** `scan.mjs` scanned only
+  the working tree, index and untracked files; a branch push ships commits, so a
+  secret committed and then removed still shipped via a checkpoint/memory-persist
+  branch push. It now also scans content added in unpushed commits (`HEAD --not
+  --remotes`) — added coverage only. **Residual:** a value present only in a file
+  referenced by a command (not in committed content) is still not read; and the
+  history scan applies the same content + key-file/Dev-Memory-name checks as the
+  working-tree scan (2026-07-21 Round 2 completion).
+- **Bounded, adversarial-only matcher cost (disclosed, not closed).**
+  `normalizeForPushCheck` (shared by both matchers, run on every command) resolves
+  in-command variable assignments in a way that is superlinear in the *number of
+  assignments in a single command* — negligible for real commands (<30 assignments,
+  sub-millisecond) but reaching a fraction of a second at ~2,000 same-command
+  assignments. Such input is machine-generated/adversarial, inside the
+  determined-adversary threat model this document already disclaims. The Round 1
+  ReDoS fix removed the separate input-*length* blow-up; this residual is the
+  assignment-*count* case, disclosed here rather than closed.
+- **A stray binary byte no longer hides a co-located ASCII secret (2026-07-21
+  Round 11).** `scan.mjs` used to skip a file's *entire* content scan the instant
+  it held any NUL byte, and the history scan ran `git log -p` without `--text` (so
+  git rendered a NUL-containing blob as "Binary files differ") — together these
+  let an ordinary would-ship **text** file that captured one stray binary byte
+  beside a real ASCII secret (a log that recorded a byte of binary output next to
+  a logged API key; a SQL/DB dump with a BLOB column beside a plaintext
+  credential) ship unflagged on BOTH paths at once. Now a NUL-containing file
+  that is predominantly text is scanned for its extractable ASCII — working tree:
+  NUL→newline, preserving line numbers; history: `--text` plus a **per-file** text
+  classification (Round 12 corrected this from a per-line guard, see below) — while
+  a genuine binary asset (font, image, compiled blob) is still skipped. Valid UTF-8
+  (Bangla included) counts as text, so a non-Latin dump is still scanned.
+  **Residual, disclosed:** a file that is predominantly non-text is not
+  content-scanned, and a NUL-interleaved encoding such as UTF-16LE (≈50% NUL)
+  classifies as non-text and is not scanned — the same "high-signal scan of
+  ordinary mistakes, not a determined-adversary guarantee" boundary this document
+  states throughout.
+- **A publish integrity gate no longer fails open on an unusual table shape
+  (2026-07-21 Round 11).** `verify-progress.mjs` (the mechanical check that every
+  "done" task carries `verified:` evidence) used to return *clean* whenever it
+  could not name the Status column — a bolded `**Status**`, a synonym `State`, a
+  composite `Task Status`, or a pipe-less GFM table all made it skip every row and
+  pass. It now broadens Status detection (strips emphasis, accepts Status/State
+  incl. a composite last word, and reads pipe-less tables) and, when a task table
+  carries a `done` cell but no identifiable Status column, **fails closed** with a
+  clear hint — matching its four sibling publish gates. This is a quality/integrity
+  gate, not a secret/authorisation boundary (the publish-safety hooks still run);
+  it is recorded here for completeness of the same audit.
+- **`gh repo create --internal` now needs the go-public token (2026-07-21 Round
+  12, HIGH).** The go-public matcher recognised `--public` and `--visibility
+  public|internal` but not the standalone `--internal` flag — yet `gh repo create`
+  has no `--visibility` flag, and an *internal* repository is visible to the whole
+  organisation/enterprise, i.e. NOT private. A private-scope token (including a
+  routine per-phase **checkpoint**) therefore authorised creating a non-private
+  repo, contradicting the gate's own guarantee that a checkpoint can never make a
+  repo public. Now `--internal` is treated as go-public exactly like `--public`;
+  `--private` stays a private push (the studio's own publish flow uses `gh repo
+  create --private`).
+- **History secret scan restored to full parity with the working-tree scan
+  (2026-07-21 Round 12).** The Round 11 history scan guarded each *diff line* with
+  a text-fraction test; a real ASCII secret sharing one line with ~32+ bytes of
+  binary dropped that line below the threshold and was skipped, even though the
+  working-tree scan caught the identical content. The history scan now classifies
+  and scans added content **per file** (mirroring the working-tree `bufIsTextish →
+  scanText` decision), so a secret co-located with binary on one line is caught on
+  both paths; a genuine binary file's added content is still skipped.
+- **Large text files are now content-scanned, not silently skipped (2026-07-21
+  Round 12).** A would-ship file over the 4 MB in-memory cap used to be skipped
+  entirely before any text/binary check, so a plaintext secret in a large ordinary
+  text file (a Terraform `.tfstate`, a SQL/DB dump, a verbose `.log`) shipped
+  unflagged — and for a single compound `git add && commit && push` the history
+  scan cannot backstop it (the commit does not exist yet at check time). Files over
+  the cap are now **stream-scanned** line-by-line in bounded memory, after a
+  head-sample classification that still skips a genuine large binary (video, model,
+  image). **Residual, disclosed:** classification samples the file head, so a file
+  whose first ~64 KB is binary but which contains text later is treated as binary —
+  the same head-sample boundary the working-tree NUL/binary path already carries.
+- **Decorated `done` values and mixed table styles no longer slip past the
+  done-requires-verified gate (2026-07-21 Round 12).** `verify-progress.mjs` now
+  de-emphasises the status *value* (`**done**`, `` `done` ``, `✅ done`), not only
+  the header, and normalises GFM's optional outer pipes so a row written in a
+  different pipe style from the header is not column-shifted; a row whose columns
+  cannot be lined up fails closed. Quality/integrity gate, as above.
+- **A force-added gitignored secret is no longer invisible to the scan (2026-07-21
+  Round 13, HIGH).** The would-ship file set is built with `git ls-files --others
+  --exclude-standard`, which omits gitignored files. A single compound `git add -f
+  <ignored-secret> && git commit && git push` therefore slipped BOTH scans — at
+  check time the file is untracked+ignored (in none of the three list calls) and no
+  commit exists yet (empty history range). Now, when the command itself force-adds
+  (`-f`/`--force`, run through the same obfuscation normaliser as the push matcher),
+  the gitignored files that force-add would stage are enumerated and scanned too,
+  **scoped to the force-add pathspecs** so an ordinary push — and a force-add of one
+  file — never sweeps in unrelated ignored trees such as `node_modules`. The pathspec
+  parser is quote-aware (Round 14), so a quoted filename containing spaces (`git add
+  -f "prod copy.secret"`) is kept as one pathspec. **Residual, disclosed:** a
+  force-add pathspec that survives only as a runtime shell expansion, or a
+  backslash-escaped space that `normalizeForPushCheck` unescapes before the parser
+  runs — the same command-parsing boundary the other disclosed shell cases carry.
+- **The history scan now surfaces merge-commit content (2026-07-21 Round 13,
+  HIGH).** `git log -p` emits no diff for a merge commit by default, so a secret
+  unique to a merge resolution (present in neither parent — an "evil merge"), later
+  removed, shipped in the merge commit's tree undetected. The invocation now uses
+  `-m` (per-parent diffs, the ordinary single-`+` format the parser already
+  handles), so merge-unique added content — secret, key-file name, or Dev-Memory
+  path — is scanned like any other commit.
+- **History secret scan brought to true head-sample parity (2026-07-21 Round 13).**
+  The Round 12 per-file history classifier tested the *whole* added content while
+  the working-tree path samples the first ~64 KB; the two disagreed for a
+  text-headed but binary-tailed file (a DB dump), which the tree scan caught and the
+  history scan skipped. The history classifier now head-samples too, so both paths
+  make the identical text/binary decision.
+- **The history scan walks every pushable local ref, not just HEAD (2026-07-21
+  Round 14, HIGH).** It previously ran `git log … HEAD --not --remotes`, which only
+  equals "what a push sends" when the pushed ref is the current checkout. `git push
+  --all`, `git push --mirror`, and `git push origin <branch>` (while standing on a
+  different branch) all ship commits on non-HEAD refs, which HEAD-only excluded (and
+  the working-tree scan reflects only the checkout, so both paths missed them). The
+  range is now `--branches --tags HEAD --not --remotes` — the finite superset of
+  every pushable local ref not already on a remote (HEAD kept explicitly for a
+  detached-HEAD push). A clean unpushed branch is still allowed; anything already on
+  a remote is still excluded.
+- **Commit messages and annotated-tag messages are now scanned (2026-07-21 Round
+  15, HIGH).** A branch push ships whole commit objects — including their commit
+  *message* — and `git push --tags`/`--follow-tags`/`--mirror` ships annotated-tag
+  objects and their messages; none of that is a file diff, so the scanner (which
+  only read diff hunks and file content) never saw it. A credential pasted into a
+  commit message — one of the most common real-world leak vectors — shipped
+  unflagged. Commit messages are now scanned over the same ref range as the diff
+  scan; annotated-tag messages are scanned when the command actually ships tags
+  (so an ordinary `git push origin main` is untouched). **Residual, disclosed:**
+  pushing a single annotated tag by its bare name (ambiguous with a branch) is not
+  detected as a tag push, so that one tag's message is not scanned.
+- **`traceability-check.mjs` now reads a decorated "met" status (2026-07-21 Round
+  15).** The Round 12 decorated-value fix (`**met**`, `` `met` ``, `✅ met`) was
+  ported from `verify-progress.mjs`, so a requirement marked met with a decorated
+  status is still held to the "a met requirement carries verification evidence"
+  rule, and a decorated "deferred" no longer causes a spurious dropped-requirement
+  block. Quality/integrity gate.

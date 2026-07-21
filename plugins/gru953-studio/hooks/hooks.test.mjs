@@ -309,6 +309,63 @@ test('gate.mjs: private-publish token does NOT authorise going public', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('lib.mjs isPushCapable: `gh api` writes are push-capable; reads stay allowed (2026-07-21 audit fix)', () => {
+  // `gh api` (the GitHub CLI's raw REST interface) was an undisclosed bypass of
+  // BOTH gates: a write short-circuited gate.mjs's `if (!isPushCapable(CMD))
+  // allow()` before the go-public gate ran. Writes (an explicit method, or a
+  // body flag that only a write uses) must be caught; reads (GET, the default)
+  // must stay allowed — the studio itself relies on `gh api user` and similar.
+  for (const c of [
+    'gh api -X PATCH repos/me/app -f visibility=public',
+    'gh api --method PATCH repos/me/app -f private=false',
+    'gh api -X POST /user/repos -f name=app -F private=false',
+    'gh api repos/me/app -f visibility=public',        // -f implies a POST body
+    'cd /tmp/x && gh api -X DELETE repos/me/app',
+  ]) {
+    assert.equal(isPushCapable(c), true, `gh api write must be caught: "${c}"`);
+  }
+  for (const c of [
+    'gh api user',
+    'gh api repos/me/app',
+    'gh api -X GET repos/me/app',
+    "gh api user --jq '.login'",
+    'gh api /rate_limit',
+  ]) {
+    assert.equal(isPushCapable(c), false, `gh api read must stay allowed: "${c}"`);
+  }
+});
+
+test('gate.mjs: a `gh api` visibility-to-public write needs the go-public token, not just the publish one (2026-07-21 audit fix)', () => {
+  const dir = mkTmp('gru-gate-ghapi-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // Record ONLY the private-publish confirmation.
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  // A gh-api visibility change must still be denied (needs its own go-public token).
+  const denied = runHook('gate.mjs', 'gh api -X PATCH repos/me/app -f visibility=public', dir);
+  assert.equal(denied.decision, 'deny', 'gh api visibility=public must not ride the private-publish token');
+  const deniedPriv = runHook('gate.mjs', 'gh api --method PATCH repos/me/app -F private=false', dir);
+  assert.equal(deniedPriv.decision, 'deny', 'gh api private=false must not ride the private-publish token');
+  // After recording the go-public confirmation, it is allowed.
+  spawnSync('node', [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
+  const allowed = runHook('gate.mjs', 'gh api -X PATCH repos/me/app -f visibility=public', dir);
+  assert.equal(allowed.decision, 'allow');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('lib.mjs isPushCapable: no catastrophic backtracking on a flag-heavy non-push git command (2026-07-21 ReDoS fix)', () => {
+  // The git-push token repetition used two fully-overlapping alternatives, so a
+  // long flag-heavy `git` command with no trailing `push` triggered exponential
+  // backtracking (measured n=28 -> 22s), running on every Bash/PowerShell/Monitor
+  // command. It must now complete effectively instantly regardless of length,
+  // while still classifying correctly.
+  const evil = 'git ' + '-a '.repeat(80) + 'origin';
+  const start = process.hrtime.bigint();
+  const got = isPushCapable(evil);
+  const ms = Number(process.hrtime.bigint() - start) / 1e6;
+  assert.equal(got, false, 'a flag-heavy non-push git command is not push-capable');
+  assert.ok(ms < 100, `matcher must not backtrack exponentially (took ${ms.toFixed(1)}ms)`);
+});
+
 test('lib.mjs isPushCapable: catches quote/IFS-obfuscated gh commands, not just git push (2026-07-11 Round 5 CRITICAL fix)', () => {
   // The gh regexes required the literal, unquoted text "gh" — a quoted "gh"
   // token or $IFS word-splitting made isPushCapable return false, so
@@ -741,6 +798,7 @@ test('licence-scan.mjs: a package with no readable package.json is surfaced as n
   const json = JSON.parse(r.stdout);
   assert.notEqual(json.status, 'clean', 'a package with no readable package.json must not report clean');
   assert.ok(json.needsReview.some((f) => f.package === 'broken-pkg'), 'the unreadable package must be surfaced in needsReview, not dropped');
+  assert.equal(r.status, 1, 'a needs-review verdict must block Publish via a non-zero exit code, not just report the status string');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1888,7 +1946,7 @@ test('dashboard.mjs: renders Concept, Architecture and Build plan sections, safe
   assert.ok(/<summary>Concept<\/summary>/.test(html));
   assert.ok(/<summary>Architecture &amp; specifications<\/summary>/.test(html));
   assert.ok(/<summary>Build plan<\/summary>/.test(html));
-  assert.ok(/<th>Component<\/th>/.test(html), 'an architecture table should render as a real table');
+  assert.ok(/<th scope="col">Component<\/th>/.test(html), 'an architecture table should render as a real table with scoped (accessible) headers');
   assert.ok(/<code>sqlite<\/code>/.test(html), 'inline code should render');
   assert.ok(!/<img src=x onerror/.test(html), 'an injected tag in a doc file must be escaped, never emitted raw');
   assert.ok(/&lt;img src=x onerror/.test(html), 'the escaped form must be present');
@@ -2217,5 +2275,1052 @@ test('quality-gate.mjs: a Bangla-only Item label is reported as a missing dimens
   const r = runScript('quality-gate.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /missing required dimension: acceptance/i.test(p)), 'a Bangla-only label must be reported missing, never silently passed');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 1 — a 7-lens panel (each finding
+// adversarially verified against the real code) fixed 2 HIGH security issues
+// (gh api gate bypass + ReDoS, tested above), and the correctness/coverage
+// fixes locked in below.
+// ---------------------------------------------------------------------------
+
+test('verify-progress.mjs: an INDENTED table with an unverified "done" row is still caught (2026-07-21 false-clean fix)', () => {
+  const dir = mkTmp('gru-vp-indent-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '  | # | Task | Status | Notes |',
+      '  | :-- | :-- | :-- | :-- |',
+      '  | 1 | Real task | done | shipped it, looks fine |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, 'a 2-space-indented done row with no verified: evidence must still be caught');
+  assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: a second, non-content table does not change the verdict (2026-07-21 spurious-block fix)', () => {
+  const dir = mkTmp('gru-cc-2tab-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const manifest = [
+    '# Content',
+    '| Asset | Medium | Source | Approved | Rights | Alt |',
+    '| :-- | :-- | :-- | :-- | :-- | :-- |',
+    '| welcome-copy | text | Claude (prompt: greet) | approved | original content | n/a |',
+  ].join('\n') + '\n';
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'CONTENT.md'), manifest);
+  const single = runScript('content-check.mjs', dir);
+  assert.equal(single.json.status, 'clean', `manifest alone should be clean: ${single.stdout}`);
+  // Append an unrelated second table; the verdict MUST stay clean (previously its
+  // rows were swept into the content check against the first table's columns).
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'CONTENT.md'),
+    manifest + '\n## Rejected drafts\n| Draft | Reason |\n| :-- | :-- |\n| hero-v1 | too busy |\n| hero-v2 | wrong colour |\n'
+  );
+  const withSecond = runScript('content-check.mjs', dir);
+  assert.equal(withSecond.json.status, 'clean', `a second unrelated table must not cause a spurious BLOCK: ${withSecond.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: a dangling GRAPH link with a trailing annotation is still caught (2026-07-21 false-clean fix)', () => {
+  // LINK_RE was end-anchored, so any link row with a fourth token (a trailing
+  // parenthetical note, an extra word) failed to match and was silently skipped.
+  const dir = mkTmp('gru-mi-trailing-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a\n\n## Links\n- T1 depends-on R99 (the payment module, not yet defined)\n'
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /undefined node "R99"/.test(p)), 'a dangling link with a trailing note must still be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('session-start.mjs: CI=false no longer falsely triggers the ephemeral note; CI=true does (2026-07-21 fix)', () => {
+  const dirFalse = mkTmp('gru-ss-cifalse-');
+  fs.mkdirSync(path.join(dirFalse, 'Dev-Memory'), { recursive: true });
+  const rFalse = runSessionStart(dirFalse, cleanEphemeralEnv({ CI: 'false' }));
+  assert.ok(rFalse.context && !/cloud\/ephemeral session/i.test(rFalse.context), 'CI=false must NOT add the cloud-persistence note');
+  const dirTrue = mkTmp('gru-ss-citrue-');
+  fs.mkdirSync(path.join(dirTrue, 'Dev-Memory'), { recursive: true });
+  const rTrue = runSessionStart(dirTrue, cleanEphemeralEnv({ CI: 'true' }));
+  assert.ok(rTrue.context && /cloud\/ephemeral session/i.test(rTrue.context), 'CI=true must add the cloud-persistence note');
+  fs.rmSync(dirFalse, { recursive: true, force: true });
+  fs.rmSync(dirTrue, { recursive: true, force: true });
+});
+
+// --- subagent-statusline.mjs (2026-07-21: previously ZERO test coverage) -----
+function runStatusline(input) {
+  const r = spawnSync('node', [path.join(HERE, 'subagent-statusline.mjs')], { input: JSON.stringify(input), encoding: 'utf8' });
+  const lines = r.stdout.trim() ? r.stdout.trim().split('\n').map((l) => JSON.parse(l)) : [];
+  return { code: r.status, stdout: r.stdout, lines };
+}
+
+test('subagent-statusline.mjs: renders a friendly line for current studio roles, incl. the newer ones (2026-07-21 drift fix)', () => {
+  // The ROLES set is now derived from agents/ at runtime, so a role added since
+  // v3.6.0/v4.1.0 (content-director, python-developer, …) is recognised too —
+  // the previous hardcoded 23-name Set had silently dropped 15 current roles.
+  const out = runStatusline({
+    columns: 80,
+    tasks: [
+      { id: 't1', name: 'builder', status: 'running' },
+      { id: 't2', name: 'content-director', status: 'running' },        // added v4.1.0
+      { id: 't3', name: 'python-developer', status: 'completed' },      // added v3.6.0
+      { id: 't4', name: 'gru953-studio:tester', status: 'running' },    // qualified form
+    ],
+  });
+  assert.equal(out.code, 0);
+  const byId = Object.fromEntries(out.lines.map((l) => [l.id, l.content]));
+  assert.equal(byId.t1, 'GRU953-Studio — builder (working)');
+  assert.ok(byId.t2 && /content director \(working\)/.test(byId.t2), 'a role added in v4.1.0 must now be recognised');
+  assert.ok(byId.t3 && /python developer \(done\)/.test(byId.t3), 'a language specialist must be recognised, and completed -> (done)');
+  assert.ok(byId.t4 && /tester \(working\)/.test(byId.t4), 'the qualified plugin:role form must match');
+});
+
+test('subagent-statusline.mjs: leaves non-studio agents, id-less tasks and bad input at the default (2026-07-21 coverage)', () => {
+  const out = runStatusline({
+    columns: 80,
+    tasks: [
+      { id: 'x1', name: 'some-other-plugin-agent', status: 'running' }, // not ours
+      { name: 'builder', status: 'running' },                            // no id -> skipped
+    ],
+  });
+  assert.equal(out.lines.length, 0, 'no output line for a non-studio agent or an id-less task');
+  const bad = spawnSync('node', [path.join(HERE, 'subagent-statusline.mjs')], { input: 'not json{{', encoding: 'utf8' });
+  assert.equal(bad.status, 0, 'unparseable stdin must not crash');
+  assert.equal(bad.stdout.trim(), '', 'unparseable stdin emits nothing');
+});
+
+// --- self-heal-nudge.mjs (2026-07-21: previously ZERO test coverage) ---------
+function runSelfHeal(input) {
+  const r = spawnSync('node', [path.join(HERE, 'self-heal-nudge.mjs')], { input: JSON.stringify(input), encoding: 'utf8' });
+  let ctx = null;
+  try { ctx = JSON.parse(r.stdout).hookSpecificOutput.additionalContext; } catch { ctx = null; }
+  return { code: r.status, stdout: r.stdout, ctx };
+}
+
+test('self-heal-nudge.mjs: emits the bounded self-heal nudge inside a studio project (2026-07-21 coverage)', () => {
+  const dir = mkTmp('gru-shn-studio-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runSelfHeal({ tool_input: { command: 'npm test' }, cwd: dir });
+  assert.equal(r.code, 0);
+  assert.ok(r.ctx && /fixer/i.test(r.ctx), 'must hand the failure to the fixer role');
+  assert.ok(r.ctx && /\b2\b/.test(r.ctx), 'must mention the bound of 2 quiet attempts (the SECURITY.md-documented behaviour)');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('self-heal-nudge.mjs: stays silent outside a studio project and on a user interrupt (2026-07-21 coverage)', () => {
+  const outside = mkTmp('gru-shn-outside-');
+  const rOutside = runSelfHeal({ tool_input: { command: 'npm test' }, cwd: outside });
+  assert.equal(rOutside.stdout.trim(), '', 'must not inject studio instructions into an unrelated project failure');
+  assert.equal(rOutside.code, 0);
+  const dir = mkTmp('gru-shn-interrupt-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const rInterrupt = runSelfHeal({ tool_input: { command: 'npm test' }, cwd: dir, is_interrupt: true });
+  assert.equal(rInterrupt.stdout.trim(), '', 'a user interrupt (Ctrl+C) is not a bug to auto-fix');
+  const rBad = spawnSync('node', [path.join(HERE, 'self-heal-nudge.mjs')], { input: 'not json{{', encoding: 'utf8' });
+  assert.equal(rBad.status, 0, 'unparseable stdin must not crash');
+  assert.equal(rBad.stdout.trim(), '', 'unparseable stdin emits nothing');
+  fs.rmSync(outside, { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- gate.mjs TTL fail-closed guards (2026-07-21 coverage) -------------------
+test('gate.mjs: a confirmation token with no ISSUED line is not honoured (fail-closed)', () => {
+  const dir = mkTmp('gru-gate-noissued-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const token = crypto.createHash('sha256').update(`studio-publish:${dir}`).digest('hex');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `STUDIO-PUBLISH-CONFIRMED:${token}\n`, 'utf8');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny', 'a token with no ISSUED timestamp must fail closed');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: a confirmation token with a FUTURE ISSUED timestamp is not honoured', () => {
+  const dir = mkTmp('gru-gate-future-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const token = crypto.createHash('sha256').update(`studio-publish:${dir}`).digest('hex');
+  const future = Date.now() + 10 * 24 * 60 * 60 * 1000;
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${future}\n`, 'utf8');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny', 'a far-future timestamp must not satisfy the TTL forever');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- roster-check.mjs ROSTER.md fallback (the product-repo CI path) ----------
+function writeAgents(dir, n) {
+  const a = path.join(dir, 'agents');
+  fs.mkdirSync(a, { recursive: true });
+  for (let i = 0; i < n; i++) fs.writeFileSync(path.join(a, `role-${i}.md`), `---\nname: role-${i}\ndescription: x\n---\n`);
+}
+
+test('roster-check.mjs: ROSTER.md fallback is clean when count <= baseline (2026-07-21 coverage of the CI path)', () => {
+  const plugin = mkTmp('gru-rc-clean-'); writeAgents(plugin, 5);
+  fs.writeFileSync(path.join(plugin, 'ROSTER.md'), '# roster\n\n**role count: 5**\n');
+  const noDm = mkTmp('gru-rc-clean-dm-');
+  const r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), plugin, noDm], { encoding: 'utf8' });
+  const j = JSON.parse(r.stdout);
+  assert.equal(r.status, 0); assert.equal(j.status, 'clean'); assert.equal(j.source, 'ROSTER.md');
+  fs.rmSync(plugin, { recursive: true, force: true }); fs.rmSync(noDm, { recursive: true, force: true });
+});
+
+test('roster-check.mjs: ROSTER.md fallback BLOCKS when agents exceed the baseline / count is missing / ROSTER.md is absent', () => {
+  const noDm = mkTmp('gru-rc-block-dm-');
+  // (a) over-grown
+  const over = mkTmp('gru-rc-over-'); writeAgents(over, 7);
+  fs.writeFileSync(path.join(over, 'ROSTER.md'), '**role count: 5**\n');
+  let r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), over, noDm], { encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  // (b) ROSTER.md present but no numeric count
+  const noCount = mkTmp('gru-rc-nocount-'); writeAgents(noCount, 3);
+  fs.writeFileSync(path.join(noCount, 'ROSTER.md'), '# a roster file with no stated number\n');
+  r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), noCount, noDm], { encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  // (c) no ROSTER.md and no decision files
+  const noRoster = mkTmp('gru-rc-noroster-'); writeAgents(noRoster, 3);
+  r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), noRoster, noDm], { encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  fs.rmSync(noDm, { recursive: true, force: true });
+  fs.rmSync(over, { recursive: true, force: true });
+  fs.rmSync(noCount, { recursive: true, force: true });
+  fs.rmSync(noRoster, { recursive: true, force: true });
+});
+
+// --- scan.mjs unpushed-history secret scan (2026-07-21 fix) ------------------
+test('scan.mjs: a secret committed then removed from the working tree is still caught in unpushed history', () => {
+  const dir = mkTmp('gru-scan-history-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // Build the AWS reserved example key in parts so this test file's own source
+  // line does not contain the contiguous literal (which scan.mjs would flag).
+  const secret = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'config.txt'), `aws_key = "${secret}"\n`);
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add config'], dir);
+  // Remove it from the working tree in a later commit — tree is now clean.
+  fs.rmSync(path.join(dir, 'config.txt'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'remove config'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a secret still present in unpushed history must block the push even when the working tree is clean');
+  assert.ok(/history/i.test(r.stdout), 'the finding should be attributed to unpushed history');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('repo-integrity.mjs INV12: the publish protocol must enumerate all seven pre-flight check hooks (2026-07-21 fix)', () => {
+  const dir = mkTmp('gru-repointeg-publish7-');
+  copyRepoTo(dir);
+  const skillPath = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'publish-github', 'SKILL.md');
+  // Simulate the exact drift the fix prevents: drop a required check reference.
+  fs.writeFileSync(skillPath, fs.readFileSync(skillPath, 'utf8').replace(/content-check\.mjs/g, 'REMOVED-check'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping a required pre-flight check from the publish protocol must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('content-check.mjs')), `expected a problem naming the dropped check, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 2 — re-verify Round 1 fixes found some
+// incomplete (gh api shorthand, publish-count in maintenance-agent) and surfaced
+// new issues (licence-scan .bin false-block, roster-check first-match, etc.).
+// ---------------------------------------------------------------------------
+
+test('lib.mjs isPushCapable: gh api attached-shorthand body flags (-fname=x / -Fname=x) are caught (2026-07-21 Round 2 fix)', () => {
+  for (const c of [
+    'gh api /user/repos -fname=app',
+    'gh api /user/repos -Fname=app',
+    'gh api -Fprivate=false repos/o/r',
+    'gh api repos/o/r -fvisibility=public',
+  ]) {
+    assert.equal(isPushCapable(c), true, `gh api attached-shorthand write must be caught: "${c}"`);
+  }
+  // reads with no body flag stay allowed
+  assert.equal(isPushCapable('gh api user'), false);
+  assert.equal(isPushCapable('gh api repos/o/r'), false);
+});
+
+test('gate.mjs: gh api default-visibility repo creation needs the go-public token (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-gate-apicreate-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  // POST /user/repos with visibility omitted -> PUBLIC by GitHub default -> must need go-public.
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app', dir).decision, 'deny', 'default-visibility repo creation defaults to public and must need the go-public token');
+  assert.equal(runHook('gate.mjs', 'gh api /user/repos -fname=app', dir).decision, 'deny', 'attached-shorthand repo creation must also need go-public');
+  // explicitly private repo creation rides the ordinary private-publish token.
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'allow', 'an explicitly-private repo creation is a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a key-file committed then removed is still caught in unpushed history (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-scan-histkey-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // A deploy key whose *content* is innocuous base64 (matches no secret pattern),
+  // caught only by the key-file NAME rule — which the history scan must now apply.
+  fs.writeFileSync(path.join(dir, 'deploy.pem'), 'bm90LWEtcmVhbC1zZWNyZXQtanVzdC1iYXNlNjQ=\n');
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add key'], dir);
+  fs.rmSync(path.join(dir, 'deploy.pem'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'remove key'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a key file in unpushed history must block the push even when the working tree is clean');
+  assert.ok(/key-file-history/.test(r.stdout), 'the finding should be a key-file-history hit');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: each secret format and key-file name is caught (2026-07-21 coverage of the core scanner)', () => {
+  const mk = () => { const d = mkTmp('gru-scan-fmt-'); fs.mkdirSync(path.join(d, 'Dev-Memory'), { recursive: true }); initRepo(d); return d; };
+  const denies = (file, content) => {
+    const d = mk();
+    fs.writeFileSync(path.join(d, file), content);
+    const r = runHook('scan.mjs', 'git push origin main', d);
+    fs.rmSync(d, { recursive: true, force: true });
+    return r.decision === 'deny';
+  };
+  // secret CONTENT formats (built in parts so this test file isn't self-flagged)
+  assert.ok(denies('a.txt', 'key = "' + 'AIza' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"'), 'Google AIza key');
+  assert.ok(denies('b.txt', 'tok = "' + 'ghp_' + 'abcdef0123456789ABCDEF0123456789abcd"'), 'GitHub token');
+  assert.ok(denies('c.txt', 'k = "' + 'sk_live_' + '0123456789abcdefABCDEF"'), 'Stripe live key');
+  assert.ok(denies('d.txt', '-----BEGIN' + ' RSA PRIVATE KEY-----'), 'PEM private key header');
+  // key-file NAMES (content innocuous)
+  assert.ok(denies('.env', 'X=1\n'), '.env file');
+  assert.ok(denies('id_rsa', 'x\n'), 'id_rsa file');
+  assert.ok(denies('app.key', 'x\n'), '*.key file');
+  // a short AIza-like string is NOT a match (length bound holds)
+  const d = mk(); fs.writeFileSync(path.join(d, 'ok.txt'), 'note = "' + 'AIza' + 'short"');
+  assert.equal(runHook('scan.mjs', 'git push origin main', d).decision, 'allow', 'a too-short AIza string must not be flagged');
+  fs.rmSync(d, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: npm .bin/.cache tooling dirs are not treated as packages (2026-07-21 false-block fix)', () => {
+  const dir = mkTmp('gru-lic-bin-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"app","version":"1.0.0"}');
+  const nm = path.join(dir, 'node_modules');
+  fs.mkdirSync(path.join(nm, 'goodpkg'), { recursive: true });
+  fs.writeFileSync(path.join(nm, 'goodpkg', 'package.json'), '{"name":"goodpkg","license":"MIT"}');
+  fs.mkdirSync(path.join(nm, '.bin'), { recursive: true });
+  fs.writeFileSync(path.join(nm, '.bin', 'tsc'), '#!/bin/sh\n');
+  fs.mkdirSync(path.join(nm, '.cache', 'x'), { recursive: true });
+  const r = runScript('licence-scan.mjs', dir);
+  assert.equal(r.json.status, 'clean', `.bin/.cache must not be scanned as packages: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a copyleft npm dependency is BLOCKED; an all-permissive tree is clean (2026-07-21 coverage)', () => {
+  // blocked path
+  const b = mkTmp('gru-lic-gpl-');
+  fs.writeFileSync(path.join(b, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(b, 'node_modules', 'copyleft-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(b, 'node_modules', 'copyleft-pkg', 'package.json'), '{"name":"copyleft-pkg","license":"GPL-3.0-only"}');
+  const rb = runScript('licence-scan.mjs', b);
+  assert.equal(rb.json.status, 'BLOCKED', `a GPL dependency must block: ${rb.stdout}`);
+  assert.equal(rb.code, 1);
+  fs.rmSync(b, { recursive: true, force: true });
+  // clean path incl. object-form licence and a scoped package
+  const c = mkTmp('gru-lic-clean-');
+  fs.writeFileSync(path.join(c, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(c, 'node_modules', 'mit-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(c, 'node_modules', 'mit-pkg', 'package.json'), '{"name":"mit-pkg","license":"MIT"}');
+  fs.mkdirSync(path.join(c, 'node_modules', 'obj-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(c, 'node_modules', 'obj-pkg', 'package.json'), '{"name":"obj-pkg","license":{"type":"Apache-2.0"}}');
+  fs.mkdirSync(path.join(c, 'node_modules', '@scope', 'scoped-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(c, 'node_modules', '@scope', 'scoped-pkg', 'package.json'), '{"name":"@scope/scoped-pkg","license":"ISC"}');
+  const rc = runScript('licence-scan.mjs', c);
+  assert.equal(rc.json.status, 'clean', `an all-permissive tree must be clean: ${rc.stdout}`);
+  fs.rmSync(c, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: prose under a ## Links heading is not mis-parsed as a link (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-mi-prose-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n- All links use present-tense verbs like implements and blocks.\n'
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a real link + a prose bullet must be clean, not a false BLOCK: ${r.stdout}`);
+  // and a genuinely dangling documented link is still caught
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), '## Nodes\n- [T1] task: a\n\n## Links\n- T1 depends-on R9\n');
+  assert.equal(runScript('memory-integrity.mjs', dir).json.status, 'BLOCKED', 'a dangling documented link must still be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('roster-check.mjs: the LAST role-count in ROSTER.md wins, so a narrated earlier number cannot hide scope creep (2026-07-21 fix)', () => {
+  const plugin = mkTmp('gru-rc-last-'); writeAgents(plugin, 6);
+  // An earlier hypothetical number precedes the authoritative one.
+  fs.writeFileSync(path.join(plugin, 'ROSTER.md'), 'We considered 50 roles (role count: 50) but settled on\n**role count: 5**\n');
+  const noDm = mkTmp('gru-rc-last-dm-');
+  const r = spawnSync('node', [path.join(HERE, 'roster-check.mjs'), plugin, noDm], { encoding: 'utf8' });
+  assert.equal(JSON.parse(r.stdout).status, 'BLOCKED', '6 agents vs the authoritative baseline of 5 must BLOCK, not read the earlier 50');
+  fs.rmSync(plugin, { recursive: true, force: true }); fs.rmSync(noDm, { recursive: true, force: true });
+});
+
+test('repo-integrity.mjs INV12: a stale "four ... checks" on the publish path (maintenance-agent) is caught (2026-07-21 Round 2 fix)', () => {
+  const dir = mkTmp('gru-repointeg-four-');
+  copyRepoTo(dir);
+  const p = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'maintenance-agent.md');
+  fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('seven blocking checks', 'four blocking checks'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale "four ... checks" on the publish path must be caught');
+  assert.ok(r.json.problems.some((p2) => /maintenance-agent\.md/.test(p2) && /four/.test(p2)), `expected a problem naming maintenance-agent, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 3 — fewer findings (5), all fixed here.
+// ---------------------------------------------------------------------------
+
+test('licence-scan.mjs: a pnpm-layout copyleft dependency (symlinked direct dep) is BLOCKED, not false-clean (2026-07-21 Round 3 regression fix)', () => {
+  const dir = mkTmp('gru-lic-pnpm-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"app"}');
+  const store = path.join(dir, 'node_modules', '.pnpm', 'evil-gpl@1.0.0', 'node_modules', 'evil-gpl');
+  fs.mkdirSync(store, { recursive: true });
+  fs.writeFileSync(path.join(store, 'package.json'), '{"name":"evil-gpl","license":"GPL-3.0"}');
+  fs.mkdirSync(path.join(dir, 'node_modules', '.bin'), { recursive: true }); // tooling dir must still be skipped
+  fs.symlinkSync(path.join('.pnpm', 'evil-gpl@1.0.0', 'node_modules', 'evil-gpl'), path.join(dir, 'node_modules', 'evil-gpl'), 'dir');
+  const r = runScript('licence-scan.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a pnpm-symlinked GPL dep must be caught, not skipped: ${r.stdout}`);
+  assert.equal(r.code, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: gh api create-from-template also needs the go-public token (2026-07-21 Round 3 fix)', () => {
+  const dir = mkTmp('gru-gate-gen-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  const denied = runHook('gate.mjs', 'gh api -X POST repos/octocat/tmpl/generate -f owner=me -f name=new', dir);
+  assert.equal(denied.decision, 'deny', 'template-generate defaults to a PUBLIC repo and must need the go-public token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a met requirement whose own row admits it is failing is caught (2026-07-21 coverage)', () => {
+  const dir = mkTmp('gru-trace-contra-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | verified: was ok, now fails with exit 1 | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /marked met but its own row|currently failing\/unverified/i.test(p)), 'the contradiction branch must fire');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('quality-gate.mjs: a required dimension with a plain non-pass status (todo) is BLOCKED (2026-07-21 coverage)', () => {
+  const dir = mkTmp('gru-qg-nonpass-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | todo | not run yet |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /is not a pass/i.test(p)), 'a non-pass required dimension must be reported');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- Round 4 (2026-07-21): 2 findings, both fixed ---------------------------
+
+test('gate.mjs: an incidental "private=..." inside an unrelated field VALUE does not downgrade a public repo-create (2026-07-21 Round 4 fix)', () => {
+  const dir = mkTmp('gru-gate-fakepriv-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f description="toggle private=true to hide"', dir).decision, 'deny', 'a fake private= buried in a description value must not suppress the go-public gate');
+  // a REAL private field still rides the ordinary private-publish token
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'allow', 'an explicitly-private repo create is a private push');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('licence-scan.mjs: a nonexistent or file-as-root path emits JSON, never a raw crash (2026-07-21 Round 4 fix)', () => {
+  const missing = path.join(os.tmpdir(), 'gru-no-such-dir-' + process.pid + '-xyz');
+  const r1 = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), missing], { encoding: 'utf8' });
+  assert.doesNotThrow(() => JSON.parse(r1.stdout), `a nonexistent root must still emit parseable JSON, got stderr: ${r1.stderr}`);
+  assert.ok(!/ENOENT|scandir/.test(r1.stderr), 'must not crash with a raw scandir error');
+  const f = mkTmp('gru-lic-fileroot-');
+  const fp = path.join(f, 'afile.txt');
+  fs.writeFileSync(fp, 'x');
+  const r2 = spawnSync('node', [path.join(HERE, 'licence-scan.mjs'), fp], { encoding: 'utf8' });
+  assert.doesNotThrow(() => JSON.parse(r2.stdout), `a file-as-root must still emit parseable JSON, got stderr: ${r2.stderr}`);
+  assert.ok(!/ENOTDIR|scandir/.test(r2.stderr), 'must not crash with a raw scandir error on a file path');
+  fs.rmSync(f, { recursive: true, force: true });
+});
+
+// --- Round 6 (2026-07-21 adversarial red-team): 4 findings, all fixed --------
+
+test('verify-progress.mjs: an escaped pipe in a cell left of Status does not hide an unverified done row (2026-07-21 Round 6 false-clean fix)', () => {
+  const dir = mkTmp('gru-vp-pipe-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | add stdin \\| stdout piping | done | no evidence recorded |\n'
+  );
+  const r = spawnSync('node', [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, 'a done row with a \\| in the Task cell and no verified evidence must still be caught');
+  assert.equal(JSON.parse(r.stdout).status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('memory-integrity.mjs: an escaped pipe in a cell left of Where does not hide a stale INDEX path (2026-07-21 Round 6 false-clean fix)', () => {
+  const dir = mkTmp('gru-mi-pipe-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Pause \\| resume | Dev-Memory/NONEXISTENT.md | task | tag |\n'
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a stale INDEX path must be caught even with an escaped pipe in an earlier cell: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => /NONEXISTENT/.test(p)), 'the stale path must be reported');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('content-check.mjs: the documented "Alt/Caption" header is recognised, not treated as missing alt-text (2026-07-21 Round 6 false-block fix)', () => {
+  const dir = mkTmp('gru-cc-altcap-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'CONTENT.md'),
+    '| Asset | Medium | Source | Approved | Rights | Alt/Caption |\n| :-- | :-- | :-- | :-- | :-- | :-- |\n| welcome_hero.png | image | Gemini, prompt #4 | approved | AI-generated, user owns | Family using the app |\n'
+  );
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a media asset with a caption under the documented Alt/Caption header must pass: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- Round 7 (2026-07-21 adversarial): 3 findings, all fixed -----------------
+
+test('lib.mjs isPushCapable: bash pattern-substitution/removal expansions no longer bypass detection (2026-07-21 Round 7 CRITICAL fix)', () => {
+  for (const c of [
+    'x=puXsh; git ${x//X/} origin main',
+    'x=puXsh; git ${x/X/} origin main',
+    'x=xxpush; git ${x##xx} origin main',
+    'x=Xpush; git ${x#X} origin main',
+    'x=pushyy; git ${x%%yy} origin main',
+    'x=pushX; git ${x%X} origin main',
+    'v=pubXlic; gh repo edit me/app --visibility=${v//X/}',
+  ]) {
+    assert.equal(isPushCapable(c), true, `pattern-substitution push must be caught: "${c}"`);
+  }
+  for (const c of ['git status', 'x=logs; git ${x//X/} status']) {
+    assert.equal(isPushCapable(c), false, `must stay clear: "${c}"`);
+  }
+});
+
+test('lib.mjs isPushCapable: ${VAR:+alt} and ${VAR:?msg} parameter expansions are resolved (2026-07-21 Round 7 family-closure)', () => {
+  for (const c of [
+    'x=set; git ${x:+push} origin main',
+    'x=set; git ${x+push} origin main',
+    'x=push; git ${x:?err} origin main',
+    'x=push; git ${x?err} origin main',
+    'v=1; gh repo edit me/app --visibility=${v:+public}',
+  ]) {
+    assert.equal(isPushCapable(c), true, `must be caught: "${c}"`);
+  }
+  assert.equal(isPushCapable('x=set; git ${x:+status} origin main'), false, 'a non-push alternative value must stay clear');
+});
+
+// --- Round 8 (2026-07-21 comprehensive): 2 findings, both fixed --------------
+
+test('gate.mjs: gh api attached-equals field forms (--field=visibility=public) still need the go-public token (2026-07-21 Round 8 fix)', () => {
+  const dir = mkTmp('gru-gate-fieldeq-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  for (const cmd of [
+    'gh api -X PATCH repos/me/app --field=visibility=public',
+    'gh api -X PATCH repos/me/app --raw-field=visibility=public',
+    'gh api -X PATCH repos/me/app -f=visibility=public',
+    'gh api -X PATCH repos/me/app --field=private=false',
+  ]) {
+    assert.equal(runHook('gate.mjs', cmd, dir).decision, 'deny', `attached-equals go-public must be gated: "${cmd}"`);
+  }
+  // a non-visibility private edit is an ordinary private push (allowed on the publish token)
+  assert.equal(runHook('gate.mjs', 'gh api -X PATCH repos/me/app --field=description=hi', dir).decision, 'allow', 'a non-visibility edit rides the publish token');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret on a "++"-prefixed content line is caught in unpushed history (2026-07-21 Round 8 fix)', () => {
+  const dir = mkTmp('gru-scan-plusplus-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const secret = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'notes.txt'), '++ key = "' + secret + '"\n'); // content begins with ++
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'notes.txt'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'remove'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a secret on a "++"-prefixed content line in unpushed history must still be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- Round 9 (2026-07-21 final adversarial): 2 findings, both fixed ----------
+
+test('scan.mjs: a removed "-- a/z" line does not let the next added secret line masquerade as a diff header (2026-07-21 Round 9 fix)', () => {
+  const dir = mkTmp('gru-scan-hunkhdr-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const secret = 'ghp_' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345'; // gh-token shaped, built in parts
+  fs.writeFileSync(path.join(dir, 'vic.txt'), '-- a/z\n');
+  git(['add', '-A'], dir); git(['commit', '-qm', 'c1'], dir);
+  fs.writeFileSync(path.join(dir, 'vic.txt'), '++ b/' + secret + '\n'); // hunk: '--- a/z' then '+++ b/ghp_…'
+  git(['add', '-A'], dir); git(['commit', '-qm', 'c2'], dir);
+  fs.writeFileSync(path.join(dir, 'vic.txt'), 'clean now\n'); // secret gone from working tree, still in history
+  git(['add', '-A'], dir); git(['commit', '-qm', 'c3'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', 'a secret added after a "-- a/z" removed line must still be caught in unpushed history');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('classifySpdxExpr: parentheses and AND/OR precedence are honoured (2026-07-21 Round 9 fix)', () => {
+  assert.equal(classifySpdxExpr('GPL-3.0-only AND (MIT OR Apache-2.0)'), false, 'a mandatory copyleft term inside AND must BLOCK');
+  assert.equal(classifySpdxExpr('(MIT OR Apache-2.0) AND GPL-3.0'), false);
+  assert.equal(classifySpdxExpr('LGPL-3.0-only AND (Apache-2.0 OR MIT)'), false);
+  assert.equal(classifySpdxExpr('MIT OR Apache-2.0'), true);
+  assert.equal(classifySpdxExpr('MIT AND Apache-2.0'), true);
+  assert.equal(classifySpdxExpr('MIT AND GPL-2.0'), false);
+  assert.equal(classifySpdxExpr('GPL-2.0 AND MIT OR BSD-3-Clause'), true, 'satisfiable via the permissive OR alternative');
+  assert.equal(classifySpdxExpr('(MIT OR Apache-2.0) AND Unicode-DFS-2016'), null, 'an unknown mandatory term -> needs review, not a silent pass');
+});
+
+test('gate.mjs + scan.mjs: a pattern-substitution-obfuscated push/go-public is gated end-to-end (2026-07-21 Round 7 CRITICAL fix)', () => {
+  const d1 = mkTmp('gru-r7-push-'); fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true }); initRepo(d1);
+  fs.writeFileSync(path.join(d1, 'config.txt'), 'k = "' + 'AKIA' + 'IOSFODNN7EXAMPLE"\n');
+  git(['add', '-A'], d1); git(['commit', '-qm', 'x'], d1);
+  assert.equal(runHook('scan.mjs', 'x=puXsh; git ${x//X/} origin main', d1).decision, 'deny', 'an obfuscated push must not ship a secret undetected');
+  assert.equal(runHook('gate.mjs', 'x=puXsh; git ${x//X/} origin main', d1).decision, 'deny', 'an obfuscated push must not be authorised without a token');
+  fs.rmSync(d1, { recursive: true, force: true });
+  const d2 = mkTmp('gru-r7-gopublic-'); fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), d2], { encoding: 'utf8' }); // private-publish token only
+  assert.equal(runHook('gate.mjs', 'v=pubXlic; gh repo edit me/app --visibility=${v//X/}', d2).decision, 'deny', 'an obfuscated go-public must not ride the private-publish token');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a 1-3 space indented GFM table is not false-blocked with a phantom "---" requirement (2026-07-21 Round 7 fix)', () => {
+  const dir = mkTmp('gru-trace-indent-');
+  const indentedReq = '  | ID | Requirement | Phase | Tasks | Verification | Status |\n  | --- | --- | --- | --- | --- | --- |\n  | R1 | Log in | 1 | T1 | verified: npm test -> exit 0 | met |\n';
+  writeReq(dir, indentedReq, PROG_HEADER + '| T1 | log in | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `an indented but consistent matrix must be clean, not false-blocked with a phantom "---" requirement: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 11 — the final independent red-team
+// broke the clean streak with 2 new medium findings: (1) a single NUL byte in a
+// would-ship file hid a co-located ASCII secret from BOTH scan paths (the
+// working-tree scan skipped the whole file on `buf.includes(0)`, and the history
+// scan ran `git log -p` without `--text`, so git rendered the NUL blob as
+// "Binary files differ"); (2) verify-progress failed OPEN on any PROGRESS.md
+// table shape whose Status column it could not name (emphasised/synonym/
+// composite header, or a pipe-less GFM table). Both fixed at root.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a stray NUL byte no longer hides a co-located ASCII secret in a would-ship file (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-scan-nul-wt-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // Build the token in parts so this test file's own source line stays clean.
+  const ghp = 'ghp' + '_' + 'ABCDEFGHIJ0123456789klmnopqrst';
+  // An ordinary log file that captured one stray binary byte beside a real key.
+  fs.writeFileSync(path.join(dir, 'app.log'), Buffer.from('start\n' + ghp + '\nmore' + String.fromCharCode(0) + 'text\n', 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a NUL byte must not hide a co-located ASCII secret: ${r.stdout}`);
+  assert.ok(/app\.log/.test(r.stdout), 'the finding should name the offending file');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a genuine binary asset with no secret is NOT false-flagged (2026-07-21 Round 11 fix — no false positive)', () => {
+  const dir = mkTmp('gru-scan-nul-bin-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // High-entropy pseudo-binary (fonts/images look like this): NULs and control
+  // bytes throughout, no secret pattern — must still ALLOW, proving the fix does
+  // not turn every binary asset into a false block.
+  const bytes = Buffer.alloc(20000);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 37 + (i % 5) * 101) % 256;
+  fs.writeFileSync(path.join(dir, 'asset.bin'), bytes);
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `a genuine binary asset with no secret must not be false-flagged: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret in a NUL-containing file committed then removed is caught in unpushed history (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-scan-nul-hist-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const ghp = 'ghp' + '_' + 'ABCDEFGHIJ0123456789klmnopqrst';
+  fs.writeFileSync(path.join(dir, 'leak.txt'), Buffer.from('hdr\n' + ghp + '\nfoo' + String.fromCharCode(0) + 'bar\n', 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'leak.txt'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'rm'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `--text must expose a NUL-blob's added secret to the history scan: ${r.stdout}`);
+  assert.ok(/history/i.test(r.stdout), 'the finding should be attributed to unpushed history');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a Bangla UTF-8 file with a stray NUL is scanned, not misclassified as binary (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-scan-nul-bn-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // Valid UTF-8 (Bangla) must count as text so its co-located secret is scanned —
+  // the text-fraction guard keys on invalid-byte density, not on non-ASCII.
+  const bangla = 'এটি একটি লগ ফাইল যেখানে একটি গোপন কী আছে\n';
+  fs.writeFileSync(path.join(dir, 'dump.sql'), Buffer.from(bangla + 'api_key = "abcdEFGH1234ijklMNOP5678"\nblob' + String.fromCharCode(0) + 'col\n', 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `valid Bangla UTF-8 must count as text, so its co-located secret is still scanned: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: an unverified "done" is caught under emphasised/synonym/composite/pipe-less Status headers (2026-07-21 Round 11 fail-open fix)', () => {
+  const shapes = [
+    ['bolded **Status**',    '| Task | **Status** | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n'],
+    ['synonym State',        '| Task | State | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n'],
+    ['composite Task Status','| Task | Task Status | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n'],
+    ['pipe-less GFM table',  'Task | Status | Notes\n--- | --- | ---\nA | done | none\n'],
+  ];
+  for (const [label, progress] of shapes) {
+    const dir = mkTmp('gru-vp-shape-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), progress);
+    const r = runScript('verify-progress.mjs', dir);
+    assert.equal(r.code, 1, `an unverified "done" under a ${label} header must be caught, not silently passed: ${r.stdout}`);
+    assert.equal(r.json && r.json.status, 'BLOCKED', `${label}: expected BLOCKED`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('verify-progress.mjs: a task table with a "done" cell but no identifiable Status column fails CLOSED (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-vp-failclosed-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // "Situation" is neither Status nor State; a "done" cell that cannot be tied
+  // to a status column must fail closed, matching the sibling publish gates —
+  // not silently pass as the old `continue` did.
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), '| Task | Situation | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n');
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `an unidentifiable Status column with a "done" cell must fail closed: ${r.stdout}`);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 12 — a fresh red-team attacked the
+// Round 11 fixes head-on and found 5 (1 high, 4 medium), three of them defects
+// in/around those fixes: (1) the history scan's per-line text guard lacked the
+// working-tree path's NUL-isolation, so a secret sharing one line with a binary
+// run was skipped; (2) a 4MB size cap silently skipped content-scanning any
+// larger file, incl. pure text; (3) gh repo create --internal (a non-private
+// visibility) bypassed the go-public gate; (4) mixed GFM outer-pipe style
+// column-shifted the Status cell; (5) a decorated `done` VALUE evaded the row
+// check AND the fail-closed backstop. All fixed at the class level.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a secret sharing ONE line with a binary run (committed then removed) is caught in unpushed history (2026-07-21 Round 12 fix — history/working-tree parity)', () => {
+  const dir = mkTmp('gru-scan-r12-histcolo-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const ghp = 'ghp' + '_' + 'ABCDEFGHIJ0123456789klmnopqrst';
+  // >=32 bytes of binary (incl NULs) glued to the secret on the SAME line; the
+  // file overall is overwhelmingly text. The Round 11 per-line guard dropped this
+  // whole line below the 0.85 text fraction and skipped it; per-file parity fixes it.
+  let bin = '';
+  for (let i = 0; i < 16; i++) bin += String.fromCharCode(0) + String.fromCharCode((i * 53) % 256 || 1);
+  const rows = Array.from({ length: 300 }, (_, i) => `row ${i} ordinary text content here`).join('\n');
+  fs.writeFileSync(path.join(dir, 'dump.sql'), Buffer.from(rows + '\nINSERT INTO blobs VALUES (' + bin + "'" + ghp + "');\nlast\n", 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'dump.sql'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'rm'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a history-only secret co-located with binary on one line must still be caught: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a plaintext secret in a >4MB text file is caught (not silently skipped by the size cap), incl. a compound commit+push (2026-07-21 Round 12 fix)', () => {
+  const dir = mkTmp('gru-scan-r12-large-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'seed'], dir);
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  // ~4.6MB of pure ASCII, secret on the final line; file is UNTRACKED at push time
+  // (the commit does not exist yet), so only the working-tree scan can catch it.
+  const filler = ('x'.repeat(200) + '\n').repeat(23000);
+  fs.writeFileSync(path.join(dir, 'terraform.tfstate'), filler + 'aws_access_key_id = "' + akia + '"\n');
+  const r = runHook('scan.mjs', 'git add -A && git commit -m release && git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a plaintext secret in a >4MB text file must not ship unflagged: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a >4MB genuine binary asset with no secret is NOT false-flagged (2026-07-21 Round 12 fix — no false positive)', () => {
+  const dir = mkTmp('gru-scan-r12-largebin-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const big = Buffer.alloc(5 * 1024 * 1024);
+  for (let i = 0; i < big.length; i++) big[i] = (i * 37 + (i % 7) * 89) % 256;
+  fs.writeFileSync(path.join(dir, 'model.bin'), big);
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `a large genuine binary with no secret must not be false-flagged: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: gh repo create --internal (standalone flag) needs the go-public token, not a private/checkpoint token (2026-07-21 Round 12 HIGH fix)', () => {
+  const dir = mkTmp('gru-gate-r12-internal-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --internal', dir).decision, 'deny', 'internal visibility is non-private and must need the go-public token');
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --public', dir).decision, 'deny', 'control: --public must need go-public');
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --visibility internal', dir).decision, 'deny', 'control: --visibility internal must need go-public');
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --private', dir).decision, 'allow', '--private must stay allowed on a private token');
+  fs.rmSync(dir, { recursive: true, force: true });
+  // and a routine checkpoint token must not authorise it either
+  const d2 = mkTmp('gru-gate-r12-internal-ckpt-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-checkpoint.mjs'), d2], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --internal', d2).decision, 'deny', 'a checkpoint token must never make a repo internal (non-private)');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: mixed GFM outer-pipe style does not column-shift the Status cell past an unverified done (2026-07-21 Round 12 fix)', () => {
+  // Piped header + one appended pipe-less done row (both valid GFM, render alike).
+  const d1 = mkTmp('gru-vp-r12-mix1-');
+  fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(d1, 'Dev-Memory', 'PROGRESS.md'), '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | build | done | verified: npm test -> exit 0 (2026-07-20) |\nT2 | ship | done | no evidence at all\n');
+  let r = runScript('verify-progress.mjs', d1);
+  assert.equal(r.code, 1, `a pipe-less done row appended to a piped table must still be checked: ${r.stdout}`);
+  fs.rmSync(d1, { recursive: true, force: true });
+  // Pipe-less header + piped done row.
+  const d2 = mkTmp('gru-vp-r12-mix2-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(d2, 'Dev-Memory', 'PROGRESS.md'), 'Task | Status | Notes\n--- | --- | ---\n| A | done | none |\n');
+  r = runScript('verify-progress.mjs', d2);
+  assert.equal(r.code, 1, `a piped done row under a pipe-less header must still be checked: ${r.stdout}`);
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: a decorated `done` VALUE (**done**, `done`, "✅ done") is still caught, and its backstop fires with no Status column (2026-07-21 Round 12 fix)', () => {
+  const values = ['**done**', '`done`', '✅ done'];
+  for (const v of values) {
+    const dir = mkTmp('gru-vp-r12-val-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), `| Task | Status | Notes |\n| :-- | :-- | :-- |\n| A | ${v} | no evidence |\n`);
+    const r = runScript('verify-progress.mjs', dir);
+    assert.equal(r.code, 1, `a decorated done value "${v}" with no verified: cell must be caught: ${r.stdout}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  // backstop: decorated done under a non-Status column must also fail closed
+  const dir = mkTmp('gru-vp-r12-valbs-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), '| Task | Progress | Notes |\n| :-- | :-- | :-- |\n| A | `done` | no evidence |\n');
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `a decorated done value under a non-Status header must fail closed: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 13 — a fresh red-team found 3 distinct
+// defects (2 high + 1 medium; a 4th was the same merge issue via a 2nd lens):
+// (1) the R12 history classifier tested the WHOLE added content while the
+// working-tree path head-samples, so a text-headed/binary-tailed dump was caught
+// in the tree but skipped in history; (2) a gitignored secret force-added in a
+// compound `git add -f X && commit && push` bypassed both scans; (3) `git log -p`
+// omits merge diffs, so a secret unique to a merge resolution shipped undetected.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a text-headed, binary-tailed file (committed then removed) is caught in history, matching the working-tree scan (2026-07-21 Round 13 head-sample parity fix)', () => {
+  const dir = mkTmp('gru-scan-r13-headsample-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  const head = Buffer.from('config value line xyz\n'.repeat(4000) + 'apikey=' + akia + '\n' + 'more config here\n'.repeat(500), 'utf8');
+  const tail = Buffer.alloc(100 * 1024, 0); // whole-content text fraction < 0.85, but head = 1.0
+  fs.writeFileSync(path.join(dir, 'dump.sql'), Buffer.concat([head, tail]));
+  git(['add', 'dump.sql'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'dump.sql')); git(['add', '-A'], dir); git(['commit', '-qm', 'rm'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a text-headed/binary-tailed dump's history secret must be caught (head-sample parity): ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a gitignored secret force-added in a compound command is caught; a normal push does not scan gitignored files (2026-07-21 Round 13 HIGH fix)', () => {
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  // (a) force-add of a gitignored secret in one compound command -> deny
+  const d1 = mkTmp('gru-scan-r13-forceadd-');
+  fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true });
+  initRepo(d1);
+  fs.writeFileSync(path.join(d1, '.gitignore'), '*.secret\nnode_modules/\n');
+  git(['add', '.gitignore'], d1); git(['commit', '-qm', 'ig'], d1);
+  fs.writeFileSync(path.join(d1, 'prod.secret'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f prod.secret && git commit -m x && git push origin main', d1).decision, 'deny', 'a force-added gitignored secret must be caught');
+  assert.equal(runHook('scan.mjs', 'git add -f . && git commit -m x && git push origin main', d1).decision, 'deny', 'git add -f . must catch the ignored secret it sweeps in');
+  fs.rmSync(d1, { recursive: true, force: true });
+  // (b) NO false positive: a normal push must not scan gitignored files at all
+  const d2 = mkTmp('gru-scan-r13-normalpush-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  initRepo(d2);
+  fs.writeFileSync(path.join(d2, '.gitignore'), '*.secret\n');
+  git(['add', '.gitignore'], d2); git(['commit', '-qm', 'ig'], d2);
+  fs.writeFileSync(path.join(d2, 'prod.secret'), 'K="' + akia + '"\n'); // ignored, NOT shipped
+  fs.writeFileSync(path.join(d2, 'app.js'), 'ok\n'); git(['add', 'app.js'], d2); git(['commit', '-qm', 'app'], d2);
+  assert.equal(runHook('scan.mjs', 'git push origin main', d2).decision, 'allow', 'a normal push must not flag a gitignored file that is not being shipped');
+  fs.rmSync(d2, { recursive: true, force: true });
+  // (c) scoping: force-adding one harmless file must not scan an unrelated ignored secret
+  const d3 = mkTmp('gru-scan-r13-scope-');
+  fs.mkdirSync(path.join(d3, 'Dev-Memory'), { recursive: true });
+  initRepo(d3);
+  fs.writeFileSync(path.join(d3, '.gitignore'), '*.log\nnode_modules/\n');
+  git(['add', '.gitignore'], d3); git(['commit', '-qm', 'ig'], d3);
+  fs.writeFileSync(path.join(d3, 'debug.log'), 'nothing secret here\n');
+  fs.mkdirSync(path.join(d3, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(d3, 'node_modules', 'pkg', 'leak.log'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f debug.log && git commit -m x && git push origin main', d3).decision, 'allow', 'force-adding one harmless file must not sweep in an unrelated ignored secret');
+  fs.rmSync(d3, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret unique to a merge commit (later removed) is caught in unpushed history (2026-07-21 Round 13 merge-diff fix)', () => {
+  const dir = mkTmp('gru-scan-r13-merge-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'line-A\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'base'], dir);
+  git(['checkout', '-qb', 'branchB'], dir);
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'line-B\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'B'], dir);
+  git(['checkout', '-q', 'main'], dir);
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'line-A2\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'A2'], dir);
+  git(['merge', '--no-commit', '--no-ff', 'branchB'], dir); // conflict
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'resolved ' + akia + '\n'); // secret unique to the merge
+  git(['add', '-A'], dir); git(['commit', '-qm', 'merge resolve'], dir);
+  fs.writeFileSync(path.join(dir, 'config.txt'), 'clean\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'cleanup'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a secret unique to a merge resolution (later removed) must be caught with git log -m: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 14 — 2 distinct defects (both HIGH; the
+// quote-blind one was found by three lenses): (1) the R13 force-add pathspec
+// parser whitespace-split QUOTED pathspecs, so `git add -f "prod copy.secret"`
+// shipped the ignored secret unscanned; (2) the history scan walked only HEAD, so
+// `git push --all` / `--mirror` / pushing a non-checked-out branch shipped a
+// committed secret undetected. Both closed (quote-aware tokenizer; --branches
+// --tags HEAD range).
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a force-added gitignored secret whose filename contains a space is caught (2026-07-21 Round 14 quote-aware parse fix)', () => {
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  const mk = () => {
+    const dir = mkTmp('gru-scan-r14-space-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    initRepo(dir);
+    fs.writeFileSync(path.join(dir, '.gitignore'), '*.secret\nnode_modules/\n');
+    git(['add', '.gitignore'], dir); git(['commit', '-qm', 'ig'], dir);
+    return dir;
+  };
+  const d1 = mk();
+  fs.writeFileSync(path.join(d1, 'prod copy.secret'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f "prod copy.secret" && git commit -m x && git push origin main', d1).decision, 'deny', 'a double-quoted spaced force-add must be caught');
+  fs.rmSync(d1, { recursive: true, force: true });
+  const d2 = mk();
+  fs.writeFileSync(path.join(d2, 'AWS access keys.secret'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', "git add -f 'AWS access keys.secret' && git commit -m x && git push origin main", d2).decision, 'deny', 'a single-quoted spaced force-add must be caught');
+  fs.rmSync(d2, { recursive: true, force: true });
+  // scoping/no-false-positive: force-adding a harmless spaced file must not sweep an unrelated ignored secret
+  const d3 = mkTmp('gru-scan-r14-spacescope-');
+  fs.mkdirSync(path.join(d3, 'Dev-Memory'), { recursive: true });
+  initRepo(d3);
+  fs.writeFileSync(path.join(d3, '.gitignore'), '*.log\nnode_modules/\n');
+  git(['add', '.gitignore'], d3); git(['commit', '-qm', 'ig'], d3);
+  fs.writeFileSync(path.join(d3, 'debug output.log'), 'nothing secret\n');
+  fs.mkdirSync(path.join(d3, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(d3, 'node_modules', 'pkg', 'leak.log'), 'K="' + akia + '"\n');
+  assert.equal(runHook('scan.mjs', 'git add -f "debug output.log" && git commit -m x && git push origin main', d3).decision, 'allow', 'a quoted force-add of one harmless file must not sweep in unrelated ignored trees');
+  fs.rmSync(d3, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret on a non-HEAD local branch is caught for git push --all / --mirror / push <branch> (2026-07-21 Round 14 ref-range fix)', () => {
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  const mk = (withSecret) => {
+    const bare = mkTmp('gru-scan-r14-bare-') + path.sep + 'r.git';
+    git(['init', '-q', '--bare', bare], os.tmpdir());
+    const dir = mkTmp('gru-scan-r14-branch-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    git(['init', '-q', '-b', 'main'], dir); git(['config', 'user.email', 't@e.com'], dir); git(['config', 'user.name', 'T'], dir);
+    git(['remote', 'add', 'origin', bare], dir);
+    fs.writeFileSync(path.join(dir, 'base.txt'), 'base\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'init'], dir);
+    git(['push', '-q', 'origin', 'main'], dir);
+    git(['checkout', '-qb', 'side'], dir);
+    fs.writeFileSync(path.join(dir, 'side.txt'), withSecret ? 'k = "' + akia + '"\n' : 'ordinary code\n');
+    git(['add', '-A'], dir); git(['commit', '-qm', 'side'], dir);
+    git(['checkout', '-q', 'main'], dir); // stand on main; side is non-HEAD
+    return dir;
+  };
+  const d1 = mk(true);
+  assert.equal(runHook('scan.mjs', 'git push --all', d1).decision, 'deny', 'git push --all must scan non-HEAD branches');
+  assert.equal(runHook('scan.mjs', 'git push --mirror', d1).decision, 'deny', 'git push --mirror must scan non-HEAD branches');
+  assert.equal(runHook('scan.mjs', 'git push origin side', d1).decision, 'deny', 'pushing a non-checked-out branch by name must scan it');
+  fs.rmSync(d1, { recursive: true, force: true });
+  const d2 = mk(false);
+  assert.equal(runHook('scan.mjs', 'git push --all', d2).decision, 'allow', 'a clean non-HEAD branch must not be false-blocked');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 15 (FINAL round) — 2 defects (1 high,
+// 1 medium): (1) secrets in COMMIT MESSAGES and ANNOTATED-TAG MESSAGES were never
+// scanned (only file diffs were) — a common real-world leak vector; (2) the Round
+// 12 decorated-value fix was never ported to traceability-check.mjs, so a decorated
+// "met" status (✅ met / **met** / `met`) skipped the verification-evidence check.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a secret in a commit message (clean file content) is caught (2026-07-21 Round 15 HIGH fix)', () => {
+  const dir = mkTmp('gru-scan-r15-msg-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const akia = 'AKIA' + '1234567890ABCDEF';
+  fs.writeFileSync(path.join(dir, 'feature.txt'), 'clean code\n');
+  git(['add', '-A'], dir);
+  git(['commit', '-qm', 'add feature debugged with key ' + akia], dir); // secret only in the message
+  assert.equal(runHook('scan.mjs', 'git push origin main', dir).decision, 'deny', 'a secret in a commit message must be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+  // control: a clean commit message with clean content allows
+  const d2 = mkTmp('gru-scan-r15-msgok-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  initRepo(d2);
+  fs.writeFileSync(path.join(d2, 'feature.txt'), 'clean code\n');
+  git(['add', '-A'], d2); git(['commit', '-qm', 'add feature (nothing sensitive)'], d2);
+  assert.equal(runHook('scan.mjs', 'git push origin main', d2).decision, 'allow', 'a clean commit message must not be false-flagged');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret in an annotated-tag message is caught only when the push ships tags (2026-07-21 Round 15 HIGH fix)', () => {
+  const akia = 'AKIA' + '1234567890ABCDEF';
+  const mk = () => {
+    const dir = mkTmp('gru-scan-r15-tag-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    initRepo(dir);
+    fs.writeFileSync(path.join(dir, 'x.txt'), 'clean\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+    git(['tag', '-a', 'v9.9', '-m', 'release v9.9 deploy key ' + akia], dir);
+    return dir;
+  };
+  const d1 = mk();
+  assert.equal(runHook('scan.mjs', 'git push origin --tags', d1).decision, 'deny', 'git push --tags must scan annotated-tag messages');
+  assert.equal(runHook('scan.mjs', 'git push --follow-tags origin main', d1).decision, 'deny', 'git push --follow-tags must scan annotated-tag messages');
+  assert.equal(runHook('scan.mjs', 'git push origin main', d1).decision, 'allow', 'a plain push (no tags shipped) must not scan tag messages');
+  fs.rmSync(d1, { recursive: true, force: true });
+  // control: a lightweight tag has no message, so --tags allows
+  const d2 = mkTmp('gru-scan-r15-lwtag-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  initRepo(d2);
+  fs.writeFileSync(path.join(d2, 'x.txt'), 'clean\n'); git(['add', '-A'], d2); git(['commit', '-qm', 'x'], d2);
+  git(['tag', 'v1.0'], d2);
+  assert.equal(runHook('scan.mjs', 'git push origin --tags', d2).decision, 'allow', 'a lightweight tag (no message) must not be false-flagged');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a decorated "met" status still requires verification evidence (2026-07-21 Round 15 fix)', () => {
+  const prog = PROG_HEADER + '| T1 | a | done | verified: npm test -> exit 0 (2026-07-20) |\n';
+  const REQ_HEADER = '| ID | Requirement | Tasks | Status | Verification |\n| :-- | :-- | :-- | :-- | :-- |\n';
+  for (const decorated of ['✅ met', '**met**', '`met`']) {
+    const dir = mkTmp('gru-trace-r15-');
+    writeReq(dir, REQ_HEADER + `| R1 | Login | T1 | ${decorated} | — |\n`, prog);
+    const r = runScript('traceability-check.mjs', dir);
+    assert.equal(r.code, 1, `a decorated "${decorated}" met with no verification evidence must be blocked: ${r.stdout}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  // no regression: a plain met WITH evidence stays clean
+  const dir = mkTmp('gru-trace-r15-ok-');
+  writeReq(dir, REQ_HEADER + '| R1 | Login | T1 | met | verified: npm test -> exit 0 (2026-07-20) |\n', prog);
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 0, `a plain met with verification evidence must stay clean: ${r.stdout}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });

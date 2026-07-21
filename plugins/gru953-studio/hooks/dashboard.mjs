@@ -28,6 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
@@ -73,7 +74,7 @@ function inlineMd(s) {
   }).join('');
 }
 function tableCells(row) {
-  const cells = row.split('|');
+  const cells = splitPipeCells(row);
   if (cells.length && cells[0].trim() === '') cells.shift();
   if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
   return cells.map((c) => c.trim());
@@ -97,7 +98,7 @@ function mdToHtml(md) {
       i--;
       const rows = block.filter((r) => !SEPARATOR_ROW_RE.test(r));
       if (rows.length) {
-        out.push('<table><thead><tr>' + tableCells(rows[0]).map((h) => `<th>${inlineMd(h)}</th>`).join('') + '</tr></thead><tbody>');
+        out.push('<table><thead><tr>' + tableCells(rows[0]).map((h) => `<th scope="col">${inlineMd(h)}</th>`).join('') + '</tr></thead><tbody>');
         for (const r of rows.slice(1)) out.push('<tr>' + tableCells(r).map((c) => `<td>${inlineMd(c)}</td>`).join('') + '</tr>');
         out.push('</tbody></table>');
       }
@@ -172,9 +173,14 @@ function renderBoard(projectName, docs, table, boardText) {
 <title>${esc(projectName)} — GRU953-Studio command centre</title>
 <style>
   :root{--bg:#f7f8fa;--card:#fff;--ink:#1b1f24;--muted:#5a6472;--line:#e3e7ec;--accent:#2f6fed;
-    --doing:#2f6fed;--blocked:#d84a4a;--scheduled:#8a5cf6;--paused:#c98a00;
-    --todo:#5a6472;--skipped:#8a94a6;--done:#1e9e6a;--other:#5a6472;}
-  @media (prefers-color-scheme:dark){:root{--bg:#12151a;--card:#1b1f26;--ink:#e8ecf1;--muted:#9aa4b2;--line:#2a303a;}}
+    /* 2026-07-21 audit fix: status colours darkened so the bold .pill .n numbers
+       (14.4px) clear WCAG 2.2 AA (>=4.5:1) as text on the white card. */
+    --doing:#2f6fed;--blocked:#c0392b;--scheduled:#6f42c1;--paused:#8a6100;
+    --todo:#5a6472;--skipped:#8a94a6;--done:#147a51;--other:#5a6472;}
+  @media (prefers-color-scheme:dark){:root{--bg:#12151a;--card:#1b1f26;--ink:#e8ecf1;--muted:#9aa4b2;--line:#2a303a;
+    /* 2026-07-21 audit fix: the dark block previously did NOT override the status
+       colours, so the light values failed AA on the dark card. Lightened here. */
+    --doing:#8ab4ff;--blocked:#f28b82;--scheduled:#c4a6ff;--paused:#f3bd5c;--done:#79d68f;}}
   *{box-sizing:border-box}
   body{margin:0;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
   main{max-width:960px;margin:0 auto;padding:24px}

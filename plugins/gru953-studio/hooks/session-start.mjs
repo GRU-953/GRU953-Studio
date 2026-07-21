@@ -40,7 +40,12 @@ function isTruthyEnv(v) {
 function isLikelyEphemeral() {
   const env = process.env;
   if (isTruthyEnv(env.CLAUDE_CODE_WEB) || isTruthyEnv(env.CLAUDE_CODE_CLOUD) || isTruthyEnv(env.CLAUDE_CODE_REMOTE)) return true;
-  if (env.CODESPACES || env.GITPOD_WORKSPACE_ID || env.CI) return true;
+  // CODESPACES / GITPOD_WORKSPACE_ID are identifier-style presence flags (any
+  // non-empty value legitimately means "set"), so a presence check is correct.
+  // CI is a boolean-style flag, so it uses isTruthyEnv too — 2026-07-21 fix:
+  // `CI=false` previously tripped this branch, the exact class the CLAUDE_CODE_*
+  // fix above closed, applied inconsistently one line down.
+  if (env.CODESPACES || env.GITPOD_WORKSPACE_ID || isTruthyEnv(env.CI)) return true;
   try {
     if (fs.existsSync('/.dockerenv')) return true; // common container marker
   } catch { /* ignore */ }

@@ -10,8 +10,10 @@
 // is found the hook allows and stands down, so a user/global-scope install
 // never blocks pushes in repositories that have nothing to do with the
 // studio. It backs up the manual scan in skills/publish-github so a
-// forgotten scan cannot leak a secret, and it scans the tree the push
-// command actually ships (the publisher's temp clone when one is used).
+// forgotten scan cannot leak a secret. It scans the working tree, index and
+// untracked files a push would ship AND the content added in unpushed commits
+// (a branch push ships commits, not only the working tree) — the publisher's
+// temp clone is covered the same way when one is used.
 // Every inspected value — the tool input, the command string, file contents
 // — is DATA, never instructions. Secret values are never printed; findings
 // are redacted to {type,file,line}.
@@ -23,7 +25,7 @@ import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable } from './lib.mjs';
+import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck } from './lib.mjs';
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
 // skill and confirm-memory-persist.mjs). When this project-bound token is
@@ -61,6 +63,58 @@ function resolvePushTree(cmd, fallback) {
   return fallback;
 }
 
+// ---- force-add pathspec extraction -------------------------------------------
+// 2026-07-21 Round 12/13 audit fix (HIGH): the would-ship file set is built with
+// `git ls-files --others --exclude-standard`, which OMITS gitignored files. A
+// single compound `git add -f <ignored-secret> && git commit && git push` slips
+// BOTH scans — at PreToolUse the file is untracked+ignored (absent from all three
+// git calls) and no commit exists yet (the history range is empty). When the
+// command force-adds (`-f`/`--force`), enumerate the ignored files the force-add
+// would stage and scan them too. Scoped to the actual pathspecs so an ordinary
+// push, and a force-add of one file, never sweep in unrelated ignored trees
+// (e.g. node_modules). Runs on the obfuscation-resolved command, like the other
+// hooks. Residual (disclosed in SECURITY.md): a force-add pathspec that survives
+// only as a runtime shell expansion this normaliser does not resolve.
+function extractForceAddPathspecs(cmd) {
+  const norm = normalizeForPushCheck(cmd);
+  const specs = [];
+  for (const seg of norm.split(/&&|\|\||[;\n|&]/)) {
+    if (!/(?:^|[^A-Za-z0-9_])git(?:[ \t]|$)/.test(seg)) continue;
+    const m = /(?:^|[^A-Za-z0-9_])add(?:[ \t]|$)/.exec(seg);
+    if (!m) continue;
+    // a force flag: --force, or a short-flag cluster containing 'f' (-f, -Af, -fA)
+    const hasForce = /(?:^|[ \t])--force(?:[ \t=]|$)/.test(seg) || /(?:^|[ \t])-[A-Za-z]*f[A-Za-z]*(?:[ \t]|$)/.test(seg);
+    if (!hasForce) continue;
+    const hasAll = /(?:^|[ \t])(?:--all|-[A-Za-z]*A[A-Za-z]*)(?:[ \t]|$)/.test(seg);
+    let sawDashDash = false;
+    let anyPath = false;
+    // 2026-07-21 Round 14 audit fix: tokenise quote-AWARE. A plain whitespace
+    // split broke a quoted pathspec that contains a space (`git add -f "prod
+    // copy.secret"`) into two bogus tokens, so the ignored file matched nothing
+    // and shipped unscanned. Keep single/double-quoted spans together (as the
+    // shell hands them to git), then strip one surrounding quote pair. Spaced
+    // filenames are ordinary on macOS/Windows, so this is a realistic case, not
+    // obfuscation. (Residual, disclosed: a backslash-escaped space is unescaped
+    // by normalizeForPushCheck before this runs — the disclosed normaliser boundary.)
+    for (const raw of seg.slice(m.index + m[0].length).match(/"[^"]*"|'[^']*'|[^\s'"]+/g) || []) {
+      let tok = raw;
+      if ((tok.startsWith('"') && tok.endsWith('"')) || (tok.startsWith("'") && tok.endsWith("'"))) {
+        tok = tok.slice(1, -1);
+      }
+      tok = tok.trim();
+      if (!tok) continue;
+      if (!sawDashDash && tok === '--') { sawDashDash = true; continue; }
+      if (!sawDashDash && tok.startsWith('-')) continue; // an option, not a pathspec
+      specs.push(tok);
+      anyPath = true;
+    }
+    // `git add -A -f` / `git add --all -f` with no explicit path stages everything,
+    // ignored included; scope that to the whole tree.
+    if (!anyPath && hasAll) specs.push('.');
+  }
+  return Array.from(new Set(specs));
+}
+
 // ---- redaction ---------------------------------------------------------------
 function redact(type = 'unknown', file = '', line = '0') {
   const safeType = String(type).replace(/[^A-Za-z0-9_.-]/g, '');
@@ -75,6 +129,32 @@ function git(args, cwd, encoding = 'utf8') {
   const r = spawnSync('git', args, { cwd, encoding, maxBuffer: 1024 * 1024 * 256 });
   if (r.error) return { status: 1, stdout: encoding === 'buffer' ? Buffer.alloc(0) : '', ok: false };
   return { status: r.status, stdout: r.stdout, ok: r.status === 0 };
+}
+
+// ---- text/binary classification ----------------------------------------------
+// 2026-07-21 Round 11 audit fix (NUL/binary blind spot). Is this content
+// PREDOMINANTLY ordinary readable text, as opposed to a genuine binary asset?
+// Used to decide whether a NUL-containing would-ship file is a text file that
+// merely captured a stray binary byte (scan its extractable ASCII) or a real
+// binary blob such as a font/image/compiled artefact (skip — regex-scanning its
+// bytes would only add noise). Valid UTF-8 — Bangla and every other script
+// included — counts fully as text: only bytes that decode to U+FFFD (invalid
+// UTF-8) or to a control char drag the fraction down, so a Bangla SQL dump with
+// a plaintext credential is still scanned, while a high-entropy binary is not.
+function strIsTextish(s) {
+  if (s.length === 0) return true;
+  let ok = 0;
+  for (let k = 0; k < s.length; k++) {
+    const c = s.charCodeAt(k);
+    if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126) || (c >= 0xa0 && c !== 0xfffd)) ok++;
+  }
+  return ok / s.length >= 0.85;
+}
+function bufIsTextish(buf) {
+  if (buf.length === 0) return true;
+  // Classify from the head — enough to tell text from binary, and bounds cost.
+  const head = buf.length > 65536 ? buf.subarray(0, 65536) : buf;
+  return strIsTextish(head.toString('utf8'));
 }
 
 function main() {
@@ -103,7 +183,8 @@ function main() {
     deny('studio scan: not a git work tree; cannot prove the push set is clean');
   }
 
-  // ---- build the would-ship file set (scan scope == push scope) --------------
+  // ---- build the working-tree/index/untracked would-ship file set ------------
+  // (the unpushed-commit history is scanned separately, after this loop)
   const nulParts = (buf) =>
     buf
       .toString('utf8')
@@ -113,6 +194,15 @@ function main() {
   for (const p of nulParts(git(['ls-files', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
   for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
   for (const p of nulParts(git(['ls-files', '--others', '--exclude-standard', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
+  // 2026-07-21 Round 13 audit fix (HIGH): if THIS command force-adds ignored
+  // files (`git add -f <path>` / `git add -A -f`), include the gitignored files
+  // it would stage — otherwise a compound add+commit+push ships them unscanned.
+  // Scoped to the force-add pathspecs, so a normal push (and a force-add of a
+  // single file) never sweeps in unrelated ignored trees such as node_modules.
+  for (const spec of extractForceAddPathspecs(CMD)) {
+    const out = git(['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', spec], REPO, 'buffer');
+    if (out.ok) for (const p of nulParts(out.stdout)) fileSet.add(p);
+  }
   const FILES = Array.from(fileSet).sort();
 
   const MAX_SCAN_BYTES = 4 * 1024 * 1024;
@@ -173,6 +263,225 @@ function main() {
   const addFinding = (type, file, line) => {
     findings.push(redact(type, file, line));
   };
+  // Scan one file's text for both secret patterns in a single pass over its lines
+  // (was two separate passes). The `// scan-allow` marker exempts an annotated
+  // test-fixture line, exactly as the per-file scan did.
+  const scanText = (text, file) => {
+    const lines = text.split(/\r?\n/);
+    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(i + 1));
+      if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(i + 1));
+    }
+  };
+  // 2026-07-21 Round 12 audit fix (undisclosed size cap, medium): a would-ship
+  // file over MAX_SCAN_BYTES used to be skipped ENTIRELY before any text/binary
+  // check — so a plaintext secret in a large ordinary text file (a Terraform
+  // .tfstate, a SQL/DB dump, a verbose .log) shipped unflagged, and for a compound
+  // `git add && git commit && git push` the history scan cannot backstop it (the
+  // commit does not exist yet at PreToolUse). Large files are now STREAM-scanned
+  // line-by-line in bounded memory: classify from the head chunk (a genuine large
+  // binary — video, model, image — is still skipped, exactly like the working-tree
+  // NUL/binary path), then scan the rest. NUL→newline mirrors the working-tree
+  // scan so a co-located secret is still found.
+  const scanLargeFile = (abs, file) => {
+    let fd;
+    try {
+      fd = fs.openSync(abs, 'r');
+    } catch {
+      return;
+    }
+    try {
+      const CHUNK = 1024 * 1024;
+      const chunk = Buffer.allocUnsafe(CHUNK);
+      let leftover = '';
+      let lineNo = 0;
+      let first = true;
+      let n;
+      const scanLine = (ln) => {
+        lineNo++;
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(lineNo));
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(lineNo));
+      };
+      while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
+        const slice = chunk.subarray(0, n);
+        if (first) {
+          first = false;
+          if (!bufIsTextish(slice)) return; // genuine large binary — not content-scanned
+        }
+        const text = leftover + slice.toString('utf8').split(String.fromCharCode(0)).join('\n');
+        const parts = text.split('\n');
+        leftover = parts.pop(); // carry the incomplete last line to the next chunk
+        for (const ln of parts) scanLine(ln);
+      }
+      if (leftover.length > 0) scanLine(leftover);
+    } finally {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  // 2026-07-21 audit fix: a branch push ships COMMITS, not the working tree, so a
+  // secret committed and then removed (git commit is never push-capable, so is
+  // never scanned) would still ride an incremental checkpoint/memory-persist
+  // branch push inside the earlier commit. Scan the content ADDED in unpushed
+  // commits across ALL local branches and tags (`--branches --tags HEAD --not
+  // --remotes` = every pushable local ref not yet on any remote — see the Round 14
+  // note on the git invocation below). Added coverage only — it never relaxes the
+  // working-tree scan; any git error or empty range returns silently and the
+  // working-tree scan still stands. (Residual, disclosed in SECURITY.md: a value
+  // living only in a file referenced by `--input`/curl body is still not parsed.)
+  const scanUnpushedHistory = () => {
+    // 2026-07-21 Round 11 audit fix: `--text` forces git to emit the real added
+    // content of NUL-containing blobs instead of rendering them as "Binary files
+    // a/x and b/x differ" — without it, a secret committed then removed inside a
+    // text file carrying one stray binary byte was invisible to the history scan
+    // (git's binary heuristic suppressed the diff). The added content is then
+    // classified PER FILE below (see flushHistory), so a genuine binary blob that
+    // `--text` dumps as pseudo-lines is not regex-scanned.
+    // 2026-07-21 Round 13 audit fix: `-m` emits a per-parent diff for MERGE
+    // commits. Without it `git log -p` shows NO diff for a merge, so a secret
+    // unique to a merge resolution (present in neither parent — an "evil merge"),
+    // later removed, shipped in the merge commit's tree undetected. `-m` uses the
+    // ordinary single-`+` diff format the parser below already handles; merged-in
+    // side-branch content is re-scanned redundantly but harmlessly.
+    // 2026-07-21 Round 14 audit fix: walk ALL local branches and tags, not only
+    // HEAD. `HEAD --not --remotes` only equals "what a push sends" when the pushed
+    // ref is the current checkout — but `git push --all`, `git push --mirror`, and
+    // `git push origin <branch>` (while standing on a different branch) all ship
+    // commits on NON-HEAD refs, which HEAD-only excluded (and the working-tree scan
+    // reflects only the checkout, so both paths missed them). `--branches --tags
+    // HEAD --not --remotes` is the finite superset of every pushable local ref not
+    // already on a remote (HEAD kept explicitly to cover a detached-HEAD push).
+    const r = git(['log', '-p', '-m', '-U0', '--no-color', '--no-textconv', '--text', '--branches', '--tags', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    if (!r.ok || !r.stdout || r.stdout.length === 0) return;
+    let file = '(unpushed history)';
+    // 2026-07-21 Round 8 fix: parse the unified diff with minimal state instead of
+    // by bare prefix. A `+++ ` line is a real FILE HEADER only when it immediately
+    // follows a `--- a/`|`/dev/null` header; otherwise an ordinary added line whose
+    // own content starts with '+' (diff line '++…'/'+++…') was wrongly swallowed as
+    // a header or excluded — silently skipping its secret scan (a false-negative
+    // that also broke the working-tree/history parity this scanner documents).
+    // Content lines strip exactly ONE leading '+', so content beginning with '+' is
+    // still scanned.
+    // 2026-07-21 Round 9 fix: track hunk state so `--- `/`+++ ` are treated as FILE
+    // HEADERS only in the pre-hunk header region (between `diff --git` and the first
+    // `@@`), never inside a hunk body. The Round 8 single-boolean parser had no hunk
+    // tracking, so a REMOVED content line whose text is `-- a/z` (diff `--- a/z`)
+    // inside a hunk masqueraded as a header and made the next ADDED secret line
+    // (diff `+++ …`) be consumed as a header and skipped — a history false-negative.
+    // In a hunk, every `+` line is added content (scanned) and every `-` line is
+    // removed content (ignored); neither can be a header.
+    let inHunk = false;
+    let afterMinusHeader = false;
+    // 2026-07-21 Round 12 audit fix: accumulate the ADDED content per file and
+    // classify/scan it as a UNIT, mirroring the working-tree path's per-FILE
+    // decision (bufIsTextish → scanText). The Round 11 per-line strIsTextish
+    // guard broke that parity: a real ASCII secret sharing ONE diff line with a
+    // short binary run dropped that single line's text fraction below 0.85, so
+    // the whole line (secret included) was skipped even though the file is
+    // overwhelmingly text — while the working-tree path caught the identical
+    // content. Now a predominantly-text file's added content is scanned in full
+    // (NUL→newline, no per-line guard, exactly like scanText), and only a
+    // predominantly-binary file's added content (a font/image/blob `--text`
+    // dumped as pseudo-lines) is skipped.
+    let added = [];
+    const flushHistory = () => {
+      if (added.length === 0) return;
+      const content = added.join('\n');
+      added = [];
+      // 2026-07-21 Round 13 audit fix: classify from the HEAD of the added content
+      // (first 64 KB), mirroring the working-tree bufIsTextish head sample. Testing
+      // the WHOLE content diverged from the working-tree scan for a text-headed but
+      // binary-tailed file (e.g. a DB dump): the tree scan caught its secret, the
+      // history scan skipped it. Head-sampling restores true parity.
+      if (!strIsTextish(content.length > 65536 ? content.slice(0, 65536) : content)) return; // genuine binary file — not content-scanned
+      for (const ln of content.split(String.fromCharCode(0)).join('\n').split('\n')) {
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+      }
+    };
+    for (const raw of r.stdout.toString('utf8').split('\n')) {
+      // Each `diff --git` starts a NEW file's diff, so flush the file just ended
+      // (its added content is scanned under the previous `file` name); the final
+      // file is flushed after the loop.
+      if (raw.startsWith('diff --git ')) { flushHistory(); inHunk = false; afterMinusHeader = false; continue; }
+      if (raw.startsWith('@@')) { inHunk = true; afterMinusHeader = false; continue; }
+      if (!inHunk) {
+        // pre-hunk header region: the only place `--- `/`+++ ` are real file headers
+        if (raw.startsWith('--- a/') || raw.startsWith('--- /dev/null')) { afterMinusHeader = true; continue; }
+        if (afterMinusHeader && raw.startsWith('+++ ')) {
+          afterMinusHeader = false;
+          file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, '');
+          // Apply the same FILENAME-based blocks the working-tree scan uses, so a key
+          // file or Dev-Memory path committed then removed is still caught in history.
+          if (file !== '/dev/null') {
+            if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
+            if (DEVMEMORY_RE.test(file) && !allowDevMemory) addFinding('dev-memory-history', file, '0');
+          }
+          continue;
+        }
+        afterMinusHeader = false;
+        continue; // other pre-hunk metadata (index, mode, rename, etc.)
+      }
+      // in a hunk body: only added ('+') lines carry shippable new content
+      if (raw.startsWith('+')) added.push(raw.slice(1));
+    }
+    flushHistory(); // the final file's added content
+  };
+
+  // 2026-07-21 Round 15 audit fix (HIGH): a branch push ships whole commit OBJECTS,
+  // whose MESSAGE the diff-based history scan never sees (messages sit in the
+  // pre-hunk region, not in a `+` diff line). A credential pasted into a commit
+  // message — one of the most common real-world leak vectors — shipped unscanned.
+  // Scan each unpushed commit's message over the same ref range as the diff scan.
+  const scanCommitMessages = () => {
+    // %H<NUL>%B<RS> per commit: NUL splits sha from the (possibly multi-line) body,
+    // RS (0x1e) separates records — neither occurs in a git commit message.
+    const r = git(['log', '--no-color', '--format=%H%x00%B%x1e', '--branches', '--tags', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    if (!r.ok || !r.stdout || r.stdout.length === 0) return;
+    const RS = String.fromCharCode(30);
+    const Z = String.fromCharCode(0);
+    for (const rec of r.stdout.toString('utf8').split(RS)) {
+      const z = rec.indexOf(Z);
+      if (z === -1) continue;
+      const sha = (rec.slice(0, z).match(/[0-9a-f]+/i) || ['commit'])[0].slice(0, 12);
+      for (const ln of rec.slice(z + 1).split('\n')) {
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-commit-message', sha, '0');
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-commit-message', sha, '0');
+      }
+    }
+  };
+
+  // 2026-07-21 Round 15 audit fix (HIGH): an ANNOTATED tag carries its own message,
+  // shipped by `git push --tags`/`--follow-tags`/`--mirror` (and a tag refspec), yet
+  // absent from `git log -p` entirely. Scan annotated-tag messages, but only when the
+  // command actually pushes tags — so an ordinary `git push origin main` is untouched.
+  // (Residual, disclosed: pushing a single annotated tag by BARE name — ambiguous with
+  // a branch — is not detected as a tag push, so its message is not scanned.)
+  const scanTagMessages = () => {
+    const norm = normalizeForPushCheck(CMD);
+    if (!(/(?:^|[ \t])--tags(?![A-Za-z0-9_])/.test(norm) || /(?:^|[ \t])--follow-tags(?![A-Za-z0-9_])/.test(norm) || /(?:^|[ \t])--mirror(?![A-Za-z0-9_])/.test(norm) || /refs\/tags\//.test(norm))) return;
+    const listing = git(['for-each-ref', '--format=%(objecttype) %(refname:short)', 'refs/tags'], REPO);
+    if (!listing.ok || !listing.stdout) return;
+    for (const line of listing.stdout.split('\n')) {
+      const sp = line.indexOf(' ');
+      if (sp === -1) continue;
+      if (line.slice(0, sp) !== 'tag') continue; // annotated only; a lightweight tag is 'commit'
+      const name = line.slice(sp + 1).trim();
+      if (!name) continue;
+      const msg = git(['tag', '-l', '--format=%(contents)', name], REPO); // exact-name match (no glob chars)
+      if (!msg.ok || !msg.stdout) continue;
+      const tag = name.replace(/[^A-Za-z0-9_./-]/g, '') || 'tag';
+      for (const ln of msg.stdout.split('\n')) {
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-tag-message', tag, '0');
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-tag-message', tag, '0');
+      }
+    }
+  };
 
   for (const f of FILES) {
     if (!f) continue;
@@ -190,25 +499,49 @@ function main() {
       continue;
     }
     if (!st.isFile()) continue;
-    if (st.size > MAX_SCAN_BYTES) continue;
+    if (st.size > MAX_SCAN_BYTES) {
+      // Do NOT silently skip on size: stream-scan the file instead (a large
+      // ordinary text file can carry a plaintext secret; a genuine large binary
+      // is skipped inside scanLargeFile after a head classification).
+      scanLargeFile(abs, f);
+      continue;
+    }
     let buf;
     try {
-      fs.accessSync(abs, fs.constants.R_OK);
+      // readFileSync throws EACCES/ENOENT on an unreadable/vanished file, caught
+      // here — the previous fs.accessSync() immediately before it was a pure
+      // redundant syscall (same catch handled both).
       buf = fs.readFileSync(abs);
     } catch {
       continue;
     }
-    if (buf.includes(0)) continue; // skip binary
-    const text = buf.toString('utf8');
-    const lines = text.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-    for (let i = 0; i < lines.length; i++) {
-      if (SECRET_RE.test(lines[i]) && !lines[i].includes(SCAN_ALLOW_MARKER)) addFinding('secret', f, String(i + 1));
+    if (buf.includes(0)) {
+      // 2026-07-21 Round 11 audit fix (NUL/binary blind spot, medium): a single
+      // NUL byte used to skip the file's WHOLE content scan, so an ordinary
+      // would-ship text file carrying one stray binary byte beside a real ASCII
+      // secret (a log that captured a byte of binary output next to a logged
+      // key; a SQL/DB dump with a BLOB column beside a plaintext credential)
+      // shipped unflagged. Now: skip only GENUINE binary assets (predominantly
+      // non-text — fonts, images, compiled blobs), and for a file that is
+      // overwhelmingly text with a stray NUL, scan its extractable ASCII
+      // (NUL→newline preserves line numbers). The high-signal regexes plus the
+      // text-fraction guard keep false positives on real binaries at zero.
+      // (Residual, disclosed in SECURITY.md: a genuine binary blob is not
+      // content-scanned, and a NUL-interleaved encoding such as UTF-16LE — ~50%
+      // NUL — classifies as non-text, so is not scanned either.)
+      if (!bufIsTextish(buf)) continue;
+      // Replace each NUL with a newline (String.fromCharCode(0) avoids an
+      // easily-mangled literal NUL byte in source): the ASCII lines around a
+      // stray binary byte stay intact and line numbers stay accurate.
+      scanText(buf.toString('utf8').split(String.fromCharCode(0)).join('\n'), f);
+      continue;
     }
-    for (let i = 0; i < lines.length; i++) {
-      if (SECRETVAR_RE.test(lines[i])) addFinding('secret-var', f, String(i + 1));
-    }
+    scanText(buf.toString('utf8'), f);
   }
+
+  scanUnpushedHistory();
+  scanCommitMessages();
+  scanTagMessages();
 
   if (findings.length === 0) {
     allow();

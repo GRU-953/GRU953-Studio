@@ -28,8 +28,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
-const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
 // A cell that names a real filesystem path: has a dotted extension or a slash.
 // The filename stem uses `[^/\s]` rather than the ASCII-only `\w`, found
@@ -57,7 +58,7 @@ function checkIndex(root, devMemory, problems) {
   let whereCol = -1;
   for (const line of lines) {
     if (!/^\s*\|/.test(line)) { inTable = false; whereCol = -1; continue; }
-    const cells = line.split('|').map((c) => c.trim());
+    const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
       whereCol = cells.findIndex((c) => /^(file|path|where|location)$/i.test(c));
@@ -110,7 +111,19 @@ function checkGraph(devMemory, problems) {
   }
   // Second pass: only inside a Links/Edges section, validate link rows.
   let inLinks = false;
-  const LINK_RE = /^\s*[-*]?\s*(\S+)\s+([a-z][a-z-]*)\s+(\S+)\s*$/;
+  // 2026-07-21 audit fix: was end-anchored (`...(\S+)\s*$`), so ANY link row with
+  // a fourth token — a trailing parenthetical note, a second target id, an extra
+  // word — failed to match and was silently skipped, never checking its node
+  // references (a false-clean, the worst direction for this gate). Now requires a
+  // list-item marker (the documented GRAPH.md link shape) and validates the
+  // leading `<src> <type> <dst>` triple regardless of any trailing text.
+  // 2026-07-21 Round 2 fix: the type token is constrained to the exact documented
+  // link vocabulary (memory-graph/SKILL.md), not "any lowercase word" — otherwise
+  // a plain prose bullet under a ## Links heading whose second word is lowercase
+  // ("- All links use verbs like implements and blocks") was parsed as a link and
+  // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
+  // introduced).
+  const LINK_RE = /^\s*[-*]\s+(\S+)\s+(implements|depends-on|relates-to|supersedes|caused-by|blocks)\s+(\S+)/i;
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
     if (heading) { inLinks = /link|edge/i.test(heading[1]); continue; }

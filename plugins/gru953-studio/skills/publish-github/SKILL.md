@@ -46,14 +46,21 @@ git config user.email "<email from gh api user>"
 ```
 If any field is empty, STOP and ask the user to confirm it — never assume.
 
-## 3. Pre-flight blocking checks (four via security-compliance-auditor, plus a roster check via scope-guardian)
+## 3. Pre-flight blocking checks (seven via security-compliance-auditor, plus a roster check via scope-guardian)
+
+<!-- 2026-07-21 audit fix: this section listed only FOUR checks while
+security-compliance-auditor.md (the role that OWNS the gate) declares SEVEN —
+quality-gate.mjs, traceability-check.mjs and content-check.mjs were never
+enumerated here, so an agent following this protocol as written ran four and
+honestly reported success while silently skipping three mandatory gates. Now the
+full seven, matching security-compliance-auditor.md, studio/SKILL.md and CLAUDE.md. -->
 
 0. **Dev-Memory resume rehearsal** (2026-07-11 Round 9 fix: this step used
-   to be a paragraph placed AFTER all four checks below, telling the reader
+   to be a paragraph placed AFTER the checks below, telling the reader
    to run it "before the pre-flight checks" — self-contradicting its own
    position in the document). If this project has a `Dev-Memory` resume
    rehearsal still outstanding (see the `dev-memory` skill), run it now,
-   before the four checks that follow — a project that cannot prove it
+   before the checks that follow — a project that cannot prove it
    resumes correctly is not ready to publish regardless of how clean its
    code is.
 1. **Secrets scan** — committed + staged + untracked-not-ignored files,
@@ -72,7 +79,22 @@ If any field is empty, STOP and ask the user to confirm it — never assume.
    means something was marked done without evidence — fix the record (by
    actually running the missing verification) before publishing, never by
    editing the status back to make the check pass.
-5. **Roster check, via `scope-guardian`** (2026-07-12 fix: this file — the
+5. **Definition-of-Done check** (2026-07-19, `quality-gate` skill) —
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .`. A non-zero exit means
+   `Dev-Memory/QUALITY-GATE.md` is missing, incomplete, or a required quality
+   dimension (acceptance, tests, review, security/licence/privacy, accessibility,
+   docs, reproducible build) is unmet or silently omitted. Only `clean` clears it.
+6. **Requirements-traceability check** (2026-07-19, `focus-guard` skill) —
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs" .`. A non-zero exit
+   means a confirmed requirement maps to no task (a dropped requirement), a task
+   traces back to no requirement (scope creep), or a `met` requirement lacks
+   verification evidence. Resolve the matrix, never paper over it.
+7. **Content approval/provenance/rights check** (2026-07-19, `content-creation`
+   skill) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/content-check.mjs" .`. A non-zero
+   exit means a `CONTENT.md` asset lacks a recorded approval, provenance, a
+   rights/licence note, or — for media — alt-text/caption. No-op when the project
+   declares no content.
+8. **Roster check, via `scope-guardian`** (2026-07-12 fix: this file — the
    role's own declared "single source of truth" — used to omit this step
    even though `publisher.md` and `/studio-publish` both treat it as
    mandatory) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"`. A
@@ -184,7 +206,7 @@ not yet published — report the failure plainly, do not report success.
 ## 7. Report
 
 Tell the user in plain English: the repository's address, that it is
-private, what was published, that all four pre-flight checks came back
+private, what was published, that all seven pre-flight checks came back
 clean, and that a real Release (not just a tag) exists — quote the
 `isDraft: false` confirmation. Record the address, tag and date in
 `Dev-Memory/PROGRESS.md` and `SESSION-LOG.md`. Delete

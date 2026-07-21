@@ -204,6 +204,17 @@ export function findStudioRoot(start) {
 // negative lookahead for an identifier character treats any of ';|&)<>`\n'
 // or end-of-string as a valid boundary, while still rejecting a keyword
 // that's actually part of a longer word (`pushx`, `--publicity`).
+// 2026-07-21 Round 6 (red-team) fix: split a markdown table ROW into cells on
+// UNESCAPED pipes only, then unescape any GFM `\|` to a literal pipe. Naive
+// `line.split('|')` mis-columns any cell containing a pipe (raw, or the
+// GFM-correct `\|`), which in the index-based table parsers silently shifted the
+// Status/Where column and skipped the row entirely — a false-clean in
+// verify-progress and memory-integrity. Shared so every table-parsing hook splits
+// identically. Leading/trailing empty cells are preserved, exactly like split('|').
+export function splitPipeCells(line) {
+  return line.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|'));
+}
+
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
 export function normalizeForPushCheck(c) {
   let n = c;
@@ -721,6 +732,34 @@ export function normalizeForPushCheck(c) {
     const offset = parseInt(off, 10);
     return len !== undefined ? v.substr(offset, parseInt(len, 10)) : v.slice(offset);
   });
+  // 2026-07-21 Round 7 audit fix (CRITICAL, reproduced end-to-end against the real
+  // gates before fixing): bash pattern-substitution `${v//pat/repl}` (replace all),
+  // `${v/pat/repl}` (replace first), and pattern-removal `${v#pat}`/`${v##pat}`
+  // (strip prefix) / `${v%pat}`/`${v%%pat}` (strip suffix) are the same class of
+  // same-command-resolvable scalar transform as the case-mod/@/substring passes
+  // above — no execution or persistent state needed — yet were unmodelled, so
+  // `x=puXsh; git ${x//X/} origin main` (and the go-public `${v//X/}` analogue)
+  // resolved to a real push/visibility-change in bash while both gates saw no
+  // literal `push`/`public` and failed OPEN. Resolved here for the same `known`
+  // scalar map; the pattern is treated as a LITERAL string (a bar-raiser — bash
+  // glob metacharacters in the pattern are not interpreted, consistent with this
+  // matcher's stated "raises the bar, not a determined-adversary sandbox" scope).
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(\/\/?)([^/}]*)(?:\/([^}]*))?\}/g, (m, name, op, pat, repl) => {
+    if (!known.has(name) || pat === '') return m;
+    const v = known.get(name);
+    const r = repl === undefined ? '' : repl;
+    if (op === '//') return v.split(pat).join(r); // replace all
+    const i = v.indexOf(pat); // replace first
+    return i === -1 ? v : v.slice(0, i) + r + v.slice(i + pat.length);
+  });
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(#{1,2}|%{1,2})([^}]*)\}/g, (m, name, op, pat) => {
+    if (!known.has(name) || pat === '') return m;
+    const v = known.get(name);
+    // literal prefix (# / ##) or suffix (% / %%) removal — for a literal
+    // (non-glob) pattern, shortest and longest match are identical.
+    if (op[0] === '#') return v.startsWith(pat) ? v.slice(pat.length) : v;
+    return v.endsWith(pat) ? v.slice(0, v.length - pat.length) : v;
+  });
   // 2026-07-12 Round 8 audit fix (real gap, found by a re-attack pass,
   // then independently reproduced live before fixing): the subscript
   // resolver only ever accepted a LITERAL digit (`${arr[1]}`) — a
@@ -805,6 +844,20 @@ export function normalizeForPushCheck(c) {
   // of the real element-0 value "push" — the wrong direction for a
   // security match (under-detecting a real push), confirmed live before
   // fixing.
+  // 2026-07-21 Round 7 audit fix (proactively closing the rest of the
+  // same-command-resolvable parameter-expansion family alongside the CRITICAL
+  // pattern-substitution fix above, so the class converges in one sweep rather
+  // than one operator per round). `${VAR:+alt}`/`${VAR+alt}` expands to `alt` when
+  // VAR is set (`:` also requires non-empty). Fail closed for the matcher: use
+  // `alt` unless we positively know VAR is empty (so `${x:+push}` is caught).
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(:?)\+([^{}]*)\}/g, (_m, name, colon, alt) => {
+    if (colon === ':' && known.has(name) && known.get(name) === '') return '';
+    return alt;
+  });
+  // `${VAR:?msg}`/`${VAR?msg}` expands to VAR's value when set (msg only prints to
+  // stderr on unset); the payload is the VALUE, not msg. Resolve to the known
+  // value, else leave literal (we don't have the value to over-detect).
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?\?[^{}]*\}/g, (m, name) => (known.has(name) ? known.get(name) : m));
   n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?[-=]([^{}]*)\}/g, (_m, name, def) => {
     if (knownArrays.has(name)) {
       const el = knownArrays.get(name)[0];
@@ -1042,7 +1095,20 @@ export function isPushCapable(rawC) {
   // name, subcommand, or keyword — matching the same `/i` this project
   // already added to the script-extension check and the confirm-script
   // basename comparison, for the identical reason.
-  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?git['"]?([ \\t]+-[^ \\t]+|[ \\t]+[^ \\t]+)*[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
+  // 2026-07-21 audit fix (ReDoS — catastrophic backtracking): the token
+  // repetition between `git` and `push` was `([ \t]+-[^ \t]+|[ \t]+[^ \t]+)*` —
+  // two FULLY OVERLAPPING alternatives (a dash-prefixed token matches BOTH
+  // branches), so `(A|B)*` over n tokens with no trailing `push` explored 2^n
+  // backtracking paths. This regex runs on EVERY Bash/PowerShell/Monitor command,
+  // so a flag-heavy but non-push `git` command (e.g. `git log` with ~26 `--flags`)
+  // hung the PreToolUse hook for 15+ seconds (measured: n=28 -> 22s, doubling per
+  // token), and a pathological input could push the hook past the harness timeout.
+  // The `-flag` branch is fully subsumed by the general `[ \t]+[^ \t]+` branch, so
+  // a single lazy token repetition matches exactly the same commands with no
+  // exponential blowup (verified: evil n=60 -> ~0ms; `git push`, `git -c a=b push`,
+  // `GIT push`, `git "push"` still match; `git pushx`, `git status`, `git log
+  // --all` still do not).
+  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?git['"]?(?:[ \\t]+[^ \\t]+)*?[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
   // 2026-07-11 Round 5 audit fix (CRITICAL, found live via gate.mjs's real
   // isGoPublicCommand()): every `gh ...` regex below required the literal,
   // unquoted text "gh" — `"gh" repo edit ...` or `gh "repo" "edit" ...`
@@ -1056,6 +1122,31 @@ export function isPushCapable(rawC) {
   // token and sub-token.
   if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+(['"]?repo['"]?[ \t]+['"]?(create|edit|sync|clone)['"]?|['"]?pr['"]?[ \t]+['"]?create['"]?|['"]?release['"]?[ \t]+['"]?(create|upload)['"]?|['"]?gist['"]?[ \t]+['"]?create['"]?)/i.test(c)) return true;
   if (new RegExp(`(^|[^A-Za-z0-9_])['"]?gh['"]?[ \\t].*--push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
+  // 2026-07-21 audit fix (undisclosed bypass of BOTH gates): `gh api` is the
+  // GitHub CLI's raw REST interface — a documented, non-obfuscated way to create
+  // repos, change a repo's visibility, push refs, etc., i.e. everything these
+  // gates control. It was not detected at all, so `gh api -X PATCH repos/me/app
+  // -f visibility=public` (and `-f private=false`, `-X POST /user/repos ...`)
+  // short-circuited at gate.mjs's `if (!isPushCapable(CMD)) allow()` before the
+  // go-public gate ever ran. Same class as the `git send-pack` plumbing
+  // alternative already covered above. A READ (GET, the default — e.g. the
+  // studio's own `gh api user`) stays ALLOWED; only a WRITE is push-capable,
+  // signalled by an explicit write method (`-X`/`--method` POST|PATCH|PUT|DELETE)
+  // or by any request-body flag (`-f`/`-F`/`--field`/`--raw-field`/`--input`),
+  // which `gh api` uses only to send a body. (Residual, disclosed in SECURITY.md:
+  // a visibility change whose value lives only inside an `--input` file, and a raw
+  // `curl` to api.github.com, are not parsed here — the same "this hook does not
+  // execute or read referenced files" boundary as elsewhere.)
+  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c) &&
+      (/[ \t]['"]?(-X|--method)['"]?[ \t=]+['"]?(POST|PATCH|PUT|DELETE)['"]?/i.test(c) ||
+       /[ \t](--field|--raw-field|--input)[ \t=]/i.test(c) ||
+       // 2026-07-21 Round 2 fix: the earlier body-flag test required a separator
+       // right after -f/-F, so it missed pflag's standard ATTACHED-shorthand form
+       // `-fname=x` / `-Fname=x` (value glued to the flag) — a normal, documented
+       // gh api form, not obfuscation, that carries a POST body and so bypassed
+       // both gates. Match -f/-F followed by a separator OR immediately by a
+       // non-dash value character. Over-detection fails closed, so it is safe.
+       /[ \t]-[fF]([ \t=]|[^ \t-])/i.test(c))) return true;
   // git aliases that resolve to push (e.g. `git -c alias.p=push p`, or
   // `git config alias.foo push` followed later by `git foo`).
   if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/i.test(c)) return true;

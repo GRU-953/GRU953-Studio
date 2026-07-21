@@ -37,6 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { splitPipeCells } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
@@ -51,7 +52,16 @@ const DEFERRED_RE = /^\s*(deferred|future|backlog|later|parked|out[ \t]*of[ \t]*
 const MET_RE = /^\s*(met|done|complete[d]?|verified|pass(ed)?|shipped)\b/i;
 const EXEMPT_RE = /\[(chore|infra|infrastructure|no-?req)\]|\bno-?req\b/i;
 const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
-const SEPARATOR_ROW_RE = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+// 2026-07-21 Round 15 audit fix: de-emphasise a Status VALUE before matching, the
+// same way verify-progress.mjs (Round 12) does for its "done" values. Without it a
+// decorated status — "✅ met", `met` (code span), **met** (bold) — failed MET_RE, so
+// the mandatory verification-evidence check was skipped (a false-clean in the sole
+// enforcer of "a met requirement carries verification evidence"); a decorated
+// **deferred** likewise failed DEFERRED_RE, wrongly reporting a deferred row as a
+// dropped requirement. Strip surrounding emphasis, then a leading run of non-
+// alphanumeric decoration, so the anchored REs see the bare status word.
+const deEmphStatus = (s) => String(s == null ? '' : s).replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '').replace(/^[^A-Za-z0-9]+/, '');
 
 function read(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
@@ -75,7 +85,7 @@ function parseTable(text, wantHeaderRe) {
       inTable = false;
       continue;
     }
-    const cells = line.split('|').map((c) => c.trim());
+    const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
       if (cells.some((c) => wantHeaderRe.test(c))) headers = cells;
@@ -132,14 +142,15 @@ function main() {
   for (const { cells, raw } of reqTable.rows) {
     const label = (cId !== -1 && cells[cId]) ? cells[cId] : (cReq !== -1 ? cells[cReq] : raw).slice(0, 60);
     const status = cStatus !== -1 ? (cells[cStatus] || '') : '';
+    const statusForMatch = deEmphStatus(status); // decoration-stripped, for MET_RE/DEFERRED_RE
     const taskCell = cTasks !== -1 ? (cells[cTasks] || '') : '';
     const ids = idsIn(taskCell);
     ids.forEach((id) => referencedTaskIds.add(id));
 
-    if (cTasks !== -1 && ids.length === 0 && !DEFERRED_RE.test(status)) {
+    if (cTasks !== -1 && ids.length === 0 && !DEFERRED_RE.test(statusForMatch)) {
       problems.push(`requirement "${label}" maps to no task and is not marked deferred/future — a dropped or unplanned requirement.`);
     }
-    if (cStatus !== -1 && MET_RE.test(status)) {
+    if (cStatus !== -1 && MET_RE.test(statusForMatch)) {
       const verif = cVerif !== -1 ? (cells[cVerif] || '') : '';
       if (cVerif === -1 || PLACEHOLDER_RE.test(verif.trim())) {
         problems.push(`requirement "${label}" is marked "${status.trim()}" but has no verification evidence — a met requirement needs proof.`);
