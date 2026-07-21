@@ -744,3 +744,20 @@ existing gate — each is additive.
   every pushable local ref not already on a remote (HEAD kept explicitly for a
   detached-HEAD push). A clean unpushed branch is still allowed; anything already on
   a remote is still excluded.
+- **Commit messages and annotated-tag messages are now scanned (2026-07-21 Round
+  15, HIGH).** A branch push ships whole commit objects — including their commit
+  *message* — and `git push --tags`/`--follow-tags`/`--mirror` ships annotated-tag
+  objects and their messages; none of that is a file diff, so the scanner (which
+  only read diff hunks and file content) never saw it. A credential pasted into a
+  commit message — one of the most common real-world leak vectors — shipped
+  unflagged. Commit messages are now scanned over the same ref range as the diff
+  scan; annotated-tag messages are scanned when the command actually ships tags
+  (so an ordinary `git push origin main` is untouched). **Residual, disclosed:**
+  pushing a single annotated tag by its bare name (ambiguous with a branch) is not
+  detected as a tag push, so that one tag's message is not scanned.
+- **`traceability-check.mjs` now reads a decorated "met" status (2026-07-21 Round
+  15).** The Round 12 decorated-value fix (`**met**`, `` `met` ``, `✅ met`) was
+  ported from `verify-progress.mjs`, so a requirement marked met with a decorated
+  status is still held to the "a met requirement carries verification evidence"
+  rule, and a decorated "deferred" no longer causes a spurious dropped-requirement
+  block. Quality/integrity gate.

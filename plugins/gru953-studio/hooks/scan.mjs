@@ -433,6 +433,56 @@ function main() {
     flushHistory(); // the final file's added content
   };
 
+  // 2026-07-21 Round 15 audit fix (HIGH): a branch push ships whole commit OBJECTS,
+  // whose MESSAGE the diff-based history scan never sees (messages sit in the
+  // pre-hunk region, not in a `+` diff line). A credential pasted into a commit
+  // message — one of the most common real-world leak vectors — shipped unscanned.
+  // Scan each unpushed commit's message over the same ref range as the diff scan.
+  const scanCommitMessages = () => {
+    // %H<NUL>%B<RS> per commit: NUL splits sha from the (possibly multi-line) body,
+    // RS (0x1e) separates records — neither occurs in a git commit message.
+    const r = git(['log', '--no-color', '--format=%H%x00%B%x1e', '--branches', '--tags', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    if (!r.ok || !r.stdout || r.stdout.length === 0) return;
+    const RS = String.fromCharCode(30);
+    const Z = String.fromCharCode(0);
+    for (const rec of r.stdout.toString('utf8').split(RS)) {
+      const z = rec.indexOf(Z);
+      if (z === -1) continue;
+      const sha = (rec.slice(0, z).match(/[0-9a-f]+/i) || ['commit'])[0].slice(0, 12);
+      for (const ln of rec.slice(z + 1).split('\n')) {
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-commit-message', sha, '0');
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-commit-message', sha, '0');
+      }
+    }
+  };
+
+  // 2026-07-21 Round 15 audit fix (HIGH): an ANNOTATED tag carries its own message,
+  // shipped by `git push --tags`/`--follow-tags`/`--mirror` (and a tag refspec), yet
+  // absent from `git log -p` entirely. Scan annotated-tag messages, but only when the
+  // command actually pushes tags — so an ordinary `git push origin main` is untouched.
+  // (Residual, disclosed: pushing a single annotated tag by BARE name — ambiguous with
+  // a branch — is not detected as a tag push, so its message is not scanned.)
+  const scanTagMessages = () => {
+    const norm = normalizeForPushCheck(CMD);
+    if (!(/(?:^|[ \t])--tags(?![A-Za-z0-9_])/.test(norm) || /(?:^|[ \t])--follow-tags(?![A-Za-z0-9_])/.test(norm) || /(?:^|[ \t])--mirror(?![A-Za-z0-9_])/.test(norm) || /refs\/tags\//.test(norm))) return;
+    const listing = git(['for-each-ref', '--format=%(objecttype) %(refname:short)', 'refs/tags'], REPO);
+    if (!listing.ok || !listing.stdout) return;
+    for (const line of listing.stdout.split('\n')) {
+      const sp = line.indexOf(' ');
+      if (sp === -1) continue;
+      if (line.slice(0, sp) !== 'tag') continue; // annotated only; a lightweight tag is 'commit'
+      const name = line.slice(sp + 1).trim();
+      if (!name) continue;
+      const msg = git(['tag', '-l', '--format=%(contents)', name], REPO); // exact-name match (no glob chars)
+      if (!msg.ok || !msg.stdout) continue;
+      const tag = name.replace(/[^A-Za-z0-9_./-]/g, '') || 'tag';
+      for (const ln of msg.stdout.split('\n')) {
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-tag-message', tag, '0');
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-tag-message', tag, '0');
+      }
+    }
+  };
+
   for (const f of FILES) {
     if (!f) continue;
     if (KEYFILE_RE.test(f)) {
@@ -490,6 +540,8 @@ function main() {
   }
 
   scanUnpushedHistory();
+  scanCommitMessages();
+  scanTagMessages();
 
   if (findings.length === 0) {
     allow();

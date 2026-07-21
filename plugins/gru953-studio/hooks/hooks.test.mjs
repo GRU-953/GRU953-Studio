@@ -3253,3 +3253,74 @@ test('scan.mjs: a secret on a non-HEAD local branch is caught for git push --all
   assert.equal(runHook('scan.mjs', 'git push --all', d2).decision, 'allow', 'a clean non-HEAD branch must not be false-blocked');
   fs.rmSync(d2, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 15 (FINAL round) — 2 defects (1 high,
+// 1 medium): (1) secrets in COMMIT MESSAGES and ANNOTATED-TAG MESSAGES were never
+// scanned (only file diffs were) — a common real-world leak vector; (2) the Round
+// 12 decorated-value fix was never ported to traceability-check.mjs, so a decorated
+// "met" status (✅ met / **met** / `met`) skipped the verification-evidence check.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a secret in a commit message (clean file content) is caught (2026-07-21 Round 15 HIGH fix)', () => {
+  const dir = mkTmp('gru-scan-r15-msg-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const akia = 'AKIA' + '1234567890ABCDEF';
+  fs.writeFileSync(path.join(dir, 'feature.txt'), 'clean code\n');
+  git(['add', '-A'], dir);
+  git(['commit', '-qm', 'add feature debugged with key ' + akia], dir); // secret only in the message
+  assert.equal(runHook('scan.mjs', 'git push origin main', dir).decision, 'deny', 'a secret in a commit message must be caught');
+  fs.rmSync(dir, { recursive: true, force: true });
+  // control: a clean commit message with clean content allows
+  const d2 = mkTmp('gru-scan-r15-msgok-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  initRepo(d2);
+  fs.writeFileSync(path.join(d2, 'feature.txt'), 'clean code\n');
+  git(['add', '-A'], d2); git(['commit', '-qm', 'add feature (nothing sensitive)'], d2);
+  assert.equal(runHook('scan.mjs', 'git push origin main', d2).decision, 'allow', 'a clean commit message must not be false-flagged');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret in an annotated-tag message is caught only when the push ships tags (2026-07-21 Round 15 HIGH fix)', () => {
+  const akia = 'AKIA' + '1234567890ABCDEF';
+  const mk = () => {
+    const dir = mkTmp('gru-scan-r15-tag-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    initRepo(dir);
+    fs.writeFileSync(path.join(dir, 'x.txt'), 'clean\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+    git(['tag', '-a', 'v9.9', '-m', 'release v9.9 deploy key ' + akia], dir);
+    return dir;
+  };
+  const d1 = mk();
+  assert.equal(runHook('scan.mjs', 'git push origin --tags', d1).decision, 'deny', 'git push --tags must scan annotated-tag messages');
+  assert.equal(runHook('scan.mjs', 'git push --follow-tags origin main', d1).decision, 'deny', 'git push --follow-tags must scan annotated-tag messages');
+  assert.equal(runHook('scan.mjs', 'git push origin main', d1).decision, 'allow', 'a plain push (no tags shipped) must not scan tag messages');
+  fs.rmSync(d1, { recursive: true, force: true });
+  // control: a lightweight tag has no message, so --tags allows
+  const d2 = mkTmp('gru-scan-r15-lwtag-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  initRepo(d2);
+  fs.writeFileSync(path.join(d2, 'x.txt'), 'clean\n'); git(['add', '-A'], d2); git(['commit', '-qm', 'x'], d2);
+  git(['tag', 'v1.0'], d2);
+  assert.equal(runHook('scan.mjs', 'git push origin --tags', d2).decision, 'allow', 'a lightweight tag (no message) must not be false-flagged');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('traceability-check.mjs: a decorated "met" status still requires verification evidence (2026-07-21 Round 15 fix)', () => {
+  const prog = PROG_HEADER + '| T1 | a | done | verified: npm test -> exit 0 (2026-07-20) |\n';
+  const REQ_HEADER = '| ID | Requirement | Tasks | Status | Verification |\n| :-- | :-- | :-- | :-- | :-- |\n';
+  for (const decorated of ['✅ met', '**met**', '`met`']) {
+    const dir = mkTmp('gru-trace-r15-');
+    writeReq(dir, REQ_HEADER + `| R1 | Login | T1 | ${decorated} | — |\n`, prog);
+    const r = runScript('traceability-check.mjs', dir);
+    assert.equal(r.code, 1, `a decorated "${decorated}" met with no verification evidence must be blocked: ${r.stdout}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  // no regression: a plain met WITH evidence stays clean
+  const dir = mkTmp('gru-trace-r15-ok-');
+  writeReq(dir, REQ_HEADER + '| R1 | Login | T1 | met | verified: npm test -> exit 0 (2026-07-20) |\n', prog);
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 0, `a plain met with verification evidence must stay clean: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -42,6 +42,9 @@ you use the tool; the roster stays 38 agents / 32 skills.
   "prod copy.secret"), and the history check now covers **every** local branch you
   might push — including `git push --all`, `git push --mirror`, or pushing a branch
   you're not currently on — not just the one you have checked out.
+- The secret scan now also reads **commit messages** and **annotated-tag messages**
+  (when you push tags), catching a key accidentally pasted into a commit or release
+  message — a very common way secrets leak — not just keys inside files.
 
 **Correctness & reliability:**
 - The licence check no longer false-blocks publishing on ordinary npm/TypeScript
@@ -64,7 +67,9 @@ you use the tool; the roster stays 38 agents / 32 skills.
   is the status, it stops and asks rather than waving the work through. It also now
   reads a "done" written with decoration (bold, code-style, or with a tick emoji)
   and lines up table columns even when rows mix pipe styles, so a finished-but-
-  untested task can't slip through on a formatting quirk.
+  untested task can't slip through on a formatting quirk. The matching requirements
+  check now recognises a decorated "met" status the same way, so it can't skip its
+  proof-of-testing requirement either.
 
 **Under the hood:**
 - The automated test suite was grown substantially, with new mechanical guards so
