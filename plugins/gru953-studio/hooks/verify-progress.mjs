@@ -88,13 +88,36 @@ function main() {
     const last = w[w.length - 1];
     return last === 'status' || last === 'state';
   };
+  // 2026-07-21 Round 12 audit fix (medium): recognise a "done" status VALUE even
+  // when it carries markdown emphasis or a leading decoration — **done**,
+  // `done`, _done_, "✅ done". R11 de-emphasised only HEADER cells, so a decorated
+  // VALUE slipped past BOTH the row check AND the fail-closed backstop, leaving
+  // this gate failing OPEN. Strip surrounding emphasis, then any leading run of
+  // non-alphanumeric decoration, before the "starts with the word done" test —
+  // still rejecting "undone"/"donee" (Round 7) and tolerating "Done ✅"/"DONE!".
+  const isDoneValue = (c) => /^done\b/i.test(deEmphasise(String(c == null ? '' : c)).replace(/^[^A-Za-z0-9]+/, ''));
+  // 2026-07-21 Round 12 audit fix (medium): GFM outer pipes are OPTIONAL per row,
+  // so a piped `| a | b |` and a pipe-less `a | b` render identically but
+  // splitPipeCells yields ['',a,b,''] vs [a,b]. If a data row's outer-pipe style
+  // differed from the header's, the Status cell was read from the WRONG column and
+  // an unverified "done" slipped through (a false-clean the R11 backstop missed —
+  // the index was valid-but-wrong, not -1). Normalise by dropping the single
+  // leading/trailing empty cell an outer pipe produces, so indices align
+  // regardless of per-row style.
+  const normCells = (line) => {
+    const cells = splitPipeCells(line).map((c) => c.trim());
+    const t = line.trim();
+    if (t.startsWith('|')) cells.shift();
+    if (t.endsWith('|') && cells.length) cells.pop();
+    return cells;
+  };
   // A table row is any non-blank line containing a pipe (covers both the piped
   // `| a | b |` form and the pipe-less `a | b` form); a blank or pipe-less line
   // ends the table.
   const looksLikeRow = (l) => l.trim() !== '' && l.includes('|');
 
   const problems = [];      // "done" rows carrying no verified: evidence
-  const unidentified = [];  // task table(s) with a "done" cell but no Status column (fail CLOSED)
+  const unidentified = [];  // task table(s) with a "done" claim we cannot verify (fail CLOSED)
 
   for (let i = 0; i < lines.length; i++) {
     const header = lines[i];
@@ -110,28 +133,28 @@ function main() {
       (SEPARATOR_ROW_RE.test(next) || /^\s*\|/.test(header));
     if (!isHeader) continue;
 
-    const statusColumnIndex = splitPipeCells(header).map((c) => c.trim()).findIndex(isStatusHeader);
+    const headerCells = normCells(header);
+    const statusColumnIndex = headerCells.findIndex(isStatusHeader);
     let sawDoneUnknown = false;
     let j = i + 1;
     for (; j < lines.length; j++) {
       const row = lines[j];
       if (!looksLikeRow(row)) break; // a blank / pipe-less line ends the table
       if (SEPARATOR_ROW_RE.test(row)) continue; // the `| :-- | :-- |` divider
-      const cells = splitPipeCells(row).map((c) => c.trim());
-      if (statusColumnIndex === -1) {
-        // Status column unidentifiable: fail CLOSED if any cell claims "done" —
-        // the exact ambiguity this gate exists to catch. A table with no "done"
-        // cell makes no completion claim, so it is left alone (no false block).
-        if (cells.some((c) => /^done\b/i.test(c))) sawDoneUnknown = true;
+      const cells = normCells(row);
+      // Fail CLOSED when we cannot reliably locate this row's status: no Status
+      // column in the header, OR a row whose column count does not match the
+      // header (a ragged/ambiguous row). If such a row makes a "done" claim we
+      // record it as unverifiable rather than silently skipping it. A row with no
+      // "done" claim is left alone (no false block).
+      if (statusColumnIndex === -1 || cells.length !== headerCells.length) {
+        if (cells.some(isDoneValue)) sawDoneUnknown = true;
         continue;
       }
-      // 2026-07-11 Round 7 fix: "starts with the word done" (tolerates "Done ✅",
-      // "Done.", "DONE!") while rejecting "undone"/"donee".
-      const statusCell = cells[statusColumnIndex];
-      if (!statusCell || !/^done\b/i.test(statusCell)) continue;
+      if (!isDoneValue(cells[statusColumnIndex])) continue;
       if (!VERIFIED_RE.test(row) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
     }
-    if (statusColumnIndex === -1 && sawDoneUnknown) unidentified.push(header.trim());
+    if (sawDoneUnknown) unidentified.push(header.trim());
     i = j - 1; // resume after this table (the for-loop's i++ advances to j)
   }
 
@@ -145,9 +168,9 @@ function main() {
     out.rows = problems;
   }
   if (unidentified.length) {
-    if (!out.reason) out.reason = 'a task table has a "done" row but no identifiable Status column — cannot verify';
-    out.unidentifiedStatusColumn = unidentified;
-    out.hint = 'Name the completion column "Status" (or "State") so "done" rows can be checked for verified: evidence. Failing closed.';
+    if (!out.reason) out.reason = 'a task table makes a "done" claim that cannot be verified (no identifiable Status column, or a row whose columns do not line up with the header)';
+    out.unverifiableTables = unidentified;
+    out.hint = 'Give the task table a clear "Status" (or "State") column and keep every row to the same columns, so "done" rows can be checked for verified: evidence. Failing closed.';
   }
   console.log(JSON.stringify(out, null, 2));
   process.exit(1);

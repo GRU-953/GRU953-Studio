@@ -214,6 +214,55 @@ function main() {
       if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(i + 1));
     }
   };
+  // 2026-07-21 Round 12 audit fix (undisclosed size cap, medium): a would-ship
+  // file over MAX_SCAN_BYTES used to be skipped ENTIRELY before any text/binary
+  // check — so a plaintext secret in a large ordinary text file (a Terraform
+  // .tfstate, a SQL/DB dump, a verbose .log) shipped unflagged, and for a compound
+  // `git add && git commit && git push` the history scan cannot backstop it (the
+  // commit does not exist yet at PreToolUse). Large files are now STREAM-scanned
+  // line-by-line in bounded memory: classify from the head chunk (a genuine large
+  // binary — video, model, image — is still skipped, exactly like the working-tree
+  // NUL/binary path), then scan the rest. NUL→newline mirrors the working-tree
+  // scan so a co-located secret is still found.
+  const scanLargeFile = (abs, file) => {
+    let fd;
+    try {
+      fd = fs.openSync(abs, 'r');
+    } catch {
+      return;
+    }
+    try {
+      const CHUNK = 1024 * 1024;
+      const chunk = Buffer.allocUnsafe(CHUNK);
+      let leftover = '';
+      let lineNo = 0;
+      let first = true;
+      let n;
+      const scanLine = (ln) => {
+        lineNo++;
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(lineNo));
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(lineNo));
+      };
+      while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
+        const slice = chunk.subarray(0, n);
+        if (first) {
+          first = false;
+          if (!bufIsTextish(slice)) return; // genuine large binary — not content-scanned
+        }
+        const text = leftover + slice.toString('utf8').split(String.fromCharCode(0)).join('\n');
+        const parts = text.split('\n');
+        leftover = parts.pop(); // carry the incomplete last line to the next chunk
+        for (const ln of parts) scanLine(ln);
+      }
+      if (leftover.length > 0) scanLine(leftover);
+    } finally {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
   // 2026-07-21 audit fix: a branch push ships COMMITS, not the working tree, so a
   // secret committed and then removed (git commit is never push-capable, so is
   // never scanned) would still ride an incremental checkpoint/memory-persist
@@ -228,9 +277,9 @@ function main() {
     // content of NUL-containing blobs instead of rendering them as "Binary files
     // a/x and b/x differ" — without it, a secret committed then removed inside a
     // text file carrying one stray binary byte was invisible to the history scan
-    // (git's binary heuristic suppressed the diff). Each added line is still
-    // guarded below by strIsTextish, so a genuine binary blob that `--text`
-    // dumps as pseudo-lines is not regex-scanned.
+    // (git's binary heuristic suppressed the diff). The added content is then
+    // classified PER FILE below (see flushHistory), so a genuine binary blob that
+    // `--text` dumps as pseudo-lines is not regex-scanned.
     const r = git(['log', '-p', '-U0', '--no-color', '--no-textconv', '--text', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     let file = '(unpushed history)';
@@ -252,8 +301,33 @@ function main() {
     // removed content (ignored); neither can be a header.
     let inHunk = false;
     let afterMinusHeader = false;
+    // 2026-07-21 Round 12 audit fix: accumulate the ADDED content per file and
+    // classify/scan it as a UNIT, mirroring the working-tree path's per-FILE
+    // decision (bufIsTextish → scanText). The Round 11 per-line strIsTextish
+    // guard broke that parity: a real ASCII secret sharing ONE diff line with a
+    // short binary run dropped that single line's text fraction below 0.85, so
+    // the whole line (secret included) was skipped even though the file is
+    // overwhelmingly text — while the working-tree path caught the identical
+    // content. Now a predominantly-text file's added content is scanned in full
+    // (NUL→newline, no per-line guard, exactly like scanText), and only a
+    // predominantly-binary file's added content (a font/image/blob `--text`
+    // dumped as pseudo-lines) is skipped.
+    let added = [];
+    const flushHistory = () => {
+      if (added.length === 0) return;
+      const content = added.join('\n');
+      added = [];
+      if (!strIsTextish(content)) return; // genuine binary file — not content-scanned
+      for (const ln of content.split(String.fromCharCode(0)).join('\n').split('\n')) {
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+      }
+    };
     for (const raw of r.stdout.toString('utf8').split('\n')) {
-      if (raw.startsWith('diff --git ')) { inHunk = false; afterMinusHeader = false; continue; }
+      // Each `diff --git` starts a NEW file's diff, so flush the file just ended
+      // (its added content is scanned under the previous `file` name); the final
+      // file is flushed after the loop.
+      if (raw.startsWith('diff --git ')) { flushHistory(); inHunk = false; afterMinusHeader = false; continue; }
       if (raw.startsWith('@@')) { inHunk = true; afterMinusHeader = false; continue; }
       if (!inHunk) {
         // pre-hunk header region: the only place `--- `/`+++ ` are real file headers
@@ -273,17 +347,9 @@ function main() {
         continue; // other pre-hunk metadata (index, mode, rename, etc.)
       }
       // in a hunk body: only added ('+') lines carry shippable new content
-      if (raw.startsWith('+')) {
-        const ln = raw.slice(1);
-        // Skip lines that are predominantly non-text (a binary blob `--text`
-        // dumped as pseudo-lines); a genuinely logged/committed secret line is
-        // overwhelmingly printable, so this never hides a real ASCII secret.
-        if (strIsTextish(ln)) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
-          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
-        }
-      }
+      if (raw.startsWith('+')) added.push(raw.slice(1));
     }
+    flushHistory(); // the final file's added content
   };
 
   for (const f of FILES) {
@@ -302,7 +368,13 @@ function main() {
       continue;
     }
     if (!st.isFile()) continue;
-    if (st.size > MAX_SCAN_BYTES) continue;
+    if (st.size > MAX_SCAN_BYTES) {
+      // Do NOT silently skip on size: stream-scan the file instead (a large
+      // ordinary text file can carry a plaintext secret; a genuine large binary
+      // is skipped inside scanLargeFile after a head classification).
+      scanLargeFile(abs, f);
+      continue;
+    }
     let buf;
     try {
       // readFileSync throws EACCES/ENOENT on an unreadable/vanished file, caught

@@ -22,6 +22,16 @@ you use the tool; the roster stays 38 agents / 32 skills.
   checked, on both the current files and the history a push would ship. Genuine
   picture, font and other binary files are still skipped (they don't hold
   typed-in secrets), and non-English text such as Bangla is treated as text.
+- Closed a gap where creating an **"internal"** repository (one visible to a whole
+  organisation, so not really private) could slip past the "make it public" safety
+  check on an ordinary private-scope confirmation. It now needs the same explicit
+  go-public approval as making a repository fully public.
+- The secret scan now also checks **large** files (previously any file over 4 MB
+  was skipped without being looked at) — so a plaintext key in a big text file
+  like a Terraform state file, database dump or verbose log is caught. Large
+  genuine picture/video/binary files are still skipped. It also now catches a
+  secret sitting on the same line as a stray non-text byte in the git history,
+  matching how the current-files check already behaved.
 
 **Correctness & reliability:**
 - The licence check no longer false-blocks publishing on ordinary npm/TypeScript
@@ -41,7 +51,10 @@ you use the tool; the roster stays 38 agents / 32 skills.
   passes when the progress table's status column is written in an unusual but valid
   way (in **bold**, under a synonym like "State", or in a table without outer
   borders). It now recognises those, and if it genuinely can't tell which column
-  is the status, it stops and asks rather than waving the work through.
+  is the status, it stops and asks rather than waving the work through. It also now
+  reads a "done" written with decoration (bold, code-style, or with a tick emoji)
+  and lines up table columns even when rows mix pipe styles, so a finished-but-
+  untested task can't slip through on a formatting quirk.
 
 **Under the hood:**
 - The automated test suite was grown substantially, with new mechanical guards so

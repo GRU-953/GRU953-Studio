@@ -126,8 +126,17 @@ function publishConfirmed(studioRoot) {
 function isGoPublicCommand(rawC) {
   const c = normalizeForPushCheck(rawC);
   // `gh repo create|edit ... --public` / `--visibility public|internal`
+  // 2026-07-21 Round 12 audit fix (HIGH): the standalone `--internal` flag was
+  // NOT matched — only `--public` and `--visibility public|internal` were. But
+  // `gh repo create` has no `--visibility` flag; its three standalone visibility
+  // flags are `--public`/`--private`/`--internal`, and an internal repo is
+  // visible to the whole org/enterprise, i.e. NOT private. The project already
+  // treats internal as go-public (`--visibility internal` and the gh api
+  // public|internal fields are in the go-public set), so a private-scope token
+  // (including a routine checkpoint) must not authorise `gh repo create --internal`.
+  // `--private` stays out (the studio's own publish uses `gh repo create --private`).
   const repoVisibility = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
-    (new RegExp(`--public['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
+    (new RegExp(`--(public|internal)['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
   // 2026-07-21 audit fix: the same visibility change performed via `gh api` (the
   // raw REST interface) — e.g. `gh api -X PATCH repos/me/app -f visibility=public`,
   // `-F private=false`, or an inline JSON body `{"visibility":"public"}`.

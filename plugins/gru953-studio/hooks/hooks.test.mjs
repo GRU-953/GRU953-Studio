@@ -2993,3 +2993,116 @@ test('verify-progress.mjs: a task table with a "done" cell but no identifiable S
   assert.equal(r.json && r.json.status, 'BLOCKED');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 12 — a fresh red-team attacked the
+// Round 11 fixes head-on and found 5 (1 high, 4 medium), three of them defects
+// in/around those fixes: (1) the history scan's per-line text guard lacked the
+// working-tree path's NUL-isolation, so a secret sharing one line with a binary
+// run was skipped; (2) a 4MB size cap silently skipped content-scanning any
+// larger file, incl. pure text; (3) gh repo create --internal (a non-private
+// visibility) bypassed the go-public gate; (4) mixed GFM outer-pipe style
+// column-shifted the Status cell; (5) a decorated `done` VALUE evaded the row
+// check AND the fail-closed backstop. All fixed at the class level.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a secret sharing ONE line with a binary run (committed then removed) is caught in unpushed history (2026-07-21 Round 12 fix — history/working-tree parity)', () => {
+  const dir = mkTmp('gru-scan-r12-histcolo-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const ghp = 'ghp' + '_' + 'ABCDEFGHIJ0123456789klmnopqrst';
+  // >=32 bytes of binary (incl NULs) glued to the secret on the SAME line; the
+  // file overall is overwhelmingly text. The Round 11 per-line guard dropped this
+  // whole line below the 0.85 text fraction and skipped it; per-file parity fixes it.
+  let bin = '';
+  for (let i = 0; i < 16; i++) bin += String.fromCharCode(0) + String.fromCharCode((i * 53) % 256 || 1);
+  const rows = Array.from({ length: 300 }, (_, i) => `row ${i} ordinary text content here`).join('\n');
+  fs.writeFileSync(path.join(dir, 'dump.sql'), Buffer.from(rows + '\nINSERT INTO blobs VALUES (' + bin + "'" + ghp + "');\nlast\n", 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'dump.sql'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'rm'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a history-only secret co-located with binary on one line must still be caught: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a plaintext secret in a >4MB text file is caught (not silently skipped by the size cap), incl. a compound commit+push (2026-07-21 Round 12 fix)', () => {
+  const dir = mkTmp('gru-scan-r12-large-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed\n'); git(['add', '-A'], dir); git(['commit', '-qm', 'seed'], dir);
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  // ~4.6MB of pure ASCII, secret on the final line; file is UNTRACKED at push time
+  // (the commit does not exist yet), so only the working-tree scan can catch it.
+  const filler = ('x'.repeat(200) + '\n').repeat(23000);
+  fs.writeFileSync(path.join(dir, 'terraform.tfstate'), filler + 'aws_access_key_id = "' + akia + '"\n');
+  const r = runHook('scan.mjs', 'git add -A && git commit -m release && git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a plaintext secret in a >4MB text file must not ship unflagged: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a >4MB genuine binary asset with no secret is NOT false-flagged (2026-07-21 Round 12 fix — no false positive)', () => {
+  const dir = mkTmp('gru-scan-r12-largebin-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const big = Buffer.alloc(5 * 1024 * 1024);
+  for (let i = 0; i < big.length; i++) big[i] = (i * 37 + (i % 7) * 89) % 256;
+  fs.writeFileSync(path.join(dir, 'model.bin'), big);
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `a large genuine binary with no secret must not be false-flagged: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('gate.mjs: gh repo create --internal (standalone flag) needs the go-public token, not a private/checkpoint token (2026-07-21 Round 12 HIGH fix)', () => {
+  const dir = mkTmp('gru-gate-r12-internal-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --internal', dir).decision, 'deny', 'internal visibility is non-private and must need the go-public token');
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --public', dir).decision, 'deny', 'control: --public must need go-public');
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --visibility internal', dir).decision, 'deny', 'control: --visibility internal must need go-public');
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --private', dir).decision, 'allow', '--private must stay allowed on a private token');
+  fs.rmSync(dir, { recursive: true, force: true });
+  // and a routine checkpoint token must not authorise it either
+  const d2 = mkTmp('gru-gate-r12-internal-ckpt-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  spawnSync('node', [path.join(HERE, 'confirm-checkpoint.mjs'), d2], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --internal', d2).decision, 'deny', 'a checkpoint token must never make a repo internal (non-private)');
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: mixed GFM outer-pipe style does not column-shift the Status cell past an unverified done (2026-07-21 Round 12 fix)', () => {
+  // Piped header + one appended pipe-less done row (both valid GFM, render alike).
+  const d1 = mkTmp('gru-vp-r12-mix1-');
+  fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(d1, 'Dev-Memory', 'PROGRESS.md'), '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | build | done | verified: npm test -> exit 0 (2026-07-20) |\nT2 | ship | done | no evidence at all\n');
+  let r = runScript('verify-progress.mjs', d1);
+  assert.equal(r.code, 1, `a pipe-less done row appended to a piped table must still be checked: ${r.stdout}`);
+  fs.rmSync(d1, { recursive: true, force: true });
+  // Pipe-less header + piped done row.
+  const d2 = mkTmp('gru-vp-r12-mix2-');
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(d2, 'Dev-Memory', 'PROGRESS.md'), 'Task | Status | Notes\n--- | --- | ---\n| A | done | none |\n');
+  r = runScript('verify-progress.mjs', d2);
+  assert.equal(r.code, 1, `a piped done row under a pipe-less header must still be checked: ${r.stdout}`);
+  fs.rmSync(d2, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: a decorated `done` VALUE (**done**, `done`, "✅ done") is still caught, and its backstop fires with no Status column (2026-07-21 Round 12 fix)', () => {
+  const values = ['**done**', '`done`', '✅ done'];
+  for (const v of values) {
+    const dir = mkTmp('gru-vp-r12-val-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), `| Task | Status | Notes |\n| :-- | :-- | :-- |\n| A | ${v} | no evidence |\n`);
+    const r = runScript('verify-progress.mjs', dir);
+    assert.equal(r.code, 1, `a decorated done value "${v}" with no verified: cell must be caught: ${r.stdout}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  // backstop: decorated done under a non-Status column must also fail closed
+  const dir = mkTmp('gru-vp-r12-valbs-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), '| Task | Progress | Notes |\n| :-- | :-- | :-- |\n| A | `done` | no evidence |\n');
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `a decorated done value under a non-Status header must fail closed: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -651,11 +651,12 @@ existing gate — each is additive.
   a logged API key; a SQL/DB dump with a BLOB column beside a plaintext
   credential) ship unflagged on BOTH paths at once. Now a NUL-containing file
   that is predominantly text is scanned for its extractable ASCII — working tree:
-  NUL→newline, preserving line numbers; history: `--text` with a per-line text
-  guard — while a genuine binary asset (font, image, compiled blob) is still
-  skipped. Valid UTF-8 (Bangla included) counts as text, so a non-Latin dump is
-  still scanned. **Residual, disclosed:** a file that is predominantly non-text is
-  not content-scanned, and a NUL-interleaved encoding such as UTF-16LE (≈50% NUL)
+  NUL→newline, preserving line numbers; history: `--text` plus a **per-file** text
+  classification (Round 12 corrected this from a per-line guard, see below) — while
+  a genuine binary asset (font, image, compiled blob) is still skipped. Valid UTF-8
+  (Bangla included) counts as text, so a non-Latin dump is still scanned.
+  **Residual, disclosed:** a file that is predominantly non-text is not
+  content-scanned, and a NUL-interleaved encoding such as UTF-16LE (≈50% NUL)
   classifies as non-text and is not scanned — the same "high-signal scan of
   ordinary mistakes, not a determined-adversary guarantee" boundary this document
   states throughout.
@@ -670,3 +671,38 @@ existing gate — each is additive.
   clear hint — matching its four sibling publish gates. This is a quality/integrity
   gate, not a secret/authorisation boundary (the publish-safety hooks still run);
   it is recorded here for completeness of the same audit.
+- **`gh repo create --internal` now needs the go-public token (2026-07-21 Round
+  12, HIGH).** The go-public matcher recognised `--public` and `--visibility
+  public|internal` but not the standalone `--internal` flag — yet `gh repo create`
+  has no `--visibility` flag, and an *internal* repository is visible to the whole
+  organisation/enterprise, i.e. NOT private. A private-scope token (including a
+  routine per-phase **checkpoint**) therefore authorised creating a non-private
+  repo, contradicting the gate's own guarantee that a checkpoint can never make a
+  repo public. Now `--internal` is treated as go-public exactly like `--public`;
+  `--private` stays a private push (the studio's own publish flow uses `gh repo
+  create --private`).
+- **History secret scan restored to full parity with the working-tree scan
+  (2026-07-21 Round 12).** The Round 11 history scan guarded each *diff line* with
+  a text-fraction test; a real ASCII secret sharing one line with ~32+ bytes of
+  binary dropped that line below the threshold and was skipped, even though the
+  working-tree scan caught the identical content. The history scan now classifies
+  and scans added content **per file** (mirroring the working-tree `bufIsTextish →
+  scanText` decision), so a secret co-located with binary on one line is caught on
+  both paths; a genuine binary file's added content is still skipped.
+- **Large text files are now content-scanned, not silently skipped (2026-07-21
+  Round 12).** A would-ship file over the 4 MB in-memory cap used to be skipped
+  entirely before any text/binary check, so a plaintext secret in a large ordinary
+  text file (a Terraform `.tfstate`, a SQL/DB dump, a verbose `.log`) shipped
+  unflagged — and for a single compound `git add && commit && push` the history
+  scan cannot backstop it (the commit does not exist yet at check time). Files over
+  the cap are now **stream-scanned** line-by-line in bounded memory, after a
+  head-sample classification that still skips a genuine large binary (video, model,
+  image). **Residual, disclosed:** classification samples the file head, so a file
+  whose first ~64 KB is binary but which contains text later is treated as binary —
+  the same head-sample boundary the working-tree NUL/binary path already carries.
+- **Decorated `done` values and mixed table styles no longer slip past the
+  done-requires-verified gate (2026-07-21 Round 12).** `verify-progress.mjs` now
+  de-emphasises the status *value* (`**done**`, `` `done` ``, `✅ done`), not only
+  the header, and normalises GFM's optional outer pipes so a row written in a
+  different pipe style from the header is not column-shifted; a row whose columns
+  cannot be lined up fails closed. Quality/integrity gate, as above.
