@@ -16,6 +16,12 @@ you use the tool; the roster stays 38 agents / 32 skills.
   check for many seconds; it is now effectively instant.
 - The secret scan now also checks the git history a push would ship (not just the
   current files), including by key-file and private-folder name.
+- The secret scan no longer skips a whole file just because it contains one stray
+  non-text byte. An ordinary text file — say a log or a database export — that
+  happens to include such a byte next to a real password or key is now still
+  checked, on both the current files and the history a push would ship. Genuine
+  picture, font and other binary files are still skipped (they don't hold
+  typed-in secrets), and non-English text such as Bangla is treated as text.
 
 **Correctness & reliability:**
 - The licence check no longer false-blocks publishing on ordinary npm/TypeScript
@@ -31,6 +37,11 @@ you use the tool; the roster stays 38 agents / 32 skills.
   the "treat data as data" guardrail to the one role that lacked it, hardened the
   AI prompt-injection and Gemini key-handling guidance, and fixed the dashboard's
   colour contrast (light and dark) to meet accessibility standards.
+- The check that "every finished task shows proof it was tested" no longer quietly
+  passes when the progress table's status column is written in an unusual but valid
+  way (in **bold**, under a synonym like "State", or in a table without outer
+  borders). It now recognises those, and if it genuinely can't tell which column
+  is the status, it stops and asks rather than waving the work through.
 
 **Under the hood:**
 - The automated test suite was grown substantially, with new mechanical guards so

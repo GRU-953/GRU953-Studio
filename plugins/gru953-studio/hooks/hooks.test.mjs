@@ -2891,3 +2891,105 @@ test('traceability-check.mjs: a 1-3 space indented GFM table is not false-blocke
   assert.equal(r.json.status, 'clean', `an indented but consistent matrix must be clean, not false-blocked with a phantom "---" requirement: ${r.stdout}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-07-21 gold-standard audit, Round 11 — the final independent red-team
+// broke the clean streak with 2 new medium findings: (1) a single NUL byte in a
+// would-ship file hid a co-located ASCII secret from BOTH scan paths (the
+// working-tree scan skipped the whole file on `buf.includes(0)`, and the history
+// scan ran `git log -p` without `--text`, so git rendered the NUL blob as
+// "Binary files differ"); (2) verify-progress failed OPEN on any PROGRESS.md
+// table shape whose Status column it could not name (emphasised/synonym/
+// composite header, or a pipe-less GFM table). Both fixed at root.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: a stray NUL byte no longer hides a co-located ASCII secret in a would-ship file (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-scan-nul-wt-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // Build the token in parts so this test file's own source line stays clean.
+  const ghp = 'ghp' + '_' + 'ABCDEFGHIJ0123456789klmnopqrst';
+  // An ordinary log file that captured one stray binary byte beside a real key.
+  fs.writeFileSync(path.join(dir, 'app.log'), Buffer.from('start\n' + ghp + '\nmore' + String.fromCharCode(0) + 'text\n', 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a NUL byte must not hide a co-located ASCII secret: ${r.stdout}`);
+  assert.ok(/app\.log/.test(r.stdout), 'the finding should name the offending file');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a genuine binary asset with no secret is NOT false-flagged (2026-07-21 Round 11 fix — no false positive)', () => {
+  const dir = mkTmp('gru-scan-nul-bin-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // High-entropy pseudo-binary (fonts/images look like this): NULs and control
+  // bytes throughout, no secret pattern — must still ALLOW, proving the fix does
+  // not turn every binary asset into a false block.
+  const bytes = Buffer.alloc(20000);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 37 + (i % 5) * 101) % 256;
+  fs.writeFileSync(path.join(dir, 'asset.bin'), bytes);
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `a genuine binary asset with no secret must not be false-flagged: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a secret in a NUL-containing file committed then removed is caught in unpushed history (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-scan-nul-hist-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  const ghp = 'ghp' + '_' + 'ABCDEFGHIJ0123456789klmnopqrst';
+  fs.writeFileSync(path.join(dir, 'leak.txt'), Buffer.from('hdr\n' + ghp + '\nfoo' + String.fromCharCode(0) + 'bar\n', 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'add'], dir);
+  fs.rmSync(path.join(dir, 'leak.txt'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'rm'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `--text must expose a NUL-blob's added secret to the history scan: ${r.stdout}`);
+  assert.ok(/history/i.test(r.stdout), 'the finding should be attributed to unpushed history');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('scan.mjs: a Bangla UTF-8 file with a stray NUL is scanned, not misclassified as binary (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-scan-nul-bn-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  // Valid UTF-8 (Bangla) must count as text so its co-located secret is scanned —
+  // the text-fraction guard keys on invalid-byte density, not on non-ASCII.
+  const bangla = 'এটি একটি লগ ফাইল যেখানে একটি গোপন কী আছে\n';
+  fs.writeFileSync(path.join(dir, 'dump.sql'), Buffer.from(bangla + 'api_key = "abcdEFGH1234ijklMNOP5678"\nblob' + String.fromCharCode(0) + 'col\n', 'utf8'));
+  git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `valid Bangla UTF-8 must count as text, so its co-located secret is still scanned: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('verify-progress.mjs: an unverified "done" is caught under emphasised/synonym/composite/pipe-less Status headers (2026-07-21 Round 11 fail-open fix)', () => {
+  const shapes = [
+    ['bolded **Status**',    '| Task | **Status** | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n'],
+    ['synonym State',        '| Task | State | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n'],
+    ['composite Task Status','| Task | Task Status | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n'],
+    ['pipe-less GFM table',  'Task | Status | Notes\n--- | --- | ---\nA | done | none\n'],
+  ];
+  for (const [label, progress] of shapes) {
+    const dir = mkTmp('gru-vp-shape-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), progress);
+    const r = runScript('verify-progress.mjs', dir);
+    assert.equal(r.code, 1, `an unverified "done" under a ${label} header must be caught, not silently passed: ${r.stdout}`);
+    assert.equal(r.json && r.json.status, 'BLOCKED', `${label}: expected BLOCKED`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('verify-progress.mjs: a task table with a "done" cell but no identifiable Status column fails CLOSED (2026-07-21 Round 11 fix)', () => {
+  const dir = mkTmp('gru-vp-failclosed-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // "Situation" is neither Status nor State; a "done" cell that cannot be tied
+  // to a status column must fail closed, matching the sibling publish gates —
+  // not silently pass as the old `continue` did.
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), '| Task | Situation | Notes |\n| :-- | :-- | :-- |\n| A | done | none |\n');
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `an unidentifiable Status column with a "done" cell must fail closed: ${r.stdout}`);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

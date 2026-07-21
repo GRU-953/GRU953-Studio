@@ -79,6 +79,32 @@ function git(args, cwd, encoding = 'utf8') {
   return { status: r.status, stdout: r.stdout, ok: r.status === 0 };
 }
 
+// ---- text/binary classification ----------------------------------------------
+// 2026-07-21 Round 11 audit fix (NUL/binary blind spot). Is this content
+// PREDOMINANTLY ordinary readable text, as opposed to a genuine binary asset?
+// Used to decide whether a NUL-containing would-ship file is a text file that
+// merely captured a stray binary byte (scan its extractable ASCII) or a real
+// binary blob such as a font/image/compiled artefact (skip — regex-scanning its
+// bytes would only add noise). Valid UTF-8 — Bangla and every other script
+// included — counts fully as text: only bytes that decode to U+FFFD (invalid
+// UTF-8) or to a control char drag the fraction down, so a Bangla SQL dump with
+// a plaintext credential is still scanned, while a high-entropy binary is not.
+function strIsTextish(s) {
+  if (s.length === 0) return true;
+  let ok = 0;
+  for (let k = 0; k < s.length; k++) {
+    const c = s.charCodeAt(k);
+    if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126) || (c >= 0xa0 && c !== 0xfffd)) ok++;
+  }
+  return ok / s.length >= 0.85;
+}
+function bufIsTextish(buf) {
+  if (buf.length === 0) return true;
+  // Classify from the head — enough to tell text from binary, and bounds cost.
+  const head = buf.length > 65536 ? buf.subarray(0, 65536) : buf;
+  return strIsTextish(head.toString('utf8'));
+}
+
 function main() {
   const INPUT = readStdin();
   const CMD = extractCommand(INPUT);
@@ -198,7 +224,14 @@ function main() {
   // still stands. (Residual, disclosed in SECURITY.md: a value living only in a
   // file referenced by `--input`/curl body is still not parsed.)
   const scanUnpushedHistory = () => {
-    const r = git(['log', '-p', '-U0', '--no-color', '--no-textconv', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    // 2026-07-21 Round 11 audit fix: `--text` forces git to emit the real added
+    // content of NUL-containing blobs instead of rendering them as "Binary files
+    // a/x and b/x differ" — without it, a secret committed then removed inside a
+    // text file carrying one stray binary byte was invisible to the history scan
+    // (git's binary heuristic suppressed the diff). Each added line is still
+    // guarded below by strIsTextish, so a genuine binary blob that `--text`
+    // dumps as pseudo-lines is not regex-scanned.
+    const r = git(['log', '-p', '-U0', '--no-color', '--no-textconv', '--text', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     let file = '(unpushed history)';
     // 2026-07-21 Round 8 fix: parse the unified diff with minimal state instead of
@@ -242,8 +275,13 @@ function main() {
       // in a hunk body: only added ('+') lines carry shippable new content
       if (raw.startsWith('+')) {
         const ln = raw.slice(1);
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
-        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+        // Skip lines that are predominantly non-text (a binary blob `--text`
+        // dumped as pseudo-lines); a genuinely logged/committed secret line is
+        // overwhelmingly printable, so this never hides a real ASCII secret.
+        if (strIsTextish(ln)) {
+          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
+          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+        }
       }
     }
   };
@@ -274,7 +312,27 @@ function main() {
     } catch {
       continue;
     }
-    if (buf.includes(0)) continue; // skip binary
+    if (buf.includes(0)) {
+      // 2026-07-21 Round 11 audit fix (NUL/binary blind spot, medium): a single
+      // NUL byte used to skip the file's WHOLE content scan, so an ordinary
+      // would-ship text file carrying one stray binary byte beside a real ASCII
+      // secret (a log that captured a byte of binary output next to a logged
+      // key; a SQL/DB dump with a BLOB column beside a plaintext credential)
+      // shipped unflagged. Now: skip only GENUINE binary assets (predominantly
+      // non-text — fonts, images, compiled blobs), and for a file that is
+      // overwhelmingly text with a stray NUL, scan its extractable ASCII
+      // (NUL→newline preserves line numbers). The high-signal regexes plus the
+      // text-fraction guard keep false positives on real binaries at zero.
+      // (Residual, disclosed in SECURITY.md: a genuine binary blob is not
+      // content-scanned, and a NUL-interleaved encoding such as UTF-16LE — ~50%
+      // NUL — classifies as non-text, so is not scanned either.)
+      if (!bufIsTextish(buf)) continue;
+      // Replace each NUL with a newline (String.fromCharCode(0) avoids an
+      // easily-mangled literal NUL byte in source): the ASCII lines around a
+      // stray binary byte stay intact and line numbers stay accurate.
+      scanText(buf.toString('utf8').split(String.fromCharCode(0)).join('\n'), f);
+      continue;
+    }
     scanText(buf.toString('utf8'), f);
   }
 

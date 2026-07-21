@@ -642,3 +642,31 @@ existing gate — each is additive.
   determined-adversary threat model this document already disclaims. The Round 1
   ReDoS fix removed the separate input-*length* blow-up; this residual is the
   assignment-*count* case, disclosed here rather than closed.
+- **A stray binary byte no longer hides a co-located ASCII secret (2026-07-21
+  Round 11).** `scan.mjs` used to skip a file's *entire* content scan the instant
+  it held any NUL byte, and the history scan ran `git log -p` without `--text` (so
+  git rendered a NUL-containing blob as "Binary files differ") — together these
+  let an ordinary would-ship **text** file that captured one stray binary byte
+  beside a real ASCII secret (a log that recorded a byte of binary output next to
+  a logged API key; a SQL/DB dump with a BLOB column beside a plaintext
+  credential) ship unflagged on BOTH paths at once. Now a NUL-containing file
+  that is predominantly text is scanned for its extractable ASCII — working tree:
+  NUL→newline, preserving line numbers; history: `--text` with a per-line text
+  guard — while a genuine binary asset (font, image, compiled blob) is still
+  skipped. Valid UTF-8 (Bangla included) counts as text, so a non-Latin dump is
+  still scanned. **Residual, disclosed:** a file that is predominantly non-text is
+  not content-scanned, and a NUL-interleaved encoding such as UTF-16LE (≈50% NUL)
+  classifies as non-text and is not scanned — the same "high-signal scan of
+  ordinary mistakes, not a determined-adversary guarantee" boundary this document
+  states throughout.
+- **A publish integrity gate no longer fails open on an unusual table shape
+  (2026-07-21 Round 11).** `verify-progress.mjs` (the mechanical check that every
+  "done" task carries `verified:` evidence) used to return *clean* whenever it
+  could not name the Status column — a bolded `**Status**`, a synonym `State`, a
+  composite `Task Status`, or a pipe-less GFM table all made it skip every row and
+  pass. It now broadens Status detection (strips emphasis, accepts Status/State
+  incl. a composite last word, and reads pipe-less tables) and, when a task table
+  carries a `done` cell but no identifiable Status column, **fails closed** with a
+  clear hint — matching its four sibling publish gates. This is a quality/integrity
+  gate, not a secret/authorisation boundary (the publish-safety hooks still run);
+  it is recorded here for completeness of the same audit.
