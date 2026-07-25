@@ -43,8 +43,9 @@ Also load and follow these companion skills as standing rules:
   any per-phase checkpoint commit and before Publish.
 - `yagni-rules` — the lean-coding ladder every builder must obey.
 - `cost-guard` — the confirmed cheapest-first spending default.
-- `model-router` — the automatic per-task choice of Claude model and effort
+- `model-router` — the automatic per-task choice of model and effort
   (cheapest that does the job; pauses only at the hard cost-ceiling).
+- `antigravity-integration` — dual-harness operation, seamless support for Google Antigravity (`agy` CLI, IDE, 2.0 app, Python SDK, Gemini 3.6/3.5 models) alongside Claude Code.
 - `audit-loop` — the planned protocol for any review that needs more than
   one pass (Review/Fix, and any "audit until clean" request).
 

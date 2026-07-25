@@ -113,9 +113,16 @@ way the code side does:
   cost counts against the same `cost-guard` ceiling; `cost-monitor` logs each
   media generation's model and spend.
 
-So the one automatic router covers Claude (code + text) and Gemini (media),
+So the one automatic router covers Claude & Gemini models (code, text, and media),
 cheapest-capable per task — with media carrying the extra per-generation
 approval its cost and privacy warrant.
+
+## Google Antigravity model routing (2026-07-26)
+
+When operating under Google Antigravity (`antigravity-integration` skill), the model router maps tasks across the Gemini model suite:
+- **Complex Tier / Architecture / Review / Security**: `gemini-3.6-pro` (or `gemini-1.5-pro` fallback) with high effort for deep reasoning.
+- **Standard Tier / Build / TDD / Test Generation**: `gemini-3.6-flash` (or `gemini-2.0-flash` fallback) with medium effort for balanced speed and reasoning.
+- **Tiny Tier / Scaffolding / Quick Checks**: `gemini-flash-lite` for ultra-fast, low-cost execution.
 
 ## Logging (so an automatic choice stays reviewable)
 

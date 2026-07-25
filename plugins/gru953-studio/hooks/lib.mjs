@@ -85,7 +85,7 @@ export function extractCommand(input) {
   }
   const ti = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj.tool_input : undefined;
   if (ti === null || ti === undefined || typeof ti !== 'object' || Array.isArray(ti)) return '';
-  const cmd = typeof ti.command === 'string' ? ti.command : ti.script;
+  const cmd = typeof ti.command === 'string' ? ti.command : (typeof ti.script === 'string' ? ti.script : ti.CommandLine);
   return typeof cmd === 'string' ? cmd : '';
 }
 export function extractCwd(input) {
@@ -95,7 +95,8 @@ export function extractCwd(input) {
   } catch {
     return '';
   }
-  const c = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj.cwd : undefined;
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
+  const c = typeof obj.cwd === 'string' ? obj.cwd : (obj.tool_input && typeof obj.tool_input.Cwd === 'string' ? obj.tool_input.Cwd : undefined);
   return typeof c === 'string' ? c : '';
 }
 

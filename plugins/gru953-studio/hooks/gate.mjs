@@ -45,7 +45,7 @@ import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isP
 // process DOES have it set (same export), so resolve it once here and
 // interpolate the real value, with a fallback computed from this file's own
 // location in case the env var is ever unset for some other invocation path.
-const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || process.env.ANTIGRAVITY_PLUGIN_ROOT || process.env.PLUGIN_ROOT || path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 // 2026-07-12 Round 7 audit fix (real TOCTOU gap, found by direct code
 // reading, not a text-obfuscation bypass — a different bug class): neither

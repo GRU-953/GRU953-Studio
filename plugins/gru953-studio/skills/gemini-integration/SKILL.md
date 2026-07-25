@@ -12,7 +12,7 @@ Gemini cloud models. This is the studio's **first external cloud dependency**, a
 real departure from its zero-dependency, local-only, private default, so it is
 handled with matching care: opt-in, the user's own key, cost-visible, and
 private-by-notice. Text content is NOT here — it is generated natively by Claude
-via the `text-content-specialist`. Plain-English rule is as set in the `studio`
+via the `text-content-specialist`. Under Google Antigravity (`antigravity-integration` skill and `google-antigravity` SDK), Gemini models are also accessible natively for general intelligence, code generation, and multi-modal inference using the environment's `GEMINI_API_KEY`. Plain-English rule is as set in the `studio`
 skill.
 
 Every model fact below is time-sensitive: **verify the current model names and

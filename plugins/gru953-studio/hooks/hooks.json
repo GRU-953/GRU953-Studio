@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Monitor",
+        "matcher": "Bash|PowerShell|Monitor|run_command",
         "hooks": [
           {
             "type": "command",
@@ -17,7 +17,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Bash|PowerShell|Monitor",
+        "matcher": "Bash|PowerShell|Monitor|run_command",
         "hooks": [
           {
             "type": "command",

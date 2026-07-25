@@ -20,7 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
-import { isPushCapable } from './lib.mjs';
+import { isPushCapable, extractCommand, extractCwd } from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -3324,3 +3324,30 @@ test('traceability-check.mjs: a decorated "met" status still requires verificati
   assert.equal(r.code, 0, `a plain met with verification evidence must stay clean: ${r.stdout}`);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// --- Google Antigravity Integration (2026-07-26) ----------------------------
+
+test('lib.mjs: extractCommand and extractCwd parse Google Antigravity run_command payload (CommandLine & Cwd)', () => {
+  const payload = JSON.stringify({
+    tool_input: {
+      CommandLine: 'git push origin main',
+      Cwd: '/Users/test/project'
+    }
+  });
+  assert.equal(extractCommand(payload), 'git push origin main', 'CommandLine field in Antigravity payload must be extracted');
+  assert.equal(extractCwd(payload), '/Users/test/project', 'Cwd field in Antigravity payload must be extracted');
+});
+
+test('hooks.json: PreToolUse and PostToolUseFailure matchers cover run_command for Antigravity', () => {
+  const text = fs.readFileSync(path.join(HERE, 'hooks.json'), 'utf8');
+  const json = JSON.parse(text);
+  const matchers = json.hooks.PreToolUse.map((e) => e.matcher);
+  assert.ok(matchers.some((m) => m.includes('run_command')), 'PreToolUse matcher must cover run_command');
+});
+
+test('repo-integrity.mjs: clean status on complete repo including antigravity-integration skill (33 skills)', () => {
+  const r = runScript('repo-integrity.mjs', path.resolve(HERE, '..', '..', '..'));
+  assert.equal(r.json.status, 'clean', `repo-integrity must pass clean: ${r.stdout}`);
+  assert.equal(r.json.skillCount, 33, `skillCount must be 33: ${r.stdout}`);
+});
+
