@@ -48,7 +48,112 @@ function isAllowed(licenceStr) {
 // than flattened). A transitively-nested copyleft dependency could
 // currently pass unnoticed. Flagged in SECURITY.md; a recursive walk is a
 // reasonable follow-up if this becomes a real problem in practice.
+// 2026-07-25: Also check package-lock.json / npm-shrinkwrap.json for more
+// reliable dependency tree when node_modules not fully installed.
 function scanNode(root) {
+  const nm = path.join(root, 'node_modules');
+  // 2026-07-25: Also check package-lock.json for lockfile-based scanning
+  // when node_modules is not fully populated or for more accurate tree.
+  const lockFile = fs.existsSync(path.join(root, 'package-lock.json'))
+    ? path.join(root, 'package-lock.json')
+    : (fs.existsSync(path.join(root, 'npm-shrinkwrap.json'))
+      ? path.join(root, 'npm-shrinkwrap.json')
+      : null);
+
+  // If lockfile exists and node_modules doesn't, use lockfile
+  if (!fs.existsSync(nm) && lockFile) {
+    return scanNodeFromLockfile(root, lockFile);
+  }
+
+  // Otherwise use node_modules (existing logic) but also check lockfile for
+  // packages that might not be in node_modules (e.g., optional deps)
+  const nodeModulesResult = fs.existsSync(nm) ? scanNodeFromNodeModules(root) : { ecosystem: 'npm', checked: false, findings: [] };
+  
+  if (lockFile) {
+    const lockResult = scanNodeFromLockfile(root, lockFile);
+    // Merge findings - lockfile may have more complete tree
+    return mergeNodeFindings(nodeModulesResult, lockResult);
+  }
+  return nodeModulesResult;
+}
+
+function scanNodeFromNodeModules(root) {
+  const nm = path.join(root, 'node_modules');
+  const findings = [];
+  const dirs = fs.readdirSync(nm, { withFileTypes: true });
+  const pkgDirs = [];
+  const isDirLike = (dirent, full) => {
+    if (dirent.isDirectory()) return true;
+    if (dirent.isSymbolicLink()) { try { return fs.statSync(full).isDirectory(); } catch { return false; } }
+    return false;
+  };
+  for (const d of dirs) {
+    if (!isDirLike(d, path.join(nm, d.name))) continue;
+    if (d.name.startsWith('@')) {
+      const scoped = fs.readdirSync(path.join(nm, d.name), { withFileTypes: true });
+      for (const s of scoped) if (isDirLike(s, path.join(nm, d.name, s.name))) pkgDirs.push(path.join(d.name, s.name));
+    } else if (d.name.startsWith('.') || d.name.startsWith('_')) {
+      continue;
+    } else {
+      pkgDirs.push(d.name);
+    }
+  }
+  for (const p of pkgDirs) {
+    const pkgJsonPath = path.join(nm, p, 'package.json');
+    let licence = null;
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+      licence = typeof pkg.license === 'string' ? pkg.license : (pkg.license && pkg.license.type) || null;
+    } catch {
+      findings.push({ package: p, licence: 'unreadable (missing or invalid package.json)', verdict: 'needs-review' });
+      continue;
+    }
+    const verdict = isAllowed(licence);
+    if (verdict === false) findings.push({ package: p, licence, verdict: 'blocked' });
+    else if (verdict === null) findings.push({ package: p, licence: licence || 'unknown', verdict: 'needs-review' });
+  }
+  return { ecosystem: 'npm', checked: true, findings };
+}
+
+function scanNodeFromLockfile(root, lockFilePath) {
+  try {
+    const lockContent = JSON.parse(fs.readFileSync(lockFilePath, 'utf8'));
+    const findings = [];
+    const packages = lockContent.packages || {};
+    
+    for (const [pkgPath, pkgInfo] of Object.entries(packages)) {
+      if (pkgPath === '' || pkgPath === '.') continue; // Skip root package
+      const name = pkgPath.replace(/^node_modules\//, '');
+      const licence = pkgInfo.license || pkgInfo.licenses?.[0]?.type || null;
+      const verdict = isAllowed(licence);
+      if (verdict === false) findings.push({ package: name, licence, verdict: 'blocked' });
+      else if (verdict === null) findings.push({ package: name, licence: licence || 'unknown', verdict: 'needs-review' });
+    }
+    return { ecosystem: 'npm', checked: true, findings };
+  } catch {
+    return { ecosystem: 'npm', checked: false, findings: [], note: 'Failed to parse lockfile' };
+  }
+}
+
+function mergeNodeFindings(a, b) {
+  if (!a.checked) return b;
+  if (!b.checked) return a;
+  // Merge by package name, prefer blocked > needs-review > clean
+  const merged = new Map();
+  for (const f of [...a.findings, ...b.findings]) {
+    const existing = merged.get(f.package);
+    if (!existing || severityRank(f.verdict) > severityRank(existing.verdict)) {
+      merged.set(f.package, f);
+    }
+  }
+  return { ecosystem: 'npm', checked: true, findings: Array.from(merged.values()) };
+}
+
+function severityRank(v) {
+  if (v === 'blocked') return 3;
+  if (v === 'needs-review') return 2;
+  return 1;
+}
   const nm = path.join(root, 'node_modules');
   if (!fs.existsSync(nm)) return { ecosystem: 'npm', checked: false, findings: [] };
   const findings = [];

@@ -615,6 +615,7 @@ function main() {
       // (Residual, disclosed in SECURITY.md: a genuine binary blob is not
       // content-scanned, and a NUL-interleaved encoding such as UTF-16LE — ~50%
       // NUL — classifies as non-text, so is not scanned either.)
+      // 2026-07-25: Also run multi-pass decode/normalize on NUL-containing files
       if (!bufIsTextish(buf)) continue;
       // Replace each NUL with a newline (String.fromCharCode(0) avoids an
       // easily-mangled literal NUL byte in source): the ASCII lines around a

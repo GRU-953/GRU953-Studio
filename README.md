@@ -64,7 +64,7 @@ You never write or read a single line of code. You just answer questions, one
 clear pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **32 skills** (the internal playbooks the team follows) · **9 simple
+roles** · **33 skills** (the internal playbooks the team follows) · **9 simple
 commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
 and CI integrity checks) · **zero third-party code
 dependencies**.
