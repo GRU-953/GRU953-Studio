@@ -3,23 +3,51 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = require("vscode");
+const fs = require("fs");
+const path = require("path");
 function activate(context) {
     console.log('Universal Agentic Studio extension is now active!');
+    function getWorkspaceDir() {
+        const folders = vscode.workspace.workspaceFolders;
+        return folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
+    }
     let startCommand = vscode.commands.registerCommand('gru953-studio.start', () => {
-        vscode.window.showInformationMessage('Universal Agentic Studio starting...');
-        // TODO: Bridge logic to agentic platform
+        const workspaceDir = getWorkspaceDir();
+        if (!workspaceDir) {
+            vscode.window.showErrorMessage('Universal Agentic Studio requires an open workspace.');
+            return;
+        }
+        const devMemoryPath = path.join(workspaceDir, 'Dev-Memory');
+        if (!fs.existsSync(devMemoryPath)) {
+            fs.mkdirSync(devMemoryPath);
+            vscode.window.showInformationMessage('Initialized new Dev-Memory for Universal Agentic Studio.');
+        }
+        else {
+            vscode.window.showInformationMessage('Found existing Dev-Memory. Resuming project...');
+        }
+        // Bridge logic: Trigger the agentic platform's start sequence
+        const terminal = vscode.window.createTerminal('GRU953 Studio');
+        terminal.show();
+        terminal.sendText('echo "Triggering Universal Agentic Studio..."');
+        terminal.sendText('npx @gru953/studio start');
     });
     let statusCommand = vscode.commands.registerCommand('gru953-studio.status', () => {
-        vscode.window.showInformationMessage('Universal Agentic Studio status request...');
-        // TODO: Bridge logic to agentic platform
+        vscode.window.showInformationMessage('Universal Agentic Studio: Fetching status...');
+        const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
+        terminal.show();
+        terminal.sendText('npx @gru953/studio status');
     });
     let pauseCommand = vscode.commands.registerCommand('gru953-studio.pause', () => {
         vscode.window.showInformationMessage('Universal Agentic Studio paused.');
-        // TODO: Bridge logic to agentic platform
+        const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
+        terminal.show();
+        terminal.sendText('npx @gru953/studio pause');
     });
     let resumeCommand = vscode.commands.registerCommand('gru953-studio.resume', () => {
         vscode.window.showInformationMessage('Universal Agentic Studio resuming...');
-        // TODO: Bridge logic to agentic platform
+        const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
+        terminal.show();
+        terminal.sendText('npx @gru953/studio resume');
     });
     context.subscriptions.push(startCommand, statusCommand, pauseCommand, resumeCommand);
 }
