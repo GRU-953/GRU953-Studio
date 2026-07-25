@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FOCUS.md schema",
+  "type": "object",
+  "required": ["objective", "activePhase", "activeTask", "topConstraints"],
+  "properties": {
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One-sentence project objective"
+    },
+    "activePhase": {
+      "type": "string",
+      "enum": ["Brainstorm", "Ideate", "Design", "Prototype", "Content", "Plan", "Build", "Test", "Fix", "Review", "Publish", "Maintain"],
+      "description": "Current lifecycle phase"
+    },
+    "activeTask": {
+      "type": "string",
+      "description": "Current task ID from PROGRESS.md (e.g., T3)"
+    },
+    "topConstraints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Top 3-5 constraints the team must respect"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of last update"
+    }
+  },
+  "additionalProperties": false
+}

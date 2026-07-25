@@ -38,3 +38,15 @@ the `csharp-developer` agent stays thin. Plain-English rule is as set in the
   best-effort; `security-compliance-auditor` reviews NuGet licences before
   Publish (`dotnet list package` gives the resolved set).
 - Every added package passes the `yagni-rules` ladder.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "dotnet build -c Release"
+  test: "dotnet test"
+  lint: "dotnet build"
+  format: "dotnet format --verify-no-changes"
+  deps: "dotnet add package"
+  dev_env: "mise install dotnet@latest"
+```

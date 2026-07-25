@@ -38,3 +38,27 @@ as set in the `studio` skill.
   existing npm scan — no new ecosystem needed. `security-compliance-auditor` runs
   it before Publish.
 - Every added package passes the `yagni-rules` ladder.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "tsc --noEmit"
+  test: "npm test"
+  lint: "eslint ."
+  format: "prettier --check ."
+  deps: "npm install"
+  dev_env: "mise install node@latest"
+```
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "tsc --noEmit"
+  test: "npm test"
+  lint: "eslint ."
+  format: "prettier --check ."
+  deps: "npm install"
+  dev_env: "mise install node@latest"
+```

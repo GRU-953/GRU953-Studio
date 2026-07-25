@@ -38,3 +38,15 @@ stays thin. Plain-English rule is as set in the `studio` skill.
   never assumed installed.
 - Every added crate still passes the `yagni-rules` ladder — a crate is a
   dependency to justify, not a default.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "cargo build --release"
+  test: "cargo test"
+  lint: "cargo clippy --all-targets -- -D warnings"
+  format: "cargo fmt --check"
+  deps: "cargo add"
+  dev_env: "mise install rust@latest"
+```

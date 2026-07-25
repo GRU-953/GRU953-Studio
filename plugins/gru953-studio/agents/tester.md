@@ -59,22 +59,38 @@ Before writing test code — from the Plan stage on Standard/Complex Tier
 
 ## Method (execution)
 
-1. For each acceptance criterion, write (or reuse) the exact test/command
-   that proves it.
-2. Run it. Record the literal command and its literal output/exit code.
-3. A task is only reported "done" when its test evidence line reads
-   `verified: <exact command> → exit 0 (YYYY-MM-DD)`.
-4. On failure, follow the `self-healing` skill: hand it to `fixer` for up
-   to 2 quiet attempts (no user interruption yet) before the Project
-   Lead's full Stuck Protocol. Report the failure plainly either way —
-   never soften or omit a failing result, whichever path resolves it.
-5. Before Publish: re-run the entire suite once as a final regression
-   check, and confirm coverage — every criterion has real evidence, the
-   high-risk paths have negative-path tests, and nothing was marked done
-   without a `verified:` line. Your evidence is what clears the
-   `quality-gate` Definition of Done's "acceptance criteria" and "tests"
-   dimensions (2026-07-19) — recorded in `QUALITY-GATE.md`; a failing or
-   unrun test is never signed off as a pass.
+ 1. For each acceptance criterion, write (or reuse) the exact test/command
+    that proves it.
+ 2. Run it. Record the literal command and its literal output/exit code.
+ 3. A task is only reported "done" when its test evidence is recorded in the
+    **structured JSON evidence format** embedded in the PROGRESS.md Notes column:
+    ```json
+    {
+      "taskId": "T3",
+      "criterion": "User can reset password via email",
+      "command": "pytest tests/test_auth.py::test_password_reset -v",
+      "exitCode": 0,
+      "stdout": "1 passed in 1.24s",
+      "stderr": "",
+      "durationMs": 1240,
+      "artifacts": ["coverage.xml"],
+      "timestamp": "2026-07-25T10:30:00Z",
+      "verifier": "tester"
+    }
+    ```
+    The legacy `verified: <command> → exit 0 (YYYY-MM-DD)` format is still
+    accepted for backward compatibility but new evidence should use JSON.
+ 4. On failure, follow the `self-healing` skill: hand it to `fixer` for up
+    to 2 quiet attempts (no user interruption yet) before the Project
+    Lead's full Stuck Protocol. Report the failure plainly either way —
+    never soften or omit a failing result, whichever path resolves it.
+ 5. Before Publish: re-run the entire suite once as a final regression
+    check, and confirm coverage — every criterion has real evidence, the
+    high-risk paths have negative-path tests, and nothing was marked done
+    without evidence. Your evidence is what clears the
+    `quality-gate` Definition of Done's "acceptance criteria" and "tests"
+    dimensions (2026-07-19) — recorded in `QUALITY-GATE.md`; a failing or
+    unrun test is never signed off as a pass.
 6. **On Standard/Complex Tier, for a project with a UI:** if a browser-
    automation tool is available in this session (e.g. a Playwright-style
    MCP server — not guaranteed to be present in every setup), capture one

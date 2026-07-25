@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "INDEX.md schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["entity", "where", "summary", "tags", "lastTouched"],
+    "properties": {
+      "entity": {
+        "type": "string",
+        "description": "Entity name (e.g., 'auth module', 'user dashboard')"
+      },
+      "where": {
+        "type": "string",
+        "description": "Real file path(s) in the project"
+      },
+      "summary": {
+        "type": "string",
+        "description": "One-line summary of what this entity does"
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Searchable tags for recall"
+      },
+      "lastTouched": {
+        "type": "string",
+        "format": "date-time",
+        "description": "ISO 8601 timestamp of last change"
+      }
+    },
+    "additionalProperties": false
+  }
+}

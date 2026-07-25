@@ -35,3 +35,15 @@ skill.
   best-effort (no single canonical licence field), so `security-compliance-auditor`
   reviews before Publish; CocoaPods/Carthage projects are reviewed manually.
 - Every added package passes the `yagni-rules` ladder.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "swift build"
+  test: "swift test"
+  lint: "swiftlint"
+  format: "swift-format lint --strict"
+  deps: "swift package resolve"
+  dev_env: "mise install swift@latest"
+```

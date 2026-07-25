@@ -38,3 +38,15 @@ stays thin. Plain-English rule is as set in the `studio` skill.
   (`mvn dependency:tree` / `./gradlew dependencies` plus a licence plugin)
   and review before Publish.
 - Every added dependency passes the `yagni-rules` ladder.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "./gradlew build"
+  test: "./gradlew test"
+  lint: "./gradlew checkstyleMain"
+  format: "./gradlew spotlessCheck"
+  deps: "./gradlew build"
+  dev_env: "mise install java@latest"
+```

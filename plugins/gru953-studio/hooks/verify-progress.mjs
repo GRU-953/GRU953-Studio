@@ -3,6 +3,10 @@
 // verify-progress.mjs — checks that every task marked "done" in
 // Dev-Memory/PROGRESS.md actually carries a `verified: <command> → exit 0
 // (YYYY-MM-DD)` (or the human-judged protocol equivalent) Notes cell.
+// Also supports structured JSON evidence (2026-07-25) in the format:
+// {"taskId": "T3", "criterion": "...", "command": "...", "exitCode": 0,
+// "stdout": "...", "stderr": "", "durationMs": 1240, "artifacts": [...],
+// "timestamp": "2026-07-25T10:30:00Z", "verifier": "tester"}
 //
 // Added 2026-07-10 (gold-standard audit fix): the tester agent's own rule —
 // "a task may only be marked done with a verified: line" — had no
@@ -43,6 +47,9 @@ function main() {
   // that is the row's FINAL claim counts — a stale claim followed by a
   // later "but now fails" no longer matches.
   const VERIFIED_RE = /verified:.*(→|->).*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
+  // 2026-07-25: Structured JSON evidence format (machine-parseable)
+  // Format: {"taskId":"T3","criterion":"...","command":"...","exitCode":0,"stdout":"...","stderr":"","durationMs":1240,"artifacts":[],"timestamp":"2026-07-25T10:30:00Z","verifier":"tester"}
+  const JSON_EVIDENCE_RE = /\{\s*"taskId"\s*:\s*"[^"]+"\s*,\s*"criterion"\s*:\s*"[^"]*"\s*,\s*"command"\s*:\s*"[^"]*"\s*,\s*"exitCode"\s*:\s*\d+\s*,\s*"stdout"/i;
   // 2026-07-12 audit fix (MAJOR false-clean, found by execution): VERIFIED_RE
   // only checks that its pattern appears SOMEWHERE on the line, so a Notes
   // cell that honestly documents an OLD passing run alongside a NEW,
@@ -152,7 +159,9 @@ function main() {
         continue;
       }
       if (!isDoneValue(cells[statusColumnIndex])) continue;
-      if (!VERIFIED_RE.test(row) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
+      const hasVerified = VERIFIED_RE.test(row);
+      const hasJsonEvidence = JSON_EVIDENCE_RE.test(row);
+      if ((!hasVerified && !hasJsonEvidence) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
     }
     if (sawDoneUnknown) unidentified.push(header.trim());
     i = j - 1; // resume after this table (the for-loop's i++ advances to j)
