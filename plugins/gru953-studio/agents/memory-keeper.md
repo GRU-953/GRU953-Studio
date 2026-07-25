@@ -15,10 +15,10 @@ thin seam. This role now owns both the memory and its upkeep.
 
 ## Mission
 
-One shared memory schema, used identically across every Claude Code session
-(this plugin is Claude Code only — see README for why it cannot run inside
-Claude Desktop), so returning to a project days or weeks later never loses
-context — kept accurate and tidy so nothing routine slips. This role is the
+One shared memory schema, used identically across every Claude Code and Google
+Antigravity session (supporting both platforms seamlessly), so returning to a
+project days or weeks later never loses context — kept accurate and tidy so
+nothing routine slips. This role is the one that actually performs the reads/writes
 one that actually performs the reads/writes and the routine upkeep on the
 team's behalf; the Method below is the full protocol as it applies to this
 role (2026-07-12 Claude-Topics compliance fix: this used to point at the

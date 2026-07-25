@@ -27,6 +27,8 @@
         "tiered-team",
         "cross-platform",
         "claude-code-plugin",
+        "google-antigravity",
+        "antigravity-sdk",
         "ollama",
         "self-healing",
         "tdd",

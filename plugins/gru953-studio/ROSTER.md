@@ -148,3 +148,6 @@ Per-task model choice (v3.6.0, `model-router` skill): the declared model above
 is each role's DEFAULT and FLOOR; the router may pick a cheaper model for a
 mechanical sub-task or spend up for a genuinely hard one, automatically, within
 that floor — cost stays a decision, now per task, not only per role.
+
+## v4.4.0 update (2026-07-26): Google Antigravity Support
+Added `skills/google-antigravity-integration/SKILL.md` (expanding total skills to 33) enabling full Google Antigravity (AGY SDK & Gemini Antigravity IDE) runtime execution alongside Claude Code. Baseline role count stands at 38 roles (role count: 38).

@@ -24,13 +24,12 @@ interruptions. Concretely:
 
 ## How usage can be judged locally
 
-**Default, always available:** Claude Code writes each session's
-transcript as JSONL files (one JSON record per line) under the user's
-`.claude` folder — for example
-`~/.claude/projects/<project-folder>/<session-id>.jsonl`. A long, heavy
-transcript file for the current session is a reasonable local signal that a
-lot of the window has been used; exact numbers aren't visible, only this
-rough signal.
+**Default, always available:** Claude Code and Google Antigravity write session
+transcripts and token metrics locally (under `.claude` or `.gemini`/antigravity
+application directories). On Google Antigravity, AGY SDK observability tracks
+token usage (including thinking tokens) and costs for Gemini models directly.
+A long, heavy transcript file or high token total for the current session is a
+reasonable local signal that a lot of the window has been used.
 
 **Optional, opt-in upgrade to real numbers (2026-07-17 gap-research
 fix):** Claude Code's `statusLine` feature can expose real figures —

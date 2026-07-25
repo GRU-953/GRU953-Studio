@@ -20,22 +20,20 @@ or a mistake is costly to undo. It is the cheapest-first principle
 
 **Model families** (cheapest → most capable):
 
-| Model | Best for |
+| Model (Claude / Gemini) | Best for |
 | :-- | :-- |
-| **Haiku** | Cheapest. Mechanical/clerical work with little open reasoning — status updates, simple edits, list upkeep, brand/format checks. Has the smallest context window of the four, so not for very large inputs (see signal 6). |
-| **Sonnet** | The balanced workhorse — real but bounded reasoning: most building, testing, drafting and review-support tasks. The default when nothing points clearly higher or lower. |
-| **Opus** | Hard reasoning — architecture, independent correctness review, safety/fairness judgement, and any decision that is costly and hard to undo. |
-| **Fable** | The frontier tier: the **most capable and most expensive** model of the four (above Opus, with always-on deeper thinking and slower responses). Reserved only for the very hardest problems where Opus is genuinely not enough — **never** for routine drafting, which is cheap work. |
+| **Haiku / Gemini 3.6 Flash / 2.5 Flash** | Cheapest & fastest. Mechanical/clerical work with little open reasoning — status updates, simple edits, list upkeep, brand/format checks. Has smaller context footprint for fast turnarounds. |
+| **Sonnet / Gemini 2.5 Pro / Flash High** | The balanced workhorse — real but bounded reasoning: most building, testing, drafting and review-support tasks. The default when nothing points clearly higher or lower. |
+| **Opus / Gemini 2.5 Pro High / Gemini Ultra** | Hard reasoning — architecture, independent correctness review, safety/fairness judgement, and any decision that is costly and hard to undo. |
+| **Fable / Frontier Tiers** | The frontier tier: the **most capable and most expensive** model tier (above Opus/Pro, with deeper thinking and slower responses). Reserved only for the very hardest problems where standard reasoning is genuinely not enough — **never** for routine drafting. |
 
-> **Verify before relying on this cost ordering (2026-07-21).** Model names,
-> tiers, context sizes and prices change. Fable is the top tier here because it is
-> both the most capable and the most expensive — confirm the current
+> **Verify before relying on this cost ordering (2026-07-26).** Model names,
+> tiers, context sizes and prices change. Fable and Frontier Tiers sit at the top
+> because they are both the most capable and most expensive — confirm the current
 > cheapest→most-capable order and each model's context window against Anthropic's
-> own current documentation before treating this table as authoritative, the same
-> currency discipline `gemini-integration` and `ollama-integration` already apply.
-> (This corrects a 2026-07-21 audit finding: Fable had been mis-listed as a cheap
-> second tier, which routed the cheapest kind of work — drafting/ideation — to the
-> single most expensive model, inverting the cheapest-first principle.)
+> and Google's own current documentation before treating this table as authoritative,
+> the same currency discipline `gemini-integration`, `google-antigravity-integration`,
+> and `ollama-integration` already apply.
 
 **Effort levels** map the owner's requested names to what the platform exposes:
 `low` → low, `medium` → medium, `high` → high, **`extra` → xhigh**, `max` → max.

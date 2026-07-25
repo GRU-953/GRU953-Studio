@@ -31,6 +31,9 @@ sentences after each stage — no jargon, no walls of text.
 Also load and follow these companion skills as standing rules:
 - `first-run` — the one-off setup that runs before a user's very first
   project (never on later projects).
+- `google-antigravity-integration` — the protocol for executing GRU953-Studio
+  inside Google Antigravity (Google Antigravity SDK and Gemini Antigravity IDE)
+  alongside Claude Code.
 - `dev-memory` — how to read and write the project's memory files, and the
   cross-project files that carry lessons and working-style preferences
   from one project to the next.

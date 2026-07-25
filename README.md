@@ -51,8 +51,7 @@ published safely to your own GitHub account, under your name.<br>
 
 ## What is GRU953-Studio?
 
-GRU953-Studio is a helper you talk to in plain English, inside **Claude Code** or **Google Antigravity** —
-AI development platforms. You tell it what
+GRU953-Studio is a helper you talk to in plain English, inside **Claude Code** and **Google Antigravity** (Google Antigravity SDK and Gemini Antigravity IDE). You tell it what
 you want — "a habit tracker for my phone", "a page that lists my recipes" — it
 asks a few multiple-choice questions to understand exactly what you mean, and then
 a team of behind-the-scenes AI specialists **designs it, shows you a clickable
@@ -70,11 +69,7 @@ dependencies**.
 
 ### Latest version: 4.4.0
 
-Version 4.4.0 adds native support for **Google Antigravity** (`agy` CLI, Antigravity IDE, Antigravity 2.0 app, Python SDK `google-antigravity`, and Gemini 3.6 / 3.5 models), dual-harness coordination, and the 33rd skill (`skills/antigravity-integration/SKILL.md`). The previous release, 4.2.0, was a documentation and packaging
-update (a rebuilt README, a new
-[wiki guide](https://github.com/GRU-953/GRU953-Studio/wiki), a slimmer
-[website](https://gru-953.github.io/GRU953-Studio/), and the canonical licence
-text). See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
+Version 4.4.0 adds native support for **Google Antigravity** (Google Antigravity SDK and Gemini Antigravity IDE) alongside Claude Code, introduces dynamic Gemini model routing in `model-router`, adds the `google-antigravity-integration` skill (bringing the total skill set to 33), and incorporates multi-loop SME safety and quality hardening — with **no change to how you use the tool**. See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
 
 ---
 

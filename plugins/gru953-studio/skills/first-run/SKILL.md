@@ -16,14 +16,10 @@ repeating or being wrongly skipped):
 
 1. Does `~/.gru953-studio/profile.md` exist? If yes, first-run is done —
    skip straight to the project interview.
-2. If not, does Claude Code's own persistent memory (where configured)
+2. If not, does the platform's persistent memory (Claude Code or Google Antigravity)
    record first-run as done? If yes, also write the file marker now (so a
    future session finds it at step 1 without needing to check this), then
-   skip to the project interview. (2026-07-12 final-audit fix: this and
-   step 1's follow-on used to say "on surfaces that have one" / "any
-   surface" — this plugin is Claude Code only, see README; reworded to drop
-   the multi-surface framing, which had already drifted back once before,
-   per a documented past fix to `memory-keeper.md` for the same claim.)
+   skip to the project interview. (Updated 2026-07-26 for Google Antigravity support.)
 3. Otherwise, first-run has never happened — run it now.
 
 ## What to ask (via `interviewer`, pop-up MCQs, recommended option marked)

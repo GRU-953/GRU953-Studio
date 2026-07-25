@@ -1,5 +1,29 @@
 # Changelog
 
+## 4.4.0 — 2026-07-26
+
+A **feature & quality release** introducing native support for **Google Antigravity**
+(Google Antigravity SDK and Gemini Antigravity IDE) alongside Claude Code,
+incorporating dynamic Gemini model routing, expanding the skill set to 33 skills with
+`google-antigravity-integration`, and applying multi-loop SME safety and quality hardening.
+
+**Google Antigravity & Multi-Platform Support:**
+- Added `skills/google-antigravity-integration/SKILL.md` establishing the protocol for
+  running GRU953-Studio on Google Antigravity (AGY SDK & Gemini Antigravity IDE).
+- Updated `model-router` to support Gemini models (Gemini 3.6 Flash, Gemini 2.5 Pro/Flash,
+  Gemini Ultra) alongside Claude model tiers (Haiku, Sonnet, Opus, Fable).
+- Updated `dev-memory`, `first-run`, `studio`, `cost-guard`, `gemini-integration`, and `session-start.mjs`
+  for seamless dual-platform memory layout (`Dev-Memory/` and `.agents/`), token usage
+  tracking, and environment auto-detection.
+- Updated agent roles (`project-lead`, `ai-developer`, `memory-keeper`, `researcher`,
+  `security-compliance-auditor`, `devops-engineer`) to support multi-platform dispatching and
+  Google Antigravity SDK (`google-antigravity`) usage.
+
+**SME Audit & Quality Hardening:**
+- Verified all 12 structural invariants in `repo-integrity.mjs` across agents, skills, hooks, and manifests.
+- Expanded `hooks.test.mjs` test suite to cover Google Antigravity integration, skill resolution, and edge-case handling.
+- Kept baseline agent count at 38 roles and expanded skill count to 33 skills.
+
 ## 4.3.0 — 2026-07-21
 
 A **quality-and-hardening release** from a deep, multi-round independent audit
