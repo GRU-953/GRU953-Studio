@@ -1,7 +1,7 @@
 {
   "name": "gru953-studio",
-  "version": "4.4.0",
-  "description": "An AI project lead plus a Tier-sized team of specialised AI developers. Type your rough app idea, answer a short pop-up interview, approve the plan, and GRU953-Studio researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub. Built for Claude Code and Google Antigravity. Plain UK English throughout; no technical knowledge needed.",
+  "version": "4.5.0",
+  "description": "An AI project lead plus a Tier-sized team of specialised AI developers. Type your rough app idea, answer a short pop-up interview, approve the plan, and GRU953-Studio researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub. A Universal Agentic Studio built for Claude Code, Google Antigravity, Cursor, Windsurf, Devin, and all major platforms. Plain UK English throughout; no technical knowledge needed.",
   "author": {
     "name": "Aninda Sundar Howlader",
     "email": "aninda.sh15@gmail.com"
@@ -30,6 +30,12 @@
     "gemini",
     "bangla",
     "prototyping",
-    "command-centre"
+    "command-centre",
+    "cursor",
+    "windsurf",
+    "devin",
+    "aider",
+    "openhands",
+    "universal-agentic-studio"
   ]
 }

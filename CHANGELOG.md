@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.5.0 — 2026-07-26
+
+A **feature release** transforming GRU953-Studio from a Claude Code plugin into a **Universal Agentic Studio** deployable across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI).
+
+**Universal Platform Support:**
+- Added `skills/universal-platform-integration/SKILL.md` (the 34th skill), establishing the Universal Agentic Protocol.
+- Mapped the studio's 38 specialized roles, 34 skills, and token-cheap memory graph system (`Dev-Memory`) to IDE-native rules (`.cursorrules`, `.windsurfrules`), CLI dispatch (Aider), autonomous sandboxes (Devin, OpenHands), and enterprise swarms (Augment Code, Tabnine).
+- Shifted the positioning in README.md, ROSTER.md, plugin.json, and marketplace.json to reflect universal support.
+- Updated repository integrity checks and baseline expectations to account for the new skill count (34 skills).
+
 ## 4.4.0 — 2026-07-26
 
 A **feature & quality release** introducing native support for **Google Antigravity**

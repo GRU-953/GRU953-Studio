@@ -51,7 +51,7 @@ published safely to your own GitHub account, under your name.<br>
 
 ## What is GRU953-Studio?
 
-GRU953-Studio is a helper you talk to in plain English, inside **Claude Code** and **Google Antigravity** (Google Antigravity SDK and Gemini Antigravity IDE). You tell it what
+GRU953-Studio is a **Universal Agentic Studio**. You can talk to it in plain English inside **Claude Code**, **Google Antigravity** (SDK & IDE), or project it into any major 2026 AI agentic platform (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI). You tell it what
 you want — "a habit tracker for my phone", "a page that lists my recipes" — it
 asks a few multiple-choice questions to understand exactly what you mean, and then
 a team of behind-the-scenes AI specialists **designs it, shows you a clickable
@@ -62,14 +62,14 @@ You never write or read a single line of code. You just answer questions, one
 clear pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **33 skills** (the internal playbooks the team follows) · **9 simple
+roles** · **34 skills** (the internal playbooks the team follows) · **9 simple
 commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 4.4.0
+### Latest version: 4.5.0
 
-Version 4.4.0 adds native support for **Google Antigravity** (Google Antigravity SDK and Gemini Antigravity IDE) alongside Claude Code, introduces dynamic Gemini model routing in `model-router`, adds the `google-antigravity-integration` skill (bringing the total skill set to 33), and incorporates multi-loop SME safety and quality hardening — with **no change to how you use the tool**. See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
+Version 4.5.0 introduces the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.), bringing the skill count to 34. Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
 
 ---
 
