@@ -82,6 +82,20 @@ function main() {
     );
   }
   const additionalContext = lines.join('\n');
+  
+  // Non-blocking auto-update check
+  try {
+    const { spawn } = await import('node:child_process');
+    const updateScript = path.join(path.dirname(new URL(import.meta.url).pathname), 'auto-update.mjs');
+    if (fs.existsSync(updateScript)) {
+      const child = spawn('node', [updateScript], {
+        detached: true,
+        stdio: 'ignore'
+      });
+      child.unref();
+    }
+  } catch (e) {}
+
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext },
   }));
