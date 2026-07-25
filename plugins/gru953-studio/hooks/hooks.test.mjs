@@ -541,6 +541,22 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('repo-integrity.mjs INV8: the LAST role-count in ROSTER.md wins', () => {
+  const dir = mkTmp('gru-repointeg-roster-');
+  copyRepoTo(dir);
+  const rosterPath = path.join(dir, 'plugins', 'gru953-studio', 'ROSTER.md');
+  let rosterText = fs.readFileSync(rosterPath, 'utf8');
+  // Inject an older decoy historical count right before the real one
+  rosterText = rosterText.replace(
+    '**role count:',
+    'we considered 50 (role count: 50) but settled on baseline = 5 then final **role count:'
+  );
+  fs.writeFileSync(rosterPath, rosterText);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a historical role count must not override the final one: ${r.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('repo-integrity.mjs INV9: a missing marketplace.json is reported, not a crash', () => {
   const dir = mkTmp('gru-repointeg-crash-');
   copyRepoTo(dir);

@@ -302,7 +302,8 @@ const rosterText = read(rosterBaselineFile);
 if (rosterText === null) {
   fail(`no committed roster baseline at plugins/gru953-studio/ROSTER.md (needed so the product's own roster can be verified)`);
 } else {
-  const rm = rosterText.match(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/i);
+  const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/ig)];
+  const rm = rmAll.length ? rmAll[rmAll.length - 1] : null;
   if (!rm) fail(`ROSTER.md does not state a numeric "role count: <n>"`);
   else if (parseInt(rm[1], 10) !== agentCount) fail(`ROSTER.md role count ${rm[1]} != actual agent count ${agentCount}`);
 }
