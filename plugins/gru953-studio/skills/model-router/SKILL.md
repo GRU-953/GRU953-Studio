@@ -1,6 +1,6 @@
 ---
 name: model-router
-description: Chooses the best Claude model and effort level for each individual task automatically — Haiku / Sonnet / Opus / Fable at low / medium / high / xhigh / max effort — so cheap tasks run cheap and only genuinely hard ones spend up. Fully automatic and silent by default, with a single hard cost-ceiling that pauses only when one task would be unusually expensive (the one reconciliation with cost-guard). Load and follow as a standing rule; project-lead consults it when delegating, cost-monitor logs the actual choice.
+description: Chooses the best model and provider for each individual task automatically — capability-based routing across Anthropic (Claude), Groq, OpenRouter, Ollama (local), and enterprise providers (Bedrock, Vertex, Azure). The studio picks the cheapest capable provider per task, with circuit breakers, fallback chains, and latency-aware routing. Fully automatic and silent by default, with a single hard cost-ceiling that pauses only when one task would be unusually expensive (the one reconciliation with cost-guard).
 ---
 
 # Model Router
@@ -16,16 +16,71 @@ or a mistake is costly to undo. It is the cheapest-first principle
 (`cost-guard`) made granular. Plain-English rule is exactly as set in the
 `studio` skill.
 
-## The choices
+## Capability registry (2026-07-25)
 
-**Model families** (cheapest → most capable):
+The router routes to a **capability** (code-generation, reasoning, vision, function-calling, structured-output), not a named provider. The registry maps each capability to the cheapest provider that supports it. The registry is a versioned YAML file at `skills/model-router/capability-registry.yaml`.
 
-| Model | Best for |
-| :-- | :-- |
-| **Haiku** | Cheapest. Mechanical/clerical work with little open reasoning — status updates, simple edits, list upkeep, brand/format checks. Has the smallest context window of the four, so not for very large inputs (see signal 6). |
-| **Sonnet** | The balanced workhorse — real but bounded reasoning: most building, testing, drafting and review-support tasks. The default when nothing points clearly higher or lower. |
-| **Opus** | Hard reasoning — architecture, independent correctness review, safety/fairness judgement, and any decision that is costly and hard to undo. |
-| **Fable** | The frontier tier: the **most capable and most expensive** model of the four (above Opus, with always-on deeper thinking and slower responses). Reserved only for the very hardest problems where Opus is genuinely not enough — **never** for routine drafting, which is cheap work. |
+**Registry schema:**
+
+```yaml
+capabilities:
+  code-generation:
+    default:
+      provider: anthropic/claude-sonnet-4
+      effort: medium
+    fallbacks:
+      - provider: ollama/deepseek-coder-v2
+        effort: medium
+      - provider: openrouter/deepseek-v3
+        effort: medium
+  reasoning:
+    default:
+      provider: anthropic/claude-opus-4
+      effort: high
+  vision:
+    default:
+      provider: anthropic/claude-sonnet-4
+      effort: medium
+```
+
+## Provider tiers (2026-07-25)
+
+| Tier | Providers | Selection | User control |
+| :-- | :-- | :-- | :-- |
+| **Default (Auto)** | Anthropic Claude + Ollama (local) | Router picks cheapest capable | None (just works) |
+| **Opt-In Cloud** | OpenRouter + Groq | User enables per project | Project-level toggle |
+| **Enterprise** | Bedrock, Vertex, Azure AI | Admin configures org-wide | Org policy (OPA) |
+
+**Key principle:** Users select a capability ("I need fast code generation"), not a provider ("use Groq"). The router maps capability → best provider, preventing decision paralysis and enabling automatic cost optimization.
+
+## Circuit breakers and health checks
+
+Each provider has a health record tracking consecutive failures, circuit state, and p99 latency. If a provider fails 3 times consecutively, the router opens the circuit and routes to the next fallback. The circuit closes after 60s of successful calls. Interactive tasks (SLA <500ms) prefer providers with p99 <1s; batch tasks include all providers.
+
+## Tiered quality gates (2026-07-25)
+
+Quality gates execute in parallel for independent checks, tier-scaled:
+
+| Tier | Gates (parallel) | Incremental re-check |
+| :-- | :-- | :-- |
+| Tiny | Secrets, License, Progress (3) | Only changed files |
+| Standard | + Quality, Traceability, Content (6) | Affected modules only |
+| Complex | + Roster, Vuln Scan, AI Review (9) | Full re-run on major changes |
+
+All gates within a tier run concurrently. Skipped checks use git diff + cache. Documented skip with risk acceptance is permitted, logged in the audit trail.
+
+## How a task is scored (silent, automatic)
+
+For each task, weigh six signals and pick the cheapest capable model + lowest effort that clears them:
+
+1. **Reasoning depth** — routine/mechanical → cheap model/low effort; genuinely novel or subtle → expensive model/high effort.
+2. **Reversibility** — trivially undoable → cheap; costly or irreversible to get wrong (a migration, a security-relevant change, a release decision) → spend up.
+3. **Risk/blast radius** — touches money, personal data, auth, or data loss → never the floor; give it more model and effort.
+4. **Breadth** — a narrow local change → cheap; a wide cross-cutting one → higher.
+5. **Creativity vs rigour** — divergent drafting/ideation is still ordinary work: route it to a cheap tier, never Fable. Convergent correctness → Sonnet/Opus.
+6. **Input size / context** — a task whose input approaches the cheapest model's context window must not be routed to it; escalate to a larger-context tier.
+
+The per-role `model:` default in each agent's frontmatter is the **floor**: the router may escalate a task above it when the signals justify it, and may drop to a cheaper model for a clearly mechanical sub-task, but it does not silently push a safety- or release-critical role below its declared floor.
 
 > **Verify before relying on this cost ordering (2026-07-21).** Model names,
 > tiers, context sizes and prices change. Fable is the top tier here because it is
