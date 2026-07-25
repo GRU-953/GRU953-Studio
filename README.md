@@ -68,14 +68,9 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 4.3.0
+### Latest version: 4.4.0
 
-Version 4.3.0 is a **quality-and-hardening release** from a deep, multi-round
-independent audit. It closes two security-gate gaps (a `gh api` publish-gate
-bypass and a slow-regex flaw), makes the licence check work correctly on real
-npm/TypeScript projects, corrects the AI model chooser's cost ordering, tightens
-several internal checks, and adds dozens of tests — with **no change to how you
-use the tool**. The previous release, 4.2.0, was a documentation and packaging
+Version 4.4.0 adds native support for **Google Antigravity** (`agy` CLI, Antigravity IDE, Antigravity 2.0 app, Python SDK `google-antigravity`, and Gemini 3.6 / 3.5 models), dual-harness coordination, and the 33rd skill (`skills/antigravity-integration/SKILL.md`). The previous release, 4.2.0, was a documentation and packaging
 update (a rebuilt README, a new
 [wiki guide](https://github.com/GRU-953/GRU953-Studio/wiki), a slimmer
 [website](https://gru-953.github.io/GRU953-Studio/), and the canonical licence
