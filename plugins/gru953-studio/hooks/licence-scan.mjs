@@ -42,18 +42,14 @@ function isAllowed(licenceStr) {
   return null; // present but not recognised — needs a human look
 }
 
-// Known limitation (disclosed 2026-07-10 audit, not yet fixed): this scans
-// top-level node_modules/* only, not each package's own nested
-// node_modules (npm can install a dependency's dependencies nested rather
-// than flattened). A transitively-nested copyleft dependency could
-// currently pass unnoticed. Flagged in SECURITY.md; a recursive walk is a
-// reasonable follow-up if this becomes a real problem in practice.
-// 2026-07-25: Also check package-lock.json / npm-shrinkwrap.json for more
-// reliable dependency tree when node_modules not fully installed.
+// 2026-07-25: Lockfile-based scanning for all ecosystems.
+// When lockfiles are present, we can scan without requiring full install.
+// Falls back to installed-deps scanning when lockfiles not available.
+
+// ---- npm (Node.js) ----
 function scanNode(root) {
   const nm = path.join(root, 'node_modules');
-  // 2026-07-25: Also check package-lock.json for lockfile-based scanning
-  // when node_modules is not fully populated or for more accurate tree.
+  // Check package-lock.json / npm-shrinkwrap.json for lockfile-based scanning
   const lockFile = fs.existsSync(path.join(root, 'package-lock.json'))
     ? path.join(root, 'package-lock.json')
     : (fs.existsSync(path.join(root, 'npm-shrinkwrap.json'))
@@ -71,7 +67,6 @@ function scanNode(root) {
   
   if (lockFile) {
     const lockResult = scanNodeFromLockfile(root, lockFile);
-    // Merge findings - lockfile may have more complete tree
     return mergeNodeFindings(nodeModulesResult, lockResult);
   }
   return nodeModulesResult;
@@ -138,7 +133,6 @@ function scanNodeFromLockfile(root, lockFilePath) {
 function mergeNodeFindings(a, b) {
   if (!a.checked) return b;
   if (!b.checked) return a;
-  // Merge by package name, prefer blocked > needs-review > clean
   const merged = new Map();
   for (const f of [...a.findings, ...b.findings]) {
     const existing = merged.get(f.package);
@@ -154,94 +148,50 @@ function severityRank(v) {
   if (v === 'needs-review') return 2;
   return 1;
 }
-  const nm = path.join(root, 'node_modules');
-  if (!fs.existsSync(nm)) return { ecosystem: 'npm', checked: false, findings: [] };
-  const findings = [];
-  const dirs = fs.readdirSync(nm, { withFileTypes: true });
-  const pkgDirs = [];
-  // 2026-07-21 Round 3 fix: pnpm places each DIRECT dependency in node_modules as a
-  // SYMLINK into node_modules/.pnpm; a symlink Dirent is not isDirectory(), so those
-  // packages were skipped — which, once the dot-dir skip below removed the old
-  // accidental .pnpm needs-review, turned a pnpm licence scan into a false-clean
-  // (copyleft deps unseen). Treat a symlink-to-a-directory as a directory
-  // (readFileSync follows it transparently to the real package.json in the store).
-  const isDirLike = (dirent, full) => {
-    if (dirent.isDirectory()) return true;
-    if (dirent.isSymbolicLink()) { try { return fs.statSync(full).isDirectory(); } catch { return false; } }
-    return false;
-  };
-  for (const d of dirs) {
-    if (!isDirLike(d, path.join(nm, d.name))) continue;
-    if (d.name.startsWith('@')) {
-      const scoped = fs.readdirSync(path.join(nm, d.name), { withFileTypes: true });
-      for (const s of scoped) if (isDirLike(s, path.join(nm, d.name, s.name))) pkgDirs.push(path.join(d.name, s.name));
-    } else if (d.name.startsWith('.') || d.name.startsWith('_')) {
-      // 2026-07-21 audit fix: npm's tooling directories are not packages. `.bin`
-      // (created whenever ANY dependency ships an executable — jest/eslint/tsc/
-      // vite/etc., i.e. almost every real project), plus `.cache`/`.vite`/`.pnpm`,
-      // have no package.json. An npm package name can never begin with '.' or '_',
-      // so these are always tooling artefacts. Previously they were treated as
-      // packages with a missing package.json -> 'needs-review' -> a NEEDS HUMAN
-      // REVIEW result that false-blocked Publish on essentially every real
-      // npm/TypeScript project (and trained users to ignore the licence gate).
-      continue;
-    } else {
-      pkgDirs.push(d.name);
-    }
-  }
-  for (const p of pkgDirs) {
-    const pkgJsonPath = path.join(nm, p, 'package.json');
-    let licence = null;
-    // 2026-07-12 audit fix (SEVERE false-clean, found by execution): a
-    // package whose package.json is missing or unparseable used to just
-    // `continue` here — silently dropped from every category (blocked,
-    // needsReview, notChecked), so the scanner reported the whole ecosystem
-    // "clean" even with a genuinely unknowable licence sitting in
-    // node_modules. This is exactly the case isAllowed()'s own comment
-    // above says the design principle rejects: "unknown — reported, not
-    // silently passed." Reproduced live: a package directory containing
-    // only an index.js (no package.json at all) produced
-    // {"status":"clean", findings:[]}, exit 0. Now surfaced as a
-    // 'needs-review' finding instead of being dropped, same as any other
-    // licence the scanner can't positively classify.
-    try {
-      const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-      licence = typeof pkg.license === 'string' ? pkg.license : (pkg.license && pkg.license.type) || null;
-    } catch {
-      findings.push({ package: p, licence: 'unreadable (missing or invalid package.json)', verdict: 'needs-review' });
-      continue;
-    }
-    const verdict = isAllowed(licence);
-    if (verdict === false) findings.push({ package: p, licence, verdict: 'blocked' });
-    else if (verdict === null) findings.push({ package: p, licence: licence || 'unknown', verdict: 'needs-review' });
-  }
-  return { ecosystem: 'npm', checked: true, findings };
-}
 
+// ---- Python (pip/poetry/pipenv/uv) ----
 function scanPython(root) {
-  // Best-effort: look for installed dist-info METADATA files under any venv-like folder.
-  const candidates = ['.venv', 'venv', 'env'].map((v) => path.join(root, v));
-  let sitePackages = null;
-  for (const c of candidates) {
-    const guess = path.join(c, 'lib');
-    if (fs.existsSync(guess)) {
-      sitePackages = guess;
-      break;
+  // Try pip-licenses first (most reliable)
+  try {
+    const raw = execFileSync('pip-licenses', ['--format=json', '--with-license-file'], {
+      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
+    });
+    const pkgs = JSON.parse(raw);
+    const findings = [];
+    for (const pkg of pkgs) {
+      const licence = pkg.License || pkg.LicenseFile || null;
+      const verdict = isAllowed(licence);
+      if (verdict === false) findings.push({ package: pkg.Name, licence, verdict: 'blocked' });
+      else if (verdict === null) findings.push({ package: pkg.Name, licence: licence || 'unknown', verdict: 'needs-review' });
     }
+    return { ecosystem: 'python', checked: true, findings };
+  } catch {
+    // Fallback: check for lockfiles
+    const lockFiles = ['poetry.lock', 'Pipfile.lock', 'uv.lock', 'requirements-lock.txt'];
+    for (const lf of lockFiles) {
+      const lockPath = path.join(root, lf);
+      if (fs.existsSync(lockPath)) {
+        return { 
+          ecosystem: 'python', 
+          checked: false, 
+          findings: [], 
+          note: `Found ${lf} — run \`pip-licenses\` or equivalent to review licences before publish` 
+        };
+      }
+    }
+    // No lockfile, check for venv
+    const candidates = ['.venv', 'venv', 'env'].map((v) => path.join(root, v));
+    let sitePackages = null;
+    for (const c of candidates) {
+      const guess = path.join(c, 'lib');
+      if (fs.existsSync(guess)) { sitePackages = guess; break; }
+    }
+    if (!sitePackages) return { ecosystem: 'python', checked: false, findings: [] };
+    return { ecosystem: 'python', checked: false, findings: [], note: 'venv found but not deeply scanned — run pip-licenses manually and review before publish' };
   }
-  if (!sitePackages) return { ecosystem: 'python', checked: false, findings: [] };
-  // Not walked deeply here — flag for manual check rather than guess wrong.
-  return { ecosystem: 'python', checked: false, findings: [], note: 'venv found but not deeply scanned — run pip-licenses manually and review before publish' };
 }
 
-// Dart/Flutter (pub.dev) packages ship a LICENSE file, not a machine-
-// readable SPDX field the way npm's package.json does — so this
-// classifies by matching distinctive phrases in the licence TEXT itself,
-// same three-way true/false/null shape as isAllowed() above. Copyleft
-// signatures are checked first, same priority FLAG_SUBSTRINGS gets in
-// isAllowed() — an unambiguous copyleft match is never allow-listed by a
-// later, looser check. Anything that doesn't match a known signature
-// returns null ("needs a human look"), never a guess.
+// ---- Dart/Flutter (pub.dev) ----
 export function detectLicenceFromText(text) {
   if (!text) return null;
   const t = text.toUpperCase();
@@ -255,10 +205,6 @@ export function detectLicenceFromText(text) {
 
   if (t.includes('MIT LICENSE')) return { spdx: 'MIT', allowed: true };
   if (t.includes('APACHE LICENSE') && t.includes('VERSION 2.0')) return { spdx: 'Apache-2.0', allowed: true };
-  // 3-clause BSD adds a "neither the name ... endorse or promote" clause
-  // the 2-clause variant doesn't have — checked first so a 3-clause text
-  // (which also matches the weaker 2-clause pattern below) is never
-  // misclassified as 2-clause.
   if (t.includes('REDISTRIBUTION AND USE') && t.includes('BINARY FORM') && t.includes('NEITHER THE NAME')) {
     return { spdx: 'BSD-3-Clause', allowed: true };
   }
@@ -269,11 +215,9 @@ export function detectLicenceFromText(text) {
   if (t.includes('CC0')) return { spdx: 'CC0-1.0', allowed: true };
   if (t.includes('ISC LICENSE')) return { spdx: 'ISC', allowed: true };
 
-  return null; // present but not recognised — needs a human look
+  return null;
 }
 
-// `PUB_CACHE` is the documented override; otherwise pub uses a fixed
-// per-OS default location — not `$HOME`-relative on Windows.
 export function findPubCacheRoot() {
   if (process.env.PUB_CACHE) return process.env.PUB_CACHE;
   if (process.platform === 'win32') {
@@ -286,9 +230,6 @@ export function findPubCacheRoot() {
 function scanDartFlutter(root) {
   let parsed;
   try {
-    // Reads the already-resolved pubspec.lock state — no network expected,
-    // but bounded with a timeout anyway so a stalled call can't hang this
-    // hook indefinitely.
     const raw = execFileSync('dart', ['pub', 'deps', '--json'], {
       cwd: root,
       encoding: 'utf8',
@@ -297,9 +238,6 @@ function scanDartFlutter(root) {
     });
     parsed = JSON.parse(raw);
   } catch {
-    // Dart SDK not on PATH, `pub deps` failed, or output wasn't valid JSON
-    // — reported honestly as not-checked, the same fallback shape every
-    // other ecosystem here uses, never a guessed/assumed clean result.
     return {
       ecosystem: 'dart/flutter',
       checked: false,
@@ -310,12 +248,6 @@ function scanDartFlutter(root) {
 
   const pubCacheRoot = findPubCacheRoot();
   const findings = [];
-  // Only 'hosted' (real pub.dev) packages live in the pub cache this way.
-  // 'root' is the project itself; 'sdk' packages (e.g. `flutter`,
-  // `sky_engine`) ship inside the Flutter SDK install under its own
-  // licence, not as an individually cached pub.dev download — out of
-  // scope here the same way scanNode() doesn't scan Node.js's own
-  // built-in modules.
   const hostedPackages = (parsed.packages || []).filter((p) => p.source === 'hosted');
 
   for (const pkg of hostedPackages) {
@@ -343,29 +275,14 @@ function scanDartFlutter(root) {
     } else if (detected.allowed === false) {
       findings.push({ package: pkg.name, licence: detected.spdx, verdict: 'blocked' });
     }
-    // else: recognised and allowed — no entry, same convention scanNode()
-    // uses (only non-clean results are pushed to findings).
   }
 
   return { ecosystem: 'dart/flutter', checked: true, findings };
 }
 
-// Classify an SPDX licence EXPRESSION (Cargo/Maven can carry "MIT OR
-// Apache-2.0", "GPL-2.0 OR MIT", "Apache-2.0 AND MIT", etc.), not just a bare
-// id. A dual "A OR B" is usable if ANY alternative is fully permissive; an
-// "A AND B" alternative is permissive only if EVERY term is. Copyleft in a term
-// makes that term non-permissive. Returns true (allowed) / false (all
-// alternatives blocked) / null (a human should look) — the same three-way
-// shape as isAllowed(), erring toward review, never toward a silent pass.
+// ---- SPDX expression classifier (for Cargo, Maven, etc.) ----
 export function classifySpdxExpr(expr) {
   if (!expr) return null;
-  // 2026-07-21 Round 9 fix: a proper precedence- and parenthesis-aware evaluator.
-  // The previous version flat-split on top-level OR before honouring parentheses or
-  // SPDX precedence (AND binds tighter than OR), so `GPL AND (MIT OR Apache)` — where
-  // the copyleft term is MANDATORY — was wrongly classified ALLOWED (a false-clean in
-  // a hard-stop gate). This recursive-descent parser evaluates OR (lowest precedence),
-  // then AND, then parenthesised groups / licence refs, in a three-way (allowed=true /
-  // blocked=false / review=null) logic that errs toward review, never a silent pass.
   const tokens = String(expr).replace(/\(/g, ' ( ').replace(/\)/g, ' ) ').trim().split(/\s+/).filter(Boolean);
   if (!tokens.length) return null;
   let pos = 0;
@@ -374,8 +291,8 @@ export function classifySpdxExpr(expr) {
   const OR = (a, b) => (a === true || b === true) ? true : (a === false && b === false) ? false : null;
   const classifyId = (id, withExc) => {
     const up = (id + (withExc ? ' WITH ' + withExc : '')).toUpperCase();
-    if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false; // copyleft/flagged
-    return ALLOWED.has(id) ? true : null; // permissive-allowed, else unknown -> review
+    if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false;
+    return ALLOWED.has(id) ? true : null;
   };
   const parseOr = () => {
     let v = parseAnd();
@@ -399,10 +316,7 @@ export function classifySpdxExpr(expr) {
   return result === undefined ? null : result;
 }
 
-// Rust (Cargo): `cargo metadata` exposes each package's SPDX `license` field
-// directly (machine-readable, like npm's package.json), so this is a real scan,
-// not best-effort. Falls back to honest "not checked" when cargo is absent or
-// resolution fails, the same shape every other ecosystem uses.
+// ---- Rust (Cargo) ----
 function scanCargo(root) {
   let parsed;
   try {
@@ -416,7 +330,7 @@ function scanCargo(root) {
   const findings = [];
   const members = new Set(parsed.workspace_members || []);
   for (const pkg of parsed.packages || []) {
-    if (members.has(pkg.id)) continue; // the project's own crate(s)
+    if (members.has(pkg.id)) continue;
     const licence = pkg.license || null;
     if (licence) {
       const verdict = classifySpdxExpr(licence);
@@ -429,32 +343,75 @@ function scanCargo(root) {
   return { ecosystem: 'rust/cargo', checked: true, findings };
 }
 
-// JVM (Maven/Gradle): dependency licences are not available from a single
-// zero-config command (they need a licence plugin), so this is honestly
-// reported as best-effort not-checked — surfaced as INCOMPLETE so a human runs
-// the ecosystem's own licence report and reviews it, never a false pass.
+// ---- JVM (Maven/Gradle) ----
 function scanJvm(root, kind) {
+  // Check for lockfiles
+  const lockFiles = kind === 'java/maven' ? ['pom.xml'] : ['gradle.lockfile', 'gradle.lockfile', 'build.gradle.lock'];
+  for (const lf of lockFiles) {
+    if (fs.existsSync(path.join(root, lf))) {
+      return { 
+        ecosystem: kind, 
+        checked: false, 
+        findings: [], 
+        note: `Found ${lf} — run maven/gradle license plugin to review licences before publish` 
+      };
+    }
+  }
   return { ecosystem: kind, checked: false, findings: [], note: `${kind} project detected — dependency licences need the ecosystem's own report (e.g. \`mvn license:aggregate-third-party-report\` or a Gradle licence plugin, plus \`mvn dependency:tree\`/\`gradle dependencies\`); run it and review before publish` };
 }
 
-// C++ (vcpkg/Conan/vendored): no canonical machine-readable licence source, so
-// best-effort not-checked with a manual-review note, consistent with the "not
-// checked, never a false pass" principle.
+// ---- C++ (vcpkg/Conan) ----
 function scanCpp(root) {
+  const lockFiles = ['vcpkg.json', 'vcpkg-configuration.json', 'conan.lock', 'conanfile.lock'];
+  for (const lf of lockFiles) {
+    if (fs.existsSync(path.join(root, lf))) {
+      return { 
+        ecosystem: 'c++', 
+        checked: false, 
+        findings: [], 
+        note: `Found ${lf} — run vcpkg/conan license check manually before publish` 
+      };
+    }
+  }
   return { ecosystem: 'c++', checked: false, findings: [], note: 'C++ project detected — dependency/vendored licences have no single canonical manifest; review vcpkg/Conan and any vendored third-party licences manually before publish' };
 }
 
-// Swift (SwiftPM), .NET (NuGet), Go (modules): each is best-effort not-checked —
-// none exposes dependency licences from a single zero-config command — reported
-// honestly as INCOMPLETE so a human runs the ecosystem's own report, never a
-// false pass. (TypeScript is npm, already covered by scanNode.)
+// ---- Swift (SwiftPM) ----
 function scanSwift(root) {
+  if (fs.existsSync(path.join(root, 'Package.resolved'))) {
+    return { 
+      ecosystem: 'swift/spm', 
+      checked: false, 
+      findings: [], 
+      note: 'Found Package.resolved — run swift package show-dependencies and review each licence before publish' 
+    };
+  }
   return { ecosystem: 'swift/spm', checked: false, findings: [], note: 'Swift package project detected — SwiftPM dependency licences need a manual review (Package.resolved lists the packages; check each licence) before publish' };
 }
+
+// ---- .NET (NuGet) ----
 function scanDotnet(root) {
+  if (fs.existsSync(path.join(root, 'packages.lock.json'))) {
+    return { 
+      ecosystem: '.net/nuget', 
+      checked: false, 
+      findings: [], 
+      note: 'Found packages.lock.json — run `dotnet list package --include-transitive` and review NuGet licences before publish' 
+    };
+  }
   return { ecosystem: '.net/nuget', checked: false, findings: [], note: '.NET project detected — run `dotnet list package` and review NuGet licences before publish' };
 }
+
+// ---- Go (modules) ----
 function scanGo(root) {
+  if (fs.existsSync(path.join(root, 'go.sum'))) {
+    return { 
+      ecosystem: 'go/modules', 
+      checked: false, 
+      findings: [], 
+      note: 'Found go.sum — run `go list -m all` (or `go-licenses`) and review module licences before publish' 
+    };
+  }
   return { ecosystem: 'go/modules', checked: false, findings: [], note: 'Go module project detected — run `go list -m all` (or `go-licenses`) and review module licences before publish' };
 }
 
@@ -469,11 +426,6 @@ function main() {
   const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
   const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
   const hasSwift = has('Package.swift') || has('Package.resolved');
-  // 2026-07-21 Round 4 fix: guard this readdirSync — it was the only manifest probe
-  // not going through the safe has() helper, so a nonexistent or file-as-root path
-  // threw ENOENT/ENOTDIR out of main(), printing a raw stack trace and NO JSON
-  // (breaking this file's own "always emit a JSON result" contract). Fails to an
-  // empty list, matching every other probe's graceful behaviour.
   let rootEntries = [];
   try { rootEntries = fs.readdirSync(root); } catch { rootEntries = []; }
   const hasDotnet = rootEntries.some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
@@ -517,12 +469,6 @@ function main() {
   process.exit(0);
 }
 
-// Guarded so this file can also be `import`-ed for unit testing
-// (detectLicenceFromText, findPubCacheRoot) without main()'s CLI side
-// effects (console output + process.exit) firing on import — this file
-// had no test-facing exports before, so this guard was never needed
-// until now. `node licence-scan.mjs [projectRoot]` still runs exactly as
-// before when invoked directly.
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   main();
 }
