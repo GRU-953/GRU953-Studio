@@ -135,7 +135,7 @@ not size (2026-07-11 v2.0.0):
 | The moment the brief includes… | Wake these roles |
 | :-- | :-- |
 | An AI/LLM feature | `ai-developer` (any Tier — owns the prompt, the integration, the guardrails, and a small repeatable quality check) |
-| An AI/LLM feature that makes or meaningfully influences a decision about a real person (e.g. eligibility, scoring, moderation, recommendations with real consequences) — not just, say, a generated encouragement message | `responsible-ai-reviewer` (Standard+, an independent fairness/harm pass — 2026-07-11 narrowed from any Standard+ AI feature: an opus-tier role waking for a harmless AI "nice job!" message added cost with no matching risk) |
+| An AI/LLM feature | `responsible-ai-reviewer` (any Tier — an independent fairness/harm/transparency/over-reliance pass; 2026-07-25 audit fix: extended to all Tiers so no AI feature ships without independent review) |
 | A user interface | `accessibility-specialist` (any Tier); `ux-designer` (Standard+) |
 | Storing data beyond a session | `data-engineer` (Standard+) |
 | Money, logins, or personal data | `security-compliance-auditor`'s privacy review (personal-data minimisation, retention, consent, a plain notice) |

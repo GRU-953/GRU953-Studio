@@ -157,6 +157,61 @@ function bufIsTextish(buf) {
   return strIsTextish(head.toString('utf8'));
 }
 
+// ---- multi-pass decode/normalize pipeline (2026-07-25 audit fix) --------------
+// Attempt to decode common encodings/obfuscations before scanning for secrets.
+// Returns array of decoded text variants to scan (original + any decoded).
+function decodeAndNormalize(buf) {
+  const results = [];
+  const originalText = buf.toString('utf8');
+  results.push(originalText);
+
+  // Try UTF-16 LE/BE and UTF-32 LE/BE
+  for (const encoding of ['utf16le', 'utf16be', 'utf32le', 'utf32be']) {
+    try {
+      const decoded = buf.toString(encoding);
+      if (strIsTextish(decoded) && decoded !== originalText) {
+        results.push(decoded);
+      }
+    } catch {
+      // ignore decode errors
+    }
+  }
+
+  // Try base64 decode (common for embedded secrets)
+  try {
+    const b64 = originalText.trim();
+    // Check if it looks like base64 (proper length, valid chars)
+    if (/^[A-Za-z0-9+/=]+$/.test(b64) && b64.length % 4 === 0 && b64.length >= 20) {
+      const decoded = Buffer.from(b64, 'base64').toString('utf8');
+      if (strIsTextish(decoded) && decoded !== originalText) {
+        results.push(decoded);
+        // Recursively try nested encodings
+        const nested = decodeAndNormalize(Buffer.from(decoded, 'utf8'));
+        for (const n of nested) if (!results.includes(n)) results.push(n);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // Try gzip/deflate decode (sync)
+  try {
+    const zlib = require('node:zlib');
+    const decompressed = zlib.gunzipSync(buf);
+    const decoded = decompressed.toString('utf8');
+    if (strIsTextish(decoded) && decoded !== originalText) {
+      results.push(decoded);
+      const nested = decodeAndNormalize(decompressed);
+      for (const n of nested) if (!results.includes(n)) results.push(n);
+    }
+  } catch {
+    // ignore
+  }
+
+  // Deduplicate
+  return [...new Set(results)];
+}
+
 function main() {
   const INPUT = readStdin();
   const CMD = extractCommand(INPUT);
@@ -266,13 +321,18 @@ function main() {
   // Scan one file's text for both secret patterns in a single pass over its lines
   // (was two separate passes). The `// scan-allow` marker exempts an annotated
   // test-fixture line, exactly as the per-file scan did.
+  // 2026-07-25: Multi-pass decode/normalize pipeline — try base64, gzip, UTF-16/32
+  // before scanning so encoded secrets are caught.
   const scanText = (text, file) => {
-    const lines = text.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-    for (let i = 0; i < lines.length; i++) {
-      const ln = lines[i];
-      if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(i + 1));
-      if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(i + 1));
+    const variants = decodeAndNormalize(Buffer.from(text, 'utf8'));
+    for (const variant of variants) {
+      const lines = variant.split(/\r?\n/);
+      if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+      for (let i = 0; i < lines.length; i++) {
+        const ln = lines[i];
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(i + 1));
+        if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(i + 1));
+      }
     }
   };
   // 2026-07-21 Round 12 audit fix (undisclosed size cap, medium): a would-ship
@@ -313,9 +373,22 @@ function main() {
         const text = leftover + slice.toString('utf8').split(String.fromCharCode(0)).join('\n');
         const parts = text.split('\n');
         leftover = parts.pop(); // carry the incomplete last line to the next chunk
-        for (const ln of parts) scanLine(ln);
+        for (const ln of parts) {
+          // 2026-07-25: Multi-pass decode/normalize for large files too
+          const variants = decodeAndNormalize(Buffer.from(ln, 'utf8'));
+          for (const variant of variants) {
+            const lines = variant.split(/\r?\n/);
+            for (const vln of lines) scanLine(vln);
+          }
+        }
       }
-      if (leftover.length > 0) scanLine(leftover);
+      if (leftover.length > 0) {
+        const variants = decodeAndNormalize(Buffer.from(leftover, 'utf8'));
+        for (const variant of variants) {
+          const lines = variant.split(/\r?\n/);
+          for (const vln of lines) scanLine(vln);
+        }
+      }
     } finally {
       try {
         fs.closeSync(fd);
@@ -399,9 +472,13 @@ function main() {
       // binary-tailed file (e.g. a DB dump): the tree scan caught its secret, the
       // history scan skipped it. Head-sampling restores true parity.
       if (!strIsTextish(content.length > 65536 ? content.slice(0, 65536) : content)) return; // genuine binary file — not content-scanned
-      for (const ln of content.split(String.fromCharCode(0)).join('\n').split('\n')) {
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
-        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+      // 2026-07-25: Multi-pass decode/normalize for history scan
+      const variants = decodeAndNormalize(Buffer.from(content, 'utf8'));
+      for (const variant of variants) {
+        for (const ln of variant.split(String.fromCharCode(0)).join('\n').split('\n')) {
+          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
+          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+        }
       }
     };
     for (const raw of r.stdout.toString('utf8').split('\n')) {
@@ -449,9 +526,14 @@ function main() {
       const z = rec.indexOf(Z);
       if (z === -1) continue;
       const sha = (rec.slice(0, z).match(/[0-9a-f]+/i) || ['commit'])[0].slice(0, 12);
-      for (const ln of rec.slice(z + 1).split('\n')) {
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-commit-message', sha, '0');
-        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-commit-message', sha, '0');
+      const message = rec.slice(z + 1);
+      // 2026-07-25: Multi-pass decode/normalize for commit messages
+      const variants = decodeAndNormalize(Buffer.from(message, 'utf8'));
+      for (const variant of variants) {
+        for (const ln of variant.split('\n')) {
+          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-commit-message', sha, '0');
+          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-commit-message', sha, '0');
+        }
       }
     }
   };
@@ -476,9 +558,13 @@ function main() {
       const msg = git(['tag', '-l', '--format=%(contents)', name], REPO); // exact-name match (no glob chars)
       if (!msg.ok || !msg.stdout) continue;
       const tag = name.replace(/[^A-Za-z0-9_./-]/g, '') || 'tag';
-      for (const ln of msg.stdout.split('\n')) {
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-tag-message', tag, '0');
-        if (SECRETVAR_RE.test(ln)) addFinding('secret-var-tag-message', tag, '0');
+      // 2026-07-25: Multi-pass decode/normalize for tag messages
+      const variants = decodeAndNormalize(Buffer.from(msg.stdout, 'utf8'));
+      for (const variant of variants) {
+        for (const ln of variant.split('\n')) {
+          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-tag-message', tag, '0');
+          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-tag-message', tag, '0');
+        }
       }
     }
   };
