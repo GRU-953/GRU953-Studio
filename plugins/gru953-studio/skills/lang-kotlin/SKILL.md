@@ -40,3 +40,15 @@ The shared toolchain knowledge for Kotlin work (JVM and Android), so the
   (`./gradlew dependencies` plus a Gradle/Maven licence plugin) and review
   before Publish.
 - Every added dependency passes the `yagni-rules` ladder.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "./gradlew build"
+  test: "./gradlew test"
+  lint: "./gradlew detekt"
+  format: "./gradlew ktlintCheck"
+  deps: "./gradlew build"
+  dev_env: "mise install java@latest"
+```

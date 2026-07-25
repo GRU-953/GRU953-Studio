@@ -102,22 +102,25 @@ is never silently built.
 
 Assigned once the brief is confirmed via a checkable rule, not a vibe —
 2026-07-10 audit fix: "a typical web app" as an example let almost any real
-request round up to Standard by default. Ask three yes/no questions and
+request round up to Standard by default. Ask three guided questions and
 map the answer:
 
-1. Does it store user data beyond the current session? (Y/N)
-2. Does it handle money, authentication/logins, or personal data? (Y/N)
-3. Does it connect to two or more other apps or websites (e.g. a payment
-   provider and a Google sign-in)? (Y/N) (2026-07-11 Round 9 comprehension
-   fix: reworded from "integrate two or more external services," jargon a
-   non-technical user answering this pop-up wouldn't necessarily know)
+**Q1: Will your app remember users between visits?**
+   Examples: "Users log in and see their own dashboard", "Shopping cart remembers items", "User preferences saved"
+   [Yes] [No] [I'm not sure — explain with examples]
 
-- **All No → Tiny.** A single static page, a small script, a one-off
-  utility.
-- **Any one Yes → Standard.** A typical web app, a tool with a database or
-  logins.
-- **Money/personal-data Yes, or 2+ integrations → Complex.** Anything
-  handling money, personal data, or multiple integrated services.
+**Q2: Does your app handle money, passwords, or personal info (names, emails, health)?**
+   Examples: "Processes credit cards", "Stores user passwords", "Collects emails for newsletter"
+   [Yes] [No] [I'm not sure — explain with examples]
+
+**Q3: Will your app connect to two or more other services (e.g. Stripe for payments AND Google for login)?**
+   Examples: "Users pay with Stripe", "Login with Google", "Send emails via SendGrid"
+   [Yes — 2 or more] [Yes — just 1] [None] [I'm not sure — explain with examples]
+
+Mapping:
+- **All No → Tiny.** A single static page, a small script, a one-off utility.
+- **Any one Yes → Standard.** A typical web app, a tool with a database or logins.
+- **Money/personal-data Yes, or 2+ integrations → Complex.** Anything handling money, personal data, or multiple integrated services.
 
 Record the three answers and the resulting Tier in `OBJECTIVE.md` so it's
 auditable later, not just asserted. Show the user the Tier and what it
@@ -139,7 +142,7 @@ not size (2026-07-11 v2.0.0):
 | The moment the brief includes… | Wake these roles |
 | :-- | :-- |
 | An AI/LLM feature | `ai-developer` (any Tier — owns the prompt, the integration, the guardrails, and a small repeatable quality check) |
-| An AI/LLM feature that makes or meaningfully influences a decision about a real person (e.g. eligibility, scoring, moderation, recommendations with real consequences) — not just, say, a generated encouragement message | `responsible-ai-reviewer` (Standard+, an independent fairness/harm pass — 2026-07-11 narrowed from any Standard+ AI feature: an opus-tier role waking for a harmless AI "nice job!" message added cost with no matching risk) |
+| An AI/LLM feature | `responsible-ai-reviewer` (any Tier — an independent fairness/harm/transparency/over-reliance pass; 2026-07-25 audit fix: extended to all Tiers so no AI feature ships without independent review) |
 | A user interface | `accessibility-specialist` (any Tier); `ux-designer` (Standard+) |
 | Storing data beyond a session | `data-engineer` (Standard+) |
 | Money, logins, or personal data | `security-compliance-auditor`'s privacy review (personal-data minimisation, retention, consent, a plain notice) |

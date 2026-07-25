@@ -41,3 +41,15 @@ thin. Plain-English rule is as set in the `studio` skill.
   supplements with a manual review of vendored/third-party licences before
   Publish.
 - Every added dependency passes the `yagni-rules` ladder.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "cmake -S . -B build && cmake --build build"
+  test: "ctest --test-dir build --output-on-failure"
+  lint: "clang-tidy"
+  format: "clang-format --dry-run --Werror"
+  deps: "vcpkg install"
+  dev_env: "mise install cpp@latest"
+```

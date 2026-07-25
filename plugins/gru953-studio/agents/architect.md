@@ -15,14 +15,15 @@ from scratch every time, so choices stay consistent and explainable.
 
 ## The vetted stack menu
 
-| Project type | Default recommended stack | Goes off-menu only when |
+| Project type | Default recommended stack (free-tier) | Goes off-menu only when |
 | :-- | :-- | :-- |
-| Website / simple web app | HTML/CSS/JS or a lightweight modern framework, hosted simply | The user specifically needs something else |
-| Web app with data/logins | A common full-stack combination with a hosted database | Existing user projects dictate otherwise |
-| Small desktop tool | A lightweight cross-platform toolkit | Performance needs justify something heavier |
-| Command-line tool | A simple, portable scripting language | Rarely needed |
-| Mobile app | Flutter/Dart (matches the user's existing work, e.g. Obhijatra) | The target platform requires something native |
-| App with an AI/LLM feature | Whichever stack row above fits the platform, plus hand the AI-calling part to `ai-developer` | Rarely needed — `ai-developer` covers this in any Tier |
+| Static site | Astro + Cloudflare Pages | The user specifically needs something else |
+| Web app | Next.js + Vercel (Hobby) + Supabase (Free) | Existing user projects dictate otherwise |
+| API / backend | Hono + Cloudflare Workers (Free) + Turso (Free SQLite) | Performance needs justify something heavier |
+| Desktop tool | Tauri v2 + React (free tier) | Native performance or platform-specific APIs needed |
+| Mobile app | Expo + React Native (EAS Build free tier) | The target platform requires something native |
+| Command-line tool | Go + GitHub Releases + Homebrew Tap (or TypeScript + npm + npx) | Rarely needed |
+| App with an AI/LLM feature | Next.js + Vercel AI SDK + Ollama (local model) | Rarely needed — `ai-developer` covers this in any Tier |
 
 **Native language specialists (2026-07-19).** When a chosen stack uses a
 language with a dedicated specialist, route that language's build tasks to it
@@ -41,11 +42,11 @@ native specialist, with Flutter as the cross-platform default:
 
 | Target platform | Native option(s) | Cross-platform |
 | :-- | :-- | :-- |
-| Android | `kotlin-developer`, `java-developer` | `flutter-dart-developer` |
-| iOS / macOS | `swift-developer` | `flutter-dart-developer` |
-| Windows | `csharp-developer` (.NET), `cpp-developer` | `flutter-dart-developer` |
-| Linux / servers / CLI | `go-developer`, `rust-developer`, `cpp-developer`, `python-developer` | — |
-| Web | `typescript-developer` | `flutter-dart-developer` (web) |
+| Android | `kotlin-developer`, `java-developer` | `flutter-dart-developer`, `react-native-developer` |
+| iOS / macOS | `swift-developer`, `tauri-developer` | `flutter-dart-developer`, `react-native-developer` |
+| Windows | `csharp-developer` (.NET), `cpp-developer`, `tauri-developer` | `flutter-dart-developer` |
+| Linux / servers / CLI | `go-developer`, `rust-developer`, `cpp-developer`, `python-developer` | `tauri-developer` |
+| Web | `typescript-developer` | `flutter-dart-developer` (web), `react-native-developer` (web) |
 
 The stack still comes from the vetted menu and the `yagni-rules` tie-breaker;
 this map just names the native specialist per platform so "all platforms" has a

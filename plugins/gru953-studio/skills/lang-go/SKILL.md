@@ -37,3 +37,15 @@ skill.
   when available).
 - Every added module passes the `yagni-rules` ladder — the standard library
   first, as Go itself encourages.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "go build ./..."
+  test: "go test -race ./..."
+  lint: "go vet ./... && staticcheck ./..."
+  format: "gofmt -l ."
+  deps: "go get"
+  dev_env: "mise install go@latest"
+```

@@ -33,5 +33,17 @@ stays thin. Plain-English rule is as set in the `studio` skill.
 - Dependencies are declared in `requirements.txt` or `pyproject.toml`, resolved
   into the venv.
 - `hooks/licence-scan.mjs` inspects an installed venv (best-effort); a deeper
-  pass uses `pip-licenses` when available. `security-compliance-auditor` runs
-  the scan before Publish, and `pip-audit` covers known vulnerabilities.
+   pass uses `pip-licenses` when available. `security-compliance-auditor` runs
+   the scan before Publish, and `pip-audit` covers known vulnerabilities.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "python -m venv .venv && . .venv/bin/activate && python -m build"
+  test: "pytest -q"
+  lint: "ruff check ."
+  format: "ruff format --check ."
+  deps: "pip install"
+  dev_env: "mise install python@latest"
+```

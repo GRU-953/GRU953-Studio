@@ -86,6 +86,37 @@ Standard/Complex Tier, the `GRAPH.md` node and links for what changed (see the
 `memory-graph` skill). Checkpoint at every stage boundary — before starting the
 next stage, never after — so an interrupted session loses nothing.
 
+### Git-Backed Memory (2026-07-25 audit fix)
+
+Every memory write is also recorded as a signed Git commit on a private
+`memory/session-<id>` branch, providing full audit trail, conflict resolution,
+and the ability to roll back or review memory changes:
+
+1. After the secrets-scan passes, stage the modified memory files: `git add Dev-Memory/`
+2. Commit with a conventional message and DCO sign-off:
+   `git commit -s -m "memory: update FOCUS + PROGRESS [session: <session-id>]"`
+3. Push to the private memory branch: `git push origin memory/session-<session-id>`
+4. On Standard/Complex Tier, major memory changes (Tier changes, architecture
+   decisions) additionally open a PR-like review via `confirm-memory-persist.mjs`
+   before the memory push.
+
+This is separate from cloud persistence (which pushes the entire Dev-Memory
+folder to a private branch). Git-backed memory writes happen on **every** memory
+update, not just cloud persistence, and provide per-change history.
+
+### Schema Validation (2026-07-25 audit fix)
+
+Memory files are validated against JSON schemas before every write to prevent
+drift and corruption. Schemas live in `skills/dev-memory/schemas/`:
+
+- `FOCUS.schema.json` — objective, activePhase, activeTask, topConstraints
+- `INDEX.schema.json` — entity, where, summary, tags, lastTouched
+- `GRAPH.schema.json` — nodeId, type, links[]
+- `LESSONS.schema.json` — date, task, type, pattern, lesson, severity, tags[]
+
+Validation is performed by `memory-keeper` using `ajv` before any memory write.
+A schema violation blocks the write and surfaces the error to the Project Lead.
+
 ## Learning from mistakes (2026-07-11 addition)
 
 Whenever a real mistake surfaces — a wrong assumption that cost a redo, a

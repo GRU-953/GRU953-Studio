@@ -36,3 +36,15 @@ The shared toolchain knowledge for Dart/Flutter work, so the
 - `hooks/licence-scan.mjs` already reads `dart pub deps --json` and matches
   LICENSE text; `security-compliance-auditor` runs it before Publish.
 - Every added package still passes the `yagni-rules` ladder.
+
+## Interface Contract (for `repo-integrity.mjs` INV11)
+
+```yaml
+commands:
+  build: "flutter build <target>"
+  test: "flutter test"
+  lint: "flutter analyze"
+  format: "dart format --set-exit-if-changed ."
+  deps: "flutter pub add"
+  dev_env: "mise install flutter@latest"
+```

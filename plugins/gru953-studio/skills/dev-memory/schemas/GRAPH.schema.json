@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GRAPH.md schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["nodeId", "type", "links"],
+    "properties": {
+      "nodeId": {
+        "type": "string",
+        "description": "Unique node identifier"
+      },
+      "type": {
+        "type": "string",
+        "enum": ["requirement", "task", "decision", "file", "module", "component", "api", "test", "lesson"],
+        "description": "Node type for graph queries"
+      },
+      "links": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["target", "relation"],
+          "properties": {
+            "target": {
+              "type": "string",
+              "description": "Target nodeId"
+            },
+            "relation": {
+              "type": "string",
+              "enum": ["traces-to", "depends-on", "implements", "tests", "decided-in", "lesson-from"],
+              "description": "Typed relationship"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "metadata": {
+        "type": "object",
+        "description": "Optional type-specific metadata"
+      }
+    },
+    "additionalProperties": false
+  }
+}

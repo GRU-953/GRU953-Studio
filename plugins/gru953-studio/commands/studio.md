@@ -10,8 +10,14 @@ pipeline exactly.
 
   IDEA: $ARGUMENTS
 
-- First check whether the assistant's own memory shows the first-run setup
-  is done; if not, run the `first-run` skill before anything else.
+- First, check whether the user has completed first-run onboarding.
+  If not, run the `first-run` skill which includes:
+  1. Welcome screen (30 seconds)
+  2. Guided first-run setup (4 questions via pop-up MCQs)
+  3. Guided demo project: build a Tiny "Hello World" CLI, auto-test, auto-publish to GitHub
+  4. Celebration + dashboard tour
+  Then move into their actual project.
+
 - Then check for a `Dev-Memory/` folder in the current working directory.
   If it exists, this is a RESUME: read the task table in
   `Dev-Memory/PROGRESS.md`, the tail of `Dev-Memory/SESSION-LOG.md`, and

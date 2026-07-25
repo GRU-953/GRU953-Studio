@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LESSONS.md schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["date", "task", "type", "pattern", "lesson", "severity", "tags"],
+    "properties": {
+      "date": {
+        "type": "string",
+        "format": "date",
+        "description": "ISO 8601 date (YYYY-MM-DD)"
+      },
+      "task": {
+        "type": "string",
+        "description": "Task ID where the lesson was learned (e.g., T12)"
+      },
+      "type": {
+        "type": "string",
+        "enum": ["bug_fix", "process_failure", "wrong_assumption", "user_correction", "security_issue", "performance"],
+        "description": "Category of lesson"
+      },
+      "pattern": {
+        "type": "string",
+        "description": "The recurring pattern or anti-pattern"
+      },
+      "lesson": {
+        "type": "string",
+        "description": "The corrected rule going forward"
+      },
+      "severity": {
+        "type": "string",
+        "enum": ["low", "medium", "high", "critical"],
+        "description": "Impact severity"
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Searchable tags for cross-project recall"
+      },
+      "distilled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether this was distilled to cross-project common-pitfalls.md"
+      }
+    },
+    "additionalProperties": false
+  }
+}

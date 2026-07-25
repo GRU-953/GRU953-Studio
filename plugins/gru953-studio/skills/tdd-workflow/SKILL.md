@@ -60,11 +60,53 @@ applies elsewhere.
   diff existed?" as one more correctness check, the same way it already
   checks the verification command's own output.
 
-## What this does not do
+## Structured Evidence Format (2026-07-25 audit fix)
 
-- Does not apply to Tiny Tier, or to work outside the Build stage.
-- Does not require a full test suite before every task — one targeted
-  test per task's own acceptance criterion, not exhaustive coverage.
-- Does not change who writes the *broader* test plan or runs the final
-  regression pass — `tester` still owns both, exactly as `tester.md`
-  already describes.
+All task verification evidence is now recorded in a **machine-parseable JSON
+format** embedded in the PROGRESS.md table's Notes column, replacing the old
+free-text `verified:` format. This enables CI dashboards, historical trend
+analysis, and automated audit trails.
+
+### JSON Evidence Schema
+
+```json
+{
+  "taskId": "T3",
+  "criterion": "User can reset password via email",
+  "command": "pytest tests/test_auth.py::test_password_reset -v --json-report",
+  "exitCode": 0,
+  "stdout": "1 passed in 1.24s",
+  "stderr": "",
+  "durationMs": 1240,
+  "artifacts": ["coverage.xml", "report.html"],
+  "timestamp": "2026-07-25T10:30:00Z",
+  "verifier": "tester"
+}
+```
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `taskId` | string | Yes | Task ID from PROGRESS.md (e.g., "T3") |
+| `criterion` | string | Yes | The acceptance criterion being verified |
+| `command` | string | Yes | Exact command run to verify |
+| `exitCode` | integer | Yes | Process exit code (0 = success) |
+| `stdout` | string | Yes | Command stdout (truncated if large) |
+| `stderr` | string | Yes | Command stderr |
+| `durationMs` | integer | Yes | Wall-clock duration in milliseconds |
+| `artifacts` | string[] | No | Paths to generated artifacts (reports, coverage, etc.) |
+| `timestamp` | string | Yes | ISO 8601 UTC timestamp |
+| `verifier` | string | Yes | Role that produced the evidence ("tester", "builder", etc.) |
+
+### Verification
+
+The `verify-progress.mjs` hook (PreToolUse) parses this JSON and accepts it as
+valid evidence alongside the legacy `verified:` format. Both formats are
+supported for backward compatibility during migration.
+
+### Migration
+
+- Tiny Tier: Use the JSON format for the single smoke test per task
+- Standard/Complex Tier: Use JSON format for all TDD and regression evidence
+- Legacy `verified:` format still accepted but new evidence should use JSON
