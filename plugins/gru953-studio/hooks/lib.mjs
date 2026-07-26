@@ -953,7 +953,24 @@ export function normalizeForPushCheck(c) {
   // go-public regexes missed them, while bash ran a real `--public` /
   // `--visibility=public` — an obfuscated going-public bypass that passed
   // with only the private-publish token. Now `\X` -> `X` for any X.
-  n = n.replace(/\\([^\r\n])/g, '$1'); // p\ush -> push, -\-public -> --public
+  //
+  // 2026-07-26 Wave 2 CI fix (Windows-only failure, reproduced: `not ok 13`,
+  // `'deny' !== 'allow'`). This comment already said "outside quotes", but
+  // the implementation below was a blanket `replace` blind to quoting, same
+  // bug class Round 5 fixed for the compound-operator check. Real bash only
+  // unescapes `\X` -> `X` unconditionally OUTSIDE quotes; inside double
+  // quotes it unescapes only `\$`, `` \` ``, `\"` and `\\` (any other `\X`
+  // stays literal backslash-then-X — bash does not touch it), and inside
+  // single quotes nothing is ever unescaped. The blanket version destroyed
+  // every backslash in any quoted argument, including a native Windows path
+  // like `"D:\a\...\confirm-publish.mjs"` — which is exactly what
+  // hooks.test.mjs feeds the confirm-script exemption, so `path.basename()`
+  // downstream in isConfirmScriptOnly() no longer saw `confirm-publish.mjs`
+  // and the exemption silently stopped applying on windows-latest CI.
+  // This does not reopen Round 6: `gh repo edit me/app "-\-public"` is not a
+  // real bash evasion either way, because double quotes never unescape
+  // `\-`; the unquoted case Round 6 actually cares about is untouched here.
+  n = unescapeBackslashesRespectingQuotes(n); // p\ush -> push, -\-public -> --public; quoted backslashes left alone
   n = n.replace(/\$\{IFS\}|\$IFS\b/g, ' '); // git${IFS}push -> git push
   let prev;
   do {
@@ -968,6 +985,53 @@ export function normalizeForPushCheck(c) {
       .replace(/(?<=[A-Za-z0-9_"'-])(["'])([A-Za-z0-9_-])/g, '$2');
   } while (n !== prev);
   return n;
+}
+// 2026-07-26 Wave 2 CI fix — see the call site in normalizeForPushCheck for
+// the full story. Quote-aware backslash unescaping: outside any quotes,
+// `\X` unescapes to `X` for any X (the Round 6 obfuscation case); inside
+// double quotes, only bash's own four recognised escapes (`\$`, `` \` ``,
+// `\"`, `\\`) unescape, everything else stays literal backslash-then-char;
+// inside single quotes nothing is ever unescaped (bash forbids an embedded
+// literal `'` there at all, so meeting one always closes the quote).
+function unescapeBackslashesRespectingQuotes(s) {
+  let out = '';
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inSingle) {
+      out += ch;
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '\\' && i + 1 < s.length && '$`"\\'.includes(s[i + 1])) {
+        out += s[i + 1];
+        i++;
+        continue;
+      }
+      out += ch;
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (ch === '\\' && i + 1 < s.length && s[i + 1] !== '\r' && s[i + 1] !== '\n') {
+      out += s[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      out += ch;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 // 2026-07-11 v2.0.1 follow-up fix (real deadlock, found live): the
 // "script name contains deploy/release/publish/ship" indirection rule

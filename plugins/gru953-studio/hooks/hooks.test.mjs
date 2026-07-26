@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
-import { isPushCapable } from './lib.mjs';
+import { isPushCapable, normalizeForPushCheck } from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages, resolveExecutable } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -292,6 +292,30 @@ test('gate.mjs/scan.mjs: invoking confirm-publish.mjs ITSELF as a Bash command i
   const decoy = `git push origin main; node confirm-publish.mjs`;
   assert.equal(isPushCapable(decoy), true, 'a real push must not be exempted just because the string also mentions confirm-publish.mjs');
   fs.rmSync(dir, RM_OPTS);
+});
+
+test('lib.mjs normalizeForPushCheck: a quoted Windows path keeps its backslashes (2026-07-26 Windows CI fix, reproduced: `not ok 13`)', () => {
+  // Found on the windows-latest CI leg, not locally (this repo's own Linux
+  // sandbox can never reproduce it directly — `path.basename` there is
+  // POSIX, so it was never exercised the way it is on a real win32 Node).
+  // The blanket "un-escape a backslash before ANY character" step used to
+  // run with no quote awareness at all, so a genuine Windows path passed to
+  // the confirm-script exemption as a quoted argument
+  // (`node "D:\a\...\confirm-publish.mjs" "D:\a\..."`) had every backslash
+  // stripped before `path.basename()` ever saw it, corrupting the path into
+  // one run-on word and silently defeating the exemption. This asserts the
+  // string-transform half of the fix directly (platform-independent); the
+  // `path.win32.basename` half cannot be exercised on this Linux sandbox and
+  // is instead verified by the windows-latest CI leg passing.
+  const winPath = 'D:\\a\\GRU953-Studio\\GRU953-Studio\\plugins\\gru953-studio\\hooks\\confirm-publish.mjs';
+  const doubleQuoted = normalizeForPushCheck(`node "${winPath}" "D:\\a\\tmp\\x"`);
+  assert.ok(doubleQuoted.includes(winPath), `backslashes in a double-quoted path must survive: ${doubleQuoted}`);
+  // Real bash: single quotes never unescape anything, not even a backslash.
+  const singleQuoted = normalizeForPushCheck(`node '${winPath}'`);
+  assert.ok(singleQuoted.includes(winPath), `backslashes in a single-quoted path must survive: ${singleQuoted}`);
+  // The 2026-07-11 Round 6 obfuscation this line exists for is UNQUOTED and
+  // must still be defeated — this fix narrows scope to quoted text only.
+  assert.match(normalizeForPushCheck('gh repo edit me/app -\\-public'), /--public/);
 });
 
 test('lib.mjs isConfirmScriptOnly: exact basename only, never a suffix/substring match (2026-07-11 Round 3 audit fix)', () => {
@@ -2207,6 +2231,19 @@ test('auto-update.mjs: a clean fast-forward is applied and reported as success',
   const top = mkTmp('gru-au-top-');
   git(['clone', '-q', bareDir, top], mkTmp('gru-au-cwd2-'));
   git(['reset', '-q', '--hard', 'HEAD~1'], top); // behind by one commit, no local edits
+  // 2026-07-26 Windows CI fix (reproduced: `not ok 119`, actual came back
+  // 'hello\r\nupdate\r\n'). runAutoUpdate() below deliberately spawns the
+  // real script with NO env override (auto-update.mjs is production code —
+  // it must not require gitEnv()'s hermetic config to behave), so its own
+  // `git pull` reads whatever autocrlf setting the host has. GitHub's
+  // windows-latest runners set core.autocrlf=true in the system config, so
+  // the pull silently rewrote this fixture's LF content to CRLF on
+  // checkout — real, standard git behaviour, not a bug in auto-update.mjs.
+  // A local repo config always wins over system/global, so pinning it here
+  // (matching what initRepo() does for every other fixture) makes the
+  // fixture's own line endings the thing under test, deterministic on every
+  // platform, rather than an artifact of the runner's global git config.
+  git(['config', 'core.autocrlf', 'false'], top);
   const scriptPath = addAutoUpdateScaffolding(top);
 
   const r = runAutoUpdate(scriptPath);
