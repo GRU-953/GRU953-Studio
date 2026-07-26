@@ -12,6 +12,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 
 // ---- decision helpers --------------------------------------------------------
 // Output is built with JSON.stringify, never hand-interpolated: a reason
@@ -115,6 +116,42 @@ export function findStudioRoot(start) {
     const parent = path.dirname(d);
     if (parent === d) return null;
     d = parent;
+  }
+}
+
+// Node's own fs system-error messages already start with the error code
+// (e.g. "EISDIR: illegal operation..."), so only prepend e.code when the
+// message doesn't already carry it — otherwise a formatted message reads
+// "EISDIR: EISDIR: ...". Shared by writeConfirmationRecordOrExit below and
+// roster-check.mjs's own guarded read, so the two don't drift apart.
+export function formatFsError(e) {
+  return e.message && e.code && e.message.startsWith(e.code) ? e.message : `${e.code || 'error'}: ${e.message}`;
+}
+
+// 2026-07-26 audit finding (further pass after stage 2): all four
+// confirm-*.mjs scripts (confirm-checkpoint, confirm-go-public,
+// confirm-memory-persist, confirm-publish) wrote their token record with a
+// bare, unguarded `fs.writeFileSync` — reproduced by execution: making the
+// target path a directory instead of a file (a plausible outcome of a stray
+// `mkdir`, a bad merge, or a case-folding artefact on Windows/macOS) throws
+// `EISDIR` with a full Node stack trace to stderr and exit 1, the exact
+// "never show a raw stack trace" guarantee this codebase otherwise enforces
+// everywhere else. A read-only Dev-Memory (EACCES), a full disk (ENOSPC) or
+// a read-only mount (EROFS) would fail the same way. Centralised here so
+// all four scripts get one plain-English failure message instead of four
+// copies that could drift, matching how this file already centralises
+// findStudioRoot() for the same four scripts.
+export function writeConfirmationRecordOrExit(record, content, label) {
+  try {
+    fs.writeFileSync(record, content, 'utf8');
+  } catch (e) {
+    process.stderr.write(
+      `${label}: could not write the confirmation record at ${record} ` +
+        `(${formatFsError(e)}). Check that Dev-Memory is a writable folder — ` +
+        `not a file or directory in the wrong place, not read-only, and the ` +
+        `disk is not full — then try again.\n`,
+    );
+    process.exit(1);
   }
 }
 
@@ -905,6 +942,21 @@ export function normalizeForPushCheck(c) {
     const varRe = new RegExp('\\$\\{' + varName + '\\}|\\$' + varName + '\\b', 'g');
     n = n.replace(varRe, () => value);
   }
+  // 2026-07-26 further-pass audit note: a background review agent found that
+  // this pair of replaces runs blind to quoting, so ordinary quoted prose
+  // containing a brace-comma pattern (e.g. `echo "use {git,push} carefully"`)
+  // gets "expanded" and can trip the downstream keyword match. A fix scoping
+  // this to bare (unquoted) text ONLY was attempted and reverted: it broke an
+  // existing, deliberately-crafted test one test below
+  // (`{g""it,pu""sh} origin main`) — real bash actually DOES treat the comma
+  // there as a live separator, because bash's brace expansion runs before
+  // quote removal and only cares whether a character is quoted at the exact
+  // tokenization point, not whether the overall `{...}` spans a quoted
+  // sub-segment. A quote-scoped version of this specific transform would
+  // need to track that same subtlety to stay correct, and getting it wrong
+  // in the unsafe direction (missing a real push) is worse than leaving this
+  // as a narrow, safe-direction-only false positive. Left as a disclosed
+  // residual limitation — see AUDIT-2026-07.md.
   n = n.replace(/\{([A-Za-z0-9]+)\.\.\1\}/g, '$1'); // degenerate {X..X} range -> X
   n = n.replace(/\{([^{}]*,[^{}]*)\}/g, (_m, list) => list.split(',').join(' '));
   // 2026-07-11 Round 7 security fix: ANSI-C quoting (`$'public'`) resolves
@@ -1033,6 +1085,7 @@ function unescapeBackslashesRespectingQuotes(s) {
   }
   return out;
 }
+
 // 2026-07-11 v2.0.1 follow-up fix (real deadlock, found live): the
 // "script name contains deploy/release/publish/ship" indirection rule
 // below correctly treats an arbitrary project script that might hide a

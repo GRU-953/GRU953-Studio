@@ -14,11 +14,10 @@
 // projectRoot defaults to the current working directory. The directory must
 // already contain (or be inside) a `Dev-Memory` folder.
 
-import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
-import { findStudioRoot } from './lib.mjs';
+import { findStudioRoot, writeConfirmationRecordOrExit } from './lib.mjs';
 
 function main() {
   const start = process.argv[2] || process.cwd();
@@ -42,7 +41,10 @@ function main() {
   // failure mode without breaking the legitimate multi-command publish
   // sequence (push, tag, release create, release upload), which normally
   // completes in well under the window.
-  fs.writeFileSync(record, `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'utf8');
+  // 2026-07-26 audit fix: was a bare writeFileSync (reproduced: EISDIR with a
+  // raw stack trace when the target is a directory instead of a file — see
+  // lib.mjs's writeConfirmationRecordOrExit for the full reproduction).
+  writeConfirmationRecordOrExit(record, `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'confirm-publish');
   process.stdout.write('confirm-publish: recorded publish confirmation for ' + studioRoot + '\n');
 }
 

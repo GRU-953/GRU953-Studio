@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { formatFsError } from './lib.mjs';
 
 function main() {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -114,7 +115,22 @@ function main() {
     return da - db;
   });
   const latest = decisionFiles[decisionFiles.length - 1];
-  const text = fs.readFileSync(path.join(decisionsDir, latest), 'utf8');
+  const latestPath = path.join(decisionsDir, latest);
+  // 2026-07-26 audit fix: this read was unguarded, unlike every other read in
+  // this file (the ROSTER.md fallback above, and both readdirSync calls, all
+  // have a try/catch). Reproduced by execution: replacing the just-listed
+  // file with a dangling symlink between the readdirSync above and this read
+  // (a real TOCTOU window — a rename, a git operation, or a corrupt symlink
+  // synced in) throws ENOENT with a raw Node stack trace and exit 1, instead
+  // of this script's own structured BLOCKED JSON contract every other failure
+  // path here uses.
+  let text;
+  try {
+    text = fs.readFileSync(latestPath, 'utf8');
+  } catch (e) {
+    console.log(JSON.stringify({ status: 'BLOCKED', reason: `could not read the latest roster decision file (${latest}): ${formatFsError(e)}`, currentCount }, null, 2));
+    process.exit(1);
+  }
   // 2026-07-12 Round 7 audit fix: same immediate-adjacency tightening as
   // above — checked this project's own real Dev-Memory decision files
   // (e.g. "agent role count = 16") to confirm the tighter pattern still

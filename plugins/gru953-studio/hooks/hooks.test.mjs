@@ -2505,6 +2505,32 @@ test('lib.mjs isConfirmScriptOnly: confirm-checkpoint.mjs itself is never treate
   assert.equal(isPushCapable('node confirm-checkpoint.mjs; git push'), true);
 });
 
+test('confirm-*.mjs: a directory in place of the token file fails with a plain-English message, not a raw stack trace (2026-07-26 further-pass audit fix)', () => {
+  // Found during a further bug-hunt pass after stage 2: all four confirm
+  // scripts wrote their token record with a bare, unguarded writeFileSync.
+  // A directory sitting where the token file should be (a plausible outcome
+  // of a stray mkdir, a bad merge, or a case-folding artefact on Windows/
+  // macOS) throws EISDIR with a raw Node stack trace and exit 1 — the exact
+  // "never show a raw stack trace" guarantee this codebase otherwise
+  // enforces everywhere else. Now routed through lib.mjs's
+  // writeConfirmationRecordOrExit, which reports the same failure as a
+  // plain-English message instead.
+  for (const { script, record } of [
+    { script: 'confirm-checkpoint.mjs', record: 'CHECKPOINT-APPROVED' },
+    { script: 'confirm-go-public.mjs', record: 'GO-PUBLIC-APPROVED' },
+    { script: 'confirm-memory-persist.mjs', record: 'MEMORY-PERSIST-APPROVED' },
+    { script: 'confirm-publish.mjs', record: 'PUBLISH-APPROVED' },
+  ]) {
+    const dir = mkTmp('gru-confirm-eisdir-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory', record), { recursive: true }); // a directory, not a file
+    const r = spawnSync(NODE, [path.join(HERE, script), dir], { encoding: 'utf8' });
+    assert.equal(r.status, 1, `${script} must exit 1 when its token record can't be written`);
+    assert.doesNotMatch(r.stderr, /at Object\.writeFileSync|node:fs:\d+/, `${script} must not leak a raw Node stack trace: ${r.stderr}`);
+    assert.match(r.stderr, /could not write the confirmation record/i, `${script} must explain the failure in plain English: ${r.stderr}`);
+    fs.rmSync(dir, RM_OPTS);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // 2026-07-19 Phase 4 — opt-in cloud memory persistence. A MEMORY-PERSIST token
 // lets Dev-Memory be pushed to a PRIVATE branch, but ONLY: (a) the secret scan

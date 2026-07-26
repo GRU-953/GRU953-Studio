@@ -28,11 +28,10 @@
 //
 // Usage: node confirm-memory-persist.mjs [projectRoot]
 
-import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
-import { findStudioRoot } from './lib.mjs';
+import { findStudioRoot, writeConfirmationRecordOrExit } from './lib.mjs';
 
 function main() {
   const start = process.argv[2] || process.cwd();
@@ -43,7 +42,10 @@ function main() {
   }
   const token = crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex');
   const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
-  fs.writeFileSync(record, `STUDIO-MEMORY-PERSIST-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'utf8');
+  // 2026-07-26 audit fix: was a bare writeFileSync (reproduced: EISDIR with a
+  // raw stack trace when the target is a directory instead of a file — see
+  // lib.mjs's writeConfirmationRecordOrExit for the full reproduction).
+  writeConfirmationRecordOrExit(record, `STUDIO-MEMORY-PERSIST-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'confirm-memory-persist');
   process.stdout.write('confirm-memory-persist: recorded memory-persistence authorisation for ' + studioRoot + '\n');
 }
 
