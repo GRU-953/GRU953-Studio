@@ -49,7 +49,24 @@ function main() {
   const VERIFIED_RE = /verified:.*(→|->).*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
   // 2026-07-25: Structured JSON evidence format (machine-parseable)
   // Format: {"taskId":"T3","criterion":"...","command":"...","exitCode":0,"stdout":"...","stderr":"","durationMs":1240,"artifacts":[],"timestamp":"2026-07-25T10:30:00Z","verifier":"tester"}
-  const JSON_EVIDENCE_RE = /\{\s*"taskId"\s*:\s*"[^"]+"\s*,\s*"criterion"\s*:\s*"[^"]*"\s*,\s*"command"\s*:\s*"[^"]*"\s*,\s*"exitCode"\s*:\s*\d+\s*,\s*"stdout"/i;
+  // 2026-07-26 audit finding 1 (MAJOR false-clean, found by execution). This
+  // regex accepted `"exitCode"\s*:\s*\d+` — ANY exit code. So a done row whose
+  // own recorded evidence was
+  //   {"taskId":"T1","criterion":"tests pass","command":"npm test",
+  //    "exitCode":1,"stdout":"3 failing"}
+  // returned {"status":"clean"}, exit 0. The gate whose entire purpose is
+  // "done means proven" accepted documented proof of the OPPOSITE.
+  //
+  // CONTRADICTION_RE did not save it either: that pattern looks for `exit`
+  // followed by whitespace and a digit, which the JSON form `"exitCode":1`
+  // never matches. Structured evidence bypassed both halves of the check.
+  //
+  // Fixed by CAPTURING the exit code rather than merely tolerating it, so a
+  // failing run can be reported as the specific thing it is instead of being
+  // lumped in with "no evidence at all". The shape regex still matches any code
+  // — that is what lets us tell "this row has no evidence" apart from "this
+  // row's evidence records a failure".
+  const JSON_EVIDENCE_SHAPE_RE = /\{\s*"taskId"\s*:\s*"[^"]+"\s*,\s*"criterion"\s*:\s*"[^"]*"\s*,\s*"command"\s*:\s*"[^"]*"\s*,\s*"exitCode"\s*:\s*(-?\d+)\s*,\s*"stdout"/i;
   // 2026-07-12 audit fix (MAJOR false-clean, found by execution): VERIFIED_RE
   // only checks that its pattern appears SOMEWHERE on the line, so a Notes
   // cell that honestly documents an OLD passing run alongside a NEW,
@@ -125,6 +142,7 @@ function main() {
 
   const problems = [];      // "done" rows carrying no verified: evidence
   const unidentified = [];  // task table(s) with a "done" claim we cannot verify (fail CLOSED)
+  const failedEvidence = []; // "done" rows whose OWN structured evidence records a non-zero exit
 
   for (let i = 0; i < lines.length; i++) {
     const header = lines[i];
@@ -160,20 +178,40 @@ function main() {
       }
       if (!isDoneValue(cells[statusColumnIndex])) continue;
       const hasVerified = VERIFIED_RE.test(row);
-      const hasJsonEvidence = JSON_EVIDENCE_RE.test(row);
-      if ((!hasVerified && !hasJsonEvidence) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
+      // 2026-07-26 audit finding 1: structured evidence only counts when the
+      // command it records actually SUCCEEDED. A recorded non-zero exit code is
+      // now a first-class failure, reported distinctly, because "your evidence
+      // says this failed" is a different problem from "you gave no evidence"
+      // and the person reading the report needs to know which.
+      const jsonEvidence = JSON_EVIDENCE_SHAPE_RE.exec(row);
+      const jsonExitCode = jsonEvidence ? Number(jsonEvidence[1]) : null;
+      const hasPassingJsonEvidence = jsonEvidence !== null && jsonExitCode === 0;
+      if (jsonEvidence !== null && jsonExitCode !== 0) {
+        failedEvidence.push({ row: row.trim(), exitCode: jsonExitCode });
+        continue;
+      }
+      if ((!hasVerified && !hasPassingJsonEvidence) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
     }
     if (sawDoneUnknown) unidentified.push(header.trim());
     i = j - 1; // resume after this table (the for-loop's i++ advances to j)
   }
 
-  if (problems.length === 0 && unidentified.length === 0) {
+  if (problems.length === 0 && unidentified.length === 0 && failedEvidence.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'every "done" row has a verified: cell' }, null, 2));
     process.exit(0);
   }
   const out = { status: 'BLOCKED' };
+  // Reported first and separately: a row whose own evidence records a failing
+  // command is a sharper problem than a row with no evidence, and the wording
+  // has to say so plainly or the reader will not understand what to fix.
+  if (failedEvidence.length) {
+    out.reason = '"done" rows whose own recorded evidence shows the command FAILED (non-zero exit)';
+    out.failedEvidence = failedEvidence;
+  }
   if (problems.length) {
-    out.reason = '"done" rows missing a verified: cell';
+    out.reason = failedEvidence.length
+      ? '"done" rows with failing evidence, and "done" rows missing a verified: cell'
+      : '"done" rows missing a verified: cell';
     out.rows = problems;
   }
   if (unidentified.length) {

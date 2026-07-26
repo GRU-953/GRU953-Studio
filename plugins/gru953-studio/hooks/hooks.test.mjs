@@ -3254,6 +3254,69 @@ test('verify-progress.mjs: a decorated `done` VALUE (**done**, `done`, "✅ done
 });
 
 // ---------------------------------------------------------------------------
+// 2026-07-26 audit finding 1 (MAJOR false-clean, found by execution).
+// JSON_EVIDENCE_RE accepted `"exitCode"\s*:\s*\d+` — ANY exit code — so a done
+// row whose own structured evidence recorded a FAILING run returned
+// {"status":"clean"}, exit 0. CONTRADICTION_RE could not catch it either: it
+// looks for `exit` + whitespace + digit, which `"exitCode":1` never matches, so
+// structured evidence bypassed both halves of the gate. This is the check every
+// other completion claim in the product rests on.
+// ---------------------------------------------------------------------------
+function writeProgressRow(dir, evidenceCell) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    `# Progress\n\n| ID | Task | Status | Evidence |\n| :-- | :-- | :-- | :-- |\n| T1 | Add login | done | ${evidenceCell} |\n`,
+  );
+}
+
+test('verify-progress.mjs: structured evidence recording a FAILED run must block (2026-07-26 finding 1)', () => {
+  // The exact reproduction from AUDIT-2026-07.md section 3.1.
+  const dir = mkTmp('gru-vp-exit1-');
+  writeProgressRow(dir, '{"taskId":"T1","criterion":"tests pass","command":"npm test","exitCode":1,"stdout":"3 failing"}');
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `evidence recording exitCode 1 must BLOCK, not report clean: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  // Reported as the specific thing it is, not lumped in with "no evidence" —
+  // the person reading this needs to know their proof says the run failed.
+  assert.ok(Array.isArray(r.json.failedEvidence), 'must report failing evidence distinctly');
+  assert.equal(r.json.failedEvidence[0].exitCode, 1);
+  assert.ok(/FAILED/i.test(r.json.reason), `reason must say the command failed: ${r.json.reason}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('verify-progress.mjs: any non-zero exit code blocks, including negative and multi-digit', () => {
+  for (const code of ['2', '127', '-1', '255']) {
+    const dir = mkTmp('gru-vp-exitN-');
+    writeProgressRow(dir, `{"taskId":"T1","criterion":"c","command":"x","exitCode":${code},"stdout":"out"}`);
+    const r = runScript('verify-progress.mjs', dir);
+    assert.equal(r.code, 1, `exitCode ${code} must block: ${r.stdout}`);
+    assert.equal(r.json.failedEvidence[0].exitCode, Number(code));
+    fs.rmSync(dir, RM_OPTS);
+  }
+});
+
+test('verify-progress.mjs: structured evidence recording a PASSING run is still clean (no regression)', () => {
+  const dir = mkTmp('gru-vp-exit0-');
+  writeProgressRow(dir, '{"taskId":"T1","criterion":"tests pass","command":"npm test","exitCode":0,"stdout":"12 passing"}');
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 0, `exitCode 0 is genuine proof and must stay clean: ${r.stdout}`);
+  assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('verify-progress.mjs: prose "verified: ... -> exit 0" evidence is unaffected by the finding-1 fix', () => {
+  // Guards against over-correction: the long-standing prose form must keep
+  // working, including the multi-clause shape this project's own Dev-Memory
+  // uses (where "exit 0" is deliberately not the final clause).
+  const dir = mkTmp('gru-vp-prose-');
+  writeProgressRow(dir, 'verified: npm test -> exit 0; pushed c9d8b50 (2026-07-26).');
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 0, `prose evidence must remain valid: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
 // 2026-07-21 gold-standard audit, Round 13 — a fresh red-team found 3 distinct
 // defects (2 high + 1 medium; a 4th was the same merge issue via a 2nd lens):
 // (1) the R12 history classifier tested the WHOLE added content while the
