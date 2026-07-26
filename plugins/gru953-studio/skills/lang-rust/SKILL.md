@@ -1,14 +1,18 @@
 ---
 name: lang-rust
-description: The Rust ecosystem pack — the exact build, test, lint, format and dependency commands, plus the idioms, that the rust-developer agent uses. Load when a task is implemented in Rust. Covers Cargo, clippy, rustfmt, and Cargo dependency/licence norms.
+description: The Rust ecosystem pack — the exact build, test, lint, format and dependency commands, plus the idioms, that the rust-developer agent uses. Load when a task is implemented in Rust. Covers Cargo, clippy, rustfmt, Cargo dependency/licence norms, and the Tauri desktop-app framework (Rust core, web front end).
 ---
 
 # Rust pack
 
 The shared toolchain knowledge for Rust work, so the `rust-developer` agent
-stays thin. Plain-English rule is as set in the `studio` skill.
+stays thin. Plain-English rule is as set in the `studio` skill. Covers
+plain Rust binaries/libraries and the Tauri desktop-app framework's native
+shell (2026-07-26 audit finding 27) — Tauri is a stack choice within the Rust
+ecosystem, not a separate role, the same way `typescript-developer`'s own
+pack already covers React Native within the TypeScript ecosystem.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -17,6 +21,7 @@ stays thin. Plain-English rule is as set in the `studio` skill.
 | lint | `cargo clippy --all-targets -- -D warnings` (warnings fail, deliberately) |
 | format | `cargo fmt --check` (apply with `cargo fmt`) |
 | deps | edit `Cargo.toml` / `cargo add <crate>`; fetch with `cargo build` or `cargo fetch` |
+| package (2026-07-26 audit finding 15) | plain binary: ship the `cargo build --release` output directly; Tauri desktop app: `cargo tauri build` produces a real installer per OS — `.dmg` (macOS), `.msi` (Windows), `.deb`/AppImage (Linux) |
 
 ## Idioms and gotchas
 

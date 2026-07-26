@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, formatFsError, deEmphasise } from './lib.mjs';
 
 function main() {
   const root = process.argv[2] || process.cwd();
@@ -34,7 +34,34 @@ function main() {
     console.log(JSON.stringify({ status: 'no PROGRESS.md found', file }));
     process.exit(0);
   }
-  const text = fs.readFileSync(file, 'utf8');
+  // 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
+  // fix — checked by execution rather than assumed: the table-row test below
+  // (`/^\s*\|/`) already tolerates a leading BOM by accident, because
+  // JavaScript's `\s` class matches U+FEFF. stripBom() stops that correctness
+  // depending on the accident. (memory-integrity.mjs and dashboard.mjs DID
+  // have a real, reproduced BOM bug: both use a strict `^#` heading regex
+  // with no `\s*` prefix, which a BOM genuinely defeats.)
+  //
+  // 2026-07-26 further-pass audit fix (audit finding 21, already fixed for
+  // the four confirm-*.mjs scripts and roster-check.mjs in the same pass —
+  // this file is the finding's other still-open example). This read had NO
+  // try/catch at all — only the existsSync check above was guarded. Anything
+  // between the two calls, or a target that fails for a reason other than
+  // "doesn't exist" (PROGRESS.md turning out to be a directory is a very
+  // plausible accident from a bad merge or a stray mkdir), crashed with a raw
+  // Node stack trace instead of this script's own plain-English contract.
+  let text;
+  try {
+    text = stripBom(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    console.log(JSON.stringify({
+      status: 'BLOCKED',
+      reason: `PROGRESS.md exists but could not be read, so "done" tasks cannot be verified: ${formatFsError(e)}`,
+      file,
+      fix: 'Make Dev-Memory/PROGRESS.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
+    }, null, 2));
+    process.exit(1);
+  }
   const lines = text.split(/\r?\n/);
   // 2026-07-12 audit fix (MAJOR false-clean, found by execution): matching
   // anywhere on the line let a Notes cell that honestly documents an OLD
@@ -49,7 +76,24 @@ function main() {
   const VERIFIED_RE = /verified:.*(→|->).*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
   // 2026-07-25: Structured JSON evidence format (machine-parseable)
   // Format: {"taskId":"T3","criterion":"...","command":"...","exitCode":0,"stdout":"...","stderr":"","durationMs":1240,"artifacts":[],"timestamp":"2026-07-25T10:30:00Z","verifier":"tester"}
-  const JSON_EVIDENCE_RE = /\{\s*"taskId"\s*:\s*"[^"]+"\s*,\s*"criterion"\s*:\s*"[^"]*"\s*,\s*"command"\s*:\s*"[^"]*"\s*,\s*"exitCode"\s*:\s*\d+\s*,\s*"stdout"/i;
+  // 2026-07-26 audit finding 1 (MAJOR false-clean, found by execution). This
+  // regex accepted `"exitCode"\s*:\s*\d+` — ANY exit code. So a done row whose
+  // own recorded evidence was
+  //   {"taskId":"T1","criterion":"tests pass","command":"npm test",
+  //    "exitCode":1,"stdout":"3 failing"}
+  // returned {"status":"clean"}, exit 0. The gate whose entire purpose is
+  // "done means proven" accepted documented proof of the OPPOSITE.
+  //
+  // CONTRADICTION_RE did not save it either: that pattern looks for `exit`
+  // followed by whitespace and a digit, which the JSON form `"exitCode":1`
+  // never matches. Structured evidence bypassed both halves of the check.
+  //
+  // Fixed by CAPTURING the exit code rather than merely tolerating it, so a
+  // failing run can be reported as the specific thing it is instead of being
+  // lumped in with "no evidence at all". The shape regex still matches any code
+  // — that is what lets us tell "this row has no evidence" apart from "this
+  // row's evidence records a failure".
+  const JSON_EVIDENCE_SHAPE_RE = /\{\s*"taskId"\s*:\s*"[^"]+"\s*,\s*"criterion"\s*:\s*"[^"]*"\s*,\s*"command"\s*:\s*"[^"]*"\s*,\s*"exitCode"\s*:\s*(-?\d+)\s*,\s*"stdout"/i;
   // 2026-07-12 audit fix (MAJOR false-clean, found by execution): VERIFIED_RE
   // only checks that its pattern appears SOMEWHERE on the line, so a Notes
   // cell that honestly documents an OLD passing run alongside a NEW,
@@ -65,7 +109,18 @@ function main() {
   // contradiction anywhere in the same row invalidates an otherwise-passing
   // VERIFIED_RE match — a row can honestly narrate old history, but not
   // also claim to be currently failing/unverified and still count as done.
-  const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
+  //
+  // 2026-07-26 further-pass audit fix: this used to be a LOCAL copy of the
+  // pattern, independent of quality-gate.mjs's and traceability-check.mjs's
+  // own copies — and it had fallen behind both. Neither the "exit code N"
+  // phrasing (finding 35, ported to the other two files but never here, the
+  // exact file finding 1 was originally about) nor the `regress(?:ed|ion)`
+  // alternative (quality-gate.mjs only) had made it into this file's copy.
+  // Reproduced by execution before fixing: a row reading "verified: npm test
+  // -> exit 0; however a later re-run gave exit code 1" returned clean here
+  // while the identical text in quality-gate.mjs was correctly BLOCKED. Now
+  // imports the one shared pattern from lib.mjs instead of its own copy, so
+  // this specific three-way drift cannot recur.
   const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
   // 2026-07-21 Round 11 audit fix (fail-open on unrecognised table shape,
   // medium): this hook is the SOLE mechanical enforcer of "a task may only be
@@ -89,7 +144,6 @@ function main() {
   // and "Build State" all qualify. "Progress" is deliberately NOT a synonym: a
   // Progress column may hold "100%" rather than a status word, and accepting it
   // could shadow a real Status column and re-open a false-clean.
-  const deEmphasise = (c) => c.replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '');
   const isStatusHeader = (c) => {
     const w = deEmphasise(c).toLowerCase().split(/\s+/).filter(Boolean);
     const last = w[w.length - 1];
@@ -125,6 +179,7 @@ function main() {
 
   const problems = [];      // "done" rows carrying no verified: evidence
   const unidentified = [];  // task table(s) with a "done" claim we cannot verify (fail CLOSED)
+  const failedEvidence = []; // "done" rows whose OWN structured evidence records a non-zero exit
 
   for (let i = 0; i < lines.length; i++) {
     const header = lines[i];
@@ -160,20 +215,40 @@ function main() {
       }
       if (!isDoneValue(cells[statusColumnIndex])) continue;
       const hasVerified = VERIFIED_RE.test(row);
-      const hasJsonEvidence = JSON_EVIDENCE_RE.test(row);
-      if ((!hasVerified && !hasJsonEvidence) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
+      // 2026-07-26 audit finding 1: structured evidence only counts when the
+      // command it records actually SUCCEEDED. A recorded non-zero exit code is
+      // now a first-class failure, reported distinctly, because "your evidence
+      // says this failed" is a different problem from "you gave no evidence"
+      // and the person reading the report needs to know which.
+      const jsonEvidence = JSON_EVIDENCE_SHAPE_RE.exec(row);
+      const jsonExitCode = jsonEvidence ? Number(jsonEvidence[1]) : null;
+      const hasPassingJsonEvidence = jsonEvidence !== null && jsonExitCode === 0;
+      if (jsonEvidence !== null && jsonExitCode !== 0) {
+        failedEvidence.push({ row: row.trim(), exitCode: jsonExitCode });
+        continue;
+      }
+      if ((!hasVerified && !hasPassingJsonEvidence) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
     }
     if (sawDoneUnknown) unidentified.push(header.trim());
     i = j - 1; // resume after this table (the for-loop's i++ advances to j)
   }
 
-  if (problems.length === 0 && unidentified.length === 0) {
+  if (problems.length === 0 && unidentified.length === 0 && failedEvidence.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'every "done" row has a verified: cell' }, null, 2));
     process.exit(0);
   }
   const out = { status: 'BLOCKED' };
+  // Reported first and separately: a row whose own evidence records a failing
+  // command is a sharper problem than a row with no evidence, and the wording
+  // has to say so plainly or the reader will not understand what to fix.
+  if (failedEvidence.length) {
+    out.reason = '"done" rows whose own recorded evidence shows the command FAILED (non-zero exit)';
+    out.failedEvidence = failedEvidence;
+  }
   if (problems.length) {
-    out.reason = '"done" rows missing a verified: cell';
+    out.reason = failedEvidence.length
+      ? '"done" rows with failing evidence, and "done" rows missing a verified: cell'
+      : '"done" rows missing a verified: cell';
     out.rows = problems;
   }
   if (unidentified.length) {

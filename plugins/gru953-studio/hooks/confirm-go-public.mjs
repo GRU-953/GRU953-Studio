@@ -17,11 +17,10 @@
 //
 // Usage: node confirm-go-public.mjs [projectRoot]
 
-import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
-import { findStudioRoot } from './lib.mjs';
+import { findStudioRoot, writeConfirmationRecordOrExit } from './lib.mjs';
 
 function main() {
   const start = process.argv[2] || process.cwd();
@@ -41,7 +40,10 @@ function main() {
   // "private-then-public, separately confirmed" guarantee to "confirmed
   // once, ever." Same fix as confirm-publish.mjs: stamp an issue time and
   // have gate.mjs enforce a bounded window.
-  fs.writeFileSync(record, `STUDIO-GO-PUBLIC-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'utf8');
+  // 2026-07-26 audit fix: was a bare writeFileSync (reproduced: EISDIR with a
+  // raw stack trace when the target is a directory instead of a file — see
+  // lib.mjs's writeConfirmationRecordOrExit for the full reproduction).
+  writeConfirmationRecordOrExit(record, `STUDIO-GO-PUBLIC-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'confirm-go-public');
   process.stdout.write('confirm-go-public: recorded go-public confirmation for ' + studioRoot + '\n');
 }
 

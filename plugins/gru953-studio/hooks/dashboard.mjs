@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom, formatFsError, isDirectory } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
@@ -45,8 +45,11 @@ const GROUPS = [
   { key: 'done', label: 'Done', match: /^done\b/i },
 ];
 
+// 2026-07-26 audit finding 26: a leading UTF-8 byte-order mark breaks any
+// `^`-anchored heading match against the file's first line (this file uses
+// one to find the project name from OBJECTIVE.md's first `# Heading`).
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 function esc(s) {
   return String(s)
@@ -149,7 +152,21 @@ function renderBoard(projectName, docs, table, boardText) {
   for (const r of table.rows) counts[groupOf(statusIdx === -1 ? '' : r[statusIdx])]++;
   const total = table.rows.length;
 
-  const summary = GROUPS.filter((g) => counts[g.key] > 0)
+  // 2026-07-26 further-pass audit fix (confirmed by execution): GROUPS never
+  // had an 'other' entry, so this summary — unlike the module comment right
+  // above GROUPS's declaration ("so it is shown, never silently dropped") —
+  // silently excluded any row whose status didn't match one of the seven
+  // known keywords, or every row at once if the table's own header isn't
+  // spelled exactly "Status". Reproduced: a table with a "State" column
+  // (statusIdx === -1) rendered the summary as a bare "No tasks yet" pill
+  // while the table immediately below it listed real, active tasks. Fixed by
+  // including 'other' in the pills too, exactly like every real row already
+  // does via groupOf()'s own fallback and the counts.other=0 initialisation
+  // just above — the classification list (GROUPS, used by groupOf()) is left
+  // untouched; only the rendered pill list gains the group it was always
+  // supposed to show.
+  const pillGroups = [...GROUPS, { key: 'other', label: 'Other' }];
+  const summary = pillGroups.filter((g) => counts[g.key] > 0)
     .map((g) => `<li class="pill ${g.key}"><span class="n">${counts[g.key]}</span> ${esc(g.label)}</li>`)
     .join('');
 
@@ -240,7 +257,11 @@ function renderBoard(projectName, docs, table, boardText) {
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  // 2026-07-26 Stage 3 fix (audit finding 22): was two separate, unguarded
+  // calls racing against each other — see lib.mjs's isDirectory() for the
+  // full reproduction (a crash instead of a plain message if Dev-Memory
+  // disappears between the two calls).
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to render', root }));
     process.exit(0);
   }
@@ -261,7 +282,21 @@ function main() {
   const table = parseFirstTable(progText);
   const html = renderBoard(projectName, docs, table, board);
   const outFile = process.argv[3] || path.join(devMemory, 'dashboard.html');
-  fs.writeFileSync(outFile, html);
+  // 2026-07-26 further-pass audit fix (audit finding 21, already fixed for
+  // the four confirm-*.mjs scripts, roster-check.mjs and verify-progress.mjs
+  // in the same pass — this file is the finding's last still-open example).
+  // A missing output directory, a read-only mount, or a full disk threw a
+  // raw Node stack trace instead of this script's own plain-English contract.
+  try {
+    fs.writeFileSync(outFile, html);
+  } catch (e) {
+    console.log(JSON.stringify({
+      status: 'BLOCKED',
+      reason: `could not write the dashboard to ${outFile}: ${formatFsError(e)}`,
+      fix: 'Check that the Dev-Memory folder is writable — not read-only, and the disk is not full — then run this again.',
+    }, null, 2));
+    process.exit(1);
+  }
   console.log(JSON.stringify({ status: 'written', file: outFile, tasks: table.rows.length, sections: Object.keys(docs).filter((k) => docs[k] !== null) }, null, 2));
   process.exit(0);
 }

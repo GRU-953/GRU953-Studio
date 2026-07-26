@@ -67,9 +67,20 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 4.5.0
+### Latest version: 5.0.0
 
-Version 4.5.0 introduces the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.), bringing the skill count to 34. Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
+Version 5.0.0 is a major hardening release: the result of an eight-stage,
+exhaustive audit of the whole repository (the full findings register is
+committed as [AUDIT-2026-07.md](AUDIT-2026-07.md)). Every safety and quality
+check now genuinely does what it claims — including the dependency-licence
+scanner, which previously checked only the top-level folder and would have
+missed a real dependency sitting one folder down. The platform-support
+promise from 4.5.0 is now real too: the studio actually asks which platform
+you want, and every language specialist's toolkit names the real command
+that produces a finished, installable app. See
+[CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
+
+Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.), bringing the skill count to 35. Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE).
 
 ---
 
@@ -213,6 +224,7 @@ You never have to sit and watch. A few simple commands, typed any time:
 | `/studio-schedule` | Ask it to pick a task back up at a time you choose. |
 | `/studio-dashboard` | Open a one-page visual summary of your project. |
 | `/studio-publish` | Publish privately to your own GitHub (with confirmations). |
+| `/studio-update` | Manually check for and apply a studio update right now. |
 
 ---
 
@@ -239,7 +251,7 @@ recognised licence.
 
 **Selling something built with it?** Commercial use (including apps you build with
 GRU953-Studio and then sell) needs a separate paid licence — see
-[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md), or email **gru953@gmail.com**.
+[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md), or email **aninda.sh15@gmail.com**.
 
 > **A note on the GitHub licence label.** GitHub's automatic licence detector only
 > recognises the licences in its built-in catalogue, which does not include
@@ -271,7 +283,7 @@ it as your own.
 
 ## About
 
-Made by [GRU-953](https://github.com/GRU-953) — for people who have
+Made by [Aninda Sundar Howlader](https://github.com/GRU-953) — for people who have
 a real idea and just want the software part handled for them, simply and honestly.
 GRU953-Studio is actively maintained: every release is checked against Anthropic's
 own official documentation, and the team of specialists grows only when a real,

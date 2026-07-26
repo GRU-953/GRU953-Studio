@@ -21,15 +21,20 @@ node plugins/gru953-studio/hooks/hooks.test.mjs
 node plugins/gru953-studio/hooks/repo-integrity.mjs .
 node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 node plugins/gru953-studio/hooks/licence-scan.mjs .
+node plugins/gru953-studio/hooks/docs-consistency.mjs .
 ```
 
 `repo-integrity.mjs` is the guard that stops a file referencing a skill,
 hook, or role count that doesn't actually exist — if you add or rename any
 agent, skill, or hook, run it before you commit. Adding a specialist role
 means updating `plugins/gru953-studio/ROSTER.md` (the committed baseline)
-with the named gap it fills.
+with the named gap it fills. `docs-consistency.mjs` (added 2026-07-26 audit
+stage 5) is the sibling check that catches a STALE claim rather than a
+missing reference — a count repeated in two places that disagree, a
+companion skill or marketplace tag listed twice, a specialist named in
+prose that exists nowhere on the real roster.
 
-The five gates above are the ones CI itself runs and are mandatory on every
+The six gates above are the ones CI itself runs and are mandatory on every
 commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries five
 project-level gates (no-ops on this repo, since it has no `Dev-Memory/` of its
 own) that a project built *by* the plugin must pass before a phase checkpoint

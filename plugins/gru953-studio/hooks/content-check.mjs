@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom, isDirectory } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
@@ -39,7 +39,34 @@ const APPROVED_RE = /^\s*(approved|yes|pass(ed)?|ok|done|signed[ -]?off|human|fi
 // never to silently skipping it.
 const TEXT_ONLY_RE = /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[- ]?text\b|in-app[- ]?text\b|টেক্সট|লেখা|কপি)/i;
 
-function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } }
+// 2026-07-26 audit finding 6 (fail-OPEN). This returned null for BOTH "the file
+// isn't there" and "the file is there but I couldn't read it", and main() treats
+// null as "no content declared — a project may legitimately have none" and exits
+// 0. So an unreadable CONTENT.md — a permissions problem, a directory where a
+// file should be, a half-written file on a full disk — silently passed the gate
+// that is supposed to guarantee every shipped asset has approval, provenance,
+// rights and alt-text.
+//
+// The distinction is now explicit and typed. ENOENT is genuinely absent and
+// still stands down; anything else is a read FAILURE and blocks, matching how
+// its sibling quality-gate.mjs already behaves. A gate that cannot read its
+// input must never claim its input is fine.
+const MISSING = Symbol('missing');
+// 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
+// fix — checked by execution rather than assumed: the table-row test below
+// (`/^\s*\|/`) already tolerates a leading BOM by accident, because
+// JavaScript's `\s` class matches U+FEFF. stripBom() stops that correctness
+// depending on the accident. (memory-integrity.mjs and dashboard.mjs DID
+// have a real, reproduced BOM bug: both use a strict `^#` heading regex with
+// no `\s*` prefix, which a BOM genuinely defeats.)
+function read(p) {
+  try {
+    return stripBom(fs.readFileSync(p, 'utf8'));
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return MISSING;
+    throw e; // surfaced by main()'s handler as a BLOCKING, explained problem
+  }
+}
 function cells(line) {
   const c = splitPipeCells(line);
   if (c.length && c[0].trim() === '') c.shift();
@@ -51,12 +78,33 @@ function ph(s) { return PLACEHOLDER_RE.test(String(s || '').trim()); }
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  // 2026-07-26 Stage 3 fix (audit finding 22): was two separate, unguarded
+  // calls (existsSync then statSync) racing against anything else that might
+  // touch this path in between — the second call had no try/catch of its
+  // own, so Dev-Memory disappearing (or a permissions problem) between the
+  // two threw a raw stack trace instead of this project's own plain-English
+  // contract. isDirectory() makes this one guarded call.
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }));
     process.exit(0);
   }
-  const text = read(path.join(devMemory, 'CONTENT.md'));
-  if (text === null) {
+  const contentPath = path.join(devMemory, 'CONTENT.md');
+  let text;
+  try {
+    text = read(contentPath);
+  } catch (e) {
+    // 2026-07-26 audit finding 6: fail CLOSED, and say why in plain English so
+    // the user can act on it rather than guess.
+    console.log(JSON.stringify({
+      status: 'BLOCKED',
+      reason: 'CONTENT.md exists but could not be read, so its assets cannot be checked for approval, provenance, rights and alt-text',
+      file: 'Dev-Memory/CONTENT.md',
+      detail: `${e.code || 'read error'}: ${e.message}`,
+      fix: 'Make Dev-Memory/CONTENT.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
+    }, null, 2));
+    process.exit(1);
+  }
+  if (text === MISSING) {
     // No content declared — a project may legitimately have none.
     console.log(JSON.stringify({ status: 'clean', reason: 'no CONTENT.md — no generated content declared for this project' }));
     process.exit(0);

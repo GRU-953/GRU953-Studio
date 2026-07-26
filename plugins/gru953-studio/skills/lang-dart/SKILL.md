@@ -9,7 +9,7 @@ The shared toolchain knowledge for Dart/Flutter work, so the
 `flutter-dart-developer` agent stays thin. Plain-English rule is as set in the
 `studio` skill. This is the studio's default mobile stack (see `architect`).
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -18,6 +18,7 @@ The shared toolchain knowledge for Dart/Flutter work, so the
 | lint (analyse) | `flutter analyze` (or `dart analyze`) — treat issues as failures |
 | format | `dart format --set-exit-if-changed .` (apply with `dart format .`) |
 | deps | edit `pubspec.yaml` / `dart pub add <pkg>`; fetch with `flutter pub get` (or `dart pub get`) |
+| package (2026-07-26 audit finding 15) | `flutter build apk` / `flutter build appbundle` (Android — `.apk` for direct install, `.aab` for the Play Store), `flutter build ios` (needs a paid Apple Developer account to ship to a real device or the App Store), `flutter build web`, `flutter build windows`/`macos`/`linux` for desktop bundles |
 
 ## Idioms and gotchas
 

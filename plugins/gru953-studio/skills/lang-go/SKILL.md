@@ -9,7 +9,7 @@ The shared toolchain knowledge for Go work (services, CLIs, Linux), so the
 `go-developer` agent stays thin. Plain-English rule is as set in the `studio`
 skill.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -18,6 +18,7 @@ skill.
 | lint | `go vet ./...` (and `staticcheck ./...` when available) |
 | format | `gofmt -l .` (non-empty output = unformatted; apply with `gofmt -w .`) |
 | deps | Go modules — `go get <pkg>`; recorded in `go.mod`/`go.sum`, tidied with `go mod tidy` |
+| package (2026-07-26 audit finding 15) | `go build` already produces a single static, dependency-free binary per OS/architecture (`GOOS=... GOARCH=... go build` cross-compiles); ship it directly via GitHub Releases (this project's own vetted CLI stack, see `architect.md`) or a Homebrew tap |
 
 ## Idioms and gotchas
 

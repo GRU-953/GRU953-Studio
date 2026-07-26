@@ -24,8 +24,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
+// 2026-07-26 audit finding 4: this was `require('node:zlib')` inside
+// decodeAndNormalize, which is a ReferenceError in an ESM module — so the
+// gzip-obfuscation defence had never run. A module-scope import is the only
+// correct form in a .mjs file.
+import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck } from './lib.mjs';
+import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck, tokenConfirmedWithinTtl } from './lib.mjs';
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
 // skill and confirm-memory-persist.mjs). When this project-bound token is
@@ -34,7 +39,17 @@ import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isP
 // so Dev-Memory persists to a private branch only if it carries no secret. This
 // is the ONLY effect of the token here; it never relaxes the secret scan, and
 // gate.mjs still confines the token to a private (never public) push.
-const MEMPERSIST_TTL_MS = 60 * 60 * 1000;
+//
+// 2026-07-26 further-pass audit fix (confirmed by execution): this used to
+// carry its OWN independent copy of the token/TTL check — match the token
+// anywhere in the file, then check freshness against the WHOLE file's first
+// `ISSUED:` line — the exact unbound-token bug audit finding 12 fixed in
+// gate.mjs, reintroduced here because scan.mjs never picked up that fix.
+// Reproduced: a record with an unrelated fresh `ISSUED:` line placed BEFORE
+// the real (expired) token+its own real issued line still returned allowed.
+// Now shares gate.mjs's already-fixed tokenConfirmedWithinTtl from lib.mjs,
+// so there is exactly one implementation and the two hooks cannot drift
+// apart on this again.
 function memoryPersistAllowed(studioRoot) {
   const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
   let text;
@@ -45,13 +60,7 @@ function memoryPersistAllowed(studioRoot) {
     return false;
   }
   const expected = `STUDIO-MEMORY-PERSIST-CONFIRMED:${crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex')}`;
-  const m = /^ISSUED:(\d+)$/m.exec(text);
-  if (!m) return false;
-  const issuedAt = parseInt(m[1], 10);
-  const fresh = Number.isFinite(issuedAt) && Date.now() - issuedAt <= MEMPERSIST_TTL_MS && Date.now() - issuedAt >= 0;
-  if (!fresh) return false;
-  for (const line of text.split(/\r?\n/)) if (line.trim() === expected) return true;
-  return false;
+  return tokenConfirmedWithinTtl(text, expected);
 }
 
 // ---- push-tree resolution ------------------------------------------------------
@@ -165,15 +174,32 @@ function decodeAndNormalize(buf) {
   const originalText = buf.toString('utf8');
   results.push(originalText);
 
-  // Try UTF-16 LE/BE and UTF-32 LE/BE
-  for (const encoding of ['utf16le', 'utf16be', 'utf32le', 'utf32be']) {
-    try {
-      const decoded = buf.toString(encoding);
-      if (strIsTextish(decoded) && decoded !== originalText) {
-        results.push(decoded);
-      }
-    } catch {
-      // ignore decode errors
+  // 2026-07-26 audit finding 5. This loop used to try
+  // ['utf16le','utf16be','utf32le','utf32be']. Only the FIRST is a real Node
+  // encoding: the other three throw `TypeError: Unknown encoding` on every call
+  // (verified), were swallowed by the catch, and so had never decoded anything.
+  //
+  // The surviving utf16le pass was worse than useless. Re-reading ordinary
+  // single-byte ASCII as UTF-16LE always yields CJK-looking mojibake whose code
+  // points are all >= 0xa0, and strIsTextish counts every code point >= 0xa0 as
+  // text — so the mojibake scored 1.000 and passed. Every line of every file was
+  // therefore scanned TWICE, and because scanText reports `i+1` from whichever
+  // variant matched, any finding from the mojibake pass carried a line number
+  // that pointed nowhere.
+  //
+  // A genuine UTF-16 file announces itself with a byte-order mark. Requiring one
+  // keeps the real case (a UTF-16LE/BE file containing a credential) and drops
+  // the phantom pass entirely. UTF-16BE is handled by byte-swapping, since Node
+  // has no 'utf16be' encoding — which is what the original list was reaching for.
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    const decoded = buf.subarray(2).toString('utf16le');
+    if (strIsTextish(decoded) && decoded !== originalText) results.push(decoded);
+  } else if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    const swapped = Buffer.from(buf.subarray(2));
+    if (swapped.length % 2 === 0) {
+      swapped.swap16();
+      const decoded = swapped.toString('utf16le');
+      if (strIsTextish(decoded) && decoded !== originalText) results.push(decoded);
     }
   }
 
@@ -194,9 +220,17 @@ function decodeAndNormalize(buf) {
     // ignore
   }
 
-  // Try gzip/deflate decode (sync)
+  // 2026-07-26 audit finding 4. This branch used `require('node:zlib')` inside
+  // a .mjs module, where `require` is not defined — so it threw
+  // `ReferenceError: require is not defined` (verified) the instant it was
+  // reached, on every platform and every Node version. The catch swallowed it,
+  // so gzip-packed secrets were never decoded and the scanner still reported
+  // success. In scanLargeFile the same ReferenceError was thrown and discarded
+  // once PER LINE.
+  //
+  // zlib is now imported at module scope (see the top of this file), which is
+  // the only correct form here and cannot regress silently.
   try {
-    const zlib = require('node:zlib');
     const decompressed = zlib.gunzipSync(buf);
     const decoded = decompressed.toString('utf8');
     if (strIsTextish(decoded) && decoded !== originalText) {
@@ -261,6 +295,25 @@ function main() {
   const FILES = Array.from(fileSet).sort();
 
   const MAX_SCAN_BYTES = 4 * 1024 * 1024;
+  // 2026-07-26: the ceiling on how large a COMPRESSED/UTF-16 file we will fully
+  // read into memory to attempt decompression/decoding for a large file (see the
+  // st.size > MAX_SCAN_BYTES branch below). Kept modest and separate from
+  // MAX_SCAN_BYTES itself so this stays a bounded, proportionate peek rather
+  // than a general licence to buffer arbitrarily large files.
+  const MAX_PACKED_PEEK_BYTES = 4 * MAX_SCAN_BYTES;
+  // The cap on the DECOMPRESSED size we'll accept (via gunzipSync's
+  // maxOutputLength). This deliberately is NOT the same as MAX_SCAN_BYTES:
+  // setting it equal to MAX_SCAN_BYTES was tried first and was wrong — verified
+  // by execution, it reintroduced the exact bug it was meant to fix. The whole
+  // reason a file lands in this branch is that its SIZE exceeds MAX_SCAN_BYTES,
+  // and a realistic large gzip archive (a log dump, a bundled config) commonly
+  // decompresses to well over 4 MB of perfectly ordinary text, so capping the
+  // OUTPUT at the same 4 MB threw on exactly the realistic case and silently
+  // fell through to the byte-level streaming scan, which cannot see inside
+  // compressed data. A materially larger ceiling is still finite — it bounds a
+  // malicious decompression bomb to a fixed amount of memory — while actually
+  // covering the case this fix exists for.
+  const MAX_PACKED_INFLATED_BYTES = 64 * 1024 * 1024;
 
   // 2026-07-10 audit fix (MINOR): sk-[A-Za-z0-9]{20,} required contiguous
   // alphanumerics right after "sk-", missing today's hyphenated key formats
@@ -295,7 +348,17 @@ function main() {
   // without losing real detections (every example in this file's own
   // security review used a quoted literal).
   const SECRETVAR_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
-  const KEYFILE_RE = /(^|\/)(\.env(\..+)?|.+\.env|id_rsa|.+\.pem|.+\.key)$/;
+  // 2026-07-26 further-pass audit fix (false-allow, confirmed by execution):
+  // no `/i` flag, and — unlike DEVMEMORY_RE just below, whose case
+  // sensitivity is explained and deliberate — nothing here says this was on
+  // purpose, because it wasn't. `.ENV`, `id_rsa.PEM` (any case variant of a
+  // key-file name) are ordinary, legal filenames on every OS this project
+  // targets, not something requiring a case-insensitive filesystem. This
+  // filename check is the ONLY backstop for `.env`-style files: SECRETVAR_RE
+  // above requires a quoted value, but real .env files conventionally use
+  // unquoted `KEY=value`, which matches neither secret regex. So a file
+  // named `.ENV` holding ordinary unquoted secrets shipped undetected.
+  const KEYFILE_RE = /(^|\/)(\.env(\..+)?|.+\.env|id_rsa|.+\.pem|.+\.key)$/i;
   // 2026-07-11 Round 5 audit fix (case-sensitive ON PURPOSE — the `/i` flag
   // was removed): the studio always creates a project's private working
   // memory as `Dev-Memory` (capital D, capital M — see findStudioRoot,
@@ -586,6 +649,63 @@ function main() {
     }
     if (!st.isFile()) continue;
     if (st.size > MAX_SCAN_BYTES) {
+      // 2026-07-26, found while re-testing findings 4/5 after fixing the
+      // small-file path: the gzip/UTF-16-BOM handling added below (for files
+      // <= MAX_SCAN_BYTES) does NOT apply here. A file whose COMPRESSED size
+      // exceeds MAX_SCAN_BYTES went straight to scanLargeFile, which streams
+      // the raw bytes looking for plaintext patterns — it never attempts
+      // decompression, so a secret inside a large gzip blob was still invisible.
+      // Verified by execution: a gzip file just over 4 MB (built from 5 MB of
+      // random, incompressible padding plus a real AWS key) shipped with
+      // decision "allow".
+      //
+      // A capped peek-and-decompress closes the realistic case without
+      // reintroducing the compression-bomb risk MAX_SCAN_BYTES exists to bound:
+      // the COMPRESSED input read here is itself capped at
+      // MAX_PACKED_PEEK_BYTES, and gunzipSync's own maxOutputLength caps the
+      // DECOMPRESSED result — so a maliciously tiny file that expands to
+      // gigabytes throws and is skipped rather than exhausting memory.
+      // Ordinary large binaries (video, images, real archives) are unaffected:
+      // they either aren't gzip/UTF-16 at all, or fail one of the two bounds
+      // and fall through to the existing streaming path unchanged.
+      if (st.size <= MAX_PACKED_PEEK_BYTES) {
+        let head2 = null;
+        try {
+          const fd0 = fs.openSync(abs, 'r');
+          try {
+            const b2 = Buffer.alloc(2);
+            fs.readSync(fd0, b2, 0, 2, 0);
+            head2 = b2;
+          } finally {
+            fs.closeSync(fd0);
+          }
+        } catch { /* fall through to the streaming path below */ }
+
+        if (head2 && head2[0] === 0x1f && head2[1] === 0x8b) {
+          try {
+            const packed = fs.readFileSync(abs);
+            const inflated = zlib.gunzipSync(packed, { maxOutputLength: MAX_PACKED_INFLATED_BYTES });
+            if (bufIsTextish(inflated)) {
+              scanText(inflated.toString('utf8'), f);
+              continue;
+            }
+          } catch { /* not valid gzip, or exceeded the output cap — fall through */ }
+        } else if (head2 && ((head2[0] === 0xff && head2[1] === 0xfe) || (head2[0] === 0xfe && head2[1] === 0xff))) {
+          try {
+            const littleEndian = head2[0] === 0xff;
+            const packed = fs.readFileSync(abs);
+            const body = Buffer.from(packed.subarray(2));
+            if (body.length % 2 === 0) {
+              if (!littleEndian) body.swap16();
+              const decoded = body.toString('utf16le');
+              if (strIsTextish(decoded)) {
+                scanText(decoded, f);
+                continue;
+              }
+            }
+          } catch { /* fall through */ }
+        }
+      }
       // Do NOT silently skip on size: stream-scan the file instead (a large
       // ordinary text file can carry a plaintext secret; a genuine large binary
       // is skipped inside scanLargeFile after a head classification).
@@ -616,6 +736,60 @@ function main() {
       // content-scanned, and a NUL-interleaved encoding such as UTF-16LE — ~50%
       // NUL — classifies as non-text, so is not scanned either.)
       // 2026-07-25: Also run multi-pass decode/normalize on NUL-containing files
+      //
+      // 2026-07-26 audit finding 4, SECOND HALF. Fixing the ESM `require` in
+      // decodeAndNormalize was necessary but NOT sufficient, and the audit
+      // initially understated this: the gzip branch was also architecturally
+      // UNREACHABLE. A real gzip blob contains NUL bytes and is not textish, so
+      // control reached the `continue` below and the file was skipped before any
+      // decoding was attempted. decodeAndNormalize only ever received text
+      // buffers, on which gunzipSync fails with "incorrect header check".
+      // Verified by execution: with the import fixed but this guard unchanged, a
+      // gzipped AWS key still shipped with decision "allow".
+      //
+      // So the compressed case is now handled HERE, before the binary skip:
+      // check the gzip magic bytes (1f 8b) and, if the content decompresses to
+      // text, scan the decompressed text. Findings are attributed to the
+      // container file, with the line number being the position within the
+      // DECOMPRESSED stream — which is the only meaningful line number there is
+      // for packed content, and is genuinely useful for locating the secret once
+      // the file is unpacked.
+      if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+        try {
+          const inflated = zlib.gunzipSync(buf);
+          if (bufIsTextish(inflated)) {
+            scanText(inflated.toString('utf8'), f);
+            continue;
+          }
+        } catch {
+          // Not valid gzip, or a compression bomb guard tripped — fall through
+          // to the ordinary binary handling below.
+        }
+      }
+      // 2026-07-26 audit finding 5, same architectural cause. SECURITY.md
+      // honestly disclosed this as a residual: "a NUL-interleaved encoding such
+      // as UTF-16LE — ~50% NUL — classifies as non-text, so is not scanned
+      // either." That disclosure was accurate, and it means the UTF-16 handling
+      // inside decodeAndNormalize was ALSO unreachable for whole files, for the
+      // same reason the gzip branch was: control never got past the binary skip.
+      //
+      // A UTF-16 file that carries a byte-order mark is unambiguous, so decode
+      // and scan it here. This closes the disclosed residual for the announced
+      // case; a UTF-16 file with NO byte-order mark remains out of scope and
+      // stays disclosed, because guessing at unmarked wide encodings is how
+      // false positives on genuine binaries start.
+      if (buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff))) {
+        const littleEndian = buf[0] === 0xff;
+        const body = Buffer.from(buf.subarray(2));
+        if (body.length % 2 === 0) {
+          if (!littleEndian) body.swap16(); // Node has no 'utf16be'; swap then decode as LE
+          const decoded = body.toString('utf16le');
+          if (strIsTextish(decoded)) {
+            scanText(decoded, f);
+            continue;
+          }
+        }
+      }
       if (!bufIsTextish(buf)) continue;
       // Replace each NUL with a newline (String.fromCharCode(0) avoids an
       // easily-mangled literal NUL byte in source): the ASCII lines around a

@@ -8,7 +8,7 @@ description: The C++ ecosystem pack — the exact build, test, lint, format and 
 The shared toolchain knowledge for C++ work, so the `cpp-developer` agent stays
 thin. Plain-English rule is as set in the `studio` skill.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -17,6 +17,7 @@ thin. Plain-English rule is as set in the `studio` skill.
 | lint | `clang-tidy` over the translation units (via `compile_commands.json`) |
 | format | `clang-format --dry-run --Werror <files>` (apply without `--dry-run`) |
 | deps | vcpkg (`vcpkg install <pkg>`) or Conan (`conan install .`); wire into CMake |
+| package (2026-07-26 audit finding 15) | `cpack` (from the same CMake build) for a platform installer, or ship the built binary directly for a CLI tool — ships as a `.deb`/`.rpm` (Linux), `.dmg` (macOS), or NSIS/WiX installer (Windows) |
 
 ## Idioms and gotchas
 

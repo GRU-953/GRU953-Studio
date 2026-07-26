@@ -37,7 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise, isDirectory } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
@@ -51,7 +51,20 @@ const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 const DEFERRED_RE = /^\s*(deferred|future|backlog|later|parked|out[ \t]*of[ \t]*scope)\b/i;
 const MET_RE = /^\s*(met|done|complete[d]?|verified|pass(ed)?|shipped)\b/i;
 const EXEMPT_RE = /\[(chore|infra|infrastructure|no-?req)\]|\bno-?req\b/i;
-const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
+// 2026-07-26, found during a further pass after fixing the same bug class in
+// verify-progress.mjs (audit finding 1). This pattern only matched the literal
+// word "exit" immediately followed by whitespace and a digit — so "exit code 1"
+// or "exited with code 1" never matched. Reproduced: a requirement's Verification
+// cell reading "Ran npm test - exit code 1, 3 failing", with Status "Met",
+// returned {"status":"clean"}. Added an alternative for "exit[ed] [with] code N".
+//
+// 2026-07-26 further-pass audit fix: this file's own local copy had also
+// fallen behind quality-gate.mjs's — missing quality-gate.mjs's
+// `regress(?:ed|ion)` alternative. Reproduced: a requirement whose
+// Verification cell read "npm test green, but a regression was spotted in
+// nightly build", Status "Met", returned clean here. Now imports the one
+// shared pattern from lib.mjs instead of a local copy, so this file and its
+// two siblings cannot drift apart on this again.
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // 2026-07-21 Round 15 audit fix: de-emphasise a Status VALUE before matching, the
 // same way verify-progress.mjs (Round 12) does for its "done" values. Without it a
@@ -63,8 +76,16 @@ const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // alphanumeric decoration, so the anchored REs see the bare status word.
 const deEmphStatus = (s) => String(s == null ? '' : s).replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '').replace(/^[^A-Za-z0-9]+/, '');
 
+// 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
+// fix — checked by execution rather than assumed: this file's table-row test
+// (`/^\s*\|/`) already tolerates a leading BOM by accident, because
+// JavaScript's `\s` class matches U+FEFF. stripBom() stops that correctness
+// depending on the accident, so a future tightening of the row pattern can't
+// silently reintroduce it. (memory-integrity.mjs and dashboard.mjs DID have a
+// real, reproduced BOM bug: both use a strict `^#` heading regex with no
+// `\s*` prefix, which a BOM genuinely defeats.)
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 function idsIn(cell) {
   if (!cell || PLACEHOLDER_RE.test(cell.trim())) return [];
@@ -88,7 +109,11 @@ function parseTable(text, wantHeaderRe) {
     const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
-      if (cells.some((c) => wantHeaderRe.test(c))) headers = cells;
+      // 2026-07-26 further-pass audit fix: de-emphasise before testing, the
+      // same as verify-progress.mjs already does — otherwise a decorated
+      // header ("**ID**", "`Requirement`") makes the whole table
+      // unrecognised even though every row is otherwise well-formed.
+      if (cells.some((c) => wantHeaderRe.test(deEmphasise(c)))) headers = cells;
       continue;
     }
     if (!headers) { inTable = false; continue; }
@@ -98,13 +123,18 @@ function parseTable(text, wantHeaderRe) {
   return headers ? { headers, rows } : null;
 }
 function col(headers, re) {
-  return headers.findIndex((c) => re.test(c));
+  return headers.findIndex((c) => re.test(deEmphasise(c)));
 }
 
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  // 2026-07-26 Stage 3 fix (audit finding 22, not originally named for this
+  // file — found while fixing the same pattern in its four siblings). Was
+  // two separate, unguarded calls racing against each other — see
+  // lib.mjs's isDirectory() for the full reproduction (a crash instead of a
+  // plain message if Dev-Memory disappears between the two calls).
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to trace', root }));
     process.exit(0);
   }

@@ -1,15 +1,20 @@
 {
   "name": "@gru953/studio-cli",
-  "version": "1.0.0",
+  "version": "5.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GRU-953/GRU953-Studio.git",
+    "directory": "clients/cli"
+  },
   "bin": {
     "gru953-studio": "./src/index.js"
   }

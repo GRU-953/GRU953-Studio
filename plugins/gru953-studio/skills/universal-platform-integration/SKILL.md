@@ -1,6 +1,6 @@
 ---
 name: universal-platform-integration
-description: The Universal Agentic Protocol for running GRU953-Studio across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI) — mapping the 38 roles, 34 skills, and memory system to IDEs, CLI agents, and cloud swarms.
+description: The Universal Agentic Protocol for running GRU953-Studio across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI) — mapping the 38 roles, 35 skills, and memory system to IDEs, CLI agents, and cloud swarms.
 ---
 
 # Universal Platform Integration
@@ -30,7 +30,7 @@ When operating in terminal-first environments:
 
 When deployed in a headless or cloud sandbox:
 - **Asynchronous Swarms**: The studio leverages the sandbox's execution environment to run multiple specialist roles in parallel (e.g., `tester` verifying while `builder` codes).
-- **Environment Parity**: The studio assumes a standard POSIX environment and provisions required language toolchains (via the `lang-*` ecosystem skills) automatically.
+- **Environment Parity**: Autonomous cloud/sandbox hosts of this kind are typically Linux-based containers, so this is where a POSIX shell can genuinely be assumed. This is a property of *this specific host category*, not of the studio's own tooling — the studio's hooks and safety checks are themselves written to run identically on Windows, macOS and Linux (see the CI matrix), because sections 1 and 2 above cover IDEs and terminals that are routinely Windows machines. Required language toolchains (via the `lang-*` ecosystem skills) are provisioned automatically either way.
 - **Reporting**: The `publisher` role is adapted to push to remote git providers automatically once the `quality-gate` passes, without requiring a local interactive browser session.
 
 ## 4. Enterprise Platforms (Augment Code, Tabnine, Amazon Q)

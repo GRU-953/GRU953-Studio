@@ -31,7 +31,7 @@ report concerns responsibly rather than opening a public issue.
 Please report security issues **privately**. Do not open a public issue for a
 suspected vulnerability.
 
-- **Email:** gru953@gmail.com
+- **Email:** aninda.sh15@gmail.com
 
 Include as much detail as you can: affected component, steps to reproduce,
 potential impact, and any proof-of-concept material. Please do not include
@@ -761,3 +761,34 @@ existing gate — each is additive.
   status is still held to the "a met requirement carries verification evidence"
   rule, and a decorated "deferred" no longer causes a spurious dropped-requirement
   block. Quality/integrity gate.
+
+## Currency update (2026-07-26, audit stage 1) — an undisclosed background git pull, now removed (finding 32)
+
+This is the correction this section exists to make: the single most
+security-relevant behaviour added since the last currency update above was
+never disclosed here at all. Recorded honestly, in the same spirit as every
+other disclosure in this document.
+
+**What existed, undisclosed.** Every session start used to spawn
+`auto-update.mjs` **detached**, with no confirmation, which ran `git remote
+update` then `git pull --rebase --autostash` against whatever directory the
+plugin resolved to — the repository root in a git checkout, or an arbitrary
+folder in a marketplace install. This rewrote history and stashed the user's
+own uncommitted work automatically. It was also the only code path in the
+whole product that modified files the user had not asked it to touch, and it
+silently never ran on Windows at all (a separate path-handling bug masked
+its own blast radius there).
+
+**What replaced it (2026-07-26 audit findings 24 and 25).** Session start is
+now notify-only: nothing is fetched, nothing is written, and no child process
+is spawned. The user is told plainly that an update may be available and
+pointed at the explicit `/studio-update` command, which still performs a
+real update, but only when the user actually asks for it. This is a
+deliberate *reduction* in automation — a silent rebase was never a feature
+worth keeping — and it is asserted by a test that the session-start hook
+spawns no child process at all.
+
+**Version coverage: through v5.0.0.** This document, and the audit that
+produced this section, cover every hook and gate through the 5.0.0 release —
+stamped once, in the same commit as the version bump itself, so it is never
+written down twice.

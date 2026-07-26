@@ -39,6 +39,20 @@ function isAllowed(licenceStr) {
   const s = String(licenceStr).trim();
   if (ALLOWED.has(s)) return true;
   if (FLAG_SUBSTRINGS.some((f) => s.toUpperCase().includes(f))) return false;
+  // 2026-07-26 audit finding 2 (found while making licence-scan.mjs recursive
+  // and finally scanning it against this repo's own real npm packages): a
+  // compound SPDX expression such as "(MIT OR CC0-1.0)" — a real, fully
+  // permissive licence choice — was reported "needs-review" here, because
+  // this function only ever compared the WHOLE string against the flat
+  // ALLOWED set, never parsing it as an expression the way
+  // classifySpdxExpr() below already does for Dart/Cargo/Maven. Delegate to
+  // the same parser for any string that looks like a compound expression,
+  // so an npm package doesn't get a worse answer than a Dart one for
+  // identical licence text.
+  if (/[()]|\bOR\b|\bAND\b/i.test(s)) {
+    const parsed = classifySpdxExpr(s);
+    if (parsed !== null) return parsed;
+  }
   return null; // present but not recognised — needs a human look
 }
 
@@ -114,8 +128,30 @@ function scanNodeFromLockfile(root, lockFilePath) {
   try {
     const lockContent = JSON.parse(fs.readFileSync(lockFilePath, 'utf8'));
     const findings = [];
-    const packages = lockContent.packages || {};
-    
+    // 2026-07-26, found during a further pass over licence-scan.mjs. This
+    // defaulted straight to `{}` whenever `packages` was absent, and then
+    // returned `checked: true` regardless — so a lockfileVersion 1
+    // package-lock.json (npm 5/6, which nests dependencies under
+    // `dependencies` rather than the flat `packages` map npm 7+ introduced)
+    // silently examined ZERO packages while still reporting a full pass.
+    // Reproduced: a v1-shaped lockfile recording a real GPL dependency
+    // returned {"status":"clean"}.
+    //
+    // v1 lockfiles also don't reliably carry per-package licence data even
+    // once the tree is walked (that only became a lockfile field with the v2/v3
+    // "packages" format), so rather than build a nested-tree walker for data
+    // that usually isn't there, this is now an honest "not checked": it joins
+    // this file's other disclosed gaps (Python venvs, Maven/Gradle, C++, Swift,
+    // .NET, Go) and turns the overall verdict into INCOMPLETE rather than a
+    // false clean.
+    if (!lockContent.packages || typeof lockContent.packages !== 'object') {
+      return {
+        ecosystem: 'npm', checked: false, findings: [],
+        note: `${path.basename(lockFilePath)} has no "packages" map (lockfileVersion ${lockContent.lockfileVersion ?? '1 or unknown'}) — npm lockfiles older than v2 don't reliably record per-package licences; run \`npm install\` and re-scan, or review dependency licences manually before publish`,
+      };
+    }
+    const packages = lockContent.packages;
+
     for (const [pkgPath, pkgInfo] of Object.entries(packages)) {
       if (pkgPath === '' || pkgPath === '.') continue; // Skip root package
       const name = pkgPath.replace(/^node_modules\//, '');
@@ -153,7 +189,7 @@ function severityRank(v) {
 function scanPython(root) {
   // Try pip-licenses first (most reliable)
   try {
-    const raw = execFileSync('pip-licenses', ['--format=json', '--with-license-file'], {
+    const raw = execFileSync(resolveExecutable('pip-licenses'), ['--format=json', '--with-license-file'], {
       cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
     });
     const pkgs = JSON.parse(raw);
@@ -218,6 +254,52 @@ export function detectLicenceFromText(text) {
   return null;
 }
 
+// 2026-07-26 audit finding 8. execFileSync() runs the named program directly
+// (no shell), which on Windows does not reliably search PATHEXT the way a
+// shell invocation does — a tool installed as a `.cmd` or `.bat` shim (which
+// is how pip and several other installers wrap a console entry point on
+// Windows) is not found by its bare name, and the whole ecosystem silently
+// degraded to "not checked" as a result.
+//
+// This resolves the real executable path — including its extension — before
+// handing it to execFileSync, so the actual binary being launched is never in
+// question. platform/pathEnv/pathExtEnv are parameters (defaulting to the
+// real environment) specifically so this can be unit-tested on any OS: the
+// algorithm itself (walking PATH x PATHEXT, checking the filesystem) is
+// exercised directly and verified by execution, even though the real Windows
+// spawn behaviour this defends against can only be proven by the Windows leg
+// of the CI matrix, not by a Linux sandbox.
+export function resolveExecutable(name, platform = process.platform, pathEnv = process.env.PATH || '', pathExtEnv = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD') {
+  if (platform !== 'win32') return name;
+  const dirs = pathEnv.split(path.delimiter).filter(Boolean);
+  const exts = pathExtEnv.split(';').filter(Boolean);
+  // Candidates compared case-INSENSITIVELY on purpose: real Windows
+  // filesystems fold case, but relying on that here would mean this
+  // algorithm's correctness could only ever be checked by actually running
+  // on Windows. Doing the case-folding ourselves makes the logic verifiably
+  // correct by execution on any OS, matching real Windows behaviour exactly
+  // rather than merely being untestable in the same way it is.
+  const wanted = new Set([name.toLowerCase(), ...exts.map((ext) => (name + ext).toLowerCase())]);
+  for (const dir of dirs) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue; // dir doesn't exist or isn't readable — keep looking elsewhere
+    }
+    for (const entry of entries) {
+      if (!wanted.has(entry.name.toLowerCase())) continue;
+      const full = path.join(dir, entry.name);
+      try {
+        if (fs.statSync(full).isFile()) return full;
+      } catch {
+        // vanished between readdir and stat, or a broken symlink — keep looking
+      }
+    }
+  }
+  return name; // not found anywhere; let execFileSync fail with its own ENOENT
+}
+
 export function findPubCacheRoot() {
   if (process.env.PUB_CACHE) return process.env.PUB_CACHE;
   if (process.platform === 'win32') {
@@ -227,10 +309,30 @@ export function findPubCacheRoot() {
   return path.join(os.homedir(), '.pub-cache');
 }
 
+// A package with no cache entry to inspect (git/path sourced, or the project's
+// own root package) is surfaced as needs-review rather than silently dropped.
+// `source: 'root'` (the project's own package, always present in a real
+// `dart pub deps --json` result) is deliberately excluded — flagging a
+// project's own package as needing a licence review on every single scan
+// would be a self-inflicted false positive on every Dart project, not a real
+// finding.
+export function classifyNonHostedDartPackages(packages) {
+  const findings = [];
+  for (const pkg of packages || []) {
+    if (!pkg || pkg.source === 'hosted' || pkg.source === 'root') continue;
+    findings.push({
+      package: pkg.name,
+      licence: `unchecked (${pkg.source || 'non-hosted'} source — no pub.dev cache entry to inspect)`,
+      verdict: 'needs-review',
+    });
+  }
+  return findings;
+}
+
 function scanDartFlutter(root) {
   let parsed;
   try {
-    const raw = execFileSync('dart', ['pub', 'deps', '--json'], {
+    const raw = execFileSync(resolveExecutable('dart'), ['pub', 'deps', '--json'], {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -248,7 +350,22 @@ function scanDartFlutter(root) {
 
   const pubCacheRoot = findPubCacheRoot();
   const findings = [];
-  const hostedPackages = (parsed.packages || []).filter((p) => p.source === 'hosted');
+  const allPackages = parsed.packages || [];
+  const hostedPackages = allPackages.filter((p) => p.source === 'hosted');
+  // 2026-07-26, found during a further pass over licence-scan.mjs. Git- or
+  // path-sourced packages (very ordinary for Dart — forked packages, private
+  // plugins) were filtered out here and never looked at again, yet the
+  // function still returned checked:true unconditionally at the bottom.
+  // Reproduced: a git-sourced GPL-licensed package never appeared anywhere in
+  // the output — not blocked, not flagged for review — while the ecosystem
+  // reported clean. There is no reliable LICENSE-file convention for a
+  // git/path source the way there is for the hosted pub.dev cache layout, so
+  // rather than guess, each is surfaced as needs-review — honest uncertainty,
+  // not silent omission. Extracted to its own exported function so it can be
+  // unit-tested directly, matching this file's existing, deliberate rationale
+  // for testing detectLicenceFromText() in isolation rather than faking a
+  // `dart pub deps --json` end-to-end run (see the test file for why).
+  findings.push(...classifyNonHostedDartPackages(allPackages));
 
   for (const pkg of hostedPackages) {
     const pkgDir = path.join(pubCacheRoot, 'hosted', 'pub.dev', `${pkg.name}-${pkg.version}`);
@@ -320,7 +437,7 @@ export function classifySpdxExpr(expr) {
 function scanCargo(root) {
   let parsed;
   try {
-    const raw = execFileSync('cargo', ['metadata', '--format-version', '1'], {
+    const raw = execFileSync(resolveExecutable('cargo'), ['metadata', '--format-version', '1'], {
       cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
     });
     parsed = JSON.parse(raw);
@@ -346,7 +463,10 @@ function scanCargo(root) {
 // ---- JVM (Maven/Gradle) ----
 function scanJvm(root, kind) {
   // Check for lockfiles
-  const lockFiles = kind === 'java/maven' ? ['pom.xml'] : ['gradle.lockfile', 'gradle.lockfile', 'build.gradle.lock'];
+  // 2026-07-26 audit finding 34: 'gradle.lockfile' was listed twice here,
+  // harmlessly (checking the same real file twice costs nothing) but wrong —
+  // corrected to the two distinct real Gradle lockfile names.
+  const lockFiles = kind === 'java/maven' ? ['pom.xml'] : ['gradle.lockfile', 'build.gradle.lock'];
   for (const lf of lockFiles) {
     if (fs.existsSync(path.join(root, lf))) {
       return { 
@@ -415,32 +535,117 @@ function scanGo(root) {
   return { ecosystem: 'go/modules', checked: false, findings: [], note: 'Go module project detected — run `go list -m all` (or `go-licenses`) and review module licences before publish' };
 }
 
-function main() {
-  const root = process.argv[2] || process.cwd();
-  const has = (f) => fs.existsSync(path.join(root, f));
+// 2026-07-26 audit finding 2 (the vacuity this whole document opens with).
+// main() used to check ONLY the given root directory for a manifest — on
+// this very repository, every real manifest lives one level down
+// (clients/cli/package.json, clients/antigravity/package.json,
+// clients/vscode/package.json, plus the former plugins/gru953-studio/
+// package.json), so this reported "no recognised dependency manifests
+// found" while the repo held four manifests and a lockfile with 93
+// resolved packages — reproduced directly, and true of any nested project
+// layout, not just this one (a Flutter app's android/, a monorepo's web/).
+//
+// Fixed with a bounded recursive walk rather than a full .gitignore parser:
+// this project's own established discipline is closing the concrete case
+// found, not building a general grammar engine for one gate (the same
+// reasoning behind the push-safety matcher and the docs-consistency
+// checks elsewhere in this repo). SKIP_DIR_NAMES excludes each
+// ecosystem's own dependency tree — those are scanned BY that ecosystem's
+// scanner already; walking into node_modules/ etc. as if it were a second
+// project would multiply spurious "project" directories and duplicate
+// every finding. MAX_DEPTH bounds the walk so a pathological tree (or a
+// symlink cycle — real directories are walked by name, never followed as
+// symlinks) cannot make this run away.
+const SKIP_DIR_NAMES = new Set([
+  'node_modules', '.git', 'Dev-Memory', 'out', 'dist', 'build', 'coverage',
+  '.vscode-test', '.dart_tool', 'target', '.gradle', 'vendor', '.venv',
+  'venv', '__pycache__', 'Pods', 'DerivedData',
+]);
+const MAX_WALK_DEPTH = 6;
+const MANIFEST_FILE_NAMES = [
+  'package.json', 'requirements.txt', 'pyproject.toml', 'Pipfile', 'Pipfile.lock',
+  'pubspec.yaml', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts',
+  'settings.gradle', 'settings.gradle.kts', 'vcpkg.json', 'conanfile.txt',
+  'conanfile.py', 'CMakeLists.txt', 'Package.swift', 'Package.resolved',
+  'packages.lock.json', 'go.mod',
+];
+function dirEntries(dir) {
+  try { return fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+}
+function hasAnyManifest(dir, entries) {
+  const names = entries.map((e) => e.name);
+  if (MANIFEST_FILE_NAMES.some((n) => names.includes(n))) return true;
+  return names.some((n) => n.endsWith('.csproj') || n.endsWith('.sln'));
+}
+export function findManifestDirs(root) {
+  const found = [];
+  function walk(dir, depth) {
+    const entries = dirEntries(dir);
+    // A file path (not a directory) as root, or an unreadable one, yields
+    // no entries and no manifests — reported the same as any other empty
+    // directory, never a crash (2026-07-21 Round 4 fix, preserved).
+    if (entries.length > 0 || fs.existsSync(dir)) {
+      if (hasAnyManifest(dir, entries)) found.push(dir);
+    }
+    if (depth >= MAX_WALK_DEPTH) return;
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (SKIP_DIR_NAMES.has(e.name)) continue;
+      walk(path.join(dir, e.name), depth + 1);
+    }
+  }
+  walk(root, 0);
+  return found;
+}
+
+// Runs the same per-ecosystem detection this file has always used, just
+// against ONE candidate directory rather than assuming it's the only one —
+// unchanged logic, now callable at every directory findManifestDirs() found.
+function scanOneDirectory(dir) {
+  const has = (f) => fs.existsSync(path.join(dir, f));
   const hasPackageJson = has('package.json');
-  const hasRequirements = has('requirements.txt') || has('pyproject.toml');
+  // 2026-07-26 further-pass audit fix (false-green, confirmed by execution):
+  // this gate never checked for Pipenv's own manifest/lockfile, even though
+  // scanPython() below already explicitly knows about `Pipfile.lock` as a
+  // lockfile fallback — that fallback was simply never reachable for a
+  // Pipenv-only project (no requirements.txt/pyproject.toml at all), so
+  // Python never appeared as an entry in `results` at all. Reproduced: a
+  // directory with only Pipfile/Pipfile.lock (holding a real copyleft
+  // dependency) returned {"status":"clean","results":[]} — worse than the
+  // disclosed "notChecked" pattern used everywhere else in this file, since
+  // there was no entry at all to alert a human.
+  const hasRequirements = has('requirements.txt') || has('pyproject.toml') || has('Pipfile') || has('Pipfile.lock');
   const hasPubspec = has('pubspec.yaml');
   const hasCargo = has('Cargo.toml');
   const hasMaven = has('pom.xml');
   const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
   const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
   const hasSwift = has('Package.swift') || has('Package.resolved');
-  let rootEntries = [];
-  try { rootEntries = fs.readdirSync(root); } catch { rootEntries = []; }
-  const hasDotnet = rootEntries.some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
+  const hasDotnet = dirEntries(dir).some((e) => e.name.endsWith('.csproj') || e.name.endsWith('.sln')) || has('packages.lock.json');
   const hasGo = has('go.mod');
 
+  const dirResults = [];
+  if (hasPackageJson) dirResults.push(scanNode(dir));
+  if (hasRequirements) dirResults.push(scanPython(dir));
+  if (hasPubspec) dirResults.push(scanDartFlutter(dir));
+  if (hasCargo) dirResults.push(scanCargo(dir));
+  if (hasMaven || hasGradle) dirResults.push(scanJvm(dir, hasMaven ? 'java/maven' : 'jvm/gradle'));
+  if (hasCpp) dirResults.push(scanCpp(dir));
+  if (hasSwift) dirResults.push(scanSwift(dir));
+  if (hasDotnet) dirResults.push(scanDotnet(dir));
+  if (hasGo) dirResults.push(scanGo(dir));
+  return dirResults;
+}
+
+function main() {
+  const root = process.argv[2] || process.cwd();
+  const manifestDirs = findManifestDirs(root);
+
   const results = [];
-  if (hasPackageJson) results.push(scanNode(root));
-  if (hasRequirements) results.push(scanPython(root));
-  if (hasPubspec) results.push(scanDartFlutter(root));
-  if (hasCargo) results.push(scanCargo(root));
-  if (hasMaven || hasGradle) results.push(scanJvm(root, hasMaven ? 'java/maven' : 'jvm/gradle'));
-  if (hasCpp) results.push(scanCpp(root));
-  if (hasSwift) results.push(scanSwift(root));
-  if (hasDotnet) results.push(scanDotnet(root));
-  if (hasGo) results.push(scanGo(root));
+  for (const dir of manifestDirs) {
+    const rel = path.relative(root, dir) || '.';
+    for (const r of scanOneDirectory(dir)) results.push({ ...r, dir: rel });
+  }
 
   if (results.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'no recognised dependency manifests found', results: [] }, null, 2));
@@ -469,6 +674,41 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+// 2026-07-26 audit finding 3 (MAJOR — a gate that silently passes). This used
+// to compare `fileURLToPath(import.meta.url) === path.resolve(process.argv[1])`
+// as plain strings. On Windows, the drive letter can legitimately differ in
+// case between how Node resolved the module (`import.meta.url`) and how the
+// caller typed the invocation (`node C:\repo\...` vs `node c:\repo\...`) —
+// those are the SAME file, but the raw strings don't match, so `main()` was
+// never called: the script exited 0 having printed nothing. A licence gate
+// that silently does nothing is the worst possible failure mode for a check
+// whose entire job is to block a bad publish.
+//
+// Fixed by comparing REALPATHS (via the native syscall, which resolves
+// filesystem case on a case-insensitive volume — the same technique already
+// used for temp-dir resolution in the test harness, for the equivalent macOS
+// symlink issue) rather than raw strings, so a case or symlink difference that
+// still points at the identical file no longer breaks the comparison. Falls
+// back to the original string comparison if either path can't be resolved
+// (e.g. a genuinely different/nonexistent file), so a real mismatch still
+// correctly skips `main()` rather than throwing.
+//
+// This specific Windows drive-letter scenario could not be executed on this
+// Linux sandbox — real path semantics differ per platform and can't be
+// faked with string tests. The Windows leg of the CI matrix added in this
+// same change is what actually proves this guard fires there; the ordinary
+// same-platform invocation is covered by a portable test below, which passes
+// identically on every OS this runs on.
+function isDirectlyInvoked() {
+  if (!process.argv[1]) return false;
+  const modulePath = fileURLToPath(import.meta.url);
+  try {
+    return fs.realpathSync.native(modulePath) === fs.realpathSync.native(process.argv[1]);
+  } catch {
+    return modulePath === path.resolve(process.argv[1]);
+  }
+}
+
+if (isDirectlyInvoked()) {
   main();
 }

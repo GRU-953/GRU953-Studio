@@ -12,6 +12,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 
 // ---- decision helpers --------------------------------------------------------
 // Output is built with JSON.stringify, never hand-interpolated: a reason
@@ -100,6 +101,27 @@ export function extractCwd(input) {
   return typeof c === 'string' ? c : '';
 }
 
+// 2026-07-26 Stage 3 fix (audit finding 22). Five of this project's own
+// gates (content-check, quality-gate, memory-integrity, dashboard, and — not
+// originally named in the finding, found while fixing the other four —
+// traceability-check) each opened with their OWN copy of
+// `!fs.existsSync(p) || !fs.statSync(p).isDirectory()`: two separate,
+// unguarded filesystem calls, racing against whatever else might touch that
+// path between them. If Dev-Memory is deleted, replaced, or renamed in that
+// window, the second call (`statSync`, with no try/catch of its own) throws
+// a raw Node stack trace instead of this project's own plain-English
+// contract — exactly the crash class finding 21 already fixed for reads and
+// writes, just for an existence CHECK instead. findStudioRoot() right below
+// already gets this right — one guarded stat call, not two racing ones —
+// this generalises that same already-correct pattern for reuse by all five.
+export function isDirectory(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 // ---- studio run marker (the run-scope gate) --------------------------------------
 // The studio's project marker is its Dev-Memory folder. Walk up from `start`
 // looking for one; return the project root that contains it, or null when no
@@ -116,6 +138,150 @@ export function findStudioRoot(start) {
     if (parent === d) return null;
     d = parent;
   }
+}
+
+// Node's own fs system-error messages already start with the error code
+// (e.g. "EISDIR: illegal operation..."), so only prepend e.code when the
+// message doesn't already carry it — otherwise a formatted message reads
+// "EISDIR: EISDIR: ...". Shared by writeConfirmationRecordOrExit below and
+// roster-check.mjs's own guarded read, so the two don't drift apart.
+export function formatFsError(e) {
+  return e.message && e.code && e.message.startsWith(e.code) ? e.message : `${e.code || 'error'}: ${e.message}`;
+}
+
+// 2026-07-26 audit finding (further pass after stage 2): all four
+// confirm-*.mjs scripts (confirm-checkpoint, confirm-go-public,
+// confirm-memory-persist, confirm-publish) wrote their token record with a
+// bare, unguarded `fs.writeFileSync` — reproduced by execution: making the
+// target path a directory instead of a file (a plausible outcome of a stray
+// `mkdir`, a bad merge, or a case-folding artefact on Windows/macOS) throws
+// `EISDIR` with a full Node stack trace to stderr and exit 1, the exact
+// "never show a raw stack trace" guarantee this codebase otherwise enforces
+// everywhere else. A read-only Dev-Memory (EACCES), a full disk (ENOSPC) or
+// a read-only mount (EROFS) would fail the same way. Centralised here so
+// all four scripts get one plain-English failure message instead of four
+// copies that could drift, matching how this file already centralises
+// findStudioRoot() for the same four scripts.
+export function writeConfirmationRecordOrExit(record, content, label) {
+  try {
+    fs.writeFileSync(record, content, 'utf8');
+  } catch (e) {
+    process.stderr.write(
+      `${label}: could not write the confirmation record at ${record} ` +
+        `(${formatFsError(e)}). Check that Dev-Memory is a writable folder — ` +
+        `not a file or directory in the wrong place, not read-only, and the ` +
+        `disk is not full — then try again.\n`,
+    );
+    process.exit(1);
+  }
+}
+
+// ---- confirmation-token TTL binding (shared by gate.mjs AND scan.mjs) --------
+// 2026-07-26 audit finding 12, originally fixed only in gate.mjs: the token and
+// its timestamp were not BOUND — each checker matched the token on one line,
+// then evaluated the TTL against the WHOLE file with /^ISSUED:(\d+)$/m. So a
+// record containing an expired approval line plus any fresh `ISSUED:` line
+// anywhere — an appended second approval, a hand-edited or concatenated file,
+// a stale token left above a newer one — re-validated the expired token.
+//
+// 2026-07-26 further-pass audit fix: this fix originally lived ONLY in
+// gate.mjs as a local, unexported function. scan.mjs has its own SEPARATE
+// consumer of the same MEMORY-PERSIST-APPROVED record (memoryPersistAllowed,
+// deciding whether to skip the dev-memory-path finding) and had its own
+// independent, un-fixed copy of the old unbound logic — confirmed by
+// execution to still accept an expired token when an unrelated fresh
+// `ISSUED:` line sits elsewhere in the file. Moved here so there is exactly
+// ONE implementation both hooks share, closing the bug in scan.mjs and
+// removing the risk of the two ever drifting apart again the way they just
+// had.
+//
+// The four confirm-*.mjs writers all emit exactly `<TOKEN>\nISSUED:<ms>\n`, so
+// the timestamp that belongs to a token is the line IMMEDIATELY after it.
+// Requiring that adjacency binds the pair and closes the substitution, while
+// remaining exactly what every writer already produces. Still fails closed:
+// no adjacent ISSUED line means not confirmed.
+//
+// (Investigated and NOT a defect, recorded so it is not "fixed" later: the
+// original /^ISSUED:(\d+)$/m tolerated CRLF correctly — in JavaScript, `$` in
+// multiline mode matches before CR as well as LF. Verified by execution.)
+export const CONFIRMATION_TTL_MS = 60 * 60 * 1000; // 60 minutes
+export function withinTtl(raw) {
+  const issuedAt = parseInt(raw, 10);
+  return Number.isFinite(issuedAt) && Date.now() - issuedAt <= CONFIRMATION_TTL_MS && Date.now() - issuedAt >= 0;
+}
+export function tokenConfirmedWithinTtl(text, expected) {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== expected) continue;
+    const next = (lines[i + 1] ?? '').trim();
+    const m = /^ISSUED:(\d+)$/.exec(next);
+    if (m && withinTtl(m[1])) return true;
+    // Keep scanning: a later, correctly-paired occurrence is still valid.
+  }
+  return false;
+}
+
+// ---- "done means proven" contradiction detector (shared by three gates) -----
+// A status/evidence cell that narrates its own row is currently broken or
+// unproven invalidates an otherwise-passing verdict — verify-progress.mjs,
+// quality-gate.mjs and traceability-check.mjs each do conceptually the same
+// job (don't let a row claim "done"/"met"/"pass" while its own text says
+// otherwise) but had drifted into three DIFFERENT copies of this pattern.
+//
+// 2026-07-26 audit finding 1/35: the original pattern only matched the literal
+// word "exit" immediately followed by whitespace and a digit, so the far more
+// natural phrasing "exit code 1" / "exited with code 1" never matched. Fixed
+// in quality-gate.mjs and traceability-check.mjs (finding 35) but NOT in
+// verify-progress.mjs — the exact file finding 1 was originally about —
+// because each carried its own independent copy and the fix was never ported
+// back to all three. Reproduced by execution: a PROGRESS.md row with
+// "verified: npm test -> exit 0; however a later re-run gave exit code 1"
+// returned {"status":"clean"} from verify-progress.mjs while the identical
+// text in a QUALITY-GATE.md row was correctly BLOCKED.
+//
+// Separately, quality-gate.mjs alone had a `regress(?:ed|ion)` alternative
+// that traceability-check.mjs and verify-progress.mjs both lacked — reproduced
+// the same way: "npm test green, but a regression was spotted in nightly
+// build" was silently accepted by both.
+//
+// Moved here as the ONE shared pattern all three now use, so this specific
+// three-way drift — the exact failure mode a background review agent was
+// asked to hunt for — cannot recur.
+export const CONTRADICTION_RE = /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
+
+// ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
+// 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
+// each read frontmatter with `text.match(/^---\n([\s\S]*?)\n---/)` — an
+// LF-only pattern. On a Windows checkout with git's default
+// core.autocrlf=true, every agent and skill file's frontmatter block is
+// CRLF, so this failed to match on ALL 38 agents and 35 skills at once —
+// reported as "missing name: frontmatter" across the board. Verified by
+// execution against a real CRLF-encoded fixture.
+//
+// Every markdown-parsing hook in this project already tolerates CRLF when
+// splitting body lines (`split(/\r?\n/)`); this frontmatter regex and its
+// counterpart in mcp-server.js were the only two LF-only holdouts in the
+// entire tree. Centralised here so future readers get this for free rather
+// than each hand-rolling their own `\r?\n` pattern (which is exactly how the
+// gap opened in the first place — one file's parser was never brought in
+// line with the rest).
+//
+// stripBom() additionally handles the UTF-8 byte-order mark some Windows
+// editors prepend, which would otherwise break the `^---` anchor the same
+// way a CRLF-only regex does — three invisible bytes, same failure shape.
+export function stripBom(text) {
+  return typeof text === 'string' && text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+// Extracts the frontmatter block's raw inner text (the part between the two
+// `---` fences), tolerant of LF, CRLF and a leading BOM. Returns null if there
+// is no frontmatter block at all — distinct from "frontmatter present but a
+// given field is absent", which is frontmatterField()'s job below.
+export function frontmatterBlock(text) {
+  const stripped = stripBom(text);
+  if (!stripped) return null;
+  const m = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  return m ? m[1] : null;
 }
 
 // ---- push-capable command matcher (fail CLOSED) ------------------------------
@@ -214,6 +380,23 @@ export function findStudioRoot(start) {
 // identically. Leading/trailing empty cells are preserved, exactly like split('|').
 export function splitPipeCells(line) {
   return line.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|'));
+}
+
+// 2026-07-26 further-pass audit fix. verify-progress.mjs's Round 11 fix strips
+// surrounding markdown emphasis (**bold**, __bold__, *italic*, _italic_,
+// `code`) from a header cell before testing it against a column-name pattern,
+// so "**Status**"/"`State`" still match. quality-gate.mjs's and
+// traceability-check.mjs's own header matchers never picked up that same
+// fix — three files doing the same job, one had it and the other two
+// didn't. Reproduced by execution: a Definition-of-Done table with header
+// `**Status**` made quality-gate.mjs report the whole table unrecognised and
+// every required dimension "missing", even though every row was otherwise
+// correctly filled in. Fails toward BLOCKING (the safe direction — a
+// dimension not being blocked is the danger, not a false block), but it's a
+// real usability gap and the exact divergence a background review agent was
+// asked to hunt for. Moved here so all three share it.
+export function deEmphasise(c) {
+  return String(c).replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '');
 }
 
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
@@ -870,6 +1053,21 @@ export function normalizeForPushCheck(c) {
     const varRe = new RegExp('\\$\\{' + varName + '\\}|\\$' + varName + '\\b', 'g');
     n = n.replace(varRe, () => value);
   }
+  // 2026-07-26 further-pass audit note: a background review agent found that
+  // this pair of replaces runs blind to quoting, so ordinary quoted prose
+  // containing a brace-comma pattern (e.g. `echo "use {git,push} carefully"`)
+  // gets "expanded" and can trip the downstream keyword match. A fix scoping
+  // this to bare (unquoted) text ONLY was attempted and reverted: it broke an
+  // existing, deliberately-crafted test one test below
+  // (`{g""it,pu""sh} origin main`) — real bash actually DOES treat the comma
+  // there as a live separator, because bash's brace expansion runs before
+  // quote removal and only cares whether a character is quoted at the exact
+  // tokenization point, not whether the overall `{...}` spans a quoted
+  // sub-segment. A quote-scoped version of this specific transform would
+  // need to track that same subtlety to stay correct, and getting it wrong
+  // in the unsafe direction (missing a real push) is worse than leaving this
+  // as a narrow, safe-direction-only false positive. Left as a disclosed
+  // residual limitation — see AUDIT-2026-07.md.
   n = n.replace(/\{([A-Za-z0-9]+)\.\.\1\}/g, '$1'); // degenerate {X..X} range -> X
   n = n.replace(/\{([^{}]*,[^{}]*)\}/g, (_m, list) => list.split(',').join(' '));
   // 2026-07-11 Round 7 security fix: ANSI-C quoting (`$'public'`) resolves
@@ -918,7 +1116,24 @@ export function normalizeForPushCheck(c) {
   // go-public regexes missed them, while bash ran a real `--public` /
   // `--visibility=public` — an obfuscated going-public bypass that passed
   // with only the private-publish token. Now `\X` -> `X` for any X.
-  n = n.replace(/\\([^\r\n])/g, '$1'); // p\ush -> push, -\-public -> --public
+  //
+  // 2026-07-26 Wave 2 CI fix (Windows-only failure, reproduced: `not ok 13`,
+  // `'deny' !== 'allow'`). This comment already said "outside quotes", but
+  // the implementation below was a blanket `replace` blind to quoting, same
+  // bug class Round 5 fixed for the compound-operator check. Real bash only
+  // unescapes `\X` -> `X` unconditionally OUTSIDE quotes; inside double
+  // quotes it unescapes only `\$`, `` \` ``, `\"` and `\\` (any other `\X`
+  // stays literal backslash-then-X — bash does not touch it), and inside
+  // single quotes nothing is ever unescaped. The blanket version destroyed
+  // every backslash in any quoted argument, including a native Windows path
+  // like `"D:\a\...\confirm-publish.mjs"` — which is exactly what
+  // hooks.test.mjs feeds the confirm-script exemption, so `path.basename()`
+  // downstream in isConfirmScriptOnly() no longer saw `confirm-publish.mjs`
+  // and the exemption silently stopped applying on windows-latest CI.
+  // This does not reopen Round 6: `gh repo edit me/app "-\-public"` is not a
+  // real bash evasion either way, because double quotes never unescape
+  // `\-`; the unquoted case Round 6 actually cares about is untouched here.
+  n = unescapeBackslashesRespectingQuotes(n); // p\ush -> push, -\-public -> --public; quoted backslashes left alone
   n = n.replace(/\$\{IFS\}|\$IFS\b/g, ' '); // git${IFS}push -> git push
   let prev;
   do {
@@ -934,6 +1149,54 @@ export function normalizeForPushCheck(c) {
   } while (n !== prev);
   return n;
 }
+// 2026-07-26 Wave 2 CI fix — see the call site in normalizeForPushCheck for
+// the full story. Quote-aware backslash unescaping: outside any quotes,
+// `\X` unescapes to `X` for any X (the Round 6 obfuscation case); inside
+// double quotes, only bash's own four recognised escapes (`\$`, `` \` ``,
+// `\"`, `\\`) unescape, everything else stays literal backslash-then-char;
+// inside single quotes nothing is ever unescaped (bash forbids an embedded
+// literal `'` there at all, so meeting one always closes the quote).
+function unescapeBackslashesRespectingQuotes(s) {
+  let out = '';
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inSingle) {
+      out += ch;
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '\\' && i + 1 < s.length && '$`"\\'.includes(s[i + 1])) {
+        out += s[i + 1];
+        i++;
+        continue;
+      }
+      out += ch;
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (ch === '\\' && i + 1 < s.length && s[i + 1] !== '\r' && s[i + 1] !== '\n') {
+      out += s[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      out += ch;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 // 2026-07-11 v2.0.1 follow-up fix (real deadlock, found live): the
 // "script name contains deploy/release/publish/ship" indirection rule
 // below correctly treats an arbitrary project script that might hide a

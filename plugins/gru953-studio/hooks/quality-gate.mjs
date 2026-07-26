@@ -35,7 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise, isDirectory } from './lib.mjs';
 
 // The required Definition-of-Done dimensions. Each must appear as at least one
 // row in QUALITY-GATE.md whose Item cell contains the keyword, marked pass (with
@@ -85,11 +85,36 @@ const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 // A row that narrates it is currently broken/unproven invalidates any otherwise
 // passing status on the same row — the same guard verify-progress.mjs uses, so
 // "passed on the old build, now fails" can't count as done.
-const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
+//
+// 2026-07-26, found during a further pass after fixing the same bug class in
+// verify-progress.mjs (audit finding 1). This pattern only matched the literal
+// word "exit" immediately followed by whitespace and a digit — so the far more
+// natural phrasing "exit code 1" or "exited with code 1" never matched at all.
+// Reproduced: a Definition-of-Done row reading "Ran npm test - exit code 1,
+// 3 failing" with an otherwise-Pass status returned {"status":"clean"}. Added
+// an alternative that also recognises "exit[ed] [with] code N".
+//
+// 2026-07-26 further-pass audit fix: moved to lib.mjs as CONTRADICTION_RE —
+// this file's own copy (the most complete of the three, including the
+// `regress(?:ed|ion)` alternative) had already diverged from
+// verify-progress.mjs's and traceability-check.mjs's own copies, which is
+// exactly how findings 1/35 above escaped this file's two siblings for as
+// long as they did. One shared pattern now, not three that can drift.
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
+// 2026-07-26, audit finding 26. Strips a leading UTF-8 byte-order mark before
+// parsing. Checked precisely rather than assumed: this file's own table-row
+// test (`/^\s*\|/`) turns out to ALREADY tolerate a BOM, because JavaScript's
+// `\s` character class matches U+FEFF — verified by execution, both with and
+// without this stripBom() call, on the exact same BOM-prefixed fixture. So
+// this is deliberate hardening, not a demonstrated-bug fix: it stops the
+// file's correctness depending on that accidental regex quirk, which a future
+// tightening of the row-detection pattern (a very plausible refactor) could
+// silently break. (Two OTHER files DID have a real, reproduced BOM bug —
+// memory-integrity.mjs and dashboard.mjs both use a STRICT `^#` heading
+// regex with no `\s*` prefix, which a BOM genuinely defeats.)
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
 // Parse the FIRST markdown table in the file whose header has both an
@@ -120,7 +145,15 @@ function parseRows(text) {
     const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
-      const find = (re) => cells.findIndex((c) => re.test(c));
+      // 2026-07-26 further-pass audit fix: verify-progress.mjs already
+      // de-emphasises a header cell (strips **bold**/`code`/_italic_) before
+      // matching it, so "**Status**" and "`Status`" are recognised the same
+      // as plain "Status" — this file's own header matcher never had that,
+      // so a decorated header made the whole table unrecognised. Reproduced:
+      // a Definition-of-Done table with header `**Status**` reported every
+      // required dimension "missing" despite every row being correctly
+      // filled in.
+      const find = (re) => cells.findIndex((c) => re.test(deEmphasise(c)));
       idx = {
         item: find(/^(item|check|dimension|requirement|criterion|gate)$/i),
         status: find(/^status$/i),
@@ -146,7 +179,12 @@ function main() {
   // Not a studio project (e.g. the plugin repo itself, or any ordinary dir) →
   // there is nothing to gate. No-op green, exactly like verify-progress.mjs on
   // a tree with no PROGRESS.md.
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  //
+  // 2026-07-26 Stage 3 fix (audit finding 22): was two separate, unguarded
+  // calls racing against each other — see lib.mjs's isDirectory() for the
+  // full reproduction (a crash instead of a plain message if Dev-Memory
+  // disappears between the two calls).
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to gate', root }));
     process.exit(0);
   }

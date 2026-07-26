@@ -31,9 +31,16 @@ sentences after each stage — no jargon, no walls of text.
 Also load and follow these companion skills as standing rules:
 - `first-run` — the one-off setup that runs before a user's very first
   project (never on later projects).
-- `google-antigravity-integration` — the protocol for executing GRU953-Studio
-  inside Google Antigravity (Google Antigravity SDK and Gemini Antigravity IDE)
+- `google-antigravity-integration` — dual-harness operation: the protocol for
+  executing GRU953-Studio inside Google Antigravity (`agy` CLI, IDE, 2.0 app,
+  Python SDK, Gemini 3.6/3.5 models, and the Antigravity SDK), seamlessly
   alongside Claude Code.
+- `universal-platform-integration` — the protocol for running GRU953-Studio on
+  every other 2026 AI coding platform (Cursor, Windsurf, Copilot, Devin,
+  Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI): how
+  the roster, skills and memory system project into each host (2026-07-26
+  audit finding 13 — this was the only skill nothing referred to, so the
+  flagship "works everywhere" capability never actually loaded).
 - `dev-memory` — how to read and write the project's memory files, and the
   cross-project files that carry lessons and working-style preferences
   from one project to the next.
@@ -48,12 +55,11 @@ Also load and follow these companion skills as standing rules:
 - `cost-guard` — the confirmed cheapest-first spending default.
 - `model-router` — the automatic per-task choice of model and effort
   (cheapest that does the job; pauses only at the hard cost-ceiling).
-- `google-antigravity-integration` — dual-harness operation, seamless support for Google Antigravity (`agy` CLI, IDE, 2.0 app, Python SDK, Gemini 3.6/3.5 models) alongside Claude Code.
 - `audit-loop` — the planned protocol for any review that needs more than
   one pass (Review/Fix, and any "audit until clean" request).
 
 At the Publish stage specifically, read `publish-github` directly rather
-than loading it the way the five skills above load (2026-07-12 Claude-Topics
+than loading it the way the skills above load (2026-07-12 Claude-Topics
 compliance fix: `publish-github` sets `disable-model-invocation: true` —
 deliberately, since publishing pushes to the user's real GitHub account and
 must never be something Claude decides to trigger on its own — which also
@@ -125,6 +131,23 @@ Mapping:
 Record the three answers and the resulting Tier in `OBJECTIVE.md` so it's
 auditable later, not just asserted. Show the user the Tier and what it
 means in plain English, and let them raise or lower it at any time.
+
+**Q4: Where will people use your app? (2026-07-26 audit finding 14 — this
+question did not previously exist anywhere, so `architect`'s platform → stack
+map had no real input to route from; nobody was ever actually asked.)**
+   Examples: "Just in a web browser", "As an app on their phone", "Installed
+   on their computer"
+   [Web browser only — recommended: cheapest and fastest to ship, and works
+   on every device already] [A phone (Android and/or iPhone)] [A computer
+   (Windows, Mac, or Linux)] [More than one of these]
+
+If the answer names a phone or computer, ask ONE short recommended-marked
+follow-up naming the specific platform(s) (e.g. "Android, iPhone, or both?" /
+"Windows, Mac, Linux, or more than one?") — never guess it. Record the
+confirmed target platform in `OBJECTIVE.md` alongside the Tier answers; this
+is exactly what `architect`'s platform → stack map (`agents/architect.md`)
+routes from, so a project with no target platform recorded has no way to
+reach a native specialist at all.
 
 | Tier | Roles activated (by project SIZE) |
 | :-- | :-- |

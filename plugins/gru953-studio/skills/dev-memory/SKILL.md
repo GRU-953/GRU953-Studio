@@ -30,7 +30,7 @@ All live under `Dev-Memory/` in the project's working directory:
 
 | File | What it holds |
 | :-- | :-- |
-| `OBJECTIVE.md` | The confirmed one-page brief, the three Tier questions and their Y/N answers, and the resulting Tier — so the Tier is auditable, not just asserted. |
+| `OBJECTIVE.md` | The confirmed one-page brief, the three Tier questions and their Y/N answers, the resulting Tier, and the user's target platform answer (2026-07-26 audit finding 14 — see `interviewer.md`'s Brainstorm/Ideate question set) — so the Tier is auditable, not just asserted, and `architect`'s platform → stack map has a real input to route from. |
 | `FOCUS.md` | (2026-07-19, see `focus-guard` skill) The tiny always-current anchor — objective, active phase, active task, top constraints — rewritten in place, read first every session so the team re-orients in almost no tokens even after a summarised or brand-new session. |
 | `REQUIREMENTS.md` | (2026-07-19, see `focus-guard` skill) The traceability matrix: every confirmed requirement mapped to its tasks, verification, and status, so nothing agreed is dropped and no task exceeds the brief. Audited by `hooks/traceability-check.mjs`. Standard/Complex Tier — a short inline list suffices on Tiny. |
 | `ARCHITECTURE.md` | The chosen stack, components, data flow, interface contracts, decisions, and deliberate omissions (written by `architect`). |
@@ -104,18 +104,28 @@ This is separate from cloud persistence (which pushes the entire Dev-Memory
 folder to a private branch). Git-backed memory writes happen on **every** memory
 update, not just cloud persistence, and provide per-change history.
 
-### Schema Validation (2026-07-25 audit fix)
+### Schema Validation (2026-07-25 audit fix; corrected 2026-07-26, finding 20)
 
-Memory files are validated against JSON schemas before every write to prevent
-drift and corruption. Schemas live in `skills/dev-memory/schemas/`:
+These four schemas document each memory file's expected shape. Schemas live
+in `skills/dev-memory/schemas/`:
 
 - `FOCUS.schema.json` — objective, activePhase, activeTask, topConstraints
 - `INDEX.schema.json` — entity, where, summary, tags, lastTouched
 - `GRAPH.schema.json` — nodeId, type, links[]
 - `LESSONS.schema.json` — date, task, type, pattern, lesson, severity, tags[]
 
-Validation is performed by `memory-keeper` using `ajv` before any memory write.
-A schema violation blocks the write and surfaces the error to the Project Lead.
+**Correction:** this section previously claimed `memory-keeper` validates
+every write against these schemas using `ajv` before it lands. That was
+never true — nothing in this repository imports `ajv`, `memory-keeper` has
+no such tool, and nothing installs it as a dependency (removing the false
+claim rather than adding the dependency it would have required, per
+AUDIT-2026-07.md's recorded decision). What IS true, and mechanically
+enforced: `hooks/memory-integrity.mjs` reads `GRAPH.schema.json`'s own
+`relation` enum at run time and rejects any `GRAPH.md` link whose verb isn't
+in it, and checks that every `INDEX.md` "where" cell points at a file that
+actually exists. `memory-keeper` upholds the other shapes (and the other
+three schemas) by writing discipline, not by automated JSON validation —
+say so plainly rather than overclaiming a check that doesn't run.
 
 ## Learning from mistakes (2026-07-11 addition)
 

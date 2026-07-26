@@ -28,7 +28,34 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { fileURLToPath } from 'node:url';
+import { splitPipeCells, stripBom, isDirectory } from './lib.mjs';
+
+// 2026-07-26 audit finding 7. GRAPH.schema.json and this file's own link
+// vocabulary used to be two hand-maintained copies of the same list, and had
+// already drifted: the schema declared traces-to/tests/decided-in/lesson-from
+// while every documented example (skills/memory-graph/SKILL.md) and this
+// file's own LINK_RE used implements/depends-on/relates-to/supersedes/
+// caused-by/blocks. The decision recorded in AUDIT-2026-07.md §6: the
+// documentation wins, because that is what every existing project was told
+// to follow — so the schema is corrected to match it, and this file now
+// reads the vocabulary from the schema at run time instead of hard-coding a
+// second copy, so the two structurally cannot drift apart again. If the
+// schema is ever unreadable, this falls back to the documented vocabulary
+// rather than silently accepting every word (a missing schema must never
+// widen what counts as a valid link).
+const GRAPH_SCHEMA_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dev-memory', 'schemas', 'GRAPH.schema.json',
+);
+const DOCUMENTED_LINK_VOCABULARY = ['implements', 'depends-on', 'relates-to', 'supersedes', 'caused-by', 'blocks'];
+function loadLinkVocabulary() {
+  try {
+    const schema = JSON.parse(fs.readFileSync(GRAPH_SCHEMA_PATH, 'utf8'));
+    const relationEnum = schema.items.properties.links.items.properties.relation.enum;
+    if (Array.isArray(relationEnum) && relationEnum.length > 0) return relationEnum;
+  } catch { /* fall through to the documented vocabulary below */ }
+  return DOCUMENTED_LINK_VOCABULARY;
+}
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
@@ -44,8 +71,17 @@ const LOOKS_LIKE_PATH_RE = /(^|\/)[^/\s]+\.[A-Za-z0-9]+$|\//;
 // LOOKS_LIKE_PATH_RE and was silently skipped).
 const MD_LINK_RE = /^\[([^\]]*)\]\(([^)]+)\)$/;
 
+// 2026-07-26 audit finding 26. A leading UTF-8 byte-order mark (three
+// invisible bytes some Windows editors write at the start of a file) breaks
+// every `^`-anchored match against the very first line — here, that's the
+// heading detector this file uses to scope node definitions to `## Nodes`
+// (see the 2026-07-26 node-scoping fix above). Reproduced: a GRAPH.md whose
+// FIRST line is a BOM immediately followed by `## Nodes` failed to recognise
+// that heading at all, so a node genuinely defined there was reported as
+// undefined — a false BLOCK on legitimate data, caused by this file's own
+// fix above interacting badly with an unstripped BOM.
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
 // --- INDEX.md: every path-shaped "where" cell resolves to a real file --------
@@ -105,7 +141,22 @@ function checkGraph(devMemory, problems) {
   // CLEAN on this script's whole job — even when the reference was
   // genuinely dangling.
   const NODE_DEF_RE = /^\s*[-*]?\s*\[([^\]]+)\]/;
+  // 2026-07-26, found during a further pass over the hooks not touched by the
+  // first audit. This loop used to scan EVERY line in the file with no heading
+  // scoping — unlike the link-validation pass below, which correctly restricts
+  // itself to a Links/Edges section. So an ordinary prose bullet anywhere else
+  // in the file shaped like a node reference (e.g. a Notes section mentioning
+  // "- [T1] was covered in an earlier session") silently registered T1 as a
+  // DEFINED node, masking a genuinely dangling link to a T1 that was never
+  // actually declared under ## Nodes. Reproduced: adding exactly that kind of
+  // bullet under an unrelated heading turned a correctly-BLOCKED dangling-link
+  // case into a false "clean". Scoped to a Nodes/Graph section the same way the
+  // link pass is scoped, below.
+  let inNodes = false;
   for (const line of lines) {
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { inNodes = /node/i.test(heading[1]); continue; }
+    if (!inNodes) continue;
     const m = line.match(NODE_DEF_RE);
     if (m) nodes.add(m[1]);
   }
@@ -123,14 +174,26 @@ function checkGraph(devMemory, problems) {
   // ("- All links use verbs like implements and blocks") was parsed as a link and
   // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
   // introduced).
-  const LINK_RE = /^\s*[-*]\s+(\S+)\s+(implements|depends-on|relates-to|supersedes|caused-by|blocks)\s+(\S+)/i;
+  const LINK_RE = new RegExp(`^\\s*[-*]\\s+(\\S+)\\s+(${loadLinkVocabulary().join('|')})\\s+(\\S+)`, 'i');
+  // 2026-07-26 further-pass audit fix (false-block, confirmed by execution).
+  // The id groups are `\S+` with no boundary after them, so a link line
+  // written as an ordinary sentence — "- T1 implements R1." — captured the
+  // destination as "R1." (trailing full stop included), which then never
+  // matched a genuinely-defined "R1" node. Reproduced: a minimal, otherwise-
+  // valid GRAPH.md with both T1 and R1 defined under `## Nodes` was reported
+  // BLOCKED for referencing an "undefined" node "R1.". Node ids never
+  // legitimately end in sentence punctuation, so trailing punctuation is
+  // stripped from each captured id before checking it against `nodes`.
+  const stripTrailingPunctuation = (s) => s.replace(/[.,;:!?)\]]+$/, '');
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
     if (heading) { inLinks = /link|edge/i.test(heading[1]); continue; }
     if (!inLinks) continue;
     const m = line.match(LINK_RE);
     if (!m) continue;
-    const [, src, type, dst] = m;
+    const [, rawSrc, type, rawDst] = m;
+    const src = stripTrailingPunctuation(rawSrc);
+    const dst = stripTrailingPunctuation(rawDst);
     if (!nodes.has(src)) problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${src}".`);
     if (!nodes.has(dst)) problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${dst}".`);
   }
@@ -139,7 +202,11 @@ function checkGraph(devMemory, problems) {
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  // 2026-07-26 Stage 3 fix (audit finding 22): was two separate, unguarded
+  // calls racing against each other — see lib.mjs's isDirectory() for the
+  // full reproduction (a crash instead of a plain message if Dev-Memory
+  // disappears between the two calls).
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }));
     process.exit(0);
   }

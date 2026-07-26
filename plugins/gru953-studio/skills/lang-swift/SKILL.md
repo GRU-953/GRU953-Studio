@@ -9,7 +9,7 @@ The shared toolchain knowledge for Swift work (iOS/macOS), so the
 `swift-developer` agent stays thin. Plain-English rule is as set in the `studio`
 skill.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -18,6 +18,7 @@ skill.
 | lint | `swiftlint` (treat violations as failures in CI) |
 | format | `swift-format lint --strict` (apply with `swift-format format -i`) |
 | deps | Swift Package Manager — declare in `Package.swift`; resolve with `swift package resolve` |
+| package (2026-07-26 audit finding 15) | `xcodebuild archive` then `xcodebuild -exportArchive` produces a real `.ipa` (iOS) or `.app`/`.dmg` (macOS) — **shipping to a real iOS device or the App Store needs a paid Apple Developer account; say this plainly to the user before committing to iOS** |
 
 ## Idioms and gotchas
 

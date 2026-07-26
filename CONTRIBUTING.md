@@ -32,8 +32,27 @@ node plugins/gru953-studio/hooks/repo-integrity.mjs .
 node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 # 6. the licence scanner runs
 node plugins/gru953-studio/hooks/licence-scan.mjs .
-# 7. every required file is present (see .github/workflows/ci.yml for the exact list)
+# 7. documentation stays internally consistent (counts, duplicates, role references)
+node plugins/gru953-studio/hooks/docs-consistency.mjs .
+# 8. every required file is present (see .github/workflows/ci.yml for the exact list)
 ```
+
+If your change touches `clients/cli`, `clients/antigravity`, or `clients/vscode`,
+also run that package's own `npm ci && npm test` (or, for the VS Code
+extension, `npm ci && npm run compile && npm run lint`) — see
+`.github/workflows/ci.yml`'s `clients` job for the exact commands.
+
+## A note on dependencies
+
+The plugin itself (`plugins/gru953-studio/`) has **zero third-party runtime
+dependencies** — Node's standard library only. That's a deliberate,
+mechanically-checked property (see `docs-consistency.mjs` and
+`licence-scan.mjs`), not an accident: it's what "no coding, no build step,
+just describe your app" can promise honestly. The three `clients/` bridges
+carry their own dev-only tooling (TypeScript, ESLint, `vsce`) to build and
+lint the VS Code extension — that's a deliberate exception, since none of it
+ships inside the plugin a user installs, and it shouldn't be "fixed" back
+out by a well-meaning cleanup.
 
 If your change touches a skill or hook that documents one of the five
 project-level gates (verify-progress.mjs, quality-gate.mjs, traceability-check.mjs,
@@ -110,4 +129,4 @@ under these terms, with a DCO 1.1 sign-off.
 All participation is governed by our
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Maintainer: **GRU-953** — gru953@gmail.com
+Maintainer: **Aninda Sundar Howlader** — aninda.sh15@gmail.com
