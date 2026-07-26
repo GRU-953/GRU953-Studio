@@ -5,6 +5,13 @@ _GRU953-Studio_
 Thank you for your interest in improving GRU953-Studio. Contributions of
 all sizes are welcome — from fixing a typo to proposing a change.
 
+A contribution can also start life as a lesson recorded while building a
+real project with the plugin — see the `dev-memory` skill's "Publishing a
+lesson upstream, as a contributor" section. It follows the exact same
+process below: your own DCO sign-off credits you as a **Contributor**;
+nothing about that path changes who owns or maintains this project (see
+`NOTICE` and `governance/GOVERNANCE.md`).
+
 ## Getting set up
 
 1. Fork the repository and clone your fork locally.
