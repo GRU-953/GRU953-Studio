@@ -26,8 +26,9 @@ moves the proposal to active discussion until it is resolved.
 
 ## RFC lifecycle
 
-Substantial changes — to the specialist-role roster, the core lifecycle, or
-governance itself — follow a Request for Comments (RFC) process:
+Substantial changes proposed by the community — to the specialist-role
+roster, the core lifecycle, or governance itself — follow a Request for
+Comments (RFC) process:
 
 1. **Draft** — The author writes up the proposal and opens it for review.
 2. **Discussion** — Open for community comment for a minimum of **14 days**.
@@ -36,9 +37,17 @@ governance itself — follow a Request for Comments (RFC) process:
 4. **Accepted / Rejected** — The maintainer records the outcome. Accepted RFCs
    move to implementation; rejected RFCs are archived with the reasoning noted.
 
-Proposals to add a new specialist agent role additionally require a named,
-specific gap and reason recorded in the project's own decision log — see
-`CONTRIBUTING.md`.
+A **contributor's** pull request adding a new specialist agent role must
+additionally name the specific, real gap it fills (see `CONTRIBUTING.md`)
+**and** point to its own Accepted RFC under this process before a maintainer
+merges it — the named-gap record alone is not sufficient for an
+externally-proposed role. This RFC requirement does not apply to a change the
+Maintainer/Steering initiates directly (2026-07-26 clarification, matching
+`ROSTER.md`'s own recorded history: every past roster change has been an
+owner-directed decision with a named-gap record, never an RFC — there being no
+outside proposal to gather comment on in that case). Either way, the named,
+specific gap recorded in the project's own decision log is always required —
+see `CONTRIBUTING.md`.
 
 ## Resolving ties
 

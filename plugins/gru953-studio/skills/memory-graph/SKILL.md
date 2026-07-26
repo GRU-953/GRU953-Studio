@@ -65,7 +65,17 @@ their relationships as typed links, in a fixed plain-text shape:
 
 ## The recall protocol (least tokens by construction)
 
-At session start, and before starting a task:
+This is the *second* half of session start, not a standalone routine
+(2026-07-26 clarification): `dev-memory`'s "Read before acting" already
+covers the first half — `FOCUS.md`, `OBJECTIVE.md`, `PROGRESS.md`, the tail
+of `SESSION-LOG.md`, and `INDEX.md` — before handing off to this protocol
+for anything beyond that resume point. Reading only this file in isolation
+and stopping at step 1 below would skip `OBJECTIVE.md`, `PROGRESS.md`, and
+`SESSION-LOG.md` entirely; step 1 re-reads `FOCUS.md`/`INDEX.md` as the
+anchor for expanding the graph, it does not replace the fuller sequence.
+
+At session start, and before starting a task, once `dev-memory`'s own
+sequence above is done:
 
 1. Read `FOCUS.md` (the heading) and `INDEX.md` (the map) — both tiny.
 2. From the active task's keywords/tags, pick the handful of relevant nodes in
