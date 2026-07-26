@@ -3388,6 +3388,67 @@ test('scan.mjs: a UTF-16LE file with a BOM and a secret is scanned (finding 5, r
   fs.rmSync(dir, RM_OPTS);
 });
 
+// ---------------------------------------------------------------------------
+// Found while re-testing findings 4/5 after the small-file fix above: the
+// gzip/UTF-16-BOM handling only applied to files <= MAX_SCAN_BYTES (4 MB). A
+// file whose COMPRESSED size exceeds that went straight to the raw-byte
+// streaming scanner, which cannot see inside compressed data — so a secret in
+// a large gzip blob was still invisible. This is the large-file counterpart of
+// the tests above.
+//
+// The first attempt at the fix capped the DECOMPRESSED output at the same
+// MAX_SCAN_BYTES, which reintroduced the exact bug for realistic large content
+// (a gzip archive that decompresses to a perfectly ordinary few MB of text) —
+// verified by execution before correcting it. The output cap is deliberately
+// separate and larger.
+// ---------------------------------------------------------------------------
+test('scan.mjs: a gzip file whose COMPRESSED size exceeds 4MB is still scanned', () => {
+  const dir = mkTmp('gru-scan-biggzip-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // Random (incompressible) padding is what makes the gzip OUTPUT itself
+  // exceed 4 MB — ordinary text compresses far too well to reach this branch
+  // by accident, so this fixture is deliberately adversarial.
+  const padding = crypto.randomBytes(5 * 1024 * 1024).toString('base64');
+  const packed = zlib.gzipSync(Buffer.from(`${padding}\naws_key = AKIAIOSFODNN7EXAMPLE\n`));
+  assert.ok(packed.length > 4 * 1024 * 1024, 'fixture must itself exceed the 4MB threshold to test the right branch');
+  fs.writeFileSync(path.join(dir, 'big.bin'), packed);
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a >4MB gzip file with a real secret must be refused: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: a decompression bomb (tiny compressed, huge decompressed) does not hang and does not crash', () => {
+  const dir = mkTmp('gru-scan-bomb-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // 200MB of zeros compresses to a few hundred KB — the classic bomb shape.
+  // The point of this test is that the hook must not hang or exhaust memory;
+  // it does not need to find anything (there is no secret in it), and the
+  // decompression cap causes it to fall back to the ordinary streaming scan.
+  const bomb = zlib.gzipSync(Buffer.alloc(200 * 1024 * 1024));
+  fs.writeFileSync(path.join(dir, 'bomb.bin'), bomb);
+  git(['add', '-A'], dir);
+  const start = Date.now();
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  const elapsedMs = Date.now() - start;
+  assert.ok(elapsedMs < 15000, `must not hang on a decompression bomb (took ${elapsedMs}ms)`);
+  assert.equal(r.code, 0, 'the hook process itself must exit cleanly, not crash');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: an ordinary large real binary (>4MB) with no secret is still allowed', () => {
+  const dir = mkTmp('gru-scan-bigbin-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'video.bin'), crypto.randomBytes(6 * 1024 * 1024));
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `an ordinary large binary must not be flagged: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 function writeProgressRow(dir, evidenceCell) {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(

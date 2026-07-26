@@ -291,6 +291,25 @@ function main() {
   const FILES = Array.from(fileSet).sort();
 
   const MAX_SCAN_BYTES = 4 * 1024 * 1024;
+  // 2026-07-26: the ceiling on how large a COMPRESSED/UTF-16 file we will fully
+  // read into memory to attempt decompression/decoding for a large file (see the
+  // st.size > MAX_SCAN_BYTES branch below). Kept modest and separate from
+  // MAX_SCAN_BYTES itself so this stays a bounded, proportionate peek rather
+  // than a general licence to buffer arbitrarily large files.
+  const MAX_PACKED_PEEK_BYTES = 4 * MAX_SCAN_BYTES;
+  // The cap on the DECOMPRESSED size we'll accept (via gunzipSync's
+  // maxOutputLength). This deliberately is NOT the same as MAX_SCAN_BYTES:
+  // setting it equal to MAX_SCAN_BYTES was tried first and was wrong — verified
+  // by execution, it reintroduced the exact bug it was meant to fix. The whole
+  // reason a file lands in this branch is that its SIZE exceeds MAX_SCAN_BYTES,
+  // and a realistic large gzip archive (a log dump, a bundled config) commonly
+  // decompresses to well over 4 MB of perfectly ordinary text, so capping the
+  // OUTPUT at the same 4 MB threw on exactly the realistic case and silently
+  // fell through to the byte-level streaming scan, which cannot see inside
+  // compressed data. A materially larger ceiling is still finite — it bounds a
+  // malicious decompression bomb to a fixed amount of memory — while actually
+  // covering the case this fix exists for.
+  const MAX_PACKED_INFLATED_BYTES = 64 * 1024 * 1024;
 
   // 2026-07-10 audit fix (MINOR): sk-[A-Za-z0-9]{20,} required contiguous
   // alphanumerics right after "sk-", missing today's hyphenated key formats
@@ -616,6 +635,63 @@ function main() {
     }
     if (!st.isFile()) continue;
     if (st.size > MAX_SCAN_BYTES) {
+      // 2026-07-26, found while re-testing findings 4/5 after fixing the
+      // small-file path: the gzip/UTF-16-BOM handling added below (for files
+      // <= MAX_SCAN_BYTES) does NOT apply here. A file whose COMPRESSED size
+      // exceeds MAX_SCAN_BYTES went straight to scanLargeFile, which streams
+      // the raw bytes looking for plaintext patterns — it never attempts
+      // decompression, so a secret inside a large gzip blob was still invisible.
+      // Verified by execution: a gzip file just over 4 MB (built from 5 MB of
+      // random, incompressible padding plus a real AWS key) shipped with
+      // decision "allow".
+      //
+      // A capped peek-and-decompress closes the realistic case without
+      // reintroducing the compression-bomb risk MAX_SCAN_BYTES exists to bound:
+      // the COMPRESSED input read here is itself capped at
+      // MAX_PACKED_PEEK_BYTES, and gunzipSync's own maxOutputLength caps the
+      // DECOMPRESSED result — so a maliciously tiny file that expands to
+      // gigabytes throws and is skipped rather than exhausting memory.
+      // Ordinary large binaries (video, images, real archives) are unaffected:
+      // they either aren't gzip/UTF-16 at all, or fail one of the two bounds
+      // and fall through to the existing streaming path unchanged.
+      if (st.size <= MAX_PACKED_PEEK_BYTES) {
+        let head2 = null;
+        try {
+          const fd0 = fs.openSync(abs, 'r');
+          try {
+            const b2 = Buffer.alloc(2);
+            fs.readSync(fd0, b2, 0, 2, 0);
+            head2 = b2;
+          } finally {
+            fs.closeSync(fd0);
+          }
+        } catch { /* fall through to the streaming path below */ }
+
+        if (head2 && head2[0] === 0x1f && head2[1] === 0x8b) {
+          try {
+            const packed = fs.readFileSync(abs);
+            const inflated = zlib.gunzipSync(packed, { maxOutputLength: MAX_PACKED_INFLATED_BYTES });
+            if (bufIsTextish(inflated)) {
+              scanText(inflated.toString('utf8'), f);
+              continue;
+            }
+          } catch { /* not valid gzip, or exceeded the output cap — fall through */ }
+        } else if (head2 && ((head2[0] === 0xff && head2[1] === 0xfe) || (head2[0] === 0xfe && head2[1] === 0xff))) {
+          try {
+            const littleEndian = head2[0] === 0xff;
+            const packed = fs.readFileSync(abs);
+            const body = Buffer.from(packed.subarray(2));
+            if (body.length % 2 === 0) {
+              if (!littleEndian) body.swap16();
+              const decoded = body.toString('utf16le');
+              if (strIsTextish(decoded)) {
+                scanText(decoded, f);
+                continue;
+              }
+            }
+          } catch { /* fall through */ }
+        }
+      }
       // Do NOT silently skip on size: stream-scan the file instead (a large
       // ordinary text file can carry a plaintext secret; a genuine large binary
       // is skipped inside scanLargeFile after a head classification).
