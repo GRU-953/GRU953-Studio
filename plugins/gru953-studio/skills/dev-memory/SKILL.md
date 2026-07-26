@@ -149,6 +149,27 @@ queue"). Anything general gets added to the cross-project
 `~/.gru953-studio/common-pitfalls.md` file — see "Cross-project memory"
 below — so it benefits every future project, not just this one.
 
+**Publishing a lesson upstream, as a contributor (2026-07-26 feature
+request: "local-only learning for now; ask users to publish new learnings
+as contributors, not as owner").** A third kind of lesson surfaces
+sometimes: not about this app's own domain, and not just a general working
+pattern, but a real defect or improvement in GRU953-Studio's own
+hooks/skills/roster — a bug in a hook, a missing guardrail, a skill that
+gave bad guidance. Learning stays local by default, exactly like every
+other lesson above; nothing is ever shared automatically or pooled across
+users. But when `memory-keeper` spots one of these, it flags it, and at
+the same Publish-stage distillation pass `project-lead` asks the user
+(`AskUserQuestion`) whether they'd like to propose it upstream to
+GRU953-Studio itself. If yes, follow `CONTRIBUTING.md`'s existing process
+exactly as any other contributor would — a branch, a DCO sign-off in the
+user's own name and email, a pull request against the project. The
+sign-off carries the user's own identity, so they are credited as a
+**Contributor**, never as the owner; this flow never touches `LICENSE`,
+`NOTICE`, or `governance/GOVERNANCE.md`'s stewardship record. If no, or if
+it's ambiguous whether it's really a plugin-level issue, it simply stays
+local like any other lesson — nothing is proposed without that explicit
+yes.
+
 ## Cross-project memory (2026-07-11 addition — carries over BETWEEN projects)
 
 Two files, maintained by `memory-keeper`, that live OUTSIDE any single
@@ -209,11 +230,12 @@ Publish. Record that the rehearsal passed in `SESSION-LOG.md`.
 
 On a **cloud/ephemeral session with memory persistence enabled** (see "Cloud
 persistence" above), the rehearsal additionally proves the *branch-persisted*
-memory rehydrates a fresh container: confirm that a resume from the private
-memory branch alone — not this container's local files, which will not survive —
-is enough to state what's done and what's next. A project that only resumes from
-the soon-to-be-wiped local copy has not actually proven it resumes on the web
-(2026-07-19, Phase 5).
+memory rehydrates a fresh container: confirm that a restore from the
+`memory/cloud-persist` branch alone (see "One named branch, and how to
+restore from it" above) — not this container's local files, which will not
+survive — is enough to state what's done and what's next. A project that
+only resumes from the soon-to-be-wiped local copy has not actually proven it
+resumes on the web (2026-07-19, Phase 5).
 
 ## Local-only, and never shipped (with one opt-in cloud exception)
 
@@ -255,6 +277,33 @@ session; the answer is recorded). The safety envelope is deliberately narrow
 This is the owner-approved, scoped variant of the "memory never leaves the
 machine" rule — narrowed to: opt-in, cloud-only, private-branch-only, and still
 secret-scanned. Everything not covered by that one exception is unchanged.
+
+### One named branch, and how to restore from it (2026-07-26 audit fix)
+
+Cloud persistence pushes to exactly one stable branch per project,
+`memory/cloud-persist` — deliberately distinct from the per-session
+`memory/session-<id>` branches above, which exist for fine-grained,
+per-change history, not for restore. This closed a real gap: the push side
+was documented but nothing said which single branch a fresh session should
+pull from, or how.
+
+- **Restoring.** At the start of a session on a cloud/ephemeral environment,
+  if local `Dev-Memory/` is missing or empty but `memory/cloud-persist`
+  exists for this project's repository, fetch that branch and check out its
+  `Dev-Memory/` (and, if present, the cross-project `~/.gru953-studio/`
+  files) into the working directory **before** running the "Read before
+  acting" sequence above. This is what makes the resume rehearsal's
+  branch-only resume (see below) actually possible end to end, not just a
+  one-way push with no documented way back.
+- **Each push updates that one branch, not a growing pile of snapshots.**
+  Because `memory/cloud-persist` always holds the *whole current* Dev-Memory
+  folder (not an increment), each persistence push fast-forwards or
+  force-with-lease updates that same branch rather than adding another
+  full-folder-snapshot commit on top of the last one. This keeps the
+  restore branch small and unambiguous. It does not touch or replace the
+  per-session `memory/session-<id>` branches, which still keep the granular,
+  never-rewritten, per-write audit trail — this optimises the bulk restore
+  copy only, not the fine-grained history.
 
 ## One schema, every session
 

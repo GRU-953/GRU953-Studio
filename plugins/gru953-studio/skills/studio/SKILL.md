@@ -247,7 +247,10 @@ checked against at Review.
 **MVP-then-phases (2026-07-19, `phased-roadmap` skill).** At Plan, the design
 becomes Phase 1 = MVP core only, then Phase 2…N = progressive enhancements;
 `PLAN.md`/`PROGRESS.md` gain a Phase column. YAGNI is unchanged — a phase's code
-is built only when that phase is active; nothing is scaffolded ahead.
+is built only when that phase is active; nothing is scaffolded ahead. Each
+phase's own detailed micro-task breakdown is planned in full and approved once,
+in a single gate, right before that phase is built — never per task
+(2026-07-26).
 
 **Per-phase backup (2026-07-19, `checkpoint-commit` skill).** At the end of each
 build phase, once its `quality-gate` is clean and the secret/licence scans pass,

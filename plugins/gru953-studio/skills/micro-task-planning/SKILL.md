@@ -101,6 +101,10 @@ implementation. Both apply together on Standard/Complex Tier.
 
 ## What this does not do
 
+- Does not seek a separate user approval for each task or subtask
+  (2026-07-26) — that happens once per phase, in a single gate, before the
+  phase's tasks are built (see `phased-roadmap`'s step 0). Tasks are
+  recorded here in full detail, not individually re-approved.
 - Does not replace `ARCHITECTURE.md` (the component/data-flow design) or
   `OBJECTIVE.md` (the brief and Tier record) — this is one level more
   granular than architecture, one level more structured than an ad hoc

@@ -36,20 +36,37 @@ code: a phase's features are only built when that phase is the active one.
   `command-centre`).
 - Each phase has its own short acceptance summary ("Phase 1 is done when …") in
   `PLAN.md`, and its own entry in `REQUIREMENTS.md` mapping requirements → phase.
-- The whole roadmap is approved once at the Prototype gate (the
-  `warframe-prototype` skill), alongside the warframe.
+- The roadmap's *shape* — how many phases, what each one delivers — is
+  approved once at the Prototype gate (the `warframe-prototype` skill),
+  alongside the warframe. Each phase's own detailed micro-task breakdown is
+  approved separately, once per phase, right before that phase is built —
+  see step 0 below.
 
 ## Phase boundaries (the rhythm)
 
 For each phase, in order:
 
+0. **Plan the phase in full, then get one approval for it — never per task**
+   (2026-07-26 feature request: "plan as finer grain as possible at the
+   start of each phase, ask for approval once per phase, never per task").
+   `architect` produces (or, if sketched earlier, finalises) this phase's
+   complete micro-task breakdown per `micro-task-planning` — every task the
+   phase needs, each with its one acceptance criterion, verification
+   command, and dependencies, recorded in `PLAN.md` under this phase.
+   `project-lead` then runs **one** blocking `AskUserQuestion` gate for the
+   whole phase's task list. Approve → continue to step 1. Change requested →
+   revise the breakdown and re-present; nothing in the phase is built
+   against an unapproved plan. Once a phase is approved, its individual
+   tasks and subtasks are never separately re-approved — they are
+   documented in `PLAN.md`, tracked in `PROGRESS.md`, and executed.
 1. Build and test the phase's micro-tasks (the normal Build/Test/Fix/Review
    flow, with the `model-router` picking model/effort per task).
 2. Clear the **quality gate** (`quality-gate` skill) for the phase — the
    Definition of Done must be green.
 3. Take a **backup checkpoint** (`checkpoint-commit` skill): commit the phase's
    app code to the private work branch. Nothing is lost if work stops here.
-4. Advance to the next phase (or, at the final phase, proceed to Publish).
+4. Advance to the next phase (or, at the final phase, proceed to Publish),
+   returning to step 0 for that next phase.
 
 A phase is never reported complete until its quality gate is clean and its
 checkpoint is taken — the `progress-honesty` rule applied at phase scale.
@@ -62,7 +79,10 @@ their place on Standard/Complex projects with real growth beyond the MVP.
 
 ## Who applies this
 
-- **architect** proposes the phased roadmap from the design; **project-lead**
-  presents it at the Prototype gate and drives phase-by-phase.
+- **architect** proposes the phased roadmap from the design, and produces each
+  phase's detailed micro-task breakdown just before that phase starts;
+  **project-lead** presents the roadmap's shape at the Prototype gate, runs
+  each phase's own one-time approval gate (step 0 above), and drives
+  phase-by-phase.
 - **memory-keeper** maintains the Phase column in `PLAN.md`/`PROGRESS.md` and
   the per-phase acceptance summaries.
