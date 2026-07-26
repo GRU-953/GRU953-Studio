@@ -99,6 +99,13 @@ proposing a new role must name the specific, real gap an existing role
 can't cover — not just "this would be nice." Extending an existing role's
 behaviour is usually a better fit than a new role.
 
+A new role is a "substantial change" under `governance/GOVERNANCE.md`'s RFC
+lifecycle (2026-07-26 clarification): before such a pull request can be
+merged, it must point to its own Accepted RFC (Draft → 14-day Discussion →
+7-day Final Comment Period) under that process, in addition to naming the
+gap here — the ordinary "Pull request process" steps below still apply, but
+for a new role they start only once that RFC has been Accepted, not before.
+
 ## Pull request process
 
 1. Keep each pull request focused on a single change.

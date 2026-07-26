@@ -13,16 +13,20 @@ back a week later in a new session, type `/studio`, and the studio picks up
 at the exact point it stopped.
 
 Written by the `memory-keeper` role. At the start of every session, the
-Project Lead reads three specific files directly — `PROGRESS.md`, the tail
-of `SESSION-LOG.md`, and `INDEX.md` (see `project-lead.md`) — the one
-narrow exception to its own delegate-never-do-specialist-work rule, because
-it needs the resume point before it can decide who to delegate to.
-`memory-keeper` owns everything else: every write, the mandatory
-secrets-scan on each one, and growing these files as the project continues.
-(2026-07-11 Round 9 fix: this paragraph and the "Read before acting"
-section below used to disagree with each other, and with `project-lead.md`
-and `studio/SKILL.md`, about who does this initial read — settled on one
-consistent story, matching those two files.)
+Project Lead reads five specific files directly — `FOCUS.md`, `OBJECTIVE.md`,
+`PROGRESS.md`, the tail of `SESSION-LOG.md`, and `INDEX.md` (see
+`project-lead.md`) — the one narrow exception to its own
+delegate-never-do-specialist-work rule, because it needs the resume point
+before it can decide who to delegate to. `memory-keeper` owns everything
+else: every write, the mandatory secrets-scan on each one, and growing these
+files as the project continues. (2026-07-11 Round 9 fix: this paragraph and
+the "Read before acting" section below used to disagree with each other, and
+with `project-lead.md` and `studio/SKILL.md`, about who does this initial
+read — settled on one consistent story, matching those two files. Count
+corrected 2026-07-26: this paragraph still said "three specific files" even
+though "Read before acting" below already listed five (`OBJECTIVE.md` was
+already there, and `FOCUS.md` was added 2026-07-19) — the two sections had
+silently drifted apart again after the Round 9 fix above.)
 
 ## The files
 
@@ -168,7 +172,12 @@ sign-off carries the user's own identity, so they are credited as a
 `NOTICE`, or `governance/GOVERNANCE.md`'s stewardship record. If no, or if
 it's ambiguous whether it's really a plugin-level issue, it simply stays
 local like any other lesson — nothing is proposed without that explicit
-yes.
+yes. This flow only ever touches `LESSONS.md` and the outbound PR — it
+never adds or changes a `GRAPH.md` node or link for the lesson (see the
+`memory-graph` skill); `GRAPH.md` schema has no field for "proposed
+upstream," and none is added for this, since a project's own graph exists to
+help that project recall its own history, not to track the lesson's life
+outside the project.
 
 ## Cross-project memory (2026-07-11 addition — carries over BETWEEN projects)
 
@@ -287,6 +296,11 @@ per-change history, not for restore. This closed a real gap: the push side
 was documented but nothing said which single branch a fresh session should
 pull from, or how.
 
+- **When the push happens.** On the same cadence as Git-backed Memory above:
+  once the per-write `memory/session-<id>` commit and push succeed,
+  `memory-keeper` also updates `memory/cloud-persist` in the same write
+  cycle — not just at checkpoint or session end. This bounds how stale a
+  restored snapshot can be to, at most, one in-flight write.
 - **Restoring.** At the start of a session on a cloud/ephemeral environment,
   if local `Dev-Memory/` is missing or empty but `memory/cloud-persist`
   exists for this project's repository, fetch that branch and check out its
@@ -294,7 +308,13 @@ pull from, or how.
   files) into the working directory **before** running the "Read before
   acting" sequence above. This is what makes the resume rehearsal's
   branch-only resume (see below) actually possible end to end, not just a
-  one-way push with no documented way back.
+  one-way push with no documented way back. A restored copy is trusted as-is,
+  the same as any local session's files — restoring does not run
+  `hooks/memory-integrity.mjs` early, and does not need to: that check is
+  already a maintainer/CI + pre-checkpoint gate, never a session-start one
+  (see "Schema Validation" below), so a restored `INDEX.md`/`GRAPH.md` is
+  checked at exactly the same point a same-machine session's would be — the
+  next checkpoint or Publish — never earlier and never later.
 - **Each push updates that one branch, not a growing pile of snapshots.**
   Because `memory/cloud-persist` always holds the *whole current* Dev-Memory
   folder (not an increment), each persistence push fast-forwards or
