@@ -18,8 +18,14 @@ that was always implicitly needed between Design and Build.
 ## Method
 
 1. **Right after `architect` finishes the component-level design**
-   (`ARCHITECTURE.md`), break the confirmed work into the smallest tasks
-   that are each independently completable and independently provable — a
+   (`ARCHITECTURE.md`), break Phase 1's confirmed work into the smallest
+   tasks that are each independently completable and independently
+   provable. On a multi-phase roadmap (2026-07-26, see `phased-roadmap`'s
+   step 0), this same breakdown step happens again, separately, right
+   before each later phase is built — never all at once for the whole
+   roadmap up front. Each phase gets its own fresh pass of this Method,
+   using what Build/Test on the prior phase actually revealed, not a plan
+   drafted before any of it existed. A
    micro-task is done when ONE clear acceptance criterion is true, checked
    by ONE exact command. Not smaller than that: "implement the login
    form's password-match check" is right-sized; "write one line inside
