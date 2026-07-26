@@ -12,8 +12,22 @@ Gemini cloud models. This is the studio's **first external cloud dependency**, a
 real departure from its zero-dependency, local-only, private default, so it is
 handled with matching care: opt-in, the user's own key, cost-visible, and
 private-by-notice. Text content is NOT here — it is generated natively by Claude
-via the `text-content-specialist`. Under Google Antigravity (`google-antigravity-integration` skill and `google-antigravity` SDK), Gemini models are also accessible natively for general intelligence, code generation, and multi-modal inference using the environment's `GEMINI_API_KEY`. Plain-English rule is as set in the `studio`
-skill.
+via the `text-content-specialist`. Under Google Antigravity
+(`google-antigravity-integration` skill and `google-antigravity` SDK), Gemini
+models are also accessible natively for general intelligence and code
+generation using the environment's `GEMINI_API_KEY` — that native access is
+for the app being built to call Gemini as part of its own logic, a different
+thing from this skill. **This skill's opt-in, per-generation approval applies
+to media generation regardless of environment** (2026-07-26 correction: this
+paragraph previously also listed "multi-modal inference" among the natively
+accessible Antigravity capabilities, which reads as if it could mean the same
+image/audio/video generation this skill exists to gate, with no statement of
+whether that route still goes through the confirmation in "Confirm before
+EVERY generation" below. It does — there is no bypass. If content generation
+is ever driven through the native Antigravity/Gemini path rather than through
+this skill's own REST/CLI call, the same per-generation cost + "sent to
+Google" confirmation still applies before it happens; nothing about running
+under Antigravity narrows this skill's opt-in requirement).
 
 Every model fact below is time-sensitive: **verify the current model names and
 prices against Google's own documentation before use** (the same discipline
@@ -74,12 +88,20 @@ runs inline — **each generation is confirmed first**:
 1. Show a plain-English **cost estimate** for this generation, and that **the
    prompt/content is sent to Google's servers**.
 2. The `project-lead` puts an `AskUserQuestion` approval to the user (generate,
-   change the prompt, or skip). Only a clear yes generates.
+   change the prompt, or skip). Only a clear yes generates. **If the user
+   picks "skip"** (2026-07-26 — this outcome was never stated here): treat it
+   exactly like the "Graceful degrade" case below — the content specialist
+   produces a placeholder and a numbered step-by-step guide for the user to
+   generate/supply the asset themselves, and the studio moves on. Declining
+   one generation is not an error and never blocks the rest of the project.
 3. Generate via **REST or a CLI using the user's key** (no bundled SDK — the
    plugin ships no Gemini package, preserving "no third-party code
    dependencies"; use `curl` or whatever the session already provides).
 4. `cost-monitor` logs the actual spend for the generation (extends the router
-   ledger). The `cost-guard` hard ceiling still applies.
+   ledger). `cost-guard`'s judgment-based "pause before an expensive step"
+   rule still applies (2026-07-26 correction: previously said "the `cost-guard`
+   hard ceiling" — no such fixed ceiling exists in this codebase; see
+   `cost-guard`/`model-router` for the actual, judgment-based mechanism).
 5. Where the built app itself will send a user's data to Google, add a plain
    privacy note to the app so its users know.
 

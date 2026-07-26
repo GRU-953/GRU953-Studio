@@ -116,8 +116,10 @@ the project is in, and either resume or start the next stage.
 9. **Pick the model and effort per task** (2026-07-19, `model-router` skill).
    When delegating, choose the cheapest Claude model and lowest effort that
    reliably does that specific task (within the role's declared model floor) —
-   automatically and silently. The only pause is `cost-guard`'s hard ceiling,
-   for a single unusually expensive task. Never raise model/effort to route
+   automatically and silently. The only pause is `cost-guard`'s judgment-based
+   rule (pause before any noticeably expensive step), applied to a single
+   unusually expensive task — not a fixed numeric threshold. Never raise
+   model/effort to route
    around a safety gate, and where the surface can't set a subagent's
    model/effort, the role's default stands. `cost-monitor` logs the actual
    choice so a silent decision stays reviewable.

@@ -77,7 +77,7 @@ never ad hoc.
 | :-- | :-- | :-- | :-- |
 | flutter-dart-developer | Dart/Flutter toolchain (pub), null-safety and widget/state idioms | A task is in Dart/Flutter (default mobile stack) | `lang-dart` |
 | kotlin-developer | Kotlin/Gradle toolchain, coroutine and null-safety idioms (JVM/Android) | A task is in Kotlin | `lang-kotlin` |
-| rust-developer | Cargo toolchain, ownership/borrow and error idioms, minimal `unsafe` | A task is in Rust | `lang-rust` |
+| rust-developer | Cargo toolchain, ownership/borrow and error idioms, minimal `unsafe`; also covers the Tauri desktop-app framework's native shell (2026-07-26 audit finding 27 — Tauri is a Rust-core stack choice, not a separate role; see `lang-rust` and `architect.md`) | A task is in Rust (including a Tauri desktop app's native shell) | `lang-rust` |
 | python-developer | venvs, pytest/ruff/mypy toolchain, typing idioms | A task is in Python | `lang-python` |
 | java-developer | Maven/Gradle toolchain, immutability and resource-handling idioms | A task is in Java | `lang-java` |
 | cpp-developer | CMake/CTest, RAII/smart-pointer memory idioms, sanitizers | A task is in C++ | `lang-cpp` |

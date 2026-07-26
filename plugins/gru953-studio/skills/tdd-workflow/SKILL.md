@@ -20,11 +20,15 @@ idea, not a use of that project's code.
 
 ## Tier scope
 
-**Standard and Complex Tier only.** Tiny Tier keeps its existing "does it
-run, does the one core flow work" basic-checks approach (`tester.md`) —
-adding a strict test-first requirement to a single one-off script would be
-friction with no matching benefit, the same reasoning `yagni-rules` already
-applies elsewhere.
+**The test-FIRST protocol below is Standard and Complex Tier only** (2026-07-26:
+this scoping applies to the test-first protocol specifically — the
+"Structured Evidence Format" section further down is a separate, broader
+convention for how evidence is recorded in `PROGRESS.md`, and does apply on
+Tiny Tier too; see its own Migration note). Tiny Tier keeps its existing
+"does it run, does the one core flow work" basic-checks approach
+(`tester.md`) — adding a strict test-first requirement to a single one-off
+script would be friction with no matching benefit, the same reasoning
+`yagni-rules` applies to unrequested process ceremony generally.
 
 ## The protocol, per Build task
 
@@ -62,10 +66,14 @@ applies elsewhere.
 
 ## Structured Evidence Format (2026-07-25 audit fix)
 
-All task verification evidence is now recorded in a **machine-parseable JSON
-format** embedded in the PROGRESS.md table's Notes column, replacing the old
-free-text `verified:` format. This enables CI dashboards, historical trend
-analysis, and automated audit trails.
+Task verification evidence may now also be recorded in a **machine-parseable
+JSON format** embedded in the PROGRESS.md table's Notes column, as an
+alternative to the plain free-text `verified:` format (2026-07-26 correction:
+this section previously said the JSON format "replac[es]" the free-text one —
+`hooks/verify-progress.mjs` itself accepts both, so nothing is actually being
+replaced; corrected to match what the hook really checks). Using JSON enables
+CI dashboards, historical trend analysis, and automated audit trails, where
+the plain form doesn't.
 
 ### JSON Evidence Schema
 
@@ -101,9 +109,16 @@ analysis, and automated audit trails.
 
 ### Verification
 
-The `verify-progress.mjs` hook (PreToolUse) parses this JSON and accepts it as
-valid evidence alongside the legacy `verified:` format. Both formats are
-supported for backward compatibility during migration.
+`hooks/verify-progress.mjs` parses this JSON and accepts it as valid evidence
+alongside the legacy `verified:` format. This is a **manual pre-Publish
+check, not a `PreToolUse` hook** (2026-07-26 correction: this section
+previously mislabelled it "(PreToolUse)" — `hooks/hooks.json`'s `PreToolUse`
+array wires only `scan.mjs` and `gate.mjs`; `verify-progress.mjs`'s own header
+states it is deliberately not wired there, because whether a task's evidence
+is well-formed "cannot be judged reliably from a single Bash call," and it is
+instead run manually before Publish — see `publish-github`, which already
+described this correctly). Both evidence formats are supported, matching the
+"alternative, not a replacement" correction above.
 
 ### Migration
 

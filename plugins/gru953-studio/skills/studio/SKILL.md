@@ -305,6 +305,19 @@ become a genuine Stuck Protocol moment. This never applies to Publish or
 any push-capable action — every fix, quietly self-healed or not, still
 needs the same explicit confirmation before anything reaches GitHub.
 
+**A task that reaches this Stuck Protocol more than once is a different
+situation, not a bigger version of the same one** (2026-07-26 — this was
+already true in `self-healing`'s "repeat-failure detector" but never carried
+over into this file, the one the coordinator itself reads). If the same task
+has now failed and been "fixed" and escalated through this protocol more
+than once, say so as a pattern, plainly: "this task has now failed and been
+re-fixed N times — something underneath it is wrong" — not another ordinary
+Stuck Protocol round with the same three-part message as before. Log the
+pattern to `Dev-Memory/LESSONS.md`. The guardrail this closes: a team that
+quietly re-runs the same 2-attempt-then-escalate cycle on a recurring
+failure can burn a whole session without ever stepping back to ask why it
+keeps coming back.
+
 ## Progress honesty (never claim done without proof)
 
 Never report a task, phase, or the project as complete without its evidence —

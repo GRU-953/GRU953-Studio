@@ -81,8 +81,14 @@ of what is being built and why. It surfaces, from Dev-Memory:
 1. **Concept** — the confirmed brief, Tier and goal (`OBJECTIVE.md`).
 2. **Architecture & specifications** — the chosen stack, components, data flow,
    interface contracts, decisions and deliberate omissions (`ARCHITECTURE.md`).
-3. **Build plan** — the complete, ordered/phased micro-task plan with each
-   task's state (`PLAN.md`), including MVP-then-phases structure.
+3. **Build plan** — `PLAN.md`'s phase list (the roadmap's shape: how many
+   phases, what each delivers) plus the current phase's own detailed,
+   ordered micro-task breakdown with each task's state. A phase not yet
+   reached shows only its one-line summary, not a task breakdown — that
+   detail is planned and approved separately, right before that phase
+   starts (2026-07-26 correction: this row previously said "the complete...
+   plan... phases and all," which read as if every future phase's tasks
+   already existed in `PLAN.md` at once; see `phased-roadmap`'s step 0).
 4. **Live task board** — Done / Doing / Paused / Scheduled / Skipped / Blocked /
    Next up (`STATUS-BOARD.md` / `PROGRESS.md`).
 
@@ -145,7 +151,8 @@ confirmation, exactly as from any other session.
 On request (`/studio-dashboard`), run `hooks/dashboard.mjs` to generate a
 **self-contained** `Dev-Memory/dashboard.html` — the organised command centre:
 the **Concept** (`OBJECTIVE.md`), **Architecture & specifications**
-(`ARCHITECTURE.md`) and the complete **Build plan** (`PLAN.md`, phases and all)
+(`ARCHITECTURE.md`) and the **Build plan** (`PLAN.md` — the phase list plus
+the current phase's detailed tasks, per the correction above)
 rendered as readable sections, followed by the live task board from
 `PROGRESS.md`/`STATUS-BOARD.md` — every task grouped by status, a summary count
 bar, and colour-coded rows. The generator guarantees the two hard rules — all

@@ -51,15 +51,3 @@ commands:
   deps: "npm install"
   dev_env: "mise install node@latest"
 ```
-
-## Interface Contract (for `repo-integrity.mjs` INV11)
-
-```yaml
-commands:
-  build: "tsc --noEmit"
-  test: "npm test"
-  lint: "eslint ."
-  format: "prettier --check ."
-  deps: "npm install"
-  dev_env: "mise install node@latest"
-```
