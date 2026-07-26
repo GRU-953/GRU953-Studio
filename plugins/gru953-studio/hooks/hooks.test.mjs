@@ -3578,6 +3578,21 @@ test('docs-consistency.mjs: a stale lifecycle stage-count claim is caught (findi
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 audit stage 7 — found by direct execution, not hypothetically:
+// this exact phrase is real, live text in README.md ("an eight-stage,
+// exhaustive audit") and is not about the studio's project lifecycle at
+// all. The DC2 check's first version matched any "<word>-stage" phrase
+// anywhere and would have wrongly blocked this real sentence.
+test('docs-consistency.mjs: an unrelated "<word>-stage" phrase with no nearby "lifecycle" is not falsely flagged', () => {
+  const dir = mkTmp('gru-docsconsist-unrelatedstage-');
+  copyRepoTo(dir);
+  const readmePath = path.join(dir, 'README.md');
+  fs.appendFileSync(readmePath, '\nThis was the result of an eight-stage, exhaustive audit.\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `an unrelated stage count with no "lifecycle" nearby must not be flagged: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('docs-consistency.mjs: a stale "the N skills above" companion-count claim is caught (finding 30)', () => {
   const dir = mkTmp('gru-docsconsist-companioncount-');
   copyRepoTo(dir);
@@ -3921,6 +3936,97 @@ test('licence-scan.mjs: a nonexistent or file-as-root path emits JSON, never a r
   assert.doesNotThrow(() => JSON.parse(r2.stdout), `a file-as-root must still emit parseable JSON, got stderr: ${r2.stderr}`);
   assert.ok(!/ENOTDIR|scandir/.test(r2.stderr), 'must not crash with a raw scandir error on a file path');
   fs.rmSync(f, RM_OPTS);
+});
+
+// 2026-07-26 audit stage 7, finding 2. main() used to check ONLY the given
+// root directory for a manifest — true of this very repository (every real
+// manifest lives one level down under clients/*), and true of any nested
+// project layout in general (a Flutter app's android/, a monorepo's web/).
+// Reproduced directly: a root with no manifest but a real, GPL-licensed
+// nested npm project used to report "no recognised dependency manifests
+// found" — clean — instead of finding and blocking it.
+test('licence-scan.mjs: a manifest nested one level down is found, not invisible (2026-07-26 finding 2)', () => {
+  const dir = mkTmp('gru-lic-nested-');
+  const sub = path.join(dir, 'clients', 'cli');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(sub, 'node_modules', 'copyleft-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(sub, 'node_modules', 'copyleft-pkg', 'package.json'), '{"name":"copyleft-pkg","license":"GPL-3.0-only"}');
+  const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.notEqual(json.status, 'clean', `a nested project with a real copyleft dependency must not be invisible: ${r.stdout}`);
+  assert.equal(json.status, 'BLOCKED', `expected the nested GPL dependency to block: ${r.stdout}`);
+  assert.ok(json.results.some((res) => res.dir === path.join('clients', 'cli')), `expected a result tagged with the nested directory, got: ${JSON.stringify(json.results)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('licence-scan.mjs: two independent nested projects are BOTH found and scanned, not just the first (2026-07-26 finding 2)', () => {
+  const dir = mkTmp('gru-lic-twonested-');
+  for (const [name, licence] of [['pkg-a', 'MIT'], ['pkg-b', 'MIT']]) {
+    const sub = path.join(dir, name);
+    fs.mkdirSync(sub, { recursive: true });
+    fs.writeFileSync(path.join(sub, 'package.json'), '{"name":"app"}');
+    fs.mkdirSync(path.join(sub, 'node_modules', 'dep'), { recursive: true });
+    fs.writeFileSync(path.join(sub, 'node_modules', 'dep', 'package.json'), `{"name":"dep","license":"${licence}"}`);
+  }
+  const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.status, 'clean', `two independent all-permissive nested projects must be clean: ${r.stdout}`);
+  assert.equal(json.results.length, 2, `expected both nested projects to appear as separate results, got: ${JSON.stringify(json.results)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('licence-scan.mjs: node_modules is never itself walked as if it were a second project (no duplicate/spurious results)', () => {
+  const dir = mkTmp('gru-lic-nmwalk-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(dir, 'node_modules', 'goodpkg'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'node_modules', 'goodpkg', 'package.json'), '{"name":"goodpkg","license":"MIT"}');
+  const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.status, 'clean', r.stdout);
+  assert.equal(json.results.length, 1, `node_modules must not be independently discovered as a project directory: ${JSON.stringify(json.results)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26 audit finding 2, found while making the scan recursive and
+// running it against this repo's own real npm packages for the first time:
+// isAllowed() compared a licence string only against the flat ALLOWED set,
+// so a real, fully-permissive compound SPDX expression like
+// "(MIT OR CC0-1.0)" was reported needs-review — a worse answer than the
+// identical text already got for Dart/Cargo/Maven via classifySpdxExpr().
+test('licence-scan.mjs: a compound SPDX OR expression of two allowed licences is recognised as clean, not needs-review (2026-07-26 finding 2)', () => {
+  const dir = mkTmp('gru-lic-spdxor-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(dir, 'node_modules', 'dual-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'node_modules', 'dual-pkg', 'package.json'), '{"name":"dual-pkg","license":"(MIT OR CC0-1.0)"}');
+  const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.status, 'clean', `a compound expression of two allowed licences must be recognised, not flagged for review: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Control for the fix above, using classifySpdxExpr's own already-established
+// OR semantics (unchanged by this fix, only now also applied to npm): "A OR
+// B" is a genuine licensee choice, so it's permissive if EITHER side is —
+// proven by the test above. The control that must still block is an
+// expression where NEITHER side is permissive.
+test('licence-scan.mjs: a compound SPDX OR expression where BOTH sides are copyleft still blocks (control for the fix above)', () => {
+  const dir = mkTmp('gru-lic-spdxor-bothcopyleft-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"app"}');
+  fs.mkdirSync(path.join(dir, 'node_modules', 'dual-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'node_modules', 'dual-pkg', 'package.json'), '{"name":"dual-pkg","license":"(GPL-3.0-only OR AGPL-3.0-only)"}');
+  const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.status, 'BLOCKED', `an OR expression where NEITHER side is permissive must still block: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('licence-scan.mjs: the actual repo is scanned and clean — locks in finding 2\'s fix against regression', () => {
+  const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), REPO_ROOT], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.notEqual(json.reason, 'no recognised dependency manifests found', `the real repo has real manifests under clients/ — this must never regress to vacuous again: ${r.stdout}`);
+  assert.ok(json.results.length >= 3, `expected at least the three clients/ npm manifests to be found, got: ${JSON.stringify(json.results)}`);
+  assert.equal(json.status, 'clean', r.stdout);
 });
 
 // --- Round 6 (2026-07-21 adversarial red-team): 4 findings, all fixed --------

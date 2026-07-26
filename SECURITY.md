@@ -788,7 +788,7 @@ deliberate *reduction* in automation — a silent rebase was never a feature
 worth keeping — and it is asserted by a test that the session-start hook
 spawns no child process at all.
 
-**Version coverage.** This is disclosed here at the point the behaviour was
-found and removed, ahead of the version it ships in — the exact version this
-document's "through vX.Y.Z" line covers is stamped once, in the same commit
-as the 5.0.0 release itself, so it is never written down twice.
+**Version coverage: through v5.0.0.** This document, and the audit that
+produced this section, cover every hook and gate through the 5.0.0 release —
+stamped once, in the same commit as the version bump itself, so it is never
+written down twice.

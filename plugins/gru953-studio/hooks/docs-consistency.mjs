@@ -156,7 +156,12 @@ const actualStageCount = studioSkillText ? countLifecycleStages(studioSkillText)
 if (actualStageCount === null) {
   fail(`could not find studio/SKILL.md's "## The lifecycle" line — cannot verify stage-count claims elsewhere`);
 } else {
-  const stageCountRe = new RegExp(`\\b(${numberWordAlt})-stage\\b`, 'gi');
+  // Scoped to "<word>-stage ... lifecycle" specifically, not any "<word>-stage"
+  // phrase — found necessary by direct execution: this repo's own README
+  // legitimately says "an eight-stage, exhaustive audit", which has nothing
+  // to do with the studio's project lifecycle and must not be compared
+  // against its stage count.
+  const stageCountRe = new RegExp(`\\b(${numberWordAlt})-stage\\b[^.\\n]{0,20}\\blifecycle\\b`, 'gi');
   for (const f of allMd) {
     if (isExempt(f)) continue;
     const text = read(f) || '';

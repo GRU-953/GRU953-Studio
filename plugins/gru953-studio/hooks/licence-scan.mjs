@@ -39,6 +39,20 @@ function isAllowed(licenceStr) {
   const s = String(licenceStr).trim();
   if (ALLOWED.has(s)) return true;
   if (FLAG_SUBSTRINGS.some((f) => s.toUpperCase().includes(f))) return false;
+  // 2026-07-26 audit finding 2 (found while making licence-scan.mjs recursive
+  // and finally scanning it against this repo's own real npm packages): a
+  // compound SPDX expression such as "(MIT OR CC0-1.0)" — a real, fully
+  // permissive licence choice — was reported "needs-review" here, because
+  // this function only ever compared the WHOLE string against the flat
+  // ALLOWED set, never parsing it as an expression the way
+  // classifySpdxExpr() below already does for Dart/Cargo/Maven. Delegate to
+  // the same parser for any string that looks like a compound expression,
+  // so an npm package doesn't get a worse answer than a Dart one for
+  // identical licence text.
+  if (/[()]|\bOR\b|\bAND\b/i.test(s)) {
+    const parsed = classifySpdxExpr(s);
+    if (parsed !== null) return parsed;
+  }
   return null; // present but not recognised — needs a human look
 }
 
@@ -521,9 +535,74 @@ function scanGo(root) {
   return { ecosystem: 'go/modules', checked: false, findings: [], note: 'Go module project detected — run `go list -m all` (or `go-licenses`) and review module licences before publish' };
 }
 
-function main() {
-  const root = process.argv[2] || process.cwd();
-  const has = (f) => fs.existsSync(path.join(root, f));
+// 2026-07-26 audit finding 2 (the vacuity this whole document opens with).
+// main() used to check ONLY the given root directory for a manifest — on
+// this very repository, every real manifest lives one level down
+// (clients/cli/package.json, clients/antigravity/package.json,
+// clients/vscode/package.json, plus the former plugins/gru953-studio/
+// package.json), so this reported "no recognised dependency manifests
+// found" while the repo held four manifests and a lockfile with 93
+// resolved packages — reproduced directly, and true of any nested project
+// layout, not just this one (a Flutter app's android/, a monorepo's web/).
+//
+// Fixed with a bounded recursive walk rather than a full .gitignore parser:
+// this project's own established discipline is closing the concrete case
+// found, not building a general grammar engine for one gate (the same
+// reasoning behind the push-safety matcher and the docs-consistency
+// checks elsewhere in this repo). SKIP_DIR_NAMES excludes each
+// ecosystem's own dependency tree — those are scanned BY that ecosystem's
+// scanner already; walking into node_modules/ etc. as if it were a second
+// project would multiply spurious "project" directories and duplicate
+// every finding. MAX_DEPTH bounds the walk so a pathological tree (or a
+// symlink cycle — real directories are walked by name, never followed as
+// symlinks) cannot make this run away.
+const SKIP_DIR_NAMES = new Set([
+  'node_modules', '.git', 'Dev-Memory', 'out', 'dist', 'build', 'coverage',
+  '.vscode-test', '.dart_tool', 'target', '.gradle', 'vendor', '.venv',
+  'venv', '__pycache__', 'Pods', 'DerivedData',
+]);
+const MAX_WALK_DEPTH = 6;
+const MANIFEST_FILE_NAMES = [
+  'package.json', 'requirements.txt', 'pyproject.toml', 'Pipfile', 'Pipfile.lock',
+  'pubspec.yaml', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts',
+  'settings.gradle', 'settings.gradle.kts', 'vcpkg.json', 'conanfile.txt',
+  'conanfile.py', 'CMakeLists.txt', 'Package.swift', 'Package.resolved',
+  'packages.lock.json', 'go.mod',
+];
+function dirEntries(dir) {
+  try { return fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+}
+function hasAnyManifest(dir, entries) {
+  const names = entries.map((e) => e.name);
+  if (MANIFEST_FILE_NAMES.some((n) => names.includes(n))) return true;
+  return names.some((n) => n.endsWith('.csproj') || n.endsWith('.sln'));
+}
+export function findManifestDirs(root) {
+  const found = [];
+  function walk(dir, depth) {
+    const entries = dirEntries(dir);
+    // A file path (not a directory) as root, or an unreadable one, yields
+    // no entries and no manifests — reported the same as any other empty
+    // directory, never a crash (2026-07-21 Round 4 fix, preserved).
+    if (entries.length > 0 || fs.existsSync(dir)) {
+      if (hasAnyManifest(dir, entries)) found.push(dir);
+    }
+    if (depth >= MAX_WALK_DEPTH) return;
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (SKIP_DIR_NAMES.has(e.name)) continue;
+      walk(path.join(dir, e.name), depth + 1);
+    }
+  }
+  walk(root, 0);
+  return found;
+}
+
+// Runs the same per-ecosystem detection this file has always used, just
+// against ONE candidate directory rather than assuming it's the only one —
+// unchanged logic, now callable at every directory findManifestDirs() found.
+function scanOneDirectory(dir) {
+  const has = (f) => fs.existsSync(path.join(dir, f));
   const hasPackageJson = has('package.json');
   // 2026-07-26 further-pass audit fix (false-green, confirmed by execution):
   // this gate never checked for Pipenv's own manifest/lockfile, even though
@@ -542,21 +621,31 @@ function main() {
   const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
   const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
   const hasSwift = has('Package.swift') || has('Package.resolved');
-  let rootEntries = [];
-  try { rootEntries = fs.readdirSync(root); } catch { rootEntries = []; }
-  const hasDotnet = rootEntries.some((f) => f.endsWith('.csproj') || f.endsWith('.sln')) || has('packages.lock.json');
+  const hasDotnet = dirEntries(dir).some((e) => e.name.endsWith('.csproj') || e.name.endsWith('.sln')) || has('packages.lock.json');
   const hasGo = has('go.mod');
 
+  const dirResults = [];
+  if (hasPackageJson) dirResults.push(scanNode(dir));
+  if (hasRequirements) dirResults.push(scanPython(dir));
+  if (hasPubspec) dirResults.push(scanDartFlutter(dir));
+  if (hasCargo) dirResults.push(scanCargo(dir));
+  if (hasMaven || hasGradle) dirResults.push(scanJvm(dir, hasMaven ? 'java/maven' : 'jvm/gradle'));
+  if (hasCpp) dirResults.push(scanCpp(dir));
+  if (hasSwift) dirResults.push(scanSwift(dir));
+  if (hasDotnet) dirResults.push(scanDotnet(dir));
+  if (hasGo) dirResults.push(scanGo(dir));
+  return dirResults;
+}
+
+function main() {
+  const root = process.argv[2] || process.cwd();
+  const manifestDirs = findManifestDirs(root);
+
   const results = [];
-  if (hasPackageJson) results.push(scanNode(root));
-  if (hasRequirements) results.push(scanPython(root));
-  if (hasPubspec) results.push(scanDartFlutter(root));
-  if (hasCargo) results.push(scanCargo(root));
-  if (hasMaven || hasGradle) results.push(scanJvm(root, hasMaven ? 'java/maven' : 'jvm/gradle'));
-  if (hasCpp) results.push(scanCpp(root));
-  if (hasSwift) results.push(scanSwift(root));
-  if (hasDotnet) results.push(scanDotnet(root));
-  if (hasGo) results.push(scanGo(root));
+  for (const dir of manifestDirs) {
+    const rel = path.relative(root, dir) || '.';
+    for (const r of scanOneDirectory(dir)) results.push({ ...r, dir: rel });
+  }
 
   if (results.length === 0) {
     console.log(JSON.stringify({ status: 'clean', reason: 'no recognised dependency manifests found', results: [] }, null, 2));

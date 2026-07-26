@@ -1,5 +1,81 @@
 # Changelog
 
+## 5.0.0 — 2026-07-26
+
+A **major hardening release**, the result of an eight-stage, exhaustive audit
+of the whole repository (the full, reproducible findings register is
+committed as [AUDIT-2026-07.md](AUDIT-2026-07.md)). Major, not a smaller
+release, for three reasons: the checks below are measurably stricter, so a
+project that passed its gates on 4.5.0 could fail on 5.0.0 without its owner
+changing a line of their own code; some published surface is removed or
+renamed; and two things this document already describes elsewhere — the
+knowledge-graph's link vocabulary, and what every language pack must
+declare — change their exact shape.
+
+**The checks themselves got more honest.** Before this release, several of
+the plugin's own safety and quality checks could report "all clear" without
+really having looked:
+- The "is this task really done?" check no longer accepts a failing test
+  run as proof that it passed.
+- The dependency-licence scanner now actually looks. It used to check only
+  the very top folder of a project — which meant it reported "no
+  dependencies found" on this very repository, even though four real
+  manifests and ninety-three installed packages were sitting one folder
+  down. It now finds every real manifest anywhere in the project, and
+  correctly recognises a package licensed under an either/or choice (like
+  "MIT or CC0") as fine when either option is.
+- A new check, `docs-consistency.mjs`, catches a stale number quoted in two
+  places that disagree, the same item listed twice by mistake, and a named
+  specialist that doesn't actually exist on the team — the exact kind of
+  mistake that let two made-up role names sit in this project's own
+  documentation until this audit found them.
+- Secrets hidden inside a compressed or unusually-encoded file are scanned
+  again (a bug had quietly turned this check off); a content-rights check
+  no longer treats a file it can't read as if it were simply absent.
+
+**Removed the one thing that could touch your files without asking.**
+Starting a session used to silently run a background command that could
+fetch, rebase and stash uncommitted work in the plugin's own folder, with no
+confirmation. It now only tells you an update may be available — running
+`/studio-update` still performs a real update, but only when you ask for it.
+
+**Proven to work the same on Windows, macOS and Linux**, not just Linux —
+including a bug that used to make a Windows checkout report all thirty-eight
+specialist roles and all thirty-five skills as broken, simply because of how
+Windows writes line endings.
+
+**Every "runs on every platform" promise is now real, not aspirational.**
+- The studio now actually asks which platform you want your app on, as one
+  of its very first questions.
+- The skill that maps your answer onto real build instructions for every
+  platform — present since 4.5.0, but never once loaded — now loads like
+  every other one.
+- Every language specialist's toolkit now names the real command that
+  produces a finished, installable app (an `.apk`, an `.ipa`, an `.exe`, a
+  live web address) — previously they all stopped at "compiles".
+- Two specialists named in the platform map, `react-native-developer` and
+  `tauri-developer`, never actually existed. Both frameworks now correctly
+  point at the language specialists who already cover them. The team stays
+  at thirty-eight roles.
+- The command-line tool, the VS Code extension, and the Google Antigravity
+  bridge each had at least one command that was broken or did nothing.
+  Every one now does what it claims, or has been removed rather than left
+  pretending to work.
+
+**Packaging clean-up.**
+- Removed a bundled, experimental protocol server that had never
+  successfully started since it was added, and was the one thing making
+  "zero third-party code dependencies" untrue.
+- Corrected wrong licence labels on the command-line tool, the Google
+  Antigravity bridge and the VS Code extension; added the licence,
+  repository link and readme the VS Code extension needed to actually be
+  publishable; renamed the Google Antigravity bridge's package to
+  `@gru953/studio-antigravity`, matching the other two.
+
+No change to how you use the tool day to day — the interview, the pop-up
+questions, and the lifecycle stay the same. See AUDIT-2026-07.md for every
+individual finding, with the exact file and line it was found at.
+
 ## 4.5.0 — 2026-07-26
 
 A **feature release** transforming GRU953-Studio from a Claude Code plugin into a **Universal Agentic Studio** deployable across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI).
