@@ -238,11 +238,14 @@ rights and alt-text — enforced by `hooks/content-check.mjs` before Publish. Th
 **Prototype stage (2026-07-19, `warframe-prototype` skill).** Between Design and
 Plan, before any real code: `ux-designer` + a `builder` produce a self-contained
 clickable HTML "warframe" (a wireframe prototype — no external calls) plus the
-phased build plan, and the Project Lead runs a **hard, blocking approval gate**
-(`AskUserQuestion`) on both. No implementation code is written until the user
-approves. On a pure CLI/library, a short text walkthrough stands in for the
-visual warframe. The approved warframe becomes the reference the built MVP is
-checked against at Review.
+phased build plan — the roadmap's *shape* only (how many phases, what each one
+delivers), never a per-phase micro-task breakdown this early (2026-07-26: that
+detail is planned and approved separately, once per phase, right before each
+phase is built — see `phased-roadmap`'s step 0) — and the Project Lead runs a
+**hard, blocking approval gate** (`AskUserQuestion`) on both. No implementation
+code is written until the user approves. On a pure CLI/library, a short text
+walkthrough stands in for the visual warframe. The approved warframe becomes
+the reference the built MVP is checked against at Review.
 
 **MVP-then-phases (2026-07-19, `phased-roadmap` skill).** At Plan, the design
 becomes Phase 1 = MVP core only, then Phase 2…N = progressive enhancements;
