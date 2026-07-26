@@ -18,8 +18,6 @@
 // so the reminder is injected as context, not shown as a raw tool result.
 
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import process from 'node:process';
 import { readStdin, extractCwd, findStudioRoot } from './lib.mjs';
 
@@ -52,7 +50,7 @@ function isLikelyEphemeral() {
   return false;
 }
 
-async function main() {
+function main() {
   let input = '';
   try { input = readStdin(); } catch { input = ''; }
   const cwd = extractCwd(input) || process.cwd();
@@ -81,20 +79,35 @@ async function main() {
       'over a local `gh` CLI if one is not present.',
     );
   }
+  // 2026-07-26 audit findings 24 and 25 (MAJOR). This used to spawn
+  // auto-update.mjs DETACHED on every single session start, which ran
+  // `git remote update` and then `git pull --rebase --autostash` — rewriting
+  // history and stashing the user's uncommitted work, with no confirmation, in
+  // whatever directory the plugin happened to resolve to. That directory is
+  // three levels above hooks/, which is the repo root in a git checkout but an
+  // arbitrary folder in a marketplace install. It was the only code path in the
+  // product that modified files the user had not asked it to touch, and it was
+  // entirely untested.
+  //
+  // It also never ran on Windows at all: the old path used
+  // `new URL(import.meta.url).pathname`, which yields "/C:/..." there, so
+  // existsSync was false and the whole branch was skipped — the bug was
+  // masking its own blast radius on one platform.
+  //
+  // Replaced with notify-only. Nothing is fetched, nothing is written, no child
+  // process is spawned. The user is told an update may be available and pointed
+  // at the explicit `/studio-update` command, which still performs the real
+  // update after they ask for it. Deliberately a REDUCTION in automation: a
+  // silent rebase is not a feature worth keeping. Asserted by test — the hook
+  // must spawn no child process.
+  lines.push(
+    '',
+    'If the user asks about updating GRU953-Studio, tell them to run',
+    '`/studio-update`. Never fetch, pull, rebase or stash on their behalf',
+    'without them asking for it first.',
+  );
+
   const additionalContext = lines.join('\n');
-  
-  // Non-blocking auto-update check
-  try {
-    const { spawn } = await import('node:child_process');
-    const updateScript = path.join(path.dirname(new URL(import.meta.url).pathname), 'auto-update.mjs');
-    if (fs.existsSync(updateScript)) {
-      const child = spawn('node', [updateScript], {
-        detached: true,
-        stdio: 'ignore'
-      });
-      child.unref();
-    }
-  } catch (e) {}
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext },

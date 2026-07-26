@@ -1855,6 +1855,71 @@ test('session-start.mjs: no studio project stands down silently, exit 0', () => 
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 audit findings 24 + 25 (MAJOR). session-start.mjs used to spawn
+// auto-update.mjs DETACHED on every session start, which ran `git remote update`
+// and `git pull --rebase --autostash` with no confirmation, in a directory the
+// plugin may not own. These two tests are the regression guard. Both FAIL on
+// the pre-fix code.
+test('session-start.mjs: spawns NO child process (never auto-updates behind the user)', () => {
+  const dir = mkTmp('gru-ss-nospawn-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+
+  // A fake `node` and a fake `git` placed FIRST on PATH. If the hook spawns
+  // either, the shim records it. This catches the spawn regardless of which
+  // binary a future implementation reaches for, and works on any platform
+  // because the hook itself invokes bare names.
+  const binDir = path.join(dir, 'fakebin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const witness = path.join(dir, 'spawned.txt');
+  for (const name of ['node', 'git']) {
+    const shim = path.join(binDir, name);
+    fs.writeFileSync(shim, `#!/bin/sh\necho "$0 $@" >> ${JSON.stringify(witness)}\nexit 0\n`);
+    fs.chmodSync(shim, 0o755);
+  }
+
+  const env = cleanEphemeralEnv();
+  env.PATH = `${binDir}${path.delimiter}${env.PATH}`;
+  const r = runSessionStart(dir, env);
+
+  assert.equal(r.code, 0);
+  assert.ok(r.context, 'must still emit its context');
+
+  // The old spawn was DETACHED, so the parent exited before the child ran.
+  // Asserting immediately would race the child and could pass against the very
+  // bug this guards. Wait a bounded window for any child to make itself known.
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline && !fs.existsSync(witness)) {
+    // Busy-wait: this file is synchronous throughout and has no event loop to
+    // yield to between spawnSync calls.
+  }
+  assert.equal(
+    fs.existsSync(witness), false,
+    'session start must spawn no child process — it must never fetch, pull, rebase or stash on the user\'s behalf',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// A deterministic source-level guard to sit alongside the behavioural witness
+// above. Stated plainly for what it is: this asserts the shape of the code, not
+// its behaviour. It exists because the behaviour being guarded against is an
+// ASYNCHRONOUS DETACHED spawn, which no synchronous assertion can observe
+// without racing it — the behavioural test needs a timed wait, and a timed wait
+// can never be a proof of absence. This one cannot race, so together they close
+// the gap: this catches reintroduction at review time, the witness catches a
+// spawn that arrives by some route this pattern misses.
+test('session-start.mjs: source contains no process-spawning call (deterministic guard)', () => {
+  const src = fs.readFileSync(path.join(HERE, 'session-start.mjs'), 'utf8');
+  for (const forbidden of ['spawn(', 'spawnSync(', 'exec(', 'execSync(', 'execFile(', 'fork(']) {
+    assert.equal(
+      src.includes(forbidden), false,
+      `session-start.mjs must not call ${forbidden} — a session start must never run a subprocess (2026-07-26 audit findings 24, 25)`,
+    );
+  }
+  // It must also not import the module that would let it.
+  assert.equal(/from\s+['"]node:child_process['"]/.test(src), false, 'must not import node:child_process');
+  assert.equal(/import\(\s*['"]node:child_process['"]\s*\)/.test(src), false, 'must not dynamically import node:child_process');
+});
+
 test('session-start.mjs: malformed stdin does not crash — silent stand-down', () => {
   const r = spawnSync(NODE, [path.join(HERE, 'session-start.mjs')], { input: 'not valid json{{{', encoding: 'utf8', env: cleanEphemeralEnv() });
   assert.equal(r.status, 0, 'malformed stdin must not crash the hook');
