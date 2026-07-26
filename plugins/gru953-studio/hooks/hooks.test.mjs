@@ -20,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { isPushCapable } from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr } from './licence-scan.mjs';
 
@@ -3262,6 +3263,61 @@ test('verify-progress.mjs: a decorated `done` VALUE (**done**, `done`, "✅ done
 // structured evidence bypassed both halves of the gate. This is the check every
 // other completion claim in the product rests on.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 2026-07-26 audit findings 4 and 5 — the two dead obfuscation defences.
+// ---------------------------------------------------------------------------
+test('scan.mjs: a gzip-packed secret is detected (2026-07-26 finding 4)', () => {
+  // Two bugs had to be fixed for this to pass, and the audit initially caught
+  // only the first: (a) decodeAndNormalize called require() inside an ESM
+  // module, a ReferenceError swallowed by its own catch; (b) even with that
+  // fixed the branch was UNREACHABLE, because a gzip blob contains NUL bytes
+  // and the binary guard skipped the file before any decoding was attempted.
+  // Verified: with only (a) fixed, this test still failed with "allow".
+  const dir = mkTmp('gru-scan-gzip-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'packed.bin'),
+    zlib.gzipSync(Buffer.from('config:\naws_key = AKIAIOSFODNN7EXAMPLE\n')),
+  );
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a gzip-packed AWS key must be refused: ${r.stdout}`);
+  assert.match(r.stdout, /packed\.bin/, 'the finding must name the containing file');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: an ordinary binary with no secret is still allowed (no new false positives)', () => {
+  // The control for the test above: widening the scanner to unpack compressed
+  // content must not start flagging real binary assets.
+  const dir = mkTmp('gru-scan-bin-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]),
+    Buffer.from(Array.from({ length: 400 }, (_, i) => (i * 37) % 256)),
+  ]);
+  fs.writeFileSync(path.join(dir, 'img.png'), png);
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `an ordinary binary must not be flagged: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: a UTF-16LE file with a BOM and a secret is scanned (finding 5, real case kept)', () => {
+  const dir = mkTmp('gru-scan-u16-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'creds.txt'), Buffer.concat([
+    Buffer.from([0xff, 0xfe]), // UTF-16LE BOM
+    Buffer.from('aws_key = AKIAIOSFODNN7EXAMPLE\n', 'utf16le'),
+  ]));
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a BOM-marked UTF-16LE secret must be refused: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 function writeProgressRow(dir, evidenceCell) {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(

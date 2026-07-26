@@ -24,6 +24,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
+// 2026-07-26 audit finding 4: this was `require('node:zlib')` inside
+// decodeAndNormalize, which is a ReferenceError in an ESM module — so the
+// gzip-obfuscation defence had never run. A module-scope import is the only
+// correct form in a .mjs file.
+import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck } from './lib.mjs';
 
@@ -165,15 +170,32 @@ function decodeAndNormalize(buf) {
   const originalText = buf.toString('utf8');
   results.push(originalText);
 
-  // Try UTF-16 LE/BE and UTF-32 LE/BE
-  for (const encoding of ['utf16le', 'utf16be', 'utf32le', 'utf32be']) {
-    try {
-      const decoded = buf.toString(encoding);
-      if (strIsTextish(decoded) && decoded !== originalText) {
-        results.push(decoded);
-      }
-    } catch {
-      // ignore decode errors
+  // 2026-07-26 audit finding 5. This loop used to try
+  // ['utf16le','utf16be','utf32le','utf32be']. Only the FIRST is a real Node
+  // encoding: the other three throw `TypeError: Unknown encoding` on every call
+  // (verified), were swallowed by the catch, and so had never decoded anything.
+  //
+  // The surviving utf16le pass was worse than useless. Re-reading ordinary
+  // single-byte ASCII as UTF-16LE always yields CJK-looking mojibake whose code
+  // points are all >= 0xa0, and strIsTextish counts every code point >= 0xa0 as
+  // text — so the mojibake scored 1.000 and passed. Every line of every file was
+  // therefore scanned TWICE, and because scanText reports `i+1` from whichever
+  // variant matched, any finding from the mojibake pass carried a line number
+  // that pointed nowhere.
+  //
+  // A genuine UTF-16 file announces itself with a byte-order mark. Requiring one
+  // keeps the real case (a UTF-16LE/BE file containing a credential) and drops
+  // the phantom pass entirely. UTF-16BE is handled by byte-swapping, since Node
+  // has no 'utf16be' encoding — which is what the original list was reaching for.
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    const decoded = buf.subarray(2).toString('utf16le');
+    if (strIsTextish(decoded) && decoded !== originalText) results.push(decoded);
+  } else if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    const swapped = Buffer.from(buf.subarray(2));
+    if (swapped.length % 2 === 0) {
+      swapped.swap16();
+      const decoded = swapped.toString('utf16le');
+      if (strIsTextish(decoded) && decoded !== originalText) results.push(decoded);
     }
   }
 
@@ -194,9 +216,17 @@ function decodeAndNormalize(buf) {
     // ignore
   }
 
-  // Try gzip/deflate decode (sync)
+  // 2026-07-26 audit finding 4. This branch used `require('node:zlib')` inside
+  // a .mjs module, where `require` is not defined — so it threw
+  // `ReferenceError: require is not defined` (verified) the instant it was
+  // reached, on every platform and every Node version. The catch swallowed it,
+  // so gzip-packed secrets were never decoded and the scanner still reported
+  // success. In scanLargeFile the same ReferenceError was thrown and discarded
+  // once PER LINE.
+  //
+  // zlib is now imported at module scope (see the top of this file), which is
+  // the only correct form here and cannot regress silently.
   try {
-    const zlib = require('node:zlib');
     const decompressed = zlib.gunzipSync(buf);
     const decoded = decompressed.toString('utf8');
     if (strIsTextish(decoded) && decoded !== originalText) {
@@ -616,6 +646,60 @@ function main() {
       // content-scanned, and a NUL-interleaved encoding such as UTF-16LE — ~50%
       // NUL — classifies as non-text, so is not scanned either.)
       // 2026-07-25: Also run multi-pass decode/normalize on NUL-containing files
+      //
+      // 2026-07-26 audit finding 4, SECOND HALF. Fixing the ESM `require` in
+      // decodeAndNormalize was necessary but NOT sufficient, and the audit
+      // initially understated this: the gzip branch was also architecturally
+      // UNREACHABLE. A real gzip blob contains NUL bytes and is not textish, so
+      // control reached the `continue` below and the file was skipped before any
+      // decoding was attempted. decodeAndNormalize only ever received text
+      // buffers, on which gunzipSync fails with "incorrect header check".
+      // Verified by execution: with the import fixed but this guard unchanged, a
+      // gzipped AWS key still shipped with decision "allow".
+      //
+      // So the compressed case is now handled HERE, before the binary skip:
+      // check the gzip magic bytes (1f 8b) and, if the content decompresses to
+      // text, scan the decompressed text. Findings are attributed to the
+      // container file, with the line number being the position within the
+      // DECOMPRESSED stream — which is the only meaningful line number there is
+      // for packed content, and is genuinely useful for locating the secret once
+      // the file is unpacked.
+      if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+        try {
+          const inflated = zlib.gunzipSync(buf);
+          if (bufIsTextish(inflated)) {
+            scanText(inflated.toString('utf8'), f);
+            continue;
+          }
+        } catch {
+          // Not valid gzip, or a compression bomb guard tripped — fall through
+          // to the ordinary binary handling below.
+        }
+      }
+      // 2026-07-26 audit finding 5, same architectural cause. SECURITY.md
+      // honestly disclosed this as a residual: "a NUL-interleaved encoding such
+      // as UTF-16LE — ~50% NUL — classifies as non-text, so is not scanned
+      // either." That disclosure was accurate, and it means the UTF-16 handling
+      // inside decodeAndNormalize was ALSO unreachable for whole files, for the
+      // same reason the gzip branch was: control never got past the binary skip.
+      //
+      // A UTF-16 file that carries a byte-order mark is unambiguous, so decode
+      // and scan it here. This closes the disclosed residual for the announced
+      // case; a UTF-16 file with NO byte-order mark remains out of scope and
+      // stays disclosed, because guessing at unmarked wide encodings is how
+      // false positives on genuine binaries start.
+      if (buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff))) {
+        const littleEndian = buf[0] === 0xff;
+        const body = Buffer.from(buf.subarray(2));
+        if (body.length % 2 === 0) {
+          if (!littleEndian) body.swap16(); // Node has no 'utf16be'; swap then decode as LE
+          const decoded = body.toString('utf16le');
+          if (strIsTextish(decoded)) {
+            scanText(decoded, f);
+            continue;
+          }
+        }
+      }
       if (!bufIsTextish(buf)) continue;
       // Replace each NUL with a newline (String.fromCharCode(0) avoids an
       // easily-mangled literal NUL byte in source): the ASCII lines around a
