@@ -31,8 +31,9 @@ sentences after each stage — no jargon, no walls of text.
 Also load and follow these companion skills as standing rules:
 - `first-run` — the one-off setup that runs before a user's very first
   project (never on later projects).
-- `google-antigravity-integration` — the protocol for executing GRU953-Studio
-  inside Google Antigravity (Google Antigravity SDK and Gemini Antigravity IDE)
+- `google-antigravity-integration` — dual-harness operation: the protocol for
+  executing GRU953-Studio inside Google Antigravity (`agy` CLI, IDE, 2.0 app,
+  Python SDK, Gemini 3.6/3.5 models, and the Antigravity SDK), seamlessly
   alongside Claude Code.
 - `universal-platform-integration` — the protocol for running GRU953-Studio on
   every other 2026 AI coding platform (Cursor, Windsurf, Copilot, Devin,
@@ -54,12 +55,11 @@ Also load and follow these companion skills as standing rules:
 - `cost-guard` — the confirmed cheapest-first spending default.
 - `model-router` — the automatic per-task choice of model and effort
   (cheapest that does the job; pauses only at the hard cost-ceiling).
-- `google-antigravity-integration` — dual-harness operation, seamless support for Google Antigravity (`agy` CLI, IDE, 2.0 app, Python SDK, Gemini 3.6/3.5 models) alongside Claude Code.
 - `audit-loop` — the planned protocol for any review that needs more than
   one pass (Review/Fix, and any "audit until clean" request).
 
 At the Publish stage specifically, read `publish-github` directly rather
-than loading it the way the five skills above load (2026-07-12 Claude-Topics
+than loading it the way the skills above load (2026-07-12 Claude-Topics
 compliance fix: `publish-github` sets `disable-model-invocation: true` —
 deliberately, since publishing pushes to the user's real GitHub account and
 must never be something Claude decides to trigger on its own — which also

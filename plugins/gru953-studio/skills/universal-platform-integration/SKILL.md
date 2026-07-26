@@ -1,6 +1,6 @@
 ---
 name: universal-platform-integration
-description: The Universal Agentic Protocol for running GRU953-Studio across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI) — mapping the 38 roles, 34 skills, and memory system to IDEs, CLI agents, and cloud swarms.
+description: The Universal Agentic Protocol for running GRU953-Studio across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI) — mapping the 38 roles, 35 skills, and memory system to IDEs, CLI agents, and cloud swarms.
 ---
 
 # Universal Platform Integration

@@ -69,7 +69,7 @@ dependencies**.
 
 ### Latest version: 4.5.0
 
-Version 4.5.0 introduces the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.), bringing the skill count to 34. Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
+Version 4.5.0 introduces the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.), bringing the skill count to 35. Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). See [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
 
 ---
 
@@ -213,6 +213,7 @@ You never have to sit and watch. A few simple commands, typed any time:
 | `/studio-schedule` | Ask it to pick a task back up at a time you choose. |
 | `/studio-dashboard` | Open a one-page visual summary of your project. |
 | `/studio-publish` | Publish privately to your own GitHub (with confirmations). |
+| `/studio-update` | Manually check for and apply a studio update right now. |
 
 ---
 

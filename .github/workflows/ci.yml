@@ -96,6 +96,8 @@ jobs:
         run: node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
       - name: Smoke-test the licence scanner
         run: node plugins/gru953-studio/hooks/licence-scan.mjs .
+      - name: Documentation-consistency check
+        run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
 
   # A single, stable check name for branch protection to require, regardless
   # of how many legs the matrix above has (matrix job names are not stable

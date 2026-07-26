@@ -460,6 +460,30 @@ for (const rel of ['agents/maintenance-agent.md', 'commands/studio-publish.md', 
   }
 }
 
+// ---- INV 13: docs-consistency.mjs stays wired into both the gate list and CI ----
+// 2026-07-26 audit stage 5. Mirrors the INV10/INV12 pattern of mechanically
+// asserting a check's wiring rather than trusting it stays referenced by
+// hand: docs-consistency.mjs (the new sibling drift gate) must remain named
+// in CLAUDE.md's mandatory-gate list AND actually invoked in
+// .github/workflows/ci.yml, or it silently stops running while still
+// existing on disk — the exact failure mode this whole audit exists to
+// close. (Not publish-github/SKILL.md's seven pre-flight checks — those
+// validate a project BUILT BY the studio; this gate validates the studio's
+// OWN documentation about itself, a different domain entirely. See
+// docs-consistency.mjs's own header comment for the corrected reasoning.)
+const claudeMdText = read(path.join(repoRoot, 'CLAUDE.md'));
+if (claudeMdText === null) {
+  fail(`CLAUDE.md is missing or unreadable — cannot verify docs-consistency.mjs is listed as a mandatory gate`);
+} else if (!/docs-consistency\.mjs/.test(claudeMdText)) {
+  fail(`CLAUDE.md no longer lists docs-consistency.mjs among the mandatory gates (2026-07-26 wiring regressed)`);
+}
+const ciYmlText = read(path.join(repoRoot, '.github', 'workflows', 'ci.yml'));
+if (ciYmlText === null) {
+  fail(`.github/workflows/ci.yml is missing or unreadable — cannot verify docs-consistency.mjs runs in CI`);
+} else if (!/docs-consistency\.mjs/.test(ciYmlText)) {
+  fail(`.github/workflows/ci.yml no longer runs docs-consistency.mjs (2026-07-26 wiring regressed)`);
+}
+
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {
   console.log(JSON.stringify({ status: 'clean', agentCount, skillCount, hookCount: hookFiles.length, commandCount: commandFiles.length }, null, 2));

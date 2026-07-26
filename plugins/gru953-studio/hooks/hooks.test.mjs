@@ -3241,6 +3241,76 @@ test('memory-integrity.mjs: a link line ending in ordinary sentence punctuation 
   fs.rmSync(dir2, RM_OPTS);
 });
 
+// 2026-07-26 audit stage 5, finding 7. GRAPH.schema.json's 'relation' enum
+// used to be a second, hand-maintained copy of the link vocabulary that had
+// already drifted from what skills/memory-graph/SKILL.md documents and this
+// file's own LINK_RE enforces. The decision recorded in AUDIT-2026-07.md §6:
+// the documentation wins, the schema is corrected to match it, and this
+// file now reads the vocabulary from the schema at run time so the two
+// structurally cannot drift apart again.
+const GRAPH_SCHEMA_PATH = path.join(HERE, '..', 'skills', 'dev-memory', 'schemas', 'GRAPH.schema.json');
+test('GRAPH.schema.json: the relation enum matches the documented vocabulary exactly (2026-07-26 finding 7)', () => {
+  const schema = JSON.parse(fs.readFileSync(GRAPH_SCHEMA_PATH, 'utf8'));
+  const relationEnum = schema.items.properties.links.items.properties.relation.enum;
+  const documented = ['implements', 'depends-on', 'relates-to', 'supersedes', 'caused-by', 'blocks'];
+  assert.deepEqual([...relationEnum].sort(), [...documented].sort(), 'GRAPH.schema.json\'s relation enum must match skills/memory-graph/SKILL.md\'s documented link vocabulary exactly');
+  const nodeTypeEnum = schema.items.properties.type.enum;
+  const documentedKinds = ['requirement', 'task', 'decision', 'file', 'lesson', 'entity'];
+  assert.deepEqual([...nodeTypeEnum].sort(), [...documentedKinds].sort(), 'GRAPH.schema.json\'s node type enum must match skills/memory-graph/SKILL.md\'s documented node kinds exactly');
+});
+
+test('memory-integrity.mjs: the link vocabulary is genuinely read from GRAPH.schema.json at run time, not hard-coded (2026-07-26 finding 7)', () => {
+  // Proof, not assertion by inspection: temporarily mutate the REAL schema
+  // file to add a made-up verb and remove a real one, confirm the checker's
+  // accepted vocabulary changes to match, then restore the original file
+  // (in a finally, so a failed assertion here can never leave the repo's
+  // own schema file mutated).
+  const original = fs.readFileSync(GRAPH_SCHEMA_PATH, 'utf8');
+  const dir = mkTmp('gru-mi-schemabinding-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  try {
+    const mutated = JSON.parse(original);
+    const relationEnum = mutated.items.properties.links.items.properties.relation.enum;
+    const idx = relationEnum.indexOf('supersedes');
+    relationEnum.splice(idx, 1, 'made-up-verb-for-this-test');
+    fs.writeFileSync(GRAPH_SCHEMA_PATH, JSON.stringify(mutated, null, 2));
+
+    // The made-up verb is now schema-valid — a link using it must be accepted.
+    fs.writeFileSync(
+      path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+      '## Nodes\n- [T1] task: a\n- [T2] task: b\n\n## Links\n- T1 made-up-verb-for-this-test T2\n',
+    );
+    const withMadeUpVerb = runScript('memory-integrity.mjs', dir);
+    assert.equal(withMadeUpVerb.json.status, 'clean', `a verb the mutated schema now allows must be accepted: ${withMadeUpVerb.stdout}`);
+
+    // 'supersedes' was just removed from the schema — a link using it must
+    // no longer be recognised as a link at all, so its 'src'/'dst' tokens
+    // are never checked as node references (the same no-match behaviour an
+    // unrecognised verb already has today).
+    fs.writeFileSync(
+      path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+      '## Nodes\n- [T1] task: a\n\n## Links\n- T1 supersedes T99\n',
+    );
+    const withRemovedVerb = runScript('memory-integrity.mjs', dir);
+    assert.equal(withRemovedVerb.json.status, 'clean', `a verb the mutated schema no longer lists must not be recognised as a link at all: ${withRemovedVerb.stdout}`);
+  } finally {
+    fs.writeFileSync(GRAPH_SCHEMA_PATH, original);
+    fs.rmSync(dir, RM_OPTS);
+  }
+
+  // Control, run only after the real file is restored: the documented
+  // vocabulary works normally again.
+  const dir2 = mkTmp('gru-mi-schemabinding-restored-');
+  fs.mkdirSync(path.join(dir2, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir2, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] task: a\n- [T2] task: b\n\n## Links\n- T1 supersedes T2\n',
+  );
+  const restored = runScript('memory-integrity.mjs', dir2);
+  assert.equal(restored.json.status, 'clean', `the real, restored schema must accept 'supersedes' again: ${restored.stdout}`);
+  fs.rmSync(dir2, RM_OPTS);
+});
+
 test('session-start.mjs: CI=false no longer falsely triggers the ephemeral note; CI=true does (2026-07-21 fix)', () => {
   const dirFalse = mkTmp('gru-ss-cifalse-');
   fs.mkdirSync(path.join(dirFalse, 'Dev-Memory'), { recursive: true });
@@ -3417,6 +3487,144 @@ test('repo-integrity.mjs INV12: the publish protocol must enumerate all seven pr
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping a required pre-flight check from the publish protocol must be caught');
   assert.ok(r.json.problems.some((p) => p.includes('content-check.mjs')), `expected a problem naming the dropped check, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26 audit stage 5, INV 13. docs-consistency.mjs is a new sibling
+// gate — this asserts it stays wired into CLAUDE.md's mandatory-gate list
+// and .github/workflows/ci.yml, the same mechanical-wiring pattern INV10/12
+// already use, so it cannot exist on disk while silently not running.
+test('repo-integrity.mjs INV13: docs-consistency.mjs dropping out of CLAUDE.md\'s gate list is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv13-claudemd-');
+  copyRepoTo(dir);
+  const claudeMdPath = path.join(dir, 'CLAUDE.md');
+  fs.writeFileSync(claudeMdPath, fs.readFileSync(claudeMdPath, 'utf8').replace(/docs-consistency\.mjs/g, 'REMOVED-check.mjs'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping docs-consistency.mjs from CLAUDE.md\'s gate list must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('CLAUDE.md') && p.includes('docs-consistency.mjs')), `expected a problem naming the dropped wiring, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+test('repo-integrity.mjs INV13: docs-consistency.mjs dropping out of ci.yml is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv13-ciyml-');
+  copyRepoTo(dir);
+  const ciYmlPath = path.join(dir, '.github', 'workflows', 'ci.yml');
+  fs.writeFileSync(ciYmlPath, fs.readFileSync(ciYmlPath, 'utf8').replace(/docs-consistency\.mjs/g, 'REMOVED-check.mjs'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping docs-consistency.mjs from ci.yml must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('ci.yml') && p.includes('docs-consistency.mjs')), `expected a problem naming the dropped wiring, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// docs-consistency.mjs — 2026-07-26 audit stage 5. A new sibling to
+// repo-integrity.mjs (see its own header comment for why not an extension
+// of it), catching STALE CLAIMS rather than missing references: a count
+// repeated in two places that disagree, a duplicate entry in a canonical
+// list, a specialist named in prose that exists nowhere on the real roster.
+// Every mutation test below reproduces the exact real drift this audit
+// found (findings 27's class, 28, 30, 31) against a full copy of the repo,
+// proving the check genuinely discriminates rather than always passing.
+// ---------------------------------------------------------------------------
+function runDocsConsistency(dir) {
+  const r = spawnSync(NODE, [path.join(HERE, 'docs-consistency.mjs'), dir], { encoding: 'utf8' });
+  let json = null;
+  try { json = JSON.parse(r.stdout); } catch {}
+  return { status: r.status, json, stdout: r.stdout, stderr: r.stderr };
+}
+
+test('docs-consistency.mjs: the actual repo is clean, with exactly the one disclosed finding-29 exemption (locks in current good state)', () => {
+  const r = runDocsConsistency(REPO_ROOT);
+  assert.equal(r.json && r.json.status, 'clean', `expected clean, got: ${r.stdout}`);
+  assert.equal(r.json.exemptions.length, 1, `expected exactly one disclosed exemption, got: ${JSON.stringify(r.json.exemptions)}`);
+  assert.equal(r.json.exemptions[0].check, 'zero-dependencies-claim');
+});
+
+test('docs-consistency.mjs: a stale "skill count to N" claim is caught (finding 28)', () => {
+  const dir = mkTmp('gru-docsconsist-skillcount-');
+  copyRepoTo(dir);
+  const readmePath = path.join(dir, 'README.md');
+  fs.writeFileSync(readmePath, fs.readFileSync(readmePath, 'utf8').replace('skill count to 35', 'skill count to 34'));
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a reintroduced stale skill count must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('skill count to 34')), `expected a problem naming the stale count, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a stale lifecycle stage-count claim is caught (finding 30)', () => {
+  const dir = mkTmp('gru-docsconsist-stagecount-');
+  copyRepoTo(dir);
+  const projectLeadPath = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'project-lead.md');
+  fs.writeFileSync(projectLeadPath, fs.readFileSync(projectLeadPath, 'utf8').replace('twelve-stage', 'nine-stage'));
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a reintroduced stale stage count must be caught');
+  assert.ok(r.json.problems.some((p) => /"nine-stage"/.test(p)), `expected a problem naming the stale stage count, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a stale "the N skills above" companion-count claim is caught (finding 30)', () => {
+  const dir = mkTmp('gru-docsconsist-companioncount-');
+  copyRepoTo(dir);
+  const studioSkillPath = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md');
+  const text = fs.readFileSync(studioSkillPath, 'utf8');
+  assert.ok(!/the (one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) skills? above/i.test(text), 'precondition: the real file must not already have this phrase');
+  const mutated = text.replace('loading it the way the skills above load', 'loading it the way the five skills above load');
+  assert.notEqual(mutated, text, 'precondition: the target phrase must actually exist in the real file for this test to mean anything');
+  fs.writeFileSync(studioSkillPath, mutated);
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a reintroduced stale companion-skill count must be caught');
+  assert.ok(r.json.problems.some((p) => /"the five skills above"/.test(p)), `expected a problem naming the stale count, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a duplicated companion-skill bullet is caught (finding 31)', () => {
+  const dir = mkTmp('gru-docsconsist-dupskill-');
+  copyRepoTo(dir);
+  const studioSkillPath = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md');
+  const text = fs.readFileSync(studioSkillPath, 'utf8');
+  const duplicated = text.replace(
+    '- `audit-loop` — the planned protocol',
+    '- `dev-memory` — a duplicate re-mention\n- `audit-loop` — the planned protocol',
+  );
+  fs.writeFileSync(studioSkillPath, duplicated);
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a duplicated companion-skill bullet must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('`dev-memory`') && p.includes('2 times')), `expected a problem naming the duplicate, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a duplicated marketplace tag is caught (finding 31)', () => {
+  const dir = mkTmp('gru-docsconsist-duptag-');
+  copyRepoTo(dir);
+  const marketplacePath = path.join(dir, '.claude-plugin', 'marketplace.json');
+  const marketJson = JSON.parse(fs.readFileSync(marketplacePath, 'utf8'));
+  marketJson.plugins[0].tags.push(marketJson.plugins[0].tags[0]);
+  fs.writeFileSync(marketplacePath, JSON.stringify(marketJson, null, 2));
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a duplicated marketplace tag must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('duplicate entry')), `expected a problem naming the duplicate tag, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a dangling specialist reference is caught — finding 27\'s exact class, reproduced (finding 27)', () => {
+  const dir = mkTmp('gru-docsconsist-danglingrole-');
+  copyRepoTo(dir);
+  const architectPath = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'architect.md');
+  const text = fs.readFileSync(architectPath, 'utf8');
+  fs.writeFileSync(architectPath, text + '\n\nSee also `tauri-developer` for Tauri apps.\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a reintroduced dangling specialist reference must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('`tauri-developer`')), `expected a problem naming the dangling role, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a real merged-away role name (ROSTER.md) is not falsely flagged as dangling', () => {
+  const dir = mkTmp('gru-docsconsist-mergedrole-');
+  copyRepoTo(dir);
+  const architectPath = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'architect.md');
+  const text = fs.readFileSync(architectPath, 'utf8');
+  fs.writeFileSync(architectPath, text + '\n\nHistorically this was `prompt-engineer`\'s job.\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a legitimately merged-away role name must not be flagged: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, RM_OPTS);
 });
 

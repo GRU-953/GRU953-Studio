@@ -44,7 +44,6 @@
         "openhands",
         "universal-agentic-studio",
         "antigravity",
-        "google-antigravity",
         "gemini-3.6"
       ],
       "source": "./plugins/gru953-studio"

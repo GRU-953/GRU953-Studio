@@ -1,6 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "GRAPH.md schema",
+  "title": "GRAPH.md conceptual schema",
+  "description": "GRAPH.md is a plain-text Markdown file, not a JSON document — nothing parses it into the JSON array this file's top-level 'type' describes. This schema instead documents the shape of one Markdown node/link pair, and is the single source of truth for the two controlled vocabularies below: hooks/memory-integrity.mjs reads the 'relation' enum from this exact file at run time (see its loadLinkVocabulary()), so this file and the checker that enforces it can no longer drift apart the way they did before the 2026-07-26 audit (finding 7) — the fix recorded here is this file being corrected to match the vocabulary skills/memory-graph/SKILL.md has documented all along, since every existing project was told to follow the prose, not this schema.",
   "type": "array",
   "items": {
     "type": "object",
@@ -12,8 +13,8 @@
       },
       "type": {
         "type": "string",
-        "enum": ["requirement", "task", "decision", "file", "module", "component", "api", "test", "lesson"],
-        "description": "Node type for graph queries"
+        "enum": ["requirement", "task", "decision", "file", "lesson", "entity"],
+        "description": "Node kind, matching skills/memory-graph/SKILL.md's documented list exactly"
       },
       "links": {
         "type": "array",
@@ -27,8 +28,8 @@
             },
             "relation": {
               "type": "string",
-              "enum": ["traces-to", "depends-on", "implements", "tests", "decided-in", "lesson-from"],
-              "description": "Typed relationship"
+              "enum": ["implements", "depends-on", "relates-to", "supersedes", "caused-by", "blocks"],
+              "description": "Typed relationship, matching skills/memory-graph/SKILL.md's documented list exactly — read at run time by hooks/memory-integrity.mjs"
             }
           },
           "additionalProperties": false

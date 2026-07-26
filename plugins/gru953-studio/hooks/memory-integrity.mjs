@@ -28,7 +28,34 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import { splitPipeCells, stripBom, isDirectory } from './lib.mjs';
+
+// 2026-07-26 audit finding 7. GRAPH.schema.json and this file's own link
+// vocabulary used to be two hand-maintained copies of the same list, and had
+// already drifted: the schema declared traces-to/tests/decided-in/lesson-from
+// while every documented example (skills/memory-graph/SKILL.md) and this
+// file's own LINK_RE used implements/depends-on/relates-to/supersedes/
+// caused-by/blocks. The decision recorded in AUDIT-2026-07.md §6: the
+// documentation wins, because that is what every existing project was told
+// to follow — so the schema is corrected to match it, and this file now
+// reads the vocabulary from the schema at run time instead of hard-coding a
+// second copy, so the two structurally cannot drift apart again. If the
+// schema is ever unreadable, this falls back to the documented vocabulary
+// rather than silently accepting every word (a missing schema must never
+// widen what counts as a valid link).
+const GRAPH_SCHEMA_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dev-memory', 'schemas', 'GRAPH.schema.json',
+);
+const DOCUMENTED_LINK_VOCABULARY = ['implements', 'depends-on', 'relates-to', 'supersedes', 'caused-by', 'blocks'];
+function loadLinkVocabulary() {
+  try {
+    const schema = JSON.parse(fs.readFileSync(GRAPH_SCHEMA_PATH, 'utf8'));
+    const relationEnum = schema.items.properties.links.items.properties.relation.enum;
+    if (Array.isArray(relationEnum) && relationEnum.length > 0) return relationEnum;
+  } catch { /* fall through to the documented vocabulary below */ }
+  return DOCUMENTED_LINK_VOCABULARY;
+}
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
@@ -147,7 +174,7 @@ function checkGraph(devMemory, problems) {
   // ("- All links use verbs like implements and blocks") was parsed as a link and
   // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
   // introduced).
-  const LINK_RE = /^\s*[-*]\s+(\S+)\s+(implements|depends-on|relates-to|supersedes|caused-by|blocks)\s+(\S+)/i;
+  const LINK_RE = new RegExp(`^\\s*[-*]\\s+(\\S+)\\s+(${loadLinkVocabulary().join('|')})\\s+(\\S+)`, 'i');
   // 2026-07-26 further-pass audit fix (false-block, confirmed by execution).
   // The id groups are `\S+` with no boundary after them, so a link line
   // written as an ordinary sentence — "- T1 implements R1." — captured the

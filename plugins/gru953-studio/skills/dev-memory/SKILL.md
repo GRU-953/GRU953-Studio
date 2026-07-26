@@ -104,18 +104,28 @@ This is separate from cloud persistence (which pushes the entire Dev-Memory
 folder to a private branch). Git-backed memory writes happen on **every** memory
 update, not just cloud persistence, and provide per-change history.
 
-### Schema Validation (2026-07-25 audit fix)
+### Schema Validation (2026-07-25 audit fix; corrected 2026-07-26, finding 20)
 
-Memory files are validated against JSON schemas before every write to prevent
-drift and corruption. Schemas live in `skills/dev-memory/schemas/`:
+These four schemas document each memory file's expected shape. Schemas live
+in `skills/dev-memory/schemas/`:
 
 - `FOCUS.schema.json` — objective, activePhase, activeTask, topConstraints
 - `INDEX.schema.json` — entity, where, summary, tags, lastTouched
 - `GRAPH.schema.json` — nodeId, type, links[]
 - `LESSONS.schema.json` — date, task, type, pattern, lesson, severity, tags[]
 
-Validation is performed by `memory-keeper` using `ajv` before any memory write.
-A schema violation blocks the write and surfaces the error to the Project Lead.
+**Correction:** this section previously claimed `memory-keeper` validates
+every write against these schemas using `ajv` before it lands. That was
+never true — nothing in this repository imports `ajv`, `memory-keeper` has
+no such tool, and nothing installs it as a dependency (removing the false
+claim rather than adding the dependency it would have required, per
+AUDIT-2026-07.md's recorded decision). What IS true, and mechanically
+enforced: `hooks/memory-integrity.mjs` reads `GRAPH.schema.json`'s own
+`relation` enum at run time and rejects any `GRAPH.md` link whose verb isn't
+in it, and checks that every `INDEX.md` "where" cell points at a file that
+actually exists. `memory-keeper` upholds the other shapes (and the other
+three schemas) by writing discipline, not by automated JSON validation —
+say so plainly rather than overclaiming a check that doesn't run.
 
 ## Learning from mistakes (2026-07-11 addition)
 

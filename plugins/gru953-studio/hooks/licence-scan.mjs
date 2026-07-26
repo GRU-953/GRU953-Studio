@@ -449,7 +449,10 @@ function scanCargo(root) {
 // ---- JVM (Maven/Gradle) ----
 function scanJvm(root, kind) {
   // Check for lockfiles
-  const lockFiles = kind === 'java/maven' ? ['pom.xml'] : ['gradle.lockfile', 'gradle.lockfile', 'build.gradle.lock'];
+  // 2026-07-26 audit finding 34: 'gradle.lockfile' was listed twice here,
+  // harmlessly (checking the same real file twice costs nothing) but wrong —
+  // corrected to the two distinct real Gradle lockfile names.
+  const lockFiles = kind === 'java/maven' ? ['pom.xml'] : ['gradle.lockfile', 'build.gradle.lock'];
   for (const lf of lockFiles) {
     if (fs.existsSync(path.join(root, lf))) {
       return { 
