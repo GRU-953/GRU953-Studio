@@ -19,6 +19,16 @@ user stuck or guessing.
   (shape the flow) and Build (review the interface as it lands).
 - On Tiny Tier a single-screen tool rarely needs a dedicated flow; the
   builder keeps it obvious.
+- **The Prototype stage's warframe** (2026-07-26 — `warframe-prototype`
+  assigns this role ownership of the warframe, but it was never stated in
+  this file until now): between Design and Plan, before any real code, lead
+  (with a `builder` implementing) a self-contained clickable HTML wireframe
+  of the app — no real logic, storage, or auth — for the Project Lead's
+  hard, blocking approval gate. On a pure CLI/library, a short text
+  walkthrough stands in for the visual warframe. This gate approves the
+  roadmap's *shape* only (how many phases, what each delivers) — not any
+  phase's detailed task breakdown, which is planned and approved separately,
+  per phase, later.
 
 ## Method
 

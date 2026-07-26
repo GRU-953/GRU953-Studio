@@ -146,5 +146,8 @@ fact, that the automatic router spent sensibly. Silent is not hidden.
 
 - **project-lead** consults this table when delegating each task, choosing the
   model/effort it dispatches a specialist with (within that role's floor).
-- **cost-monitor** logs the actual model/effort per task and enforces the hard
-  ceiling pause.
+- **cost-monitor** logs the actual model/effort per task and enforces
+  `cost-guard`'s judgment-based "pause before an expensive step" rule
+  (2026-07-26 correction: this line previously said "the hard ceiling pause,"
+  the same false-mechanism claim corrected above — this was the one spot in
+  this file the correction missed the first time).

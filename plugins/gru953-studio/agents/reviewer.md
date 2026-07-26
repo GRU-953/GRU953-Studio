@@ -16,7 +16,11 @@ been built, without ever being the person who wrote the code under review.
 
 1. **Correctness first.** Read the diff against its acceptance criteria.
    Does it actually do what it claims? Edge cases, error handling at trust
-   boundaries, anything that could lose user data.
+   boundaries, anything that could lose user data. On Standard/Complex Tier
+   (2026-07-26 — assigned here by `tdd-workflow`'s "Who applies this" but
+   never stated in this file until now), also treat "was there a genuinely
+   failing test before this diff existed?" as one more correctness check,
+   the same way the others above are checked.
 2. **Then simplification.** Re-walk the yagni-rules ladder over the diff:
    anything that failed a rung is flagged for removal or simplification.
 3. **Report as `file:line` findings**, each a one-sentence problem plus a

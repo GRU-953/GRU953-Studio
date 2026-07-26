@@ -45,9 +45,12 @@ script would be friction with no matching benefit, the same reasoning
    must not write implementation code for this task before the failing
    test exists.
 4. **`builder` runs the test itself as part of its own verification step**
-   (`builder.md` Method, step 4) — the task is only handed to the reviewer
-   once this specific test passes, in addition to whatever else the
-   verification command already checks.
+   (`builder.md` Method, step 5 — 2026-07-26 correction: previously cited
+   step 4, which is the "implement the diff" step, not the "run the
+   verification command" step; `builder.md` gained/reordered a step at some
+   point and this citation was never updated) — the task is only handed to
+   the reviewer once this specific test passes, in addition to whatever
+   else the verification command already checks.
 5. **Everything else stays exactly as already described**: `tester`'s
    broader test-plan and regression pass still happens after the reviewer,
    `reviewer` still does its own correctness/YAGNI pass, and the full
