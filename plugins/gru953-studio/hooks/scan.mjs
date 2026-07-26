@@ -30,7 +30,7 @@ import crypto from 'node:crypto';
 // correct form in a .mjs file.
 import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck } from './lib.mjs';
+import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck, tokenConfirmedWithinTtl } from './lib.mjs';
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
 // skill and confirm-memory-persist.mjs). When this project-bound token is
@@ -39,7 +39,17 @@ import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isP
 // so Dev-Memory persists to a private branch only if it carries no secret. This
 // is the ONLY effect of the token here; it never relaxes the secret scan, and
 // gate.mjs still confines the token to a private (never public) push.
-const MEMPERSIST_TTL_MS = 60 * 60 * 1000;
+//
+// 2026-07-26 further-pass audit fix (confirmed by execution): this used to
+// carry its OWN independent copy of the token/TTL check — match the token
+// anywhere in the file, then check freshness against the WHOLE file's first
+// `ISSUED:` line — the exact unbound-token bug audit finding 12 fixed in
+// gate.mjs, reintroduced here because scan.mjs never picked up that fix.
+// Reproduced: a record with an unrelated fresh `ISSUED:` line placed BEFORE
+// the real (expired) token+its own real issued line still returned allowed.
+// Now shares gate.mjs's already-fixed tokenConfirmedWithinTtl from lib.mjs,
+// so there is exactly one implementation and the two hooks cannot drift
+// apart on this again.
 function memoryPersistAllowed(studioRoot) {
   const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
   let text;
@@ -50,13 +60,7 @@ function memoryPersistAllowed(studioRoot) {
     return false;
   }
   const expected = `STUDIO-MEMORY-PERSIST-CONFIRMED:${crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex')}`;
-  const m = /^ISSUED:(\d+)$/m.exec(text);
-  if (!m) return false;
-  const issuedAt = parseInt(m[1], 10);
-  const fresh = Number.isFinite(issuedAt) && Date.now() - issuedAt <= MEMPERSIST_TTL_MS && Date.now() - issuedAt >= 0;
-  if (!fresh) return false;
-  for (const line of text.split(/\r?\n/)) if (line.trim() === expected) return true;
-  return false;
+  return tokenConfirmedWithinTtl(text, expected);
 }
 
 // ---- push-tree resolution ------------------------------------------------------
@@ -344,7 +348,17 @@ function main() {
   // without losing real detections (every example in this file's own
   // security review used a quoted literal).
   const SECRETVAR_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
-  const KEYFILE_RE = /(^|\/)(\.env(\..+)?|.+\.env|id_rsa|.+\.pem|.+\.key)$/;
+  // 2026-07-26 further-pass audit fix (false-allow, confirmed by execution):
+  // no `/i` flag, and — unlike DEVMEMORY_RE just below, whose case
+  // sensitivity is explained and deliberate — nothing here says this was on
+  // purpose, because it wasn't. `.ENV`, `id_rsa.PEM` (any case variant of a
+  // key-file name) are ordinary, legal filenames on every OS this project
+  // targets, not something requiring a case-insensitive filesystem. This
+  // filename check is the ONLY backstop for `.env`-style files: SECRETVAR_RE
+  // above requires a quoted value, but real .env files conventionally use
+  // unquoted `KEY=value`, which matches neither secret regex. So a file
+  // named `.ENV` holding ordinary unquoted secrets shipped undetected.
+  const KEYFILE_RE = /(^|\/)(\.env(\..+)?|.+\.env|id_rsa|.+\.pem|.+\.key)$/i;
   // 2026-07-11 Round 5 audit fix (case-sensitive ON PURPOSE — the `/i` flag
   // was removed): the studio always creates a project's private working
   // memory as `Dev-Memory` (capital D, capital M — see findStudioRoot,

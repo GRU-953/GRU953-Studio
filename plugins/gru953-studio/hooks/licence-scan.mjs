@@ -522,7 +522,17 @@ function main() {
   const root = process.argv[2] || process.cwd();
   const has = (f) => fs.existsSync(path.join(root, f));
   const hasPackageJson = has('package.json');
-  const hasRequirements = has('requirements.txt') || has('pyproject.toml');
+  // 2026-07-26 further-pass audit fix (false-green, confirmed by execution):
+  // this gate never checked for Pipenv's own manifest/lockfile, even though
+  // scanPython() below already explicitly knows about `Pipfile.lock` as a
+  // lockfile fallback — that fallback was simply never reachable for a
+  // Pipenv-only project (no requirements.txt/pyproject.toml at all), so
+  // Python never appeared as an entry in `results` at all. Reproduced: a
+  // directory with only Pipfile/Pipfile.lock (holding a real copyleft
+  // dependency) returned {"status":"clean","results":[]} — worse than the
+  // disclosed "notChecked" pattern used everywhere else in this file, since
+  // there was no entry at all to alert a human.
+  const hasRequirements = has('requirements.txt') || has('pyproject.toml') || has('Pipfile') || has('Pipfile.lock');
   const hasPubspec = has('pubspec.yaml');
   const hasCargo = has('Cargo.toml');
   const hasMaven = has('pom.xml');

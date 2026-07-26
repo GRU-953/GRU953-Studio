@@ -35,7 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise } from './lib.mjs';
 
 // The required Definition-of-Done dimensions. Each must appear as at least one
 // row in QUALITY-GATE.md whose Item cell contains the keyword, marked pass (with
@@ -93,7 +93,13 @@ const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 // Reproduced: a Definition-of-Done row reading "Ran npm test - exit code 1,
 // 3 failing" with an otherwise-Pass status returned {"status":"clean"}. Added
 // an alternative that also recognises "exit[ed] [with] code N".
-const CONTRADICTION_RE = /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
+//
+// 2026-07-26 further-pass audit fix: moved to lib.mjs as CONTRADICTION_RE —
+// this file's own copy (the most complete of the three, including the
+// `regress(?:ed|ion)` alternative) had already diverged from
+// verify-progress.mjs's and traceability-check.mjs's own copies, which is
+// exactly how findings 1/35 above escaped this file's two siblings for as
+// long as they did. One shared pattern now, not three that can drift.
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 // 2026-07-26, audit finding 26. Strips a leading UTF-8 byte-order mark before
@@ -139,7 +145,15 @@ function parseRows(text) {
     const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
-      const find = (re) => cells.findIndex((c) => re.test(c));
+      // 2026-07-26 further-pass audit fix: verify-progress.mjs already
+      // de-emphasises a header cell (strips **bold**/`code`/_italic_) before
+      // matching it, so "**Status**" and "`Status`" are recognised the same
+      // as plain "Status" — this file's own header matcher never had that,
+      // so a decorated header made the whole table unrecognised. Reproduced:
+      // a Definition-of-Done table with header `**Status**` reported every
+      // required dimension "missing" despite every row being correctly
+      // filled in.
+      const find = (re) => cells.findIndex((c) => re.test(deEmphasise(c)));
       idx = {
         item: find(/^(item|check|dimension|requirement|criterion|gate)$/i),
         status: find(/^status$/i),

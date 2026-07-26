@@ -703,6 +703,24 @@ test('repo-integrity.mjs INV1: a quoted frontmatter name: value is parsed like r
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 further-pass audit fix (audit finding 21, already fixed for the
+// four confirm-*.mjs scripts and roster-check.mjs in the same pass — this
+// file's PROGRESS.md read was the finding's other still-open example). This
+// read had NO try/catch at all, unlike the existsSync check right above it —
+// a directory sitting where PROGRESS.md should be (a stray mkdir, a bad
+// merge) threw a raw Node stack trace instead of this script's own
+// plain-English BLOCKED contract.
+test('verify-progress.mjs: a directory where PROGRESS.md should be is blocked, not a crash (further-pass finding)', () => {
+  const dir = mkTmp('gru-verifyprog-eisdir-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), { recursive: true });
+  const r = spawnSync(NODE, [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, `must exit 1 when PROGRESS.md can't be read: ${r.stdout}`);
+  assert.doesNotMatch(r.stderr, /at Object\.readFileSync|node:fs:\d+/, `must not leak a raw Node stack trace: ${r.stderr}`);
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('verify-progress.mjs: a decorated "Done ✅" status is still recognised as done', () => {
   const dir = mkTmp('gru-verifyprog-decorated-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
@@ -1300,6 +1318,44 @@ test('verify-progress.mjs: a stale "exit 0" claim no longer masks a later, live-
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 further-pass audit fix: verify-progress.mjs's own CONTRADICTION_RE
+// had fallen behind quality-gate.mjs's/traceability-check.mjs's — missing both
+// the "exit code N" phrasing (finding 35, the exact file finding 1 was
+// originally about) and the `regress(?:ed|ion)` alternative. Both are
+// reproduced here as failing-then-passing regressions; both now come from the
+// single shared lib.mjs CONTRADICTION_RE all three files use.
+test('verify-progress.mjs: "exit code 1" phrasing is recognised as a contradiction, not just bare "exit 1" (further-pass finding)', () => {
+  const dir = mkTmp('gru-verifyprog-exitcode-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| # | Task | Status | Notes |',
+      '| :-- | :-- | :-- | :-- |',
+      '| 1 | Ship widget | Done | verified: npm test -> exit 0 (2026-07-20); however a later re-run gave exit code 1 |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync(NODE, [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, `"exit code 1" must be recognised as a contradiction: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('verify-progress.mjs: a row admitting "a regression was spotted" is not accepted as done (further-pass finding)', () => {
+  const dir = mkTmp('gru-verifyprog-regression-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| # | Task | Status | Notes |',
+      '| :-- | :-- | :-- | :-- |',
+      '| 1 | Ship gadget | Done | verified: npm test -> exit 0 (2026-07-20); a regression was spotted in nightly build |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync(NODE, [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, `an admitted regression must not count as done: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('verify-progress.mjs: a real multi-clause "done" row (exit 0 not the last clause) is not a false-block regression (2026-07-12)', () => {
   // This project's OWN real Dev-Memory has legitimate multi-clause done rows
   // where "exit 0" is deliberately not the row's final clause (more text
@@ -1749,6 +1805,20 @@ test('quality-gate.mjs: a complete DoD (pass + reasoned n/a) is clean', () => {
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 further-pass audit fix: verify-progress.mjs already de-emphasises
+// a header cell (strips **bold**/`code`) before matching it against a column
+// name; this file's own header matcher never had that fix, so a decorated
+// "Status" header made the whole table unrecognised — every dimension
+// reported "missing" even though every row was otherwise correctly filled in.
+test('quality-gate.mjs: a decorated "**Status**" header is still recognised (further-pass finding)', () => {
+  const dir = mkTmp('gru-qg-decoratedheader-');
+  writeGate(dir, FULL_DOD.replace('| Item | Status | Evidence |', '| Item | **Status** | Evidence |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json && r.json.status, 'clean', `a decorated Status header must not hide a complete DoD table: ${r.stdout}`);
+  assert.equal(r.code, 0);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // 2026-07-26, audit finding 26. NOT a discriminating regression test — checked
 // by execution, and this passes identically with or without the stripBom()
 // hardening in quality-gate.mjs, because `/^\s*\|/`'s `\s*` already tolerates
@@ -1849,6 +1919,24 @@ test('traceability-check.mjs: a consistent two-way matrix is clean', () => {
     '| T2 | resume | todo | — |\n');
   const r = runScript('traceability-check.mjs', dir);
   assert.equal(r.json.status, 'clean', `expected clean: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26 further-pass audit fix: quality-gate.mjs's own version of this
+// test is the sibling to this one — verify-progress.mjs already de-emphasises
+// a header cell before matching it, but traceability-check.mjs's parseTable()
+// (table detection) and col() (column-index lookup) never had that fix, so a
+// decorated "**ID**"/"**Status**" header could make the whole table
+// unrecognised or a column invisible.
+test('traceability-check.mjs: decorated "**ID**"/"**Status**" headers are still recognised (further-pass finding)', () => {
+  const dir = mkTmp('gru-tr-decoratedheader-');
+  writeReq(dir,
+    REQ_HEADER.replace('| ID |', '| **ID** |') +
+    '| R1 | Pause a task | 1 | T1 | `test_pause` -> exit 0 | met |\n',
+    PROG_HEADER.replace('| Status |', '| **Status** |') +
+    '| T1 | pause | done | verified: `test_pause` -> exit 0 (2026-07-19) |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `decorated headers must not hide an otherwise-consistent matrix: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -2347,6 +2435,24 @@ test('dashboard.mjs: Dev-Memory present but PROGRESS.md unreadable is blocked, n
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 further-pass audit fix (audit finding 21, already fixed for the
+// four confirm-*.mjs scripts and roster-check.mjs in the same pass — this
+// script's writeFileSync was the finding's last still-open example). A
+// directory sitting where the output file should be (a stray mkdir, a bad
+// merge) threw a raw Node stack trace instead of this script's own
+// plain-English BLOCKED contract.
+test('dashboard.mjs: a directory where the output file should go is blocked, not a crash (further-pass finding)', () => {
+  const dir = mkTmp('gru-db-writeeisdir-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), '# Progress\n');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory', 'dashboard.html'), { recursive: true });
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.code, 1, `must exit 1 when the output cannot be written: ${r.stdout}`);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.doesNotMatch(r.stderr, /at Object\.writeFileSync|node:fs:\d+/, `must not leak a raw Node stack trace: ${r.stderr}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('dashboard.mjs: case-varied status values still land in the correct pill group (2026-07-19 audit fix — coverage gap)', () => {
   // Every GROUPS regex already carries an /i flag, so this behaves correctly
   // today — this test locks it in so a future refactor that drops the flag
@@ -2362,6 +2468,42 @@ test('dashboard.mjs: case-varied status values still land in the correct pill gr
   assert.ok(/pill done/.test(html), 'an upper-case "DONE" status must still land in the done pill group');
   assert.ok(/pill blocked/.test(html), 'a title-case "Blocked" status must still land in the blocked pill group');
   fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26 further-pass audit fix: GROUPS never had an 'other' entry, so
+// the summary pills silently dropped any row whose status matched none of
+// the seven known keywords — or ALL rows at once, rendering a bare "No tasks
+// yet" pill, if the table's own header isn't spelled exactly "Status" —
+// directly contradicting the module's own comment above GROUPS ("so it is
+// shown, never silently dropped"). Confirmed by execution before fixing.
+test('dashboard.mjs: an unrecognised status column or status word still shows in the summary, not "No tasks yet" (further-pass finding)', () => {
+  // Case 1: the status column isn't spelled "Status" at all (statusIdx -1),
+  // so EVERY row falls into 'other' — this used to render the summary as
+  // just the empty-board fallback pill while the table below still listed
+  // real tasks.
+  const dir1 = mkTmp('gru-db-otherpill-nocol-');
+  fs.mkdirSync(path.join(dir1, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir1, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | State | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | a | Doing | x |\n| T2 | b | Done | x |\n');
+  const r1 = runScript('dashboard.mjs', dir1);
+  assert.equal(r1.json.status, 'written');
+  const html1 = fs.readFileSync(path.join(dir1, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.doesNotMatch(html1, /No tasks yet/, 'a table with real rows must never render the empty-board summary pill');
+  assert.match(html1, /pill other"><span class="n">2<\/span> Other/, 'both rows must be counted in a visible "Other" pill');
+  fs.rmSync(dir1, RM_OPTS);
+
+  // Case 2: the column IS named "Status", but one row's value is a synonym
+  // ("In Review") not among the seven recognised words — that one row used
+  // to silently vanish from the summary while the table still listed it.
+  const dir2 = mkTmp('gru-db-otherpill-synonym-');
+  fs.mkdirSync(path.join(dir2, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir2, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | a | Doing | x |\n| T2 | b | In Review | x |\n');
+  const r2 = runScript('dashboard.mjs', dir2);
+  const html2 = fs.readFileSync(path.join(dir2, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.match(html2, /pill doing"><span class="n">1<\/span> Doing now/);
+  assert.match(html2, /pill other"><span class="n">1<\/span> Other/, 'the synonym-status row must still be counted somewhere in the summary');
+  fs.rmSync(dir2, RM_OPTS);
 });
 
 test('dashboard.mjs: a header-only PROGRESS.md (zero data rows) renders the empty-board message, not a crash', () => {
@@ -2410,6 +2552,27 @@ test('licence-scan.mjs: a Maven project is honestly reported not-checked (INCOMP
   assert.equal(r.status, 1, 'an unscanned ecosystem must not exit 0 clean');
   assert.ok(/INCOMPLETE/.test(json.status));
   assert.ok(json.notChecked.some((n) => n.ecosystem === 'java/maven'));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26 further-pass audit fix (false-green, confirmed by execution).
+// The Python-detection gate checked for requirements.txt/pyproject.toml only,
+// but scanPython() itself already had an explicit Pipfile.lock lockfile
+// fallback — never reachable, because a Pipenv-only project (no
+// requirements.txt/pyproject.toml at all) never triggered scanPython() in
+// the first place. A project using ONLY Pipenv reported "clean" with ZERO
+// results — not even the disclosed "notChecked" entry every other unscanned
+// ecosystem gets.
+test('licence-scan.mjs: a Pipenv-only project (Pipfile/Pipfile.lock, no requirements.txt) is not invisible (further-pass finding)', () => {
+  const dir = mkTmp('gru-lic-pipenv-');
+  fs.writeFileSync(path.join(dir, 'Pipfile'), '[packages]\nsome-gpl-package = "*"\n');
+  fs.writeFileSync(path.join(dir, 'Pipfile.lock'), '{"_meta": {}, "default": {}}\n');
+  const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const json = JSON.parse(r.stdout);
+  assert.equal(r.status, 1, `a Pipenv-only project with no way to check its licences must never exit 0 clean: ${r.stdout}`);
+  assert.ok(/INCOMPLETE/.test(json.status));
+  assert.ok(json.results.some((res) => res.ecosystem === 'python'), 'python must appear as a checked-or-not-checked entry, never silently absent');
+  assert.ok(json.notChecked.some((n) => n.ecosystem === 'python'));
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -2886,6 +3049,36 @@ test('memory-integrity.mjs: a dangling GRAPH link with a trailing annotation is 
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 further-pass audit fix (false-block, confirmed by execution).
+// Both id groups in LINK_RE are `\S+` with no boundary after them, so a link
+// line written as an ordinary sentence — "- T1 implements R1." — captured the
+// destination as "R1." (trailing full stop included), which never matched
+// the genuinely-defined "R1" node under ## Nodes. A completely healthy graph
+// was reported BLOCKED purely because someone wrote the link as a sentence.
+test('memory-integrity.mjs: a link line ending in ordinary sentence punctuation is not a false dangling reference (further-pass finding)', () => {
+  const dir = mkTmp('gru-mi-trailingpunct-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] Task one\n- [R1] Requirement one\n\n## Links\n- T1 implements R1.\n'
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a trailing full stop must not create a false dangling-reference block: ${r.stdout}`);
+
+  // Control: a genuinely undefined node (also period-terminated) must still be caught.
+  const dir2 = mkTmp('gru-mi-trailingpunct-dangling-');
+  fs.mkdirSync(path.join(dir2, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir2, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] Task one\n\n## Links\n- T1 implements R99.\n'
+  );
+  const r2 = runScript('memory-integrity.mjs', dir2);
+  assert.equal(r2.json.status, 'BLOCKED', `a genuinely undefined node must still be caught even period-terminated: ${r2.stdout}`);
+  assert.ok(r2.json.problems.some((p) => /undefined node "R99"/.test(p)));
+  fs.rmSync(dir, RM_OPTS);
+  fs.rmSync(dir2, RM_OPTS);
+});
+
 test('session-start.mjs: CI=false no longer falsely triggers the ephemeral note; CI=true does (2026-07-21 fix)', () => {
   const dirFalse = mkTmp('gru-ss-cifalse-');
   fs.mkdirSync(path.join(dirFalse, 'Dev-Memory'), { recursive: true });
@@ -3294,6 +3487,17 @@ test('traceability-check.mjs: "exit code N" phrasing is caught, not just bare "e
   writeReq(dir, REQ_HEADER + '| R1 | Users can log in | 1 | T1 | Ran npm test - exit code 1, 3 failing | met |\n', PROG_HEADER + '| T1 | login | done | verified: ok |\n');
   const r = runScript('traceability-check.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED', `"exit code 1" must be recognised as a contradiction: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26, further-pass audit fix: this file's CONTRADICTION_RE lacked
+// quality-gate.mjs's `regress(?:ed|ion)` alternative, so a Met requirement
+// whose own Verification cell admits a regression was accepted clean.
+test('traceability-check.mjs: a Verification cell admitting "a regression was spotted" is not accepted as met (further-pass finding)', () => {
+  const dir = mkTmp('gru-trace-regression-');
+  writeReq(dir, REQ_HEADER + '| R1 | Users can log in | 1 | T1 | npm test green, but a regression was spotted in nightly build | met |\n', PROG_HEADER + '| T1 | login | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `an admitted regression must not count as met: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -3746,6 +3950,39 @@ test('gate.mjs: an expired token cannot be revalidated by an unrelated fresh ISS
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `${token}\nISSUED:${expired}\n`);
   assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny',
     'an expired token must remain expired');
+
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26 further-pass audit fix: scan.mjs's MEMORY-PERSIST-APPROVED
+// consumer (memoryPersistAllowed) carried its OWN independent, un-fixed copy
+// of the exact finding-12 unbound-token logic above — confirmed by execution
+// to still treat an expired token as valid when an unrelated fresh ISSUED
+// line sits elsewhere in the file. Now shares gate.mjs's fixed
+// tokenConfirmedWithinTtl via lib.mjs; this proves scan.mjs's own consumer of
+// it is wired correctly (gate.mjs's own use of the shared helper is already
+// proven by the test directly above).
+test('scan.mjs: an expired memory-persist token cannot be revalidated by an unrelated fresh ISSUED line (further-pass finding)', () => {
+  const dir = memPersistRepo();
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'my private brief\n');
+  git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
+  const token = 'STUDIO-MEMORY-PERSIST-CONFIRMED:' + crypto.createHash('sha256').update(`studio-memory-persist:${dir}`).digest('hex');
+  const expired = Date.now() - 2 * 60 * 60 * 1000; // 2h ago, past the 60m TTL
+  const fresh = Date.now();
+
+  // Fresh timestamp BEFORE the token, so a first-match-in-file bug is what
+  // would actually be fooled (mirrors the gate.mjs fixture above).
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED'),
+    `ISSUED:${fresh}\n${token}\nISSUED:${expired}\n`,
+  );
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'deny',
+    'an expired memory-persist token must not be revalidated by a fresh ISSUED line elsewhere in the file');
+
+  // Control: correctly paired and fresh must still work.
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED'), `${token}\nISSUED:${fresh}\n`);
+  assert.equal(runHook('scan.mjs', 'git push origin memory', dir).decision, 'allow',
+    'a correctly paired, in-date memory-persist token must still authorise the push');
 
   fs.rmSync(dir, RM_OPTS);
 });

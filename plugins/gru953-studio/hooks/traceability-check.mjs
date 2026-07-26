@@ -37,7 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
@@ -57,7 +57,14 @@ const EXEMPT_RE = /\[(chore|infra|infrastructure|no-?req)\]|\bno-?req\b/i;
 // or "exited with code 1" never matched. Reproduced: a requirement's Verification
 // cell reading "Ran npm test - exit code 1, 3 failing", with Status "Met",
 // returned {"status":"clean"}. Added an alternative for "exit[ed] [with] code N".
-const CONTRADICTION_RE = /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
+//
+// 2026-07-26 further-pass audit fix: this file's own local copy had also
+// fallen behind quality-gate.mjs's — missing quality-gate.mjs's
+// `regress(?:ed|ion)` alternative. Reproduced: a requirement whose
+// Verification cell read "npm test green, but a regression was spotted in
+// nightly build", Status "Met", returned clean here. Now imports the one
+// shared pattern from lib.mjs instead of a local copy, so this file and its
+// two siblings cannot drift apart on this again.
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // 2026-07-21 Round 15 audit fix: de-emphasise a Status VALUE before matching, the
 // same way verify-progress.mjs (Round 12) does for its "done" values. Without it a
@@ -102,7 +109,11 @@ function parseTable(text, wantHeaderRe) {
     const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
-      if (cells.some((c) => wantHeaderRe.test(c))) headers = cells;
+      // 2026-07-26 further-pass audit fix: de-emphasise before testing, the
+      // same as verify-progress.mjs already does — otherwise a decorated
+      // header ("**ID**", "`Requirement`") makes the whole table
+      // unrecognised even though every row is otherwise well-formed.
+      if (cells.some((c) => wantHeaderRe.test(deEmphasise(c)))) headers = cells;
       continue;
     }
     if (!headers) { inTable = false; continue; }
@@ -112,7 +123,7 @@ function parseTable(text, wantHeaderRe) {
   return headers ? { headers, rows } : null;
 }
 function col(headers, re) {
-  return headers.findIndex((c) => re.test(c));
+  return headers.findIndex((c) => re.test(deEmphasise(c)));
 }
 
 function main() {

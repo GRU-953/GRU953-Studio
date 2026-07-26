@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, formatFsError, deEmphasise } from './lib.mjs';
 
 function main() {
   const root = process.argv[2] || process.cwd();
@@ -41,7 +41,27 @@ function main() {
   // depending on the accident. (memory-integrity.mjs and dashboard.mjs DID
   // have a real, reproduced BOM bug: both use a strict `^#` heading regex
   // with no `\s*` prefix, which a BOM genuinely defeats.)
-  const text = stripBom(fs.readFileSync(file, 'utf8'));
+  //
+  // 2026-07-26 further-pass audit fix (audit finding 21, already fixed for
+  // the four confirm-*.mjs scripts and roster-check.mjs in the same pass —
+  // this file is the finding's other still-open example). This read had NO
+  // try/catch at all — only the existsSync check above was guarded. Anything
+  // between the two calls, or a target that fails for a reason other than
+  // "doesn't exist" (PROGRESS.md turning out to be a directory is a very
+  // plausible accident from a bad merge or a stray mkdir), crashed with a raw
+  // Node stack trace instead of this script's own plain-English contract.
+  let text;
+  try {
+    text = stripBom(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    console.log(JSON.stringify({
+      status: 'BLOCKED',
+      reason: `PROGRESS.md exists but could not be read, so "done" tasks cannot be verified: ${formatFsError(e)}`,
+      file,
+      fix: 'Make Dev-Memory/PROGRESS.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
+    }, null, 2));
+    process.exit(1);
+  }
   const lines = text.split(/\r?\n/);
   // 2026-07-12 audit fix (MAJOR false-clean, found by execution): matching
   // anywhere on the line let a Notes cell that honestly documents an OLD
@@ -89,7 +109,18 @@ function main() {
   // contradiction anywhere in the same row invalidates an otherwise-passing
   // VERIFIED_RE match — a row can honestly narrate old history, but not
   // also claim to be currently failing/unverified and still count as done.
-  const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?)\b/i;
+  //
+  // 2026-07-26 further-pass audit fix: this used to be a LOCAL copy of the
+  // pattern, independent of quality-gate.mjs's and traceability-check.mjs's
+  // own copies — and it had fallen behind both. Neither the "exit code N"
+  // phrasing (finding 35, ported to the other two files but never here, the
+  // exact file finding 1 was originally about) nor the `regress(?:ed|ion)`
+  // alternative (quality-gate.mjs only) had made it into this file's copy.
+  // Reproduced by execution before fixing: a row reading "verified: npm test
+  // -> exit 0; however a later re-run gave exit code 1" returned clean here
+  // while the identical text in quality-gate.mjs was correctly BLOCKED. Now
+  // imports the one shared pattern from lib.mjs instead of its own copy, so
+  // this specific three-way drift cannot recur.
   const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
   // 2026-07-21 Round 11 audit fix (fail-open on unrecognised table shape,
   // medium): this hook is the SOLE mechanical enforcer of "a task may only be
@@ -113,7 +144,6 @@ function main() {
   // and "Build State" all qualify. "Progress" is deliberately NOT a synonym: a
   // Progress column may hold "100%" rather than a status word, and accepting it
   // could shadow a real Status column and re-open a false-clean.
-  const deEmphasise = (c) => c.replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '');
   const isStatusHeader = (c) => {
     const w = deEmphasise(c).toLowerCase().split(/\s+/).filter(Boolean);
     const last = w[w.length - 1];

@@ -155,6 +155,79 @@ export function writeConfirmationRecordOrExit(record, content, label) {
   }
 }
 
+// ---- confirmation-token TTL binding (shared by gate.mjs AND scan.mjs) --------
+// 2026-07-26 audit finding 12, originally fixed only in gate.mjs: the token and
+// its timestamp were not BOUND — each checker matched the token on one line,
+// then evaluated the TTL against the WHOLE file with /^ISSUED:(\d+)$/m. So a
+// record containing an expired approval line plus any fresh `ISSUED:` line
+// anywhere — an appended second approval, a hand-edited or concatenated file,
+// a stale token left above a newer one — re-validated the expired token.
+//
+// 2026-07-26 further-pass audit fix: this fix originally lived ONLY in
+// gate.mjs as a local, unexported function. scan.mjs has its own SEPARATE
+// consumer of the same MEMORY-PERSIST-APPROVED record (memoryPersistAllowed,
+// deciding whether to skip the dev-memory-path finding) and had its own
+// independent, un-fixed copy of the old unbound logic — confirmed by
+// execution to still accept an expired token when an unrelated fresh
+// `ISSUED:` line sits elsewhere in the file. Moved here so there is exactly
+// ONE implementation both hooks share, closing the bug in scan.mjs and
+// removing the risk of the two ever drifting apart again the way they just
+// had.
+//
+// The four confirm-*.mjs writers all emit exactly `<TOKEN>\nISSUED:<ms>\n`, so
+// the timestamp that belongs to a token is the line IMMEDIATELY after it.
+// Requiring that adjacency binds the pair and closes the substitution, while
+// remaining exactly what every writer already produces. Still fails closed:
+// no adjacent ISSUED line means not confirmed.
+//
+// (Investigated and NOT a defect, recorded so it is not "fixed" later: the
+// original /^ISSUED:(\d+)$/m tolerated CRLF correctly — in JavaScript, `$` in
+// multiline mode matches before CR as well as LF. Verified by execution.)
+export const CONFIRMATION_TTL_MS = 60 * 60 * 1000; // 60 minutes
+export function withinTtl(raw) {
+  const issuedAt = parseInt(raw, 10);
+  return Number.isFinite(issuedAt) && Date.now() - issuedAt <= CONFIRMATION_TTL_MS && Date.now() - issuedAt >= 0;
+}
+export function tokenConfirmedWithinTtl(text, expected) {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== expected) continue;
+    const next = (lines[i + 1] ?? '').trim();
+    const m = /^ISSUED:(\d+)$/.exec(next);
+    if (m && withinTtl(m[1])) return true;
+    // Keep scanning: a later, correctly-paired occurrence is still valid.
+  }
+  return false;
+}
+
+// ---- "done means proven" contradiction detector (shared by three gates) -----
+// A status/evidence cell that narrates its own row is currently broken or
+// unproven invalidates an otherwise-passing verdict — verify-progress.mjs,
+// quality-gate.mjs and traceability-check.mjs each do conceptually the same
+// job (don't let a row claim "done"/"met"/"pass" while its own text says
+// otherwise) but had drifted into three DIFFERENT copies of this pattern.
+//
+// 2026-07-26 audit finding 1/35: the original pattern only matched the literal
+// word "exit" immediately followed by whitespace and a digit, so the far more
+// natural phrasing "exit code 1" / "exited with code 1" never matched. Fixed
+// in quality-gate.mjs and traceability-check.mjs (finding 35) but NOT in
+// verify-progress.mjs — the exact file finding 1 was originally about —
+// because each carried its own independent copy and the fix was never ported
+// back to all three. Reproduced by execution: a PROGRESS.md row with
+// "verified: npm test -> exit 0; however a later re-run gave exit code 1"
+// returned {"status":"clean"} from verify-progress.mjs while the identical
+// text in a QUALITY-GATE.md row was correctly BLOCKED.
+//
+// Separately, quality-gate.mjs alone had a `regress(?:ed|ion)` alternative
+// that traceability-check.mjs and verify-progress.mjs both lacked — reproduced
+// the same way: "npm test green, but a regression was spotted in nightly
+// build" was silently accepted by both.
+//
+// Moved here as the ONE shared pattern all three now use, so this specific
+// three-way drift — the exact failure mode a background review agent was
+// asked to hunt for — cannot recur.
+export const CONTRADICTION_RE = /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
+
 // ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
 // 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
 // each read frontmatter with `text.match(/^---\n([\s\S]*?)\n---/)` — an
@@ -286,6 +359,23 @@ export function frontmatterBlock(text) {
 // identically. Leading/trailing empty cells are preserved, exactly like split('|').
 export function splitPipeCells(line) {
   return line.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|'));
+}
+
+// 2026-07-26 further-pass audit fix. verify-progress.mjs's Round 11 fix strips
+// surrounding markdown emphasis (**bold**, __bold__, *italic*, _italic_,
+// `code`) from a header cell before testing it against a column-name pattern,
+// so "**Status**"/"`State`" still match. quality-gate.mjs's and
+// traceability-check.mjs's own header matchers never picked up that same
+// fix — three files doing the same job, one had it and the other two
+// didn't. Reproduced by execution: a Definition-of-Done table with header
+// `**Status**` made quality-gate.mjs report the whole table unrecognised and
+// every required dimension "missing", even though every row was otherwise
+// correctly filled in. Fails toward BLOCKING (the safe direction — a
+// dimension not being blocked is the danger, not a false block), but it's a
+// real usability gap and the exact divergence a background review agent was
+// asked to hunt for. Moved here so all three share it.
+export function deEmphasise(c) {
+  return String(c).replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '');
 }
 
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';

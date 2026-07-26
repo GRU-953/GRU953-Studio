@@ -148,13 +148,25 @@ function checkGraph(devMemory, problems) {
   // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
   // introduced).
   const LINK_RE = /^\s*[-*]\s+(\S+)\s+(implements|depends-on|relates-to|supersedes|caused-by|blocks)\s+(\S+)/i;
+  // 2026-07-26 further-pass audit fix (false-block, confirmed by execution).
+  // The id groups are `\S+` with no boundary after them, so a link line
+  // written as an ordinary sentence — "- T1 implements R1." — captured the
+  // destination as "R1." (trailing full stop included), which then never
+  // matched a genuinely-defined "R1" node. Reproduced: a minimal, otherwise-
+  // valid GRAPH.md with both T1 and R1 defined under `## Nodes` was reported
+  // BLOCKED for referencing an "undefined" node "R1.". Node ids never
+  // legitimately end in sentence punctuation, so trailing punctuation is
+  // stripped from each captured id before checking it against `nodes`.
+  const stripTrailingPunctuation = (s) => s.replace(/[.,;:!?)\]]+$/, '');
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
     if (heading) { inLinks = /link|edge/i.test(heading[1]); continue; }
     if (!inLinks) continue;
     const m = line.match(LINK_RE);
     if (!m) continue;
-    const [, src, type, dst] = m;
+    const [, rawSrc, type, rawDst] = m;
+    const src = stripTrailingPunctuation(rawSrc);
+    const dst = stripTrailingPunctuation(rawDst);
     if (!nodes.has(src)) problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${src}".`);
     if (!nodes.has(dst)) problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${dst}".`);
   }
