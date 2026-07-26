@@ -13,3 +13,11 @@ node_modules/
 .env.*
 plugins/*.zip
 .last-update-check
+
+# 2026-07-26 audit finding 34: clients/vscode/out/ is compiled output
+# (`tsc -p .`), not source — it was committed by mistake and had drifted
+# from the source that produces it more than once already. Untracked here;
+# `npm run compile` regenerates it locally, and the CI step that builds the
+# extension does the same before packaging.
+/clients/vscode/out/
+*.vsix

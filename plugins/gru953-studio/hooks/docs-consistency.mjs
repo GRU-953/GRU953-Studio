@@ -38,8 +38,7 @@
 // so it cannot silently go unwired.
 //
 // Usage: node docs-consistency.mjs [repoRoot]
-// Exit 0 = no drift found (any disclosed, still-open exemption is printed,
-// never silently swallowed). Exit 1 = at least one drift found (listed).
+// Exit 0 = no drift found. Exit 1 = at least one drift found (listed).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -282,17 +281,15 @@ for (const f of allMd) {
 }
 
 // ---- DC6: the "zero third-party dependencies" claim (finding 29) ------------
-// Disclosed, temporary exemption — never silently added. Removing this
-// exemption is Stage 6's job, in the SAME commit that deletes mcp-server.js
-// and its package.json (the decision recorded in AUDIT-2026-07.md §6): that
-// is what makes the claim true, so the claim is edited exactly once and is
-// never false in between.
-const KNOWN_EXEMPTIONS = [
-  {
-    check: 'zero-dependencies-claim',
-    reason: 'README.md\'s "zero third-party code dependencies" claim (finding 29) is untrue while plugins/gru953-studio/package.json still declares @modelcontextprotocol/sdk for mcp-server.js. Resolved in stage 6, which deletes both in the same commit that fixes this claim.',
-  },
-];
+// Until 2026-07-26 audit stage 6, this was a disclosed, temporary exemption:
+// README.md's "zero third-party code dependencies" claim was untrue while
+// plugins/gru953-studio/package.json still declared @modelcontextprotocol/sdk
+// for the never-loadable mcp-server.js (finding 10). Stage 6 deleted both in
+// the same commit that made this claim true, so this is now a permanent,
+// blocking regression guard rather than an exemption: if the plugin's own
+// package.json is ever reintroduced with a real dependency while README
+// still makes this claim, that is a genuine regression of finding 29, not a
+// disclosed known state.
 const mcpPackageJsonRaw = read(path.join(pluginRoot, 'package.json'));
 let hasRealDependency = false;
 if (mcpPackageJsonRaw !== null) {
@@ -303,15 +300,14 @@ if (mcpPackageJsonRaw !== null) {
 }
 const readmeText = read(path.join(repoRoot, 'README.md')) || '';
 const claimsZeroDependencies = /zero third-party code\s*\ndependencies|zero third-party code dependencies/i.test(readmeText);
-const exemptions = [];
 if (claimsZeroDependencies && hasRealDependency) {
-  exemptions.push(KNOWN_EXEMPTIONS[0]);
+  fail(`README.md claims "zero third-party code dependencies" but plugins/gru953-studio/package.json declares a real dependency — finding 29 has regressed`);
 }
 
 // ---- report -------------------------------------------------------------
 if (problems.length === 0) {
-  console.log(JSON.stringify({ status: 'clean', exemptions }, null, 2));
+  console.log(JSON.stringify({ status: 'clean' }, null, 2));
   process.exit(0);
 }
-console.log(JSON.stringify({ status: 'BLOCKED', problems, exemptions }, null, 2));
+console.log(JSON.stringify({ status: 'BLOCKED', problems }, null, 2));
 process.exit(1);

@@ -4,6 +4,12 @@
   "description": "GRU953-Studio - Universal Agentic Studio for VS Code, Cursor, and Windsurf",
   "version": "4.5.0",
   "publisher": "GRU-953",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GRU-953/GRU953-Studio.git",
+    "directory": "clients/vscode"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -24,13 +30,10 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "lint": "eslint src --ext ts"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",
-    "@types/mocha": "^10.0.1",
     "@types/node": "16.x",
     "@typescript-eslint/eslint-plugin": "^5.59.1",
     "@typescript-eslint/parser": "^5.59.1",

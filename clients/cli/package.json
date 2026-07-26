@@ -8,8 +8,13 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GRU-953/GRU953-Studio.git",
+    "directory": "clients/cli"
+  },
   "bin": {
     "gru953-studio": "./src/index.js"
   }

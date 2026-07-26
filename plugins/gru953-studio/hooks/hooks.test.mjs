@@ -3532,11 +3532,28 @@ function runDocsConsistency(dir) {
   return { status: r.status, json, stdout: r.stdout, stderr: r.stderr };
 }
 
-test('docs-consistency.mjs: the actual repo is clean, with exactly the one disclosed finding-29 exemption (locks in current good state)', () => {
+test('docs-consistency.mjs: the actual repo is clean (locks in current good state)', () => {
   const r = runDocsConsistency(REPO_ROOT);
   assert.equal(r.json && r.json.status, 'clean', `expected clean, got: ${r.stdout}`);
-  assert.equal(r.json.exemptions.length, 1, `expected exactly one disclosed exemption, got: ${JSON.stringify(r.json.exemptions)}`);
-  assert.equal(r.json.exemptions[0].check, 'zero-dependencies-claim');
+});
+
+// 2026-07-26 audit stage 6. Until this stage, README's "zero third-party code
+// dependencies" claim was untrue while plugins/gru953-studio/package.json
+// (mcp-server.js's manifest) declared @modelcontextprotocol/sdk — a disclosed,
+// temporary exemption. Stage 6 deleted mcp-server.js and its package.json in
+// the same commit that made the claim true, turning this into a permanent,
+// blocking regression guard. Proven here by reintroducing exactly that file.
+test('docs-consistency.mjs: a reintroduced real dependency alongside the zero-dependencies claim is caught, not exempted (finding 29 regression guard)', () => {
+  const dir = mkTmp('gru-docsconsist-zerodeps-');
+  copyRepoTo(dir);
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'package.json'),
+    JSON.stringify({ name: 'gru953-studio', version: '1.0.0', dependencies: { 'some-real-package': '^1.0.0' } }, null, 2),
+  );
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a reintroduced real dependency alongside the zero-dependencies claim must be caught');
+  assert.ok(r.json.problems.some((p) => /finding 29 has regressed/.test(p)), `expected a problem naming the regression, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
 });
 
 test('docs-consistency.mjs: a stale "skill count to N" claim is caught (finding 28)', () => {

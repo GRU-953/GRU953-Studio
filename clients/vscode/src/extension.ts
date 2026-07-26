@@ -19,7 +19,7 @@ import * as vscode from 'vscode';
 export function activate(context: vscode.ExtensionContext) {
     console.log('Universal Agentic Studio extension is now active!');
 
-    let statusCommand = vscode.commands.registerCommand('gru953-studio.status', () => {
+    const statusCommand = vscode.commands.registerCommand('gru953-studio.status', () => {
         vscode.window.showInformationMessage('Universal Agentic Studio: Fetching status...');
         const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
         terminal.show();
@@ -29,4 +29,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(statusCommand);
 }
 
-export function deactivate() {}
+// Nothing to clean up: the only registered command is disposed via
+// context.subscriptions above, and no other resource is held.
+export function deactivate(): void {
+    // intentionally empty
+}

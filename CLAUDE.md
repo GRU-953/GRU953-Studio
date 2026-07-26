@@ -32,9 +32,7 @@ with the named gap it fills. `docs-consistency.mjs` (added 2026-07-26 audit
 stage 5) is the sibling check that catches a STALE claim rather than a
 missing reference — a count repeated in two places that disagree, a
 companion skill or marketplace tag listed twice, a specialist named in
-prose that exists nowhere on the real roster. Any exemption it prints
-(there is currently one, disclosed and temporary — see the script's own
-comments) must be named and reasoned, never silently widened.
+prose that exists nowhere on the real roster.
 
 The six gates above are the ones CI itself runs and are mandatory on every
 commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries five
