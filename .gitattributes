@@ -1,0 +1,38 @@
+# Line-ending policy. 2026-07-26 audit finding 9.
+#
+# Without this, a Windows checkout with git's default `core.autocrlf=true`
+# rewrites every text file to CRLF. `hooks/repo-integrity.mjs` then failed to
+# read the frontmatter block of EVERY agent and skill, reporting all 38 roles
+# and all 35 skills as malformed. Pinning LF here stops that happening to this
+# repository; the readers in hooks/ are ALSO being made line-ending tolerant,
+# because they parse the user's own project files too, and those may legitimately
+# be CRLF on Windows. Both halves are needed — this file is not a substitute for
+# tolerant parsing.
+#
+# The CI job that deliberately builds a CRLF working tree overrides this after
+# checkout, so the guard itself stays tested.
+
+* text=auto eol=lf
+
+# Explicitly binary — never touch the bytes.
+*.woff2 binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.zip   binary
+*.vsix  binary
+
+# Text, but pin the ones that break loudly if they arrive as CRLF.
+*.mjs  text eol=lf
+*.js   text eol=lf
+*.ts   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.svg  text eol=lf

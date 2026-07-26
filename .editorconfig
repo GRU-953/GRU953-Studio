@@ -1,0 +1,21 @@
+# Keeps every contributor's editor agreeing with .gitattributes and with the
+# line-ending tests in hooks/. 2026-07-26 audit, stage 0.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Markdown gives meaning to two trailing spaces (a hard line break).
+trim_trailing_whitespace = false
+
+[*.{mjs,js,ts,json,yml,yaml}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
