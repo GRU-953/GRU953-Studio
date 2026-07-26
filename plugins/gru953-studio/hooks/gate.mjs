@@ -63,11 +63,37 @@ const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || process.env.ANTIGRAVITY_PL
 // session/command identity through the hook (which the PreToolUse stdin
 // payload does not reliably expose across tool types).
 const CONFIRMATION_TTL_MS = 60 * 60 * 1000; // 60 minutes
-function issuedWithinTtl(text) {
-  const m = /^ISSUED:(\d+)$/m.exec(text);
-  if (!m) return false; // no timestamp recorded -> fails closed, not open
-  const issuedAt = parseInt(m[1], 10);
+function withinTtl(raw) {
+  const issuedAt = parseInt(raw, 10);
   return Number.isFinite(issuedAt) && Date.now() - issuedAt <= CONFIRMATION_TTL_MS && Date.now() - issuedAt >= 0;
+}
+
+// 2026-07-26 audit finding 12. The token and its timestamp were not BOUND: each
+// checker matched the token on one line, then evaluated the TTL against the
+// WHOLE file with /^ISSUED:(\d+)$/m. So a record containing an expired approval
+// line plus any fresh `ISSUED:` line anywhere — an appended second approval, a
+// hand-edited or concatenated file, a stale token left above a newer one —
+// re-validated the expired token.
+//
+// The four writers all emit exactly `<TOKEN>\nISSUED:<ms>\n`, so the timestamp
+// that belongs to a token is the line IMMEDIATELY after it. Requiring that
+// adjacency binds the pair and closes the substitution, while remaining exactly
+// what every writer already produces. Still fails closed: no adjacent ISSUED
+// line means not confirmed.
+//
+// (Investigated and NOT a defect, recorded so it is not "fixed" later: the
+// original /^ISSUED:(\d+)$/m tolerated CRLF correctly — in JavaScript, `$` in
+// multiline mode matches before CR as well as LF. Verified by execution.)
+function tokenConfirmedWithinTtl(text, expected) {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== expected) continue;
+    const next = (lines[i + 1] ?? '').trim();
+    const m = /^ISSUED:(\d+)$/.exec(next);
+    if (m && withinTtl(m[1])) return true;
+    // Keep scanning: a later, correctly-paired occurrence is still valid.
+  }
+  return false;
 }
 function publishToken(studioRoot) {
   return crypto.createHash('sha256').update(`studio-publish:${studioRoot}`).digest('hex');
@@ -82,10 +108,7 @@ function publishConfirmed(studioRoot) {
     return false;
   }
   const expected = `STUDIO-PUBLISH-CONFIRMED:${publishToken(studioRoot)}`;
-  for (const line of text.split(/\r?\n/)) {
-    if (line.trim() === expected) return issuedWithinTtl(text);
-  }
-  return false;
+  return tokenConfirmedWithinTtl(text, expected);
 }
 
 // 2026-07-10 audit fix (MAJOR): "private first, then a separate explicit
@@ -196,10 +219,7 @@ function checkpointConfirmed(studioRoot) {
     return false;
   }
   const expected = `STUDIO-CHECKPOINT-CONFIRMED:${checkpointToken(studioRoot)}`;
-  for (const line of text.split(/\r?\n/)) {
-    if (line.trim() === expected) return issuedWithinTtl(text);
-  }
-  return false;
+  return tokenConfirmedWithinTtl(text, expected);
 }
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence). Same shape and same
@@ -220,10 +240,7 @@ function memoryPersistConfirmed(studioRoot) {
     return false;
   }
   const expected = `STUDIO-MEMORY-PERSIST-CONFIRMED:${memoryPersistToken(studioRoot)}`;
-  for (const line of text.split(/\r?\n/)) {
-    if (line.trim() === expected) return issuedWithinTtl(text);
-  }
-  return false;
+  return tokenConfirmedWithinTtl(text, expected);
 }
 function goPublicConfirmed(studioRoot) {
   const record = path.join(studioRoot, 'Dev-Memory', 'GO-PUBLIC-APPROVED');
@@ -235,10 +252,7 @@ function goPublicConfirmed(studioRoot) {
     return false;
   }
   const expected = `STUDIO-GO-PUBLIC-CONFIRMED:${goPublicToken(studioRoot)}`;
-  for (const line of text.split(/\r?\n/)) {
-    if (line.trim() === expected) return issuedWithinTtl(text);
-  }
-  return false;
+  return tokenConfirmedWithinTtl(text, expected);
 }
 
 function main() {

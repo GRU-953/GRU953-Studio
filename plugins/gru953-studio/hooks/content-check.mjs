@@ -39,7 +39,27 @@ const APPROVED_RE = /^\s*(approved|yes|pass(ed)?|ok|done|signed[ -]?off|human|fi
 // never to silently skipping it.
 const TEXT_ONLY_RE = /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[- ]?text\b|in-app[- ]?text\b|টেক্সট|লেখা|কপি)/i;
 
-function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } }
+// 2026-07-26 audit finding 6 (fail-OPEN). This returned null for BOTH "the file
+// isn't there" and "the file is there but I couldn't read it", and main() treats
+// null as "no content declared — a project may legitimately have none" and exits
+// 0. So an unreadable CONTENT.md — a permissions problem, a directory where a
+// file should be, a half-written file on a full disk — silently passed the gate
+// that is supposed to guarantee every shipped asset has approval, provenance,
+// rights and alt-text.
+//
+// The distinction is now explicit and typed. ENOENT is genuinely absent and
+// still stands down; anything else is a read FAILURE and blocks, matching how
+// its sibling quality-gate.mjs already behaves. A gate that cannot read its
+// input must never claim its input is fine.
+const MISSING = Symbol('missing');
+function read(p) {
+  try {
+    return fs.readFileSync(p, 'utf8');
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return MISSING;
+    throw e; // surfaced by main()'s handler as a BLOCKING, explained problem
+  }
+}
 function cells(line) {
   const c = splitPipeCells(line);
   if (c.length && c[0].trim() === '') c.shift();
@@ -55,8 +75,23 @@ function main() {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }));
     process.exit(0);
   }
-  const text = read(path.join(devMemory, 'CONTENT.md'));
-  if (text === null) {
+  const contentPath = path.join(devMemory, 'CONTENT.md');
+  let text;
+  try {
+    text = read(contentPath);
+  } catch (e) {
+    // 2026-07-26 audit finding 6: fail CLOSED, and say why in plain English so
+    // the user can act on it rather than guess.
+    console.log(JSON.stringify({
+      status: 'BLOCKED',
+      reason: 'CONTENT.md exists but could not be read, so its assets cannot be checked for approval, provenance, rights and alt-text',
+      file: 'Dev-Memory/CONTENT.md',
+      detail: `${e.code || 'read error'}: ${e.message}`,
+      fix: 'Make Dev-Memory/CONTENT.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
+    }, null, 2));
+    process.exit(1);
+  }
+  if (text === MISSING) {
     // No content declared — a project may legitimately have none.
     console.log(JSON.stringify({ status: 'clean', reason: 'no CONTENT.md — no generated content declared for this project' }));
     process.exit(0);

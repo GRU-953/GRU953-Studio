@@ -3264,6 +3264,76 @@ test('verify-progress.mjs: a decorated `done` VALUE (**done**, `done`, "✅ done
 // other completion claim in the product rests on.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// 2026-07-26 audit finding 12. A token and its timestamp were not bound: the
+// token was matched on one line, then the TTL was evaluated against the WHOLE
+// file, so an expired approval plus any fresh ISSUED line anywhere re-validated
+// it. The writers emit `<TOKEN>\nISSUED:<ms>\n`, so adjacency is now required.
+// ---------------------------------------------------------------------------
+test('gate.mjs: an expired token cannot be revalidated by an unrelated fresh ISSUED line (finding 12)', () => {
+  const dir = mkTmp('gru-gate-bind-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const token = 'STUDIO-PUBLISH-CONFIRMED:' + crypto.createHash('sha256').update(`studio-publish:${dir}`).digest('hex');
+  const expired = Date.now() - 2 * 60 * 60 * 1000; // 2h ago, past the 60m TTL
+  const fresh = Date.now();
+
+  // The substitution, ordered so it genuinely reproduces the bug. The old code
+  // used /^ISSUED:(\d+)$/m with .exec(), which returns the FIRST match in the
+  // file — so the fresh timestamp has to appear BEFORE the token for the old
+  // code to be fooled. (A first attempt at this fixture put the expired stamp
+  // first and therefore passed against the unfixed code, proving nothing.)
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'),
+    `ISSUED:${fresh}\n${token}\nISSUED:${expired}\n`,
+  );
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny',
+    'an expired token must not be revalidated by a fresh ISSUED line elsewhere in the file');
+
+  // Control: correctly paired and fresh must still work.
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `${token}\nISSUED:${fresh}\n`);
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow',
+    'a correctly paired, in-date token must still authorise the push');
+
+  // Control: correctly paired but expired must still be refused.
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `${token}\nISSUED:${expired}\n`);
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny',
+    'an expired token must remain expired');
+
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-26 audit finding 6 — the content gate failed OPEN on an unreadable
+// CONTENT.md, because read() returned null for both "absent" and "unreadable"
+// and main() treats null as "no content declared".
+//
+// The fixture is a DIRECTORY named CONTENT.md, not chmod 000, and that choice is
+// load-bearing: this suite runs as root in CI containers, and chmod 000 does not
+// deny root — verified during the audit, the read succeeded anyway. On Windows
+// chmod only toggles the read-only bit and the file stays readable. EISDIR is the
+// one read failure that is genuine for every user on every platform.
+// ---------------------------------------------------------------------------
+test('content-check.mjs: an UNREADABLE CONTENT.md blocks instead of passing (2026-07-26 finding 6)', () => {
+  const dir = mkTmp('gru-cc-unreadable-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory', 'CONTENT.md'), { recursive: true });
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.code, 1, `an unreadable CONTENT.md must BLOCK, not report clean: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  // The message has to be actionable for a non-technical owner, not a stack trace.
+  assert.match(r.json.reason, /could not be read/i);
+  assert.ok(r.json.fix, 'must tell the user how to fix it');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('content-check.mjs: a genuinely absent CONTENT.md still stands down clean (no over-correction)', () => {
+  const dir = mkTmp('gru-cc-absent-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.code, 0, `a project with no declared content is legitimate: ${r.stdout}`);
+  assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
 // 2026-07-26 audit findings 4 and 5 — the two dead obfuscation defences.
 // ---------------------------------------------------------------------------
 test('scan.mjs: a gzip-packed secret is detected (2026-07-26 finding 4)', () => {
