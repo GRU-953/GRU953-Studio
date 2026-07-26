@@ -9,7 +9,7 @@ The shared toolchain knowledge for C#/.NET work (Windows and cross-platform), so
 the `csharp-developer` agent stays thin. Plain-English rule is as set in the
 `studio` skill.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -18,6 +18,7 @@ the `csharp-developer` agent stays thin. Plain-English rule is as set in the
 | lint | `dotnet build` with analyzers as errors (`-warnaserror`), or `dotnet format --verify-no-changes` for style |
 | format | `dotnet format` (check with `dotnet format --verify-no-changes`) |
 | deps | NuGet — `dotnet add package <pkg>`; restore with `dotnet restore` (recorded in the `.csproj`) |
+| package (2026-07-26 audit finding 15) | `dotnet publish -c Release -r <RID> --self-contained` produces a standalone executable with no .NET install required; wrap it in an `.msi`/MSIX installer for Windows distribution |
 
 ## Idioms and gotchas
 

@@ -40,17 +40,37 @@ useful, an ecosystem `lang-*` pack — adding a new specialist is a roster chang
 **Platform → stack map (all target platforms).** Route the target platform to a
 native specialist, with Flutter as the cross-platform default:
 
-| Target platform | Native option(s) | Cross-platform |
-| :-- | :-- | :-- |
-| Android | `kotlin-developer`, `java-developer` | `flutter-dart-developer`, `react-native-developer` |
-| iOS / macOS | `swift-developer`, `tauri-developer` | `flutter-dart-developer`, `react-native-developer` |
-| Windows | `csharp-developer` (.NET), `cpp-developer`, `tauri-developer` | `flutter-dart-developer` |
-| Linux / servers / CLI | `go-developer`, `rust-developer`, `cpp-developer`, `python-developer` | `tauri-developer` |
-| Web | `typescript-developer` | `flutter-dart-developer` (web), `react-native-developer` (web) |
+| Target platform | Native option(s) | Cross-platform | Ships as |
+| :-- | :-- | :-- | :-- |
+| Android | `kotlin-developer`, `java-developer` | `flutter-dart-developer`, `typescript-developer` (React Native/Expo) | `.apk` (direct install/testing) or `.aab` (Play Store) |
+| iOS / macOS | `swift-developer`, `rust-developer` (Tauri) | `flutter-dart-developer`, `typescript-developer` (React Native/Expo) | `.ipa` (iOS) / `.app`, `.dmg` (macOS) — **iOS shipping to real devices or the App Store needs a paid Apple Developer account; say this plainly to the user before committing to iOS** |
+| Windows | `csharp-developer` (.NET), `cpp-developer`, `rust-developer` (Tauri) | `flutter-dart-developer` | `.exe`/`.msi` installer |
+| Linux / servers / CLI | `go-developer`, `rust-developer`, `cpp-developer`, `python-developer` | `rust-developer` (Tauri) | a native binary, or an AppImage/`.deb` for a desktop app |
+| Web | `typescript-developer` | `flutter-dart-developer` (web), `typescript-developer` (React Native web) | a live URL; a PWA (Progressive Web App — an installable web app, no app-store account needed) is the cheapest route to "an app on my phone" |
+
+**Watch and TV targets are explicitly out of scope**, not silently unhandled
+(2026-07-26 audit finding 15): named here as a deliberate cut. If a project
+genuinely needs one, its existing platform owner above takes it (e.g.
+`swift-developer` for watchOS, `kotlin-developer` for Wear OS/Android TV) —
+there is no separate specialist for it.
 
 The stack still comes from the vetted menu and the `yagni-rules` tie-breaker;
 this map just names the native specialist per platform so "all platforms" has a
 real, non-overlapping owner each.
+
+**Frameworks are stacks, not roles (2026-07-26 audit finding 27).** This table
+used to name two "React Native" and "Tauri" specialist roles that were never
+actually added to the roster, so every route through them pointed nowhere.
+React Native/Expo is TypeScript (`typescript-developer`'s own pack already
+covers it, see `lang-typescript/SKILL.md`); Tauri is a Rust core with a web
+front end (`rust-developer` for the native shell, `typescript-developer` for
+the UI). A framework is a stack choice within a language's ecosystem, not a
+language of its own — the specialist who already owns that language takes it,
+the same way `builder` already covers every
+framework that has no dedicated language specialist. This keeps the roster at
+38: adding the two phantom names as real roles would have meant two new
+`lang-*` packs, a governance RFC, and renumbering three automatic checks, to
+cover frameworks two existing specialists already handle.
 
 ## Method
 

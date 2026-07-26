@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { linkOrCopy } = require('./link-or-copy');
 
 console.log('Initializing Universal Agentic Studio for Google Antigravity...');
 
@@ -20,19 +20,34 @@ if (!fs.existsSync(targetSkillsDir)) {
     fs.mkdirSync(targetSkillsDir, { recursive: true });
 }
 
-// Copy skills if needed or symlink.
+// 2026-07-26 audit finding 18. This used to be a bare `fs.symlinkSync` in a
+// try/catch that logged the error and carried on regardless — silently
+// failing on Windows every time (see link-or-copy.js for the real fix) and
+// still printing "initialized successfully!" at the end, with
+// `.agents/skills` left completely empty — a false success. Success is now
+// reported only when the content is actually there.
+let skillsReady = true;
 try {
     const sourceSkillsDir = path.join(pluginSourceDir, 'skills');
     if (fs.existsSync(sourceSkillsDir)) {
-        // Just symlink for now to keep it lightweight and auto-updating
         const studioSkillLink = path.join(targetSkillsDir, 'studio');
         if (!fs.existsSync(studioSkillLink)) {
-            fs.symlinkSync(path.join(sourceSkillsDir, 'studio'), studioSkillLink);
-            console.log('Symlinked core studio skill to .agents/skills/studio');
+            const result = linkOrCopy(path.join(sourceSkillsDir, 'studio'), studioSkillLink);
+            if (result.ok) {
+                console.log(`Studio skill available at .agents/skills/studio (${result.method}).`);
+            } else {
+                skillsReady = false;
+                console.error(`Could not make the studio skill available at .agents/skills/studio: ${result.error.message}`);
+                console.error('Check that .agents/skills is writable, then run this again.');
+            }
         }
+    } else {
+        skillsReady = false;
+        console.error(`Could not find the studio skill source at ${sourceSkillsDir} — is this running from inside the GRU953-Studio plugin?`);
     }
 } catch (e) {
-    console.error('Failed to link skills:', e);
+    skillsReady = false;
+    console.error('Failed to set up skills:', e.message);
 }
 
 const devMemoryDir = path.join(workspaceDir, 'Dev-Memory');
@@ -41,5 +56,10 @@ if (!fs.existsSync(devMemoryDir)) {
     console.log('Created Dev-Memory directory.');
 }
 
-console.log('Universal Agentic Studio for Google Antigravity initialized successfully!');
-console.log('You can now run agents with Google Antigravity that utilize the studio protocol.');
+if (skillsReady) {
+    console.log('Universal Agentic Studio for Google Antigravity initialized successfully!');
+    console.log('You can now run agents with Google Antigravity that utilize the studio protocol.');
+} else {
+    console.error('Universal Agentic Studio for Google Antigravity did NOT initialize successfully — see the errors above.');
+    process.exitCode = 1;
+}

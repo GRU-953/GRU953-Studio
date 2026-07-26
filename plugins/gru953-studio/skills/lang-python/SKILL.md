@@ -8,7 +8,7 @@ description: The Python ecosystem pack — the exact build, test, lint, format a
 The shared toolchain knowledge for Python work, so the `python-developer` agent
 stays thin. Plain-English rule is as set in the `studio` skill.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -17,6 +17,7 @@ stays thin. Plain-English rule is as set in the `studio` skill.
 | lint | `ruff check .` (or `flake8`); optionally `mypy .` for typed code |
 | format | `ruff format --check .` (or `black --check .`); apply without `--check` |
 | deps | `pip install <pkg>`; record in `requirements.txt` or `pyproject.toml` (pin versions) |
+| package (2026-07-26 audit finding 15) | `python -m build` produces a wheel/sdist for PyPI; for a standalone app with no Python install required, `pyinstaller --onefile` bundles it into a single native executable per OS |
 
 ## Idioms and gotchas
 

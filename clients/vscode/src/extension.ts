@@ -1,59 +1,32 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
 
+// 2026-07-26 audit findings 16 and 17.
+//
+// Finding 16: every `sendText` call here ran `npx @gru953/studio ...` — the
+// real published package is `@gru953/studio-cli` (see clients/cli/package.json),
+// so this ran a package that doesn't exist and did nothing.
+//
+// Finding 17: `start`/`pause`/`resume` printed an encouraging message and
+// then did nothing real — worse, `start` also created a `Dev-Memory` folder
+// directly with `fs.mkdirSync`, entirely bypassing the actual studio
+// coordinator that is supposed to own that folder's structure and content.
+// Pausing and resuming a build is something the AI team does to Dev-Memory
+// (deciding what to pick back up, recording state), which a standalone
+// button cannot honestly perform — removed rather than faked. `status`
+// stays: the CLI's own `status` command now reports real information (see
+// clients/cli/src/status.js), so this button is no longer connected to a
+// package that doesn't exist or a command that lies about doing something.
 export function activate(context: vscode.ExtensionContext) {
     console.log('Universal Agentic Studio extension is now active!');
-
-    function getWorkspaceDir(): string | undefined {
-        const folders = vscode.workspace.workspaceFolders;
-        return folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
-    }
-
-    let startCommand = vscode.commands.registerCommand('gru953-studio.start', () => {
-        const workspaceDir = getWorkspaceDir();
-        if (!workspaceDir) {
-            vscode.window.showErrorMessage('Universal Agentic Studio requires an open workspace.');
-            return;
-        }
-
-        const devMemoryPath = path.join(workspaceDir, 'Dev-Memory');
-        if (!fs.existsSync(devMemoryPath)) {
-            fs.mkdirSync(devMemoryPath);
-            vscode.window.showInformationMessage('Initialized new Dev-Memory for Universal Agentic Studio.');
-        } else {
-            vscode.window.showInformationMessage('Found existing Dev-Memory. Resuming project...');
-        }
-
-        // Bridge logic: Trigger the agentic platform's start sequence
-        const terminal = vscode.window.createTerminal('GRU953 Studio');
-        terminal.show();
-        terminal.sendText('echo "Triggering Universal Agentic Studio..."');
-        terminal.sendText('npx @gru953/studio start');
-    });
 
     let statusCommand = vscode.commands.registerCommand('gru953-studio.status', () => {
         vscode.window.showInformationMessage('Universal Agentic Studio: Fetching status...');
         const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
         terminal.show();
-        terminal.sendText('npx @gru953/studio status');
+        terminal.sendText('npx @gru953/studio-cli status');
     });
 
-    let pauseCommand = vscode.commands.registerCommand('gru953-studio.pause', () => {
-        vscode.window.showInformationMessage('Universal Agentic Studio paused.');
-        const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
-        terminal.show();
-        terminal.sendText('npx @gru953/studio pause');
-    });
-
-    let resumeCommand = vscode.commands.registerCommand('gru953-studio.resume', () => {
-        vscode.window.showInformationMessage('Universal Agentic Studio resuming...');
-        const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
-        terminal.show();
-        terminal.sendText('npx @gru953/studio resume');
-    });
-
-    context.subscriptions.push(startCommand, statusCommand, pauseCommand, resumeCommand);
+    context.subscriptions.push(statusCommand);
 }
 
 export function deactivate() {}

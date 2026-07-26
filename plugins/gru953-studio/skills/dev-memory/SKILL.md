@@ -30,7 +30,7 @@ All live under `Dev-Memory/` in the project's working directory:
 
 | File | What it holds |
 | :-- | :-- |
-| `OBJECTIVE.md` | The confirmed one-page brief, the three Tier questions and their Y/N answers, and the resulting Tier — so the Tier is auditable, not just asserted. |
+| `OBJECTIVE.md` | The confirmed one-page brief, the three Tier questions and their Y/N answers, the resulting Tier, and the user's target platform answer (2026-07-26 audit finding 14 — see `interviewer.md`'s Brainstorm/Ideate question set) — so the Tier is auditable, not just asserted, and `architect`'s platform → stack map has a real input to route from. |
 | `FOCUS.md` | (2026-07-19, see `focus-guard` skill) The tiny always-current anchor — objective, active phase, active task, top constraints — rewritten in place, read first every session so the team re-orients in almost no tokens even after a summarised or brand-new session. |
 | `REQUIREMENTS.md` | (2026-07-19, see `focus-guard` skill) The traceability matrix: every confirmed requirement mapped to its tasks, verification, and status, so nothing agreed is dropped and no task exceeds the brief. Audited by `hooks/traceability-check.mjs`. Standard/Complex Tier — a short inline list suffices on Tiny. |
 | `ARCHITECTURE.md` | The chosen stack, components, data flow, interface contracts, decisions, and deliberate omissions (written by `architect`). |

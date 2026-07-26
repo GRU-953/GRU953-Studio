@@ -9,7 +9,7 @@ The shared toolchain knowledge for Kotlin work (JVM and Android), so the
 `kotlin-developer` agent stays thin. Plain-English rule is as set in the
 `studio` skill.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command |
 | :-- | :-- |
@@ -18,6 +18,7 @@ The shared toolchain knowledge for Kotlin work (JVM and Android), so the
 | lint | `./gradlew ktlintCheck` or `./gradlew detekt` (also `./gradlew lint` on Android) |
 | format | `./gradlew ktlintFormat` (check-only in CI with `ktlintCheck`) |
 | deps | declare in `build.gradle(.kts)`; resolve with `./gradlew build`/`dependencies` |
+| package (2026-07-26 audit finding 15) | Android: `./gradlew assembleRelease` (`.apk`, for direct install/testing) or `./gradlew bundleRelease` (`.aab`, needed for the Play Store — both need signing before a real release); plain JVM: `./gradlew build` already produces a runnable `.jar` |
 
 ## Idioms and gotchas
 

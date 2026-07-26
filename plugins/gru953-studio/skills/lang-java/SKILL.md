@@ -8,7 +8,7 @@ description: The Java ecosystem pack — the exact build, test, lint, format and
 The shared toolchain knowledge for Java work, so the `java-developer` agent
 stays thin. Plain-English rule is as set in the `studio` skill.
 
-## The five standard commands (used as acceptance-proving commands)
+## The six standard commands (used as acceptance-proving commands)
 
 | Purpose | Command (Maven / Gradle) |
 | :-- | :-- |
@@ -17,6 +17,7 @@ stays thin. Plain-English rule is as set in the `studio` skill.
 | lint | `mvn checkstyle:check` / `./gradlew checkstyleMain` (or SpotBugs) |
 | format | `mvn spotless:check` / `./gradlew spotlessCheck` (apply with `spotless:apply`) |
 | deps | declare in `pom.xml` / `build.gradle`; resolve with the build command |
+| package (2026-07-26 audit finding 15) | the build command already produces a `.jar`/`.war`; for a distributable desktop app use `jpackage` (bundled with the JDK) to wrap it into a native `.exe`/`.dmg`/`.deb` installer with its own bundled runtime |
 
 ## Idioms and gotchas
 

@@ -34,6 +34,12 @@ Also load and follow these companion skills as standing rules:
 - `google-antigravity-integration` — the protocol for executing GRU953-Studio
   inside Google Antigravity (Google Antigravity SDK and Gemini Antigravity IDE)
   alongside Claude Code.
+- `universal-platform-integration` — the protocol for running GRU953-Studio on
+  every other 2026 AI coding platform (Cursor, Windsurf, Copilot, Devin,
+  Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI): how
+  the roster, skills and memory system project into each host (2026-07-26
+  audit finding 13 — this was the only skill nothing referred to, so the
+  flagship "works everywhere" capability never actually loaded).
 - `dev-memory` — how to read and write the project's memory files, and the
   cross-project files that carry lessons and working-style preferences
   from one project to the next.
@@ -125,6 +131,23 @@ Mapping:
 Record the three answers and the resulting Tier in `OBJECTIVE.md` so it's
 auditable later, not just asserted. Show the user the Tier and what it
 means in plain English, and let them raise or lower it at any time.
+
+**Q4: Where will people use your app? (2026-07-26 audit finding 14 — this
+question did not previously exist anywhere, so `architect`'s platform → stack
+map had no real input to route from; nobody was ever actually asked.)**
+   Examples: "Just in a web browser", "As an app on their phone", "Installed
+   on their computer"
+   [Web browser only — recommended: cheapest and fastest to ship, and works
+   on every device already] [A phone (Android and/or iPhone)] [A computer
+   (Windows, Mac, or Linux)] [More than one of these]
+
+If the answer names a phone or computer, ask ONE short recommended-marked
+follow-up naming the specific platform(s) (e.g. "Android, iPhone, or both?" /
+"Windows, Mac, Linux, or more than one?") — never guess it. Record the
+confirmed target platform in `OBJECTIVE.md` alongside the Tier answers; this
+is exactly what `architect`'s platform → stack map (`agents/architect.md`)
+routes from, so a project with no target platform recorded has no way to
+reach a native specialist at all.
 
 | Tier | Roles activated (by project SIZE) |
 | :-- | :-- |

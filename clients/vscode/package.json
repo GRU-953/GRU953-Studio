@@ -15,20 +15,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "gru953-studio.start",
-        "title": "Universal Agentic Studio: Start"
-      },
-      {
         "command": "gru953-studio.status",
         "title": "Universal Agentic Studio: Status"
-      },
-      {
-        "command": "gru953-studio.pause",
-        "title": "Universal Agentic Studio: Pause"
-      },
-      {
-        "command": "gru953-studio.resume",
-        "title": "Universal Agentic Studio: Resume"
       }
     ]
   },

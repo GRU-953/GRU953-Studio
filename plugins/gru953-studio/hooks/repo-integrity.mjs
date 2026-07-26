@@ -388,25 +388,45 @@ if (hooksJsonText === null) {
   }
 }
 
-// ---- INV 11: every language pack declares the five standard commands ----------
+// ---- INV 11: every language pack declares the six standard commands ----------
 // 2026-07-19 (Phase 5 language-pack contract). Each `lang-*` skill is the shared
 // toolchain pack a native language specialist loads; a pack missing one of the
-// five standard command families (build / test / lint / format / deps) would let
-// a language ship half-wired — a specialist with no way to prove or check its
-// work. This makes the contract mechanical: a new `lang-*` pack cannot land
-// without all five, the same way a new agent cannot land without a roster entry.
+// standard command families (build / test / lint / format / deps / package)
+// would let a language ship half-wired — a specialist with no way to prove or
+// check its work, or no way to actually FINISH the app. This makes the
+// contract mechanical: a new `lang-*` pack cannot land without all six, the
+// same way a new agent cannot land without a roster entry.
+//
+// 2026-07-26 audit finding 15: 'package' added as the sixth required family.
+// All ten packs covered build/test/lint/format/deps but stopped at "compiles"
+// — none named the actual command that produces a finished, installable
+// artefact (an .apk, an .ipa, a live URL). For a non-technical owner whose
+// goal is "an app on my phone", compiling is not the finish line.
+//
+// The obvious first regex (`\bpackage\b`) turned out NOT to discriminate —
+// confirmed by execution, reverting each pack one at a time: "package" is
+// already ordinary vocabulary in at least six of the ten ecosystems on their
+// own terms, entirely unrelated to shipping a finished app — Go's own
+// `package` keyword, npm's `package.json`, NuGet's `dotnet add package`,
+// Swift Package Manager, and "third-party package" in several packs'
+// existing YAGNI-ladder prose. A bare word match would have reported every
+// pack compliant whether or not this fix had actually landed. Narrowed to
+// the specific tool/artefact names each pack's real packaging command
+// actually uses, verified by execution to appear in NONE of the ten packs
+// before this finding was fixed and in ALL TEN after.
 const REQUIRED_PACK_COMMANDS = [
   { key: 'build', re: /\bbuild\b/i },
   { key: 'test', re: /\btest\b/i },
   { key: 'lint', re: /\blint\b|\banalys|clippy|ktlint|detekt|checkstyle|clang-tidy|\bruff\b|flake8/i },
   { key: 'format', re: /\bformat\b|fmt|spotless|clang-format|\bblack\b/i },
   { key: 'deps', re: /\bdepend|\bdeps\b|cargo\.toml|pubspec|requirements|pom\.xml|build\.gradle|vcpkg|conan|pip install|pub add|cargo add/i },
+  { key: 'package', re: /jpackage|pyinstaller|eas build|cargo tauri|exportarchive|dotnet publish|assemblerelease|bundlerelease|\bcpack\b|appimage|\.aab\b|\.ipa\b|\.dmg\b|\.msi\b|github releases?/i },
 ];
 for (const s of skillDirs) {
   if (!/^lang-/.test(s)) continue;
   const text = read(path.join(skillsDir, s, 'SKILL.md')) || '';
   const missing = REQUIRED_PACK_COMMANDS.filter((c) => !c.re.test(text)).map((c) => c.key);
-  if (missing.length) fail(`language pack 'skills/${s}' does not declare the required command famil${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')} — a lang-* pack must cover build, test, lint, format and deps.`);
+  if (missing.length) fail(`language pack 'skills/${s}' does not declare the required command famil${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')} — a lang-* pack must cover build, test, lint, format, deps and package.`);
 }
 
 // ---- INV 12: the publish protocol enumerates all seven pre-flight checks -----

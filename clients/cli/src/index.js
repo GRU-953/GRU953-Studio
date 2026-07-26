@@ -1,26 +1,22 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+// 2026-07-26 audit finding 17. `start`/`pause`/`resume` were removed rather
+// than fixed: pausing and resuming a project's build is something the AI
+// team does to Dev-Memory (recording state, deciding what to pick back up),
+// which a standalone CLI has no honest way to perform — these three only
+// ever printed a message and did nothing real. `status` stays, and now
+// actually reports on the project's real Dev-Memory files (see status.js)
+// instead of printing "Checking status..." and stopping there.
+
+const { printStatus } = require('./status');
 
 console.log('Universal Agentic Studio CLI initializing...');
 
 const command = process.argv[2] || 'help';
 
 switch (command) {
-    case 'start':
-        console.log('Starting Universal Agentic Studio...');
-        // Execute the MCP server or agent initialization protocol
-        break;
     case 'status':
-        console.log('Checking status...');
-        break;
-    case 'pause':
-        console.log('Pausing studio...');
-        break;
-    case 'resume':
-        console.log('Resuming studio...');
+        printStatus();
         break;
     case 'init':
         console.log('Initializing universal platform support...');
@@ -29,6 +25,6 @@ switch (command) {
         break;
     case 'help':
     default:
-        console.log('Usage: gru953-studio [start|status|pause|resume|init|help]');
+        console.log('Usage: gru953-studio [status|init|help]');
         break;
 }

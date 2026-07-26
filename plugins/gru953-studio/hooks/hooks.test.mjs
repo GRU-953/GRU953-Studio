@@ -2895,6 +2895,48 @@ test('repo-integrity.mjs INV11: a language pack missing a command family is bloc
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 audit finding 15: 'package' added as INV11's sixth required
+// family — all ten lang-* packs covered build/test/lint/format/deps but none
+// named the actual command that produces a finished, installable artefact.
+test('repo-integrity.mjs INV11: a language pack missing the package command family is blocked (2026-07-26 finding 15)', () => {
+  const dir = mkTmp('gru-langpack-nopackage-');
+  copyRepoTo(dir);
+  // A minimal lang-rust pack covering the original five families but not package.
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'skills', 'lang-rust', 'SKILL.md'),
+    ['---', 'name: lang-rust', 'description: rust pack', '---', '', '# Rust', '',
+      'build with `cargo build`, test with `cargo test`, lint with `cargo clippy`,',
+      'format with `cargo fmt`, dependencies live in `Cargo.toml`.'].join('\n') + '\n'
+  );
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /lang-rust/.test(p) && /package/.test(p)), `expected a missing-package finding: ${JSON.stringify(r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// This is what actually matters: proving the check isn't merely present but
+// blind — the bare `\bpackage\b` regex first tried turned out to already
+// match ordinary, unrelated vocabulary in at least six of the ten real packs
+// (Go's own `package` keyword, npm's `package.json`, NuGet's `dotnet add
+// package`, Swift Package Manager, "third-party package" in the YAGNI-ladder
+// prose several packs share) — so it would have reported every pack
+// compliant whether or not a real packaging command was ever added.
+test('repo-integrity.mjs INV11: the package check is not fooled by a pack that merely uses the word "package" for something else (2026-07-26 finding 15)', () => {
+  const dir = mkTmp('gru-langpack-wordonly-');
+  copyRepoTo(dir);
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'skills', 'lang-rust', 'SKILL.md'),
+    ['---', 'name: lang-rust', 'description: rust pack', '---', '', '# Rust', '',
+      'build with `cargo build`, test with `cargo test`, lint with `cargo clippy`,',
+      'format with `cargo fmt`, dependencies live in `Cargo.toml` — every added',
+      'package still passes the yagni-rules ladder.'].join('\n') + '\n'
+  );
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'the bare word "package" with no real packaging command must still be caught');
+  assert.ok(r.json.problems.some((p) => /lang-rust/.test(p) && /package/.test(p)));
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // ---------------------------------------------------------------------------
 // 2026-07-19 Content Creation — content-check.mjs verifies every asset in
 // CONTENT.md has approval + provenance + rights (+ alt-text for media) before
