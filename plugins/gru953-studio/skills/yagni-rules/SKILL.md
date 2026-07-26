@@ -51,6 +51,23 @@ Deletion pressure STOPS at these:
 If in doubt, keep the safety and note the question in
 `Dev-Memory/decisions/` rather than deleting it.
 
+## Beyond code: the same principle applied to process, scaled by Tier
+
+This file's ladder is scoped to code — "before writing ANY code." A handful
+of other skills (`phased-roadmap`, `content-creation`, `quality-gate`,
+`memory-graph`, `focus-guard`) each carry their own `## Tier-scaling (YAGNI)`
+section, applying the same "don't do more than the task genuinely needs"
+spirit to *process and documentation ceremony* — a Tiny-Tier project skips a
+multi-phase roadmap, a content manifest, a knowledge graph, or a
+requirements matrix it has no real use for (2026-07-26 clarification: those
+five sections cited "YAGNI" without this file ever confirming the extension
+to process/ceremony — the ladder above never mentioned Tiers at all, so the
+citation was one-directional). Tiers themselves are defined in
+`studio/SKILL.md`, not here; this file's contribution is only this: the same
+reasoning that stops unrequested code from being written also stops
+unrequested process from being run. It does not relax rung 1 above — code is
+still never speculative regardless of Tier.
+
 ## Who applies this
 
 - **builder** walks the ladder before every task.

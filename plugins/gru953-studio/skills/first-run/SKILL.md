@@ -57,6 +57,16 @@ Here's your dashboard — it shows project status, tasks, and quality gates. Nex
 
 ## After first-run
 
+0. **Offer the optional `statusLine` cost upgrade, once** (2026-07-26 — this
+   step was already documented in `cost-guard`'s "How usage can be judged
+   locally" section as something first-run offers, but never actually
+   appeared in this file until now): if the user has no existing `statusLine`
+   configured, offer to add a small script that both displays real cost/usage
+   figures and writes them to `~/.gru953-studio/cost-snapshot.json` for
+   `cost-monitor` to read. If the user already has their own `statusLine`,
+   never overwrite it — show them the one line to add themselves instead, and
+   leave their file untouched either way. See `cost-guard`'s own section for
+   the exact mechanism; this file just owns the "when to offer" moment.
 1. Hand the four answers to `memory-keeper`, which records them in
    `~/.gru953-studio/profile.md` — a durable location outside any single
    project, since this applies across all future projects (2026-07-11

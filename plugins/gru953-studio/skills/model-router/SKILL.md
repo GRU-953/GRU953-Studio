@@ -1,6 +1,6 @@
 ---
 name: model-router
-description: Chooses the best Claude model and effort level for each individual task automatically — Haiku / Sonnet / Opus / Fable at low / medium / high / xhigh / max effort — so cheap tasks run cheap and only genuinely hard ones spend up. Fully automatic and silent by default, with a single hard cost-ceiling that pauses only when one task would be unusually expensive (the one reconciliation with cost-guard). Load and follow as a standing rule; project-lead consults it when delegating, cost-monitor logs the actual choice.
+description: Chooses the best Claude model and effort level for each individual task automatically — Haiku / Sonnet / Opus / Fable at low / medium / high / xhigh / max effort — so cheap tasks run cheap and only genuinely hard ones spend up. Fully automatic and silent by default, pausing only when one task would be unusually expensive (the one reconciliation with cost-guard's judgment-based "pause before an expensive step" rule — not a fixed numeric ceiling; see cost-guard for what actually exists). Load and follow as a standing rule; project-lead consults it when delegating, cost-monitor logs the actual choice.
 ---
 
 # Model Router
@@ -89,13 +89,18 @@ not silently push a safety- or release-critical role below its declared floor.
 
 Per the owner's choice, the router picks per task and **does not prompt** — no
 menu, no confirmation, for the ordinary case. The **single exception** is
-`cost-guard`'s hard ceiling: a per-task spend threshold (seeded by `first-run`/
-`cost-guard`, adjustable by the user). Only when one task would cross that
-ceiling — an unusually large or high-effort job — does the studio pause and put
+`cost-guard`'s own rule (2026-07-26 correction: this section previously
+described a "hard ceiling" — "a per-task spend threshold, seeded by `first-run`,
+adjustable by the user" — that neither `cost-guard/SKILL.md` nor `first-run/SKILL.md`
+actually defines anywhere; there is no numeric per-task threshold in this
+codebase. What's real is `cost-guard`'s own judgment-based rule: "pause to check
+with the user before any noticeably expensive step"): when a task looks
+unusually large or high-effort by that same judgment, the studio pauses and puts
 a plain-English choice to the user (proceed at this cost, or take the cheaper
-path). Everything below the ceiling runs automatically. This is the one, narrow
-reconciliation with cost-guard's "confirm before expensive" default; it is not a
-per-task interruption.
+path). Everything that doesn't look unusually expensive runs automatically.
+This is the one, narrow reconciliation with cost-guard's "confirm before
+expensive" default; it is not a per-task interruption, and it is not gated by
+any numeric threshold a user configures.
 
 Two hard rules the router never overrides:
 - It never raises effort or model to route *around* a safety gate — a Publish
@@ -120,8 +125,8 @@ way the code side does:
   may switch models between drafts. But media generation is **not silent**: each
   generation still passes through the confirm-before-generate step (cost + "sent
   to Google"), because it spends real money and leaves the user's machine. Media
-  cost counts against the same `cost-guard` ceiling; `cost-monitor` logs each
-  media generation's model and spend.
+  cost is subject to the same `cost-guard` judgment-based pause; `cost-monitor`
+  logs each media generation's model and spend.
 
 So the one automatic router covers Claude (code + text) and Gemini (media),
 cheapest-capable per task — with media carrying the extra per-generation

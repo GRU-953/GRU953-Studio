@@ -49,7 +49,12 @@ does `micro-task-planning` (Plan) and Build begin.
 Alongside the warframe, present the **phased build plan** (the `phased-roadmap`
 skill): Phase 1 = the MVP core only, then Phase 2…N = progressive enhancements.
 The user approves *what the first version does* and *what is deliberately left
-for later*, not just how it looks.
+for later*, not just how it looks. This is the roadmap's **shape only** — how
+many phases, and what each one delivers in one line — never a per-phase
+micro-task breakdown this early (2026-07-26: each phase's own detailed task
+list is planned and approved separately, in its own single gate, right before
+that phase is built — see `phased-roadmap`'s step 0. Approving the shape here
+does not pre-approve any phase's task-level detail, including Phase 1's.)
 
 ## The hard approval gate (blocking)
 

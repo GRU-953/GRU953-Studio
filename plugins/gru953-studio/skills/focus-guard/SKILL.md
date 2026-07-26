@@ -40,8 +40,18 @@ owns writing it, with the same secrets-scan-before-write as every memory file.
 
 ## The re-orientation ritual (session start AND every stage boundary)
 
-Before acting — every new session, and again at every stage boundary within a
-session — the Project Lead reads, in this order:
+**At the start of a new session**, this ritual IS `dev-memory`'s own five-file
+"Read before acting" sequence — `FOCUS.md`, `OBJECTIVE.md`, `PROGRESS.md`, the
+tail of `SESSION-LOG.md`, and `INDEX.md` — not a separate or smaller read (2026-07-26
+correction: this section previously listed only four items here, omitting
+`SESSION-LOG.md` and `INDEX.md`, while still claiming to be "the same
+session-start read `dev-memory` already defines" — it wasn't; corrected to
+actually match).
+
+**At every stage boundary within an already-oriented session** (nothing was
+lost, memory is already loaded — this is a quick re-anchor, not a resume), the
+Project Lead re-reads the lighter four-item subset that matters for staying on
+track mid-session:
 
 1. `FOCUS.md` — the current heading.
 2. `OBJECTIVE.md` — the confirmed brief and Tier (the source of truth FOCUS.md
@@ -49,12 +59,11 @@ session — the Project Lead reads, in this order:
 3. The `▶ RESUME HERE` pointer in `PROGRESS.md`.
 4. Any `blocked` rows / open blockers.
 
-Then **restate the single active goal in one plain line** before doing anything
-else. This is what makes the build survive a summarised or brand-new session:
-the team rehydrates from `FOCUS.md` + the memory files, never from lost chat
-history. It is the same session-start read `dev-memory` already defines, with
-`FOCUS.md` added as the first, cheapest step and the explicit "restate the goal"
-checkpoint.
+Either way, **restate the single active goal in one plain line** before doing
+anything else. This is what makes the build survive a summarised or
+brand-new session: the team rehydrates from `FOCUS.md` + the memory files,
+never from lost chat history — the full five-file read at session start, the
+four-item quick re-anchor at each stage boundary after that.
 
 ## The drift check (before starting any task)
 

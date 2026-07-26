@@ -40,8 +40,16 @@ Publish the current project's working app to a private GitHub repository.
    project root. Then load `publish-github` and follow it exactly and in
    order: verify tools, set author identity from the signed-in user,
    attribution cleanup in a throwaway clone, create the private repository,
-   add the full `governance/` folder, push, **tag and create a real
-   GitHub Release (verify `isDraft: false`)**, report the address.
+   ensure `LICENSE`, `NOTICE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, and
+   `SECURITY.md` are present at the repository ROOT (2026-07-26 correction:
+   this step used to say "add the full `governance/` folder" — that would put
+   these five files back inside `governance/`, undoing publish-github's own
+   2026-07-16 fix that moved them to the root specifically so GitHub's
+   licence detector and Community Standards checklist recognise them; see
+   `publish-github`'s step 6), plus `governance/TRADEMARKS.md`,
+   `governance/LOGO-USAGE.md`, and `governance/GOVERNANCE.md` (which do stay
+   inside `governance/`), push, **tag and create a real GitHub Release
+   (verify `isDraft: false`)**, report the address.
 6. Record the outcome (address, tag, and date, or the reason publishing
    stopped) in `Dev-Memory/PROGRESS.md` and `Dev-Memory/SESSION-LOG.md`.
 7. Going public is a separate later step with its own confirmation and its

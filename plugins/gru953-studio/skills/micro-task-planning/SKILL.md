@@ -30,8 +30,10 @@ that was always implicitly needed between Design and Build.
    by ONE exact command. Not smaller than that: "implement the login
    form's password-match check" is right-sized; "write one line inside
    that function" is not a task, it's a step inside one — fragmenting
-   further than a task actually needs is its own kind of waste
-   (`yagni-rules`).
+   further than a task actually needs is its own kind of waste, this
+   skill's own over-fragmentation rule (2026-07-26 correction: previously
+   misattributed to `yagni-rules`, which is scoped to code and never
+   discusses task granularity at all).
 2. **Record, per micro-task:** a short id and name, its one acceptance
    criterion, the exact verification command that proves it, and its
    dependencies (which other micro-tasks, if any, must be `done` first). The
@@ -43,8 +45,9 @@ that was always implicitly needed between Design and Build.
    separately-provable steps, list them as subtasks (`T3.1`, `T3.2`) each with
    its own one acceptance criterion and one proving command, under the parent.
    Stop there — a subtask is still a provable unit of behaviour, never "one
-   line inside a function" (the same over-fragmentation `yagni-rules` warns
-   against). The parent is `done` only when every subtask is `done` and
+   line inside a function" — the same over-fragmentation rule as step 1
+   above, this skill's own, not `yagni-rules`'s. The parent is `done` only
+   when every subtask is `done` and
    verified.
 3. **Scale by Tier:**
    - **Tiny:** an informal, short list (typically 2-6 tasks) stated
