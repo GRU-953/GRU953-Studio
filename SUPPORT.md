@@ -29,7 +29,7 @@ the **[Security policy](SECURITY.md)** instead.
 ### 5. Commercial licensing
 To use GRU953-Studio commercially, see
 **[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md)** or email
-**gru953@gmail.com**.
+**aninda.sh15@gmail.com**.
 
 ---
 

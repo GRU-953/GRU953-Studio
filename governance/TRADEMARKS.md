@@ -1,6 +1,6 @@
 # GRU953 Trademark & Brand-Usage Policy
 
-**Version 1.0 · 8 July 2026 · Owner: GRU-953**
+**Version 1.0 · 8 July 2026 · Owner: Aninda Sundar Howlader**
 
 The word mark **GRU953**, the **Soaring Bird** logo, and any lockup
 combining them (the "Marks") identify the origin of GRU953 work. The
@@ -46,5 +46,5 @@ freely; only the Marks are scoped by this policy.
 
 ## Permission requests
 
-Email **gru953@gmail.com** with a short description and a mock-up.
+Email **aninda.sh15@gmail.com** with a short description and a mock-up.
 Silence is not consent.

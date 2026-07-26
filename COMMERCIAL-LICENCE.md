@@ -50,12 +50,12 @@ the free non-commercial licence does not cover it — a commercial licence does.
 Getting a commercial licence is simple and friendly — a short email conversation,
 not a legal ordeal.
 
-1. Email **gru953@gmail.com**.
+1. Email **aninda.sh15@gmail.com**.
 2. Briefly describe what you'd like to build or sell, and roughly the scale.
 3. You'll get a plain-English reply with clear terms.
 
 **Licensor / contact:**
-GRU-953 — <https://github.com/GRU-953> — gru953@gmail.com
+Aninda Sundar Howlader — <https://github.com/GRU-953> — aninda.sh15@gmail.com
 
 ---
 

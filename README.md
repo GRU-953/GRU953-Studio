@@ -251,7 +251,7 @@ recognised licence.
 
 **Selling something built with it?** Commercial use (including apps you build with
 GRU953-Studio and then sell) needs a separate paid licence — see
-[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md), or email **gru953@gmail.com**.
+[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md), or email **aninda.sh15@gmail.com**.
 
 > **A note on the GitHub licence label.** GitHub's automatic licence detector only
 > recognises the licences in its built-in catalogue, which does not include
@@ -283,7 +283,7 @@ it as your own.
 
 ## About
 
-Made by [GRU-953](https://github.com/GRU-953) — for people who have
+Made by [Aninda Sundar Howlader](https://github.com/GRU-953) — for people who have
 a real idea and just want the software part handled for them, simply and honestly.
 GRU953-Studio is actively maintained: every release is checked against Anthropic's
 own official documentation, and the team of specialists grows only when a real,
