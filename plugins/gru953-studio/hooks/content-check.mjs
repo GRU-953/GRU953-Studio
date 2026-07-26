@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom } from './lib.mjs';
+import { splitPipeCells, stripBom, isDirectory } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
@@ -78,7 +78,13 @@ function ph(s) { return PLACEHOLDER_RE.test(String(s || '').trim()); }
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  // 2026-07-26 Stage 3 fix (audit finding 22): was two separate, unguarded
+  // calls (existsSync then statSync) racing against anything else that might
+  // touch this path in between — the second call had no try/catch of its
+  // own, so Dev-Memory disappearing (or a permissions problem) between the
+  // two threw a raw stack trace instead of this project's own plain-English
+  // contract. isDirectory() makes this one guarded call.
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }));
     process.exit(0);
   }

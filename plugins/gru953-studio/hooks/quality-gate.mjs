@@ -35,7 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise, isDirectory } from './lib.mjs';
 
 // The required Definition-of-Done dimensions. Each must appear as at least one
 // row in QUALITY-GATE.md whose Item cell contains the keyword, marked pass (with
@@ -179,7 +179,12 @@ function main() {
   // Not a studio project (e.g. the plugin repo itself, or any ordinary dir) →
   // there is nothing to gate. No-op green, exactly like verify-progress.mjs on
   // a tree with no PROGRESS.md.
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  //
+  // 2026-07-26 Stage 3 fix (audit finding 22): was two separate, unguarded
+  // calls racing against each other — see lib.mjs's isDirectory() for the
+  // full reproduction (a crash instead of a plain message if Dev-Memory
+  // disappears between the two calls).
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to gate', root }));
     process.exit(0);
   }

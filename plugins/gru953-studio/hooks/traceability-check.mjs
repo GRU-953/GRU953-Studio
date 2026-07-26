@@ -37,7 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise } from './lib.mjs';
+import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise, isDirectory } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
@@ -129,7 +129,12 @@ function col(headers, re) {
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  // 2026-07-26 Stage 3 fix (audit finding 22, not originally named for this
+  // file — found while fixing the same pattern in its four siblings). Was
+  // two separate, unguarded calls racing against each other — see
+  // lib.mjs's isDirectory() for the full reproduction (a crash instead of a
+  // plain message if Dev-Memory disappears between the two calls).
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to trace', root }));
     process.exit(0);
   }

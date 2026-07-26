@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
-import { isPushCapable, normalizeForPushCheck } from './lib.mjs';
+import { isPushCapable, normalizeForPushCheck, isDirectory } from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages, resolveExecutable } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -291,6 +291,44 @@ test('gate.mjs/scan.mjs: invoking confirm-publish.mjs ITSELF as a Bash command i
   // confirm-script name mentioned elsewhere is still caught.
   const decoy = `git push origin main; node confirm-publish.mjs`;
   assert.equal(isPushCapable(decoy), true, 'a real push must not be exempted just because the string also mentions confirm-publish.mjs');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26 Stage 3 fix (audit finding 22). Five gates (content-check,
+// quality-gate, memory-integrity, dashboard, traceability-check) each opened
+// with `!fs.existsSync(p) || !fs.statSync(p).isDirectory()` — two separate,
+// unguarded filesystem calls. The second call had no try/catch of its own,
+// so anything that changed the path between the two calls (deleted,
+// replaced, a permissions change) threw a raw Node stack trace instead of
+// this project's own plain-English contract. isDirectory() replaces both
+// calls with one guarded stat, mirroring findStudioRoot()'s already-correct
+// pattern right below it in lib.mjs.
+//
+// A genuine concurrent race between the two original calls can't be
+// deterministically reproduced in a single-threaded, synchronous test — this
+// instead proves the property that actually matters: isDirectory() never
+// throws for any input a caller might realistically pass it, and correctly
+// distinguishes "doesn't exist" from "exists but is a file" from "exists and
+// is a directory". Each of the five hooks' own "no Dev-Memory → clean
+// no-op" tests elsewhere in this suite lock in that the refactor didn't
+// change their observable behaviour.
+test('lib.mjs isDirectory: never throws, and correctly distinguishes missing / file / directory', () => {
+  const dir = mkTmp('gru-isdirectory-');
+  const missing = path.join(dir, 'does-not-exist');
+  const filePath = path.join(dir, 'a-file');
+  const dirPath = path.join(dir, 'a-dir');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, 'hello\n');
+  fs.mkdirSync(dirPath);
+
+  assert.equal(isDirectory(missing), false, 'a path that does not exist must return false, not throw');
+  assert.equal(isDirectory(filePath), false, 'an ordinary file must return false, not throw');
+  assert.equal(isDirectory(dirPath), true, 'a genuine directory must return true');
+  // A path with a NUL byte throws synchronously at the Node API layer
+  // itself, for a reason entirely unrelated to any race — confirms
+  // isDirectory() swallows even this kind of error rather than letting it
+  // escape as a crash.
+  assert.doesNotThrow(() => isDirectory(path.join(dir, 'bad\0name')), 'a structurally invalid path must not throw out of isDirectory()');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -2291,15 +2329,15 @@ test('session-start.mjs: a literal "false" string value no longer falsely trigge
 // the scenario the test intends. (Caught while writing this test: the first
 // version had the steps in the wrong order and every case silently exercised
 // the wrong branch.)
-function addAutoUpdateScaffolding(top) {
-  const hooksDir = path.join(top, 'plugins', 'gru953-studio', 'hooks');
+function addAutoUpdateScaffolding(top, relativeDepth = ['plugins', 'gru953-studio', 'hooks']) {
+  const hooksDir = path.join(top, ...relativeDepth);
   fs.mkdirSync(hooksDir, { recursive: true });
   const scriptPath = path.join(hooksDir, 'auto-update.mjs');
   fs.copyFileSync(path.join(HERE, 'auto-update.mjs'), scriptPath);
   return scriptPath;
 }
-function runAutoUpdate(scriptPath) {
-  const r = spawnSync(NODE, [scriptPath, '--force'], { encoding: 'utf8' });
+function runAutoUpdate(scriptPath, envOverride) {
+  const r = spawnSync(NODE, [scriptPath, '--force'], { encoding: 'utf8', env: envOverride ? { ...process.env, ...envOverride } : process.env });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -2371,6 +2409,88 @@ test('auto-update.mjs: a conflicting local edit is reported as a FAILURE, not si
   assert.doesNotMatch(combined, /applied successfully/i);
   const fileContent = fs.readFileSync(path.join(top, 'file.txt'), 'utf8');
   assert.match(fileContent, /<<<<<<</, 'the repro must genuinely produce conflict markers, or this test proves nothing');
+  fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-26 Stage 3 fix (audit finding 23). Two separate bugs in this same
+// file: (1) the "is an update available" check parsed English text out of
+// `git status`, so it silently did nothing for anyone running git in another
+// language; (2) the plugin's own git-repository root was a hardcoded "three
+// levels above this script" guess, correct only for the exact directory
+// depth this repository happens to use.
+// ---------------------------------------------------------------------------
+test('auto-update.mjs: still finds and applies an update when the plugin sits at a DIFFERENT depth than plugins/gru953-studio/hooks (2026-07-26 finding 23)', () => {
+  // The old code computed studioRoot as a flat "three levels up" from its own
+  // file, which only happens to be correct for THIS repo's exact layout. A
+  // script sitting at some other depth inside its own git checkout would
+  // have resolved to the wrong directory (or one with no .git at all) under
+  // the old code; the fix walks up looking for a real .git, so any depth
+  // works. Verified here by scaffolding the script three levels DEEPER than
+  // usual (a plausible shape for a differently-vendored or cached install).
+  const bareDir = mkTmp('gru-au-bare3-');
+  git(['init', '-q', '--bare', '-b', 'main'], bareDir);
+  const seedDir = mkTmp('gru-au-seed3-');
+  git(['clone', '-q', bareDir, seedDir], mkTmp('gru-au-cwd5-'));
+  fs.writeFileSync(path.join(seedDir, 'file.txt'), 'hello\n');
+  git(['add', '-A'], seedDir);
+  git(['commit', '-q', '-m', 'init'], seedDir);
+  git(['push', '-q', '-u', 'origin', 'main'], seedDir);
+  fs.appendFileSync(path.join(seedDir, 'file.txt'), 'update\n');
+  git(['commit', '-aq', '-m', 'remote change'], seedDir);
+  git(['push', '-q'], seedDir);
+
+  const top = mkTmp('gru-au-top3-');
+  git(['clone', '-q', bareDir, top], mkTmp('gru-au-cwd6-'));
+  git(['reset', '-q', '--hard', 'HEAD~1'], top);
+  git(['config', 'core.autocrlf', 'false'], top);
+  // Six levels deep instead of the usual three (plugins/gru953-studio/hooks).
+  const scriptPath = addAutoUpdateScaffolding(top, ['vendor', 'cache', 'plugins', 'gru953-studio', 'hooks', 'deeper']);
+
+  const r = runAutoUpdate(scriptPath);
+  assert.equal(r.code, 0, `must still find the real .git root and apply cleanly at a different depth: ${r.stdout} ${r.stderr}`);
+  assert.match(r.stdout, /applied successfully/i);
+  assert.equal(fs.readFileSync(path.join(top, 'file.txt'), 'utf8'), 'hello\nupdate\n');
+  fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
+});
+
+test('auto-update.mjs: an available update is still detected with LC_ALL set to a non-English locale tag (defense in depth, not a discriminating regression test)', () => {
+  // NOT a discriminating regression test — checked directly: this also
+  // passes against the PRE-fix code, because this sandbox has no git locale
+  // catalogs installed at all, so `git status -uno` falls back to English
+  // regardless of LC_ALL here — the real bug (git actually TRANSLATING "Your
+  // branch is behind" when a matching catalog is installed and selected)
+  // cannot be reproduced in this environment, so this test cannot exercise
+  // it. What WAS verified directly (see the comment above the fix itself, in
+  // auto-update.mjs) is the property the fix actually depends on: `git
+  // rev-list --count HEAD..@{u}` was confirmed by separate manual testing to
+  // emit a bare number under LC_ALL=C, a real non-English tag, and a
+  // nonsense one alike — the windows-latest-style proof this project relies
+  // on when a sandbox can't reproduce a platform/locale difference directly.
+  // Kept as a confidence check that setting LC_ALL doesn't otherwise break
+  // anything in the detect-and-apply path.
+  const bareDir = mkTmp('gru-au-bare4-');
+  git(['init', '-q', '--bare', '-b', 'main'], bareDir);
+  const seedDir = mkTmp('gru-au-seed4-');
+  git(['clone', '-q', bareDir, seedDir], mkTmp('gru-au-cwd7-'));
+  fs.writeFileSync(path.join(seedDir, 'file.txt'), 'hello\n');
+  git(['add', '-A'], seedDir);
+  git(['commit', '-q', '-m', 'init'], seedDir);
+  git(['push', '-q', '-u', 'origin', 'main'], seedDir);
+  fs.appendFileSync(path.join(seedDir, 'file.txt'), 'update\n');
+  git(['commit', '-aq', '-m', 'remote change'], seedDir);
+  git(['push', '-q'], seedDir);
+
+  const top = mkTmp('gru-au-top4-');
+  git(['clone', '-q', bareDir, top], mkTmp('gru-au-cwd8-'));
+  git(['reset', '-q', '--hard', 'HEAD~1'], top);
+  git(['config', 'core.autocrlf', 'false'], top);
+  const scriptPath = addAutoUpdateScaffolding(top);
+
+  const r = runAutoUpdate(scriptPath, { LC_ALL: 'fr_FR.UTF-8', LANG: 'fr_FR.UTF-8' });
+  assert.equal(r.code, 0, `an available update must still be detected and applied under a non-English locale: ${r.stdout} ${r.stderr}`);
+  assert.match(r.stdout, /applied successfully/i);
+  assert.equal(fs.readFileSync(path.join(top, 'file.txt'), 'utf8'), 'hello\nupdate\n');
   fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
 });
 

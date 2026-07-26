@@ -7,7 +7,33 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const studioRoot = path.resolve(__dirname, '..', '..', '..');
+
+// 2026-07-26 Stage 3 fix (audit finding 23, first half). This used to be a
+// flat `path.resolve(__dirname, '..', '..', '..')` — a hardcoded guess that
+// the git repository containing this plugin is always exactly three levels
+// above hooks/. That holds for the layout THIS repository happens to use
+// (plugins/gru953-studio/hooks/), but nothing guarantees every installation
+// mechanism preserves that exact depth — a differently-vendored or cached
+// install could sit the plugin at a different depth inside its own git
+// checkout, and the fixed-depth guess would silently point at the wrong
+// directory (or one with no `.git` at all, even though a real one exists
+// nearby). `lib.mjs`'s findStudioRoot() already solves the analogous problem
+// (locating Dev-Memory) by walking up from a known-correct starting point
+// rather than guessing a depth; this does the same for `.git`, verified by
+// actually checking for it at every level rather than assuming. Falls back
+// to the old fixed-depth guess only if no `.git` is found anywhere up the
+// tree at all (a genuine non-git install, where the exact fallback value is
+// moot — the `isGitRepo` check below will be false either way).
+function findGitRoot(start) {
+    let d = path.resolve(start);
+    for (;;) {
+        if (fs.existsSync(path.join(d, '.git'))) return d;
+        const parent = path.dirname(d);
+        if (parent === d) return null;
+        d = parent;
+    }
+}
+const studioRoot = findGitRoot(__dirname) || path.resolve(__dirname, '..', '..', '..');
 
 // Only check once a day automatically. For manual checks, pass '--force'
 const force = process.argv.includes('--force');
@@ -33,9 +59,30 @@ if (isGitRepo) {
     try {
         // Check if there are updates available on the remote
         execSync('git remote update', { cwd: studioRoot, stdio: 'ignore' });
-        const status = execSync('git status -uno', { cwd: studioRoot, encoding: 'utf8' });
-        
-        if (status.includes('Your branch is behind')) {
+        // 2026-07-26 Stage 3 fix (audit finding 23, second half). This used to
+        // parse `git status -uno`'s human-facing text for the literal English
+        // phrase "Your branch is behind" — git translates that phrase (and
+        // every other porcelain status line) via gettext whenever a matching
+        // locale is installed and LANG/LC_ALL selects it, so this silently
+        // never detected an available update for anyone not running git in
+        // English. (This exact translated string could not be reproduced
+        // directly in this sandbox — no git locale catalogs are installed
+        // here — but git's own localisation of this porcelain message is
+        // well-documented and not in question; what WAS verified directly is
+        // the replacement below staying numeric under a bogus LC_ALL, which
+        // is the property the fix actually depends on.)
+        //
+        // `git rev-list --count HEAD..@{u}` reports how many commits the
+        // upstream is ahead of HEAD as a bare number — no natural-language
+        // text at all, so no locale can change it. Verified: identical output
+        // under LC_ALL=C, a real non-English locale tag, and a nonsense one.
+        // `@{u}` throws if no upstream tracking branch is configured; that is
+        // treated as "can't check", not "up to date" — the same fail-honest
+        // choice this file already makes for a genuine network/remote error
+        // just below.
+        const behindCount = parseInt(execSync('git rev-list --count HEAD..@{u}', { cwd: studioRoot, encoding: 'utf8' }).trim(), 10);
+
+        if (Number.isFinite(behindCount) && behindCount > 0) {
             console.log('Universal Agentic Studio: Update available. Applying now...');
             // 2026-07-26, found during a further pass. Two distinct bugs here,
             // and the first fix attempt at this only caught the first one.
@@ -58,14 +105,15 @@ if (isGitRepo) {
             // applied successfully."
             //
             // Deliberately NOT matched by parsing English stderr text like
-            // "resulted in conflicts" — this file already has one documented,
-            // known bug (locale-dependent parsing of `git status` output,
-            // scheduled separately) from doing exactly that, and repeating the
-            // mistake here while fixing an adjacent one would be perverse.
-            // Instead: `git diff --name-only --diff-filter=U` lists unmerged
-            // (conflicted) paths directly, in a machine-readable, locale-
-            // independent form — this is the actual ground truth of "did a
-            // conflict get left behind," regardless of what git printed.
+            // "resulted in conflicts" — this file's OWN "behind" detection
+            // above used to do exactly that (locale-dependent parsing of
+            // `git status` output, now fixed as part of the same Stage 3
+            // pass), and repeating the mistake here while fixing an adjacent
+            // one would be perverse. Instead: `git diff --name-only
+            // --diff-filter=U` lists unmerged (conflicted) paths directly, in
+            // a machine-readable, locale-independent form — this is the
+            // actual ground truth of "did a conflict get left behind,"
+            // regardless of what git printed.
             //
             // This script is only invoked from the explicit `/studio-update`
             // command now (session-start.mjs no longer calls it automatically),

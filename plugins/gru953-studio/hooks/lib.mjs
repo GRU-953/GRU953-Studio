@@ -101,6 +101,27 @@ export function extractCwd(input) {
   return typeof c === 'string' ? c : '';
 }
 
+// 2026-07-26 Stage 3 fix (audit finding 22). Five of this project's own
+// gates (content-check, quality-gate, memory-integrity, dashboard, and — not
+// originally named in the finding, found while fixing the other four —
+// traceability-check) each opened with their OWN copy of
+// `!fs.existsSync(p) || !fs.statSync(p).isDirectory()`: two separate,
+// unguarded filesystem calls, racing against whatever else might touch that
+// path between them. If Dev-Memory is deleted, replaced, or renamed in that
+// window, the second call (`statSync`, with no try/catch of its own) throws
+// a raw Node stack trace instead of this project's own plain-English
+// contract — exactly the crash class finding 21 already fixed for reads and
+// writes, just for an existence CHECK instead. findStudioRoot() right below
+// already gets this right — one guarded stat call, not two racing ones —
+// this generalises that same already-correct pattern for reuse by all five.
+export function isDirectory(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 // ---- studio run marker (the run-scope gate) --------------------------------------
 // The studio's project marker is its Dev-Memory folder. Walk up from `start`
 // looking for one; return the project root that contains it, or null when no

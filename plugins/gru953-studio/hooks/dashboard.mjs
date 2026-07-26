@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, formatFsError } from './lib.mjs';
+import { splitPipeCells, stripBom, formatFsError, isDirectory } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
@@ -257,7 +257,11 @@ function renderBoard(projectName, docs, table, boardText) {
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
-  if (!fs.existsSync(devMemory) || !fs.statSync(devMemory).isDirectory()) {
+  // 2026-07-26 Stage 3 fix (audit finding 22): was two separate, unguarded
+  // calls racing against each other — see lib.mjs's isDirectory() for the
+  // full reproduction (a crash instead of a plain message if Dev-Memory
+  // disappears between the two calls).
+  if (!isDirectory(devMemory)) {
     console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to render', root }));
     process.exit(0);
   }
