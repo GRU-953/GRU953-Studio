@@ -114,8 +114,30 @@ function scanNodeFromLockfile(root, lockFilePath) {
   try {
     const lockContent = JSON.parse(fs.readFileSync(lockFilePath, 'utf8'));
     const findings = [];
-    const packages = lockContent.packages || {};
-    
+    // 2026-07-26, found during a further pass over licence-scan.mjs. This
+    // defaulted straight to `{}` whenever `packages` was absent, and then
+    // returned `checked: true` regardless — so a lockfileVersion 1
+    // package-lock.json (npm 5/6, which nests dependencies under
+    // `dependencies` rather than the flat `packages` map npm 7+ introduced)
+    // silently examined ZERO packages while still reporting a full pass.
+    // Reproduced: a v1-shaped lockfile recording a real GPL dependency
+    // returned {"status":"clean"}.
+    //
+    // v1 lockfiles also don't reliably carry per-package licence data even
+    // once the tree is walked (that only became a lockfile field with the v2/v3
+    // "packages" format), so rather than build a nested-tree walker for data
+    // that usually isn't there, this is now an honest "not checked": it joins
+    // this file's other disclosed gaps (Python venvs, Maven/Gradle, C++, Swift,
+    // .NET, Go) and turns the overall verdict into INCOMPLETE rather than a
+    // false clean.
+    if (!lockContent.packages || typeof lockContent.packages !== 'object') {
+      return {
+        ecosystem: 'npm', checked: false, findings: [],
+        note: `${path.basename(lockFilePath)} has no "packages" map (lockfileVersion ${lockContent.lockfileVersion ?? '1 or unknown'}) — npm lockfiles older than v2 don't reliably record per-package licences; run \`npm install\` and re-scan, or review dependency licences manually before publish`,
+      };
+    }
+    const packages = lockContent.packages;
+
     for (const [pkgPath, pkgInfo] of Object.entries(packages)) {
       if (pkgPath === '' || pkgPath === '.') continue; // Skip root package
       const name = pkgPath.replace(/^node_modules\//, '');
@@ -227,6 +249,26 @@ export function findPubCacheRoot() {
   return path.join(os.homedir(), '.pub-cache');
 }
 
+// A package with no cache entry to inspect (git/path sourced, or the project's
+// own root package) is surfaced as needs-review rather than silently dropped.
+// `source: 'root'` (the project's own package, always present in a real
+// `dart pub deps --json` result) is deliberately excluded — flagging a
+// project's own package as needing a licence review on every single scan
+// would be a self-inflicted false positive on every Dart project, not a real
+// finding.
+export function classifyNonHostedDartPackages(packages) {
+  const findings = [];
+  for (const pkg of packages || []) {
+    if (!pkg || pkg.source === 'hosted' || pkg.source === 'root') continue;
+    findings.push({
+      package: pkg.name,
+      licence: `unchecked (${pkg.source || 'non-hosted'} source — no pub.dev cache entry to inspect)`,
+      verdict: 'needs-review',
+    });
+  }
+  return findings;
+}
+
 function scanDartFlutter(root) {
   let parsed;
   try {
@@ -248,7 +290,22 @@ function scanDartFlutter(root) {
 
   const pubCacheRoot = findPubCacheRoot();
   const findings = [];
-  const hostedPackages = (parsed.packages || []).filter((p) => p.source === 'hosted');
+  const allPackages = parsed.packages || [];
+  const hostedPackages = allPackages.filter((p) => p.source === 'hosted');
+  // 2026-07-26, found during a further pass over licence-scan.mjs. Git- or
+  // path-sourced packages (very ordinary for Dart — forked packages, private
+  // plugins) were filtered out here and never looked at again, yet the
+  // function still returned checked:true unconditionally at the bottom.
+  // Reproduced: a git-sourced GPL-licensed package never appeared anywhere in
+  // the output — not blocked, not flagged for review — while the ecosystem
+  // reported clean. There is no reliable LICENSE-file convention for a
+  // git/path source the way there is for the hosted pub.dev cache layout, so
+  // rather than guess, each is surfaced as needs-review — honest uncertainty,
+  // not silent omission. Extracted to its own exported function so it can be
+  // unit-tested directly, matching this file's existing, deliberate rationale
+  // for testing detectLicenceFromText() in isolation rather than faking a
+  // `dart pub deps --json` end-to-end run (see the test file for why).
+  findings.push(...classifyNonHostedDartPackages(allPackages));
 
   for (const pkg of hostedPackages) {
     const pkgDir = path.join(pubCacheRoot, 'hosted', 'pub.dev', `${pkg.name}-${pkg.version}`);

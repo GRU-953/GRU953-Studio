@@ -85,7 +85,15 @@ const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 // A row that narrates it is currently broken/unproven invalidates any otherwise
 // passing status on the same row — the same guard verify-progress.mjs uses, so
 // "passed on the old build, now fails" can't count as done.
-const CONTRADICTION_RE = /\b(exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
+//
+// 2026-07-26, found during a further pass after fixing the same bug class in
+// verify-progress.mjs (audit finding 1). This pattern only matched the literal
+// word "exit" immediately followed by whitespace and a digit — so the far more
+// natural phrasing "exit code 1" or "exited with code 1" never matched at all.
+// Reproduced: a Definition-of-Done row reading "Ran npm test - exit code 1,
+// 3 failing" with an otherwise-Pass status returned {"status":"clean"}. Added
+// an alternative that also recognises "exit[ed] [with] code N".
+const CONTRADICTION_RE = /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 function read(p) {

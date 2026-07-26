@@ -105,7 +105,22 @@ function checkGraph(devMemory, problems) {
   // CLEAN on this script's whole job — even when the reference was
   // genuinely dangling.
   const NODE_DEF_RE = /^\s*[-*]?\s*\[([^\]]+)\]/;
+  // 2026-07-26, found during a further pass over the hooks not touched by the
+  // first audit. This loop used to scan EVERY line in the file with no heading
+  // scoping — unlike the link-validation pass below, which correctly restricts
+  // itself to a Links/Edges section. So an ordinary prose bullet anywhere else
+  // in the file shaped like a node reference (e.g. a Notes section mentioning
+  // "- [T1] was covered in an earlier session") silently registered T1 as a
+  // DEFINED node, masking a genuinely dangling link to a T1 that was never
+  // actually declared under ## Nodes. Reproduced: adding exactly that kind of
+  // bullet under an unrelated heading turned a correctly-BLOCKED dangling-link
+  // case into a false "clean". Scoped to a Nodes/Graph section the same way the
+  // link pass is scoped, below.
+  let inNodes = false;
   for (const line of lines) {
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { inNodes = /node/i.test(heading[1]); continue; }
+    if (!inNodes) continue;
     const m = line.match(NODE_DEF_RE);
     if (m) nodes.add(m[1]);
   }

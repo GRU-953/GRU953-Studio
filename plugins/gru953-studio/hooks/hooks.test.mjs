@@ -22,7 +22,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { isPushCapable } from './lib.mjs';
-import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr } from './licence-scan.mjs';
+import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -956,6 +956,36 @@ test('licence-scan.mjs findPubCacheRoot: respects the PUB_CACHE override before 
   }
 });
 
+// 2026-07-26, found during a further pass over licence-scan.mjs. Git/path
+// sourced Dart packages were filtered out of scanDartFlutter's hosted-package
+// loop and never looked at again, while the function still reported
+// checked:true — a real git-sourced GPL dependency never appeared anywhere in
+// the output. Tested directly rather than via a fake `dart pub deps --json`
+// spawn, for the same reason detectLicenceFromText() above is: this file's own
+// documented rationale is that faking the Dart toolchain's output would just
+// test a mock, not the real classification path — see the comment above the
+// "no Dart SDK reachable" test.
+test('licence-scan.mjs classifyNonHostedDartPackages: git/path-sourced packages are surfaced as needs-review, not silently dropped (found in a further pass)', () => {
+  const packages = [
+    { name: 'my_app', source: 'root' },
+    { name: 'clean_hosted_pkg', source: 'hosted' },
+    { name: 'gpl_fork', source: 'git' },
+    { name: 'local_plugin', source: 'path' },
+  ];
+  const findings = classifyNonHostedDartPackages(packages);
+  const names = findings.map((f) => f.package);
+  assert.ok(names.includes('gpl_fork'), 'a git-sourced package must be surfaced, not silently dropped');
+  assert.ok(names.includes('local_plugin'), 'a path-sourced package must be surfaced, not silently dropped');
+  assert.ok(!names.includes('my_app'), 'the project\'s own root package must not be flagged as needing review');
+  assert.ok(!names.includes('clean_hosted_pkg'), 'hosted packages are handled by the separate pub-cache lookup, not here');
+  for (const f of findings) assert.equal(f.verdict, 'needs-review', 'an unresolvable source must never be silently "clean" nor outright "blocked" — needs-review is the honest verdict');
+});
+
+test('licence-scan.mjs classifyNonHostedDartPackages: an all-hosted package list needs no review', () => {
+  const findings = classifyNonHostedDartPackages([{ name: 'my_app', source: 'root' }, { name: 'a', source: 'hosted' }, { name: 'b', source: 'hosted' }]);
+  assert.deepEqual(findings, [], 'nothing to flag when every real dependency is hosted');
+});
+
 test('licence-scan.mjs: with no Dart SDK reachable, a Dart/Flutter project is reported as not-checked, never a crash or a false clean', () => {
   // Deliberately runs with a PATH that excludes any `dart` binary — this
   // dev machine happens to have Dart installed (from building the
@@ -1630,6 +1660,19 @@ test('quality-gate.mjs: a row that says it is currently failing invalidates its 
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26, found during a further pass after fixing the same bug class in
+// verify-progress.mjs. CONTRADICTION_RE only matched the literal word "exit"
+// immediately followed by whitespace and a digit, so the ordinary phrasing
+// "exit code 1" (no space between "exit" and the number) never matched — a
+// Pass row whose evidence documents a failing exit code slipped through clean.
+test('quality-gate.mjs: "exit code N" phrasing is caught, not just bare "exit N" (found in a further pass)', () => {
+  const dir = mkTmp('gru-qg-exitcode-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | Ran npm test - exit code 1, 3 failing |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `"exit code 1" must be recognised as a contradiction: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 function writeReq(dir, req, prog) {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'REQUIREMENTS.md'), req);
@@ -1798,6 +1841,39 @@ test('memory-integrity.mjs: a dangling link with a punctuated or Bangla node id 
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26, found during a further pass over the hooks not covered by the
+// first audit. Node-id collection was not scoped to a Nodes/Graph heading —
+// unlike link validation, which was already correctly scoped — so an ordinary
+// prose bullet elsewhere in the file, shaped like "- [T1] was covered in an
+// earlier session", registered T1 as a defined node and masked a genuinely
+// dangling link. The control case (same file minus the stray bullet) proves
+// the check does fire without it.
+test('memory-integrity.mjs: a node id is only recognised inside a Nodes section, not from a stray prose bullet (found in a further pass)', () => {
+  const dir = mkTmp('gru-mi-nodescope-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const withStrayBullet =
+    '## Notes\n- [T1] was covered in an earlier session; see PROGRESS.md for the full history.\n\n' +
+    '## Nodes\n- [R1] requirement: users can log in {tags: auth}\n\n' +
+    '## Links\n- T1 implements R1\n';
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), withStrayBullet);
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a stray prose bullet must not count as a node definition: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => /undefined node "T1"/.test(p)), 'T1 was never defined under ## Nodes and must be flagged as dangling');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('memory-integrity.mjs: control — the same graph WITH T1 properly defined under Nodes is clean', () => {
+  const dir = mkTmp('gru-mi-nodescope-ctrl-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const properlyDefined =
+    '## Nodes\n- [T1] task: a\n- [R1] requirement: users can log in {tags: auth}\n\n' +
+    '## Links\n- T1 implements R1\n';
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), properlyDefined);
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `T1 properly defined under ## Nodes must validate: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('memory-integrity.mjs: a stale non-ASCII or markdown-link INDEX cell is still caught (2026-07-19 audit fix)', () => {
   // LOOKS_LIKE_PATH_RE previously used ASCII-only \w for the extension form
   // and only otherwise caught cells containing a literal "/" — so a bare
@@ -1951,6 +2027,97 @@ test('session-start.mjs: a literal "false" string value no longer falsely trigge
   const r = runSessionStart(dir, cleanEphemeralEnv({ CLAUDE_CODE_WEB: 'false' }));
   assert.ok(r.context && !/cloud\/ephemeral session/i.test(r.context), 'CLAUDE_CODE_WEB=false must not trigger the ephemeral note');
   fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-26, found during a further pass — auto-update.mjs had NO tests at
+// all before this. Two distinct bugs, both against a real local git remote:
+// (1) the pull used to run detached with no result checking whatsoever, so the
+// script reported success before the child process had necessarily even
+// started; (2) even made synchronous, `git pull --rebase --autostash` exits 0
+// when the autostash POP leaves real conflict markers in a file — the rebase
+// itself (a clean fast-forward) is what the exit code reflects, the stash-pop
+// conflict is not. auto-update.mjs resolves its "studioRoot" as three levels
+// above its own __dirname (matching the real plugins/gru953-studio/hooks/
+// layout), so testing the actual file means recreating that same depth rather
+// than patching the path-resolution logic, which would test different code.
+// ---------------------------------------------------------------------------
+// `git clone <src> <dest>` refuses a non-empty `<dest>`, so the plugin-depth
+// scaffolding (plugins/gru953-studio/hooks/auto-update.mjs) must be added
+// AFTER cloning, not before — cloning into a directory that already contains
+// that scaffolding silently fails, leaving `dest` without a .git folder at
+// all, and auto-update.mjs then reports "not a git repo" instead of running
+// the scenario the test intends. (Caught while writing this test: the first
+// version had the steps in the wrong order and every case silently exercised
+// the wrong branch.)
+function addAutoUpdateScaffolding(top) {
+  const hooksDir = path.join(top, 'plugins', 'gru953-studio', 'hooks');
+  fs.mkdirSync(hooksDir, { recursive: true });
+  const scriptPath = path.join(hooksDir, 'auto-update.mjs');
+  fs.copyFileSync(path.join(HERE, 'auto-update.mjs'), scriptPath);
+  return scriptPath;
+}
+function runAutoUpdate(scriptPath) {
+  const r = spawnSync(NODE, [scriptPath, '--force'], { encoding: 'utf8' });
+  return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+}
+
+test('auto-update.mjs: a clean fast-forward is applied and reported as success', () => {
+  const bareDir = mkTmp('gru-au-bare-');
+  git(['init', '-q', '--bare', '-b', 'main'], bareDir);
+  const seedDir = mkTmp('gru-au-seed-');
+  git(['clone', '-q', bareDir, seedDir], mkTmp('gru-au-cwd-'));
+  fs.writeFileSync(path.join(seedDir, 'file.txt'), 'hello\n');
+  git(['add', '-A'], seedDir);
+  git(['commit', '-q', '-m', 'init'], seedDir);
+  git(['push', '-q', '-u', 'origin', 'main'], seedDir);
+  fs.appendFileSync(path.join(seedDir, 'file.txt'), 'update\n');
+  git(['commit', '-aq', '-m', 'remote change'], seedDir);
+  git(['push', '-q'], seedDir);
+
+  const top = mkTmp('gru-au-top-');
+  git(['clone', '-q', bareDir, top], mkTmp('gru-au-cwd2-'));
+  git(['reset', '-q', '--hard', 'HEAD~1'], top); // behind by one commit, no local edits
+  const scriptPath = addAutoUpdateScaffolding(top);
+
+  const r = runAutoUpdate(scriptPath);
+  assert.equal(r.code, 0, `a clean update must succeed: ${r.stdout} ${r.stderr}`);
+  assert.match(r.stdout, /applied successfully/i);
+  assert.equal(fs.readFileSync(path.join(top, 'file.txt'), 'utf8'), 'hello\nupdate\n');
+  fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
+});
+
+test('auto-update.mjs: a conflicting local edit is reported as a FAILURE, not silently left with conflict markers (2026-07-26 finding)', () => {
+  const bareDir = mkTmp('gru-au-bare2-');
+  git(['init', '-q', '--bare', '-b', 'main'], bareDir);
+  const seedDir = mkTmp('gru-au-seed2-');
+  git(['clone', '-q', bareDir, seedDir], mkTmp('gru-au-cwd3-'));
+  fs.writeFileSync(path.join(seedDir, 'file.txt'), 'hello\n');
+  git(['add', '-A'], seedDir);
+  git(['commit', '-q', '-m', 'init'], seedDir);
+  git(['push', '-q', '-u', 'origin', 'main'], seedDir);
+  fs.appendFileSync(path.join(seedDir, 'file.txt'), 'update\n');
+  git(['commit', '-aq', '-m', 'remote change'], seedDir);
+  git(['push', '-q'], seedDir);
+
+  const top = mkTmp('gru-au-top2-');
+  git(['clone', '-q', bareDir, top], mkTmp('gru-au-cwd4-'));
+  git(['reset', '-q', '--hard', 'HEAD~1'], top);
+  // Uncommitted local edit to the SAME line the remote change touches.
+  fs.appendFileSync(path.join(top, 'file.txt'), 'LOCAL UNCOMMITTED CONFLICTING EDIT\n');
+  const scriptPath = addAutoUpdateScaffolding(top);
+
+  const r = runAutoUpdate(scriptPath);
+  assert.equal(r.code, 1, `a conflicting update must be reported as a failure, not exit 0: ${r.stdout} ${r.stderr}`);
+  const combined = r.stdout + r.stderr;
+  assert.match(combined, /did NOT apply cleanly/i);
+  assert.match(combined, /file\.txt/, 'the conflicted file must be named');
+  // The point of the whole fix: the script must not claim success while the
+  // file it just touched contains raw conflict markers.
+  assert.doesNotMatch(combined, /applied successfully/i);
+  const fileContent = fs.readFileSync(path.join(top, 'file.txt'), 'utf8');
+  assert.match(fileContent, /<<<<<<</, 'the repro must genuinely produce conflict markers, or this test proves nothing');
+  fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
 });
 
 test('dashboard.mjs: no Dev-Memory is a no-op, exit 0', () => {
@@ -2830,6 +2997,43 @@ test('licence-scan.mjs: a pnpm-layout copyleft dependency (symlinked direct dep)
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26, found during a further pass over the newer (2026-07-25)
+// lockfile-based npm scanning, which had no test coverage at all. A
+// lockfileVersion 1 package-lock.json (npm 5/6 — dependencies nested under
+// "dependencies", not the flat "packages" map npm 7+ introduced) defaulted
+// `packages` to `{}` and still reported checked:true — so a real GPL
+// dependency recorded in a v1 lockfile with no node_modules present was
+// examined zero times while the gate said clean.
+test('licence-scan.mjs: a lockfileVersion 1 package-lock.json is honestly INCOMPLETE, not false-clean (found in a further pass)', () => {
+  const dir = mkTmp('gru-lic-npmv1-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"x","version":"1.0.0","dependencies":{"gpl-thing":"1.0.0"}}');
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), JSON.stringify({
+    name: 'x', version: '1.0.0', lockfileVersion: 1, requires: true,
+    dependencies: {
+      'gpl-thing': { version: '1.0.0', resolved: 'https://registry.npmjs.org/gpl-thing/-/gpl-thing-1.0.0.tgz', license: 'GPL-3.0-only' },
+    },
+  }));
+  const r = runScript('licence-scan.mjs', dir);
+  assert.notEqual(r.json.status, 'clean', `a v1 lockfile must not be silently reported clean: ${r.stdout}`);
+  assert.ok(r.json.notChecked.some((n) => n.ecosystem === 'npm'), 'npm must appear in notChecked, not be silently skipped');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('licence-scan.mjs: a lockfileVersion 2+ (npm 7+) lockfile is still scanned normally (no regression)', () => {
+  const dir = mkTmp('gru-lic-npmv2-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"x","version":"1.0.0","dependencies":{"gpl-thing":"1.0.0"}}');
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), JSON.stringify({
+    name: 'x', version: '1.0.0', lockfileVersion: 3, requires: true,
+    packages: {
+      '': { name: 'x', version: '1.0.0' },
+      'node_modules/gpl-thing': { version: '1.0.0', license: 'GPL-3.0-only' },
+    },
+  }));
+  const r = runScript('licence-scan.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a real v2/v3 lockfile scan must still catch a GPL dependency: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('gate.mjs: gh api create-from-template also needs the go-public token (2026-07-21 Round 3 fix)', () => {
   const dir = mkTmp('gru-gate-gen-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
@@ -2845,6 +3049,19 @@ test('traceability-check.mjs: a met requirement whose own row admits it is faili
   const r = runScript('traceability-check.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /marked met but its own row|currently failing\/unverified/i.test(p)), 'the contradiction branch must fire');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26, found during a further pass after fixing the same bug class in
+// verify-progress.mjs. CONTRADICTION_RE only matched bare "exit N" (a single
+// space, then digits directly), so "exit code 1" — the ordinary way to phrase
+// it — never matched, and a Met requirement whose evidence documents a failing
+// exit code was accepted clean.
+test('traceability-check.mjs: "exit code N" phrasing is caught, not just bare "exit N" (found in a further pass)', () => {
+  const dir = mkTmp('gru-trace-exitcode-');
+  writeReq(dir, REQ_HEADER + '| R1 | Users can log in | 1 | T1 | Ran npm test - exit code 1, 3 failing | met |\n', PROG_HEADER + '| T1 | login | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `"exit code 1" must be recognised as a contradiction: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
