@@ -35,7 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom } from './lib.mjs';
 
 // The required Definition-of-Done dimensions. Each must appear as at least one
 // row in QUALITY-GATE.md whose Item cell contains the keyword, marked pass (with
@@ -96,8 +96,19 @@ const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 const CONTRADICTION_RE = /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
+// 2026-07-26, audit finding 26. Strips a leading UTF-8 byte-order mark before
+// parsing. Checked precisely rather than assumed: this file's own table-row
+// test (`/^\s*\|/`) turns out to ALREADY tolerate a BOM, because JavaScript's
+// `\s` character class matches U+FEFF — verified by execution, both with and
+// without this stripBom() call, on the exact same BOM-prefixed fixture. So
+// this is deliberate hardening, not a demonstrated-bug fix: it stops the
+// file's correctness depending on that accidental regex quirk, which a future
+// tightening of the row-detection pattern (a very plausible refactor) could
+// silently break. (Two OTHER files DID have a real, reproduced BOM bug —
+// memory-integrity.mjs and dashboard.mjs both use a STRICT `^#` heading
+// regex with no `\s*` prefix, which a BOM genuinely defeats.)
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
 // Parse the FIRST markdown table in the file whose header has both an

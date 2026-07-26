@@ -22,7 +22,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { isPushCapable } from './lib.mjs';
-import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages } from './licence-scan.mjs';
+import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages, resolveExecutable } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -576,6 +576,37 @@ test('repo-integrity.mjs: the actual repo is clean (locks in current good state)
   assert.equal(r.json && r.json.status, 'clean', `expected clean, got: ${r.stdout}`);
 });
 
+// 2026-07-26 audit finding 9 (MAJOR — a Windows checkout fails every single
+// role/skill at once). repo-integrity.mjs's frontmatter reader was LF-only,
+// so on a CRLF-encoded checkout — the default outcome of git's
+// core.autocrlf=true on Windows, and there was no .gitattributes preventing
+// it — every one of the 38 agents and 35 skills was reported as missing its
+// `name:` frontmatter. Simulates that checkout by re-encoding every tracked
+// markdown file to CRLF, matching what git itself would have produced.
+function toCrlf(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) { toCrlf(full); continue; }
+    if (!entry.name.endsWith('.md')) continue;
+    const text = fs.readFileSync(full, 'utf8');
+    fs.writeFileSync(full, text.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
+  }
+}
+
+test('repo-integrity.mjs: a CRLF-encoded checkout (the Windows default) is still clean (2026-07-26 finding 9)', () => {
+  const dir = mkTmp('gru-repointeg-crlf-');
+  copyRepoTo(dir);
+  toCrlf(dir);
+  // Prove the fixture actually IS CRLF, or this test proves nothing.
+  const sample = fs.readFileSync(path.join(dir, 'plugins', 'gru953-studio', 'agents', 'architect.md'), 'utf8');
+  assert.match(sample, /\r\n/, 'the fixture must genuinely be CRLF-encoded');
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a CRLF checkout must parse identically to an LF one: ${r.stdout}`);
+  assert.equal(r.json.agentCount, 38, 'all 38 agents must still be recognised, not reported missing frontmatter');
+  assert.equal(r.json.skillCount, 35, 'all 35 skills must still be recognised');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by an earlier correct one', () => {
   const dir = mkTmp('gru-repointeg-mask-');
   copyRepoTo(dir);
@@ -956,6 +987,35 @@ test('licence-scan.mjs findPubCacheRoot: respects the PUB_CACHE override before 
   }
 });
 
+// 2026-07-26 audit finding 3 (MAJOR — a gate that silently passes). The
+// entry-point guard at the bottom of licence-scan.mjs compared raw strings:
+// `fileURLToPath(import.meta.url) === path.resolve(process.argv[1])`. Node
+// resolves symlinks when setting import.meta.url for the running module, but
+// leaves argv[1] exactly as the caller typed it — so invoking the script
+// through a symlink (a case that requires no special OS at all; verified on
+// Linux) made the two sides differ, main() was never called, and the process
+// exited 0 having printed nothing. That is the same underlying defect as the
+// Windows drive-letter-case scenario the audit describes (a raw string
+// comparison where the two sides can legitimately differ while pointing at
+// the same file) and is the part of it this sandbox can actually execute and
+// prove; the Windows-specific case difference is proven by the Windows leg of
+// the CI matrix added in this same change, not by a string test here.
+test('licence-scan.mjs: still runs when invoked through a symlink, not just the direct path (2026-07-26 finding 3)', () => {
+  // A directory with NO dependency manifest at all, so the genuinely correct
+  // verdict is a specific, known "clean" reason — the point of this test is
+  // only whether main() runs at all, not any particular scanning behaviour.
+  const dir = mkTmp('gru-lic-symlink-target-');
+  const linkDir = mkTmp('gru-lic-symlink-link-');
+  const linkPath = path.join(linkDir, 'licence-scan-via-symlink.mjs');
+  fs.symlinkSync(path.join(HERE, 'licence-scan.mjs'), linkPath, process.platform === 'win32' ? 'file' : undefined);
+  const r = spawnSync(NODE, [linkPath, dir], { encoding: 'utf8' });
+  assert.notEqual(r.stdout.trim(), '', `main() must actually run and print a verdict, not silently exit with nothing (stderr: ${r.stderr})`);
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.status, 'clean', `an empty directory has nothing to flag: ${r.stdout}`);
+  assert.equal(r.status, 0);
+  fs.rmSync(dir, RM_OPTS); fs.rmSync(linkDir, RM_OPTS);
+});
+
 // 2026-07-26, found during a further pass over licence-scan.mjs. Git/path
 // sourced Dart packages were filtered out of scanDartFlutter's hosted-package
 // loop and never looked at again, while the function still reported
@@ -984,6 +1044,45 @@ test('licence-scan.mjs classifyNonHostedDartPackages: git/path-sourced packages 
 test('licence-scan.mjs classifyNonHostedDartPackages: an all-hosted package list needs no review', () => {
   const findings = classifyNonHostedDartPackages([{ name: 'my_app', source: 'root' }, { name: 'a', source: 'hosted' }, { name: 'b', source: 'hosted' }]);
   assert.deepEqual(findings, [], 'nothing to flag when every real dependency is hosted');
+});
+
+// 2026-07-26 audit finding 8. execFileSync() (no shell) does not reliably
+// search PATHEXT on Windows, so a tool installed as a .cmd/.bat shim (how
+// pip wraps a console entry point there) silently degraded that ecosystem to
+// "not checked". resolveExecutable() takes platform/PATH/PATHEXT as
+// parameters specifically so the resolution ALGORITHM can be verified by
+// execution on any OS — real Windows spawn behaviour itself is what the
+// Windows leg of the CI matrix (added in this same change) proves, since a
+// Linux sandbox cannot fake that.
+test('licence-scan.mjs resolveExecutable: on non-Windows, the name passes through untouched', () => {
+  assert.equal(resolveExecutable('dart', 'linux'), 'dart');
+  assert.equal(resolveExecutable('dart', 'darwin'), 'dart');
+});
+
+test('licence-scan.mjs resolveExecutable: on Windows, finds a .cmd shim that a bare name lookup would miss', () => {
+  const binDir = mkTmp('gru-lic-resolveexe-');
+  // A real Windows PATH entry would hold something like pip-licenses.cmd —
+  // recreate that shape; extensions are just filename characters on any OS,
+  // so this can be built and inspected here even though this sandbox is Linux.
+  fs.writeFileSync(path.join(binDir, 'pip-licenses.cmd'), '@echo off\r\n');
+  const resolved = resolveExecutable('pip-licenses', 'win32', binDir, '.COM;.EXE;.BAT;.CMD');
+  assert.equal(resolved, path.join(binDir, 'pip-licenses.cmd'), 'must resolve to the actual .cmd file, not the bare unresolved name');
+  fs.rmSync(binDir, RM_OPTS);
+});
+
+test('licence-scan.mjs resolveExecutable: on Windows, a bare executable with no extension resolves to itself when present', () => {
+  const binDir = mkTmp('gru-lic-resolveexe2-');
+  fs.writeFileSync(path.join(binDir, 'cargo.exe'), '');
+  const resolved = resolveExecutable('cargo', 'win32', binDir, '.COM;.EXE;.BAT;.CMD');
+  assert.equal(resolved, path.join(binDir, 'cargo.exe'));
+  fs.rmSync(binDir, RM_OPTS);
+});
+
+test('licence-scan.mjs resolveExecutable: on Windows, an executable nowhere on PATH falls back to the bare name (so execFileSync still fails honestly)', () => {
+  const binDir = mkTmp('gru-lic-resolveexe3-');
+  const resolved = resolveExecutable('totally-nonexistent-tool', 'win32', binDir, '.COM;.EXE;.BAT;.CMD');
+  assert.equal(resolved, 'totally-nonexistent-tool', 'must fall through rather than invent a path, so the eventual ENOENT is honest');
+  fs.rmSync(binDir, RM_OPTS);
 });
 
 test('licence-scan.mjs: with no Dart SDK reachable, a Dart/Flutter project is reported as not-checked, never a crash or a false clean', () => {
@@ -1626,6 +1725,22 @@ test('quality-gate.mjs: a complete DoD (pass + reasoned n/a) is clean', () => {
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26, audit finding 26. NOT a discriminating regression test — checked
+// by execution, and this passes identically with or without the stripBom()
+// hardening in quality-gate.mjs, because `/^\s*\|/`'s `\s*` already tolerates
+// a BOM by accident (JavaScript's `\s` class matches U+FEFF). Kept anyway as a
+// confidence check: it locks in today's correct behaviour, and would start
+// discriminating for real the moment someone tightens that regex (e.g. to a
+// literal `line.startsWith('|')`), which stripBom() is specifically there to
+// protect against.
+test('quality-gate.mjs: a leading byte-order mark does not break table parsing (defense in depth, not a demonstrated bug)', () => {
+  const dir = mkTmp('gru-qg-bom-');
+  writeGate(dir, '﻿' + FULL_DOD);
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json && r.json.status, 'clean', `a BOM-prefixed file must parse identically: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('quality-gate.mjs: a required dimension cannot be hidden by omission', () => {
   const dir = mkTmp('gru-qg-omit-');
   writeGate(dir, FULL_DOD.split('\n').filter((l) => !/Security/.test(l)).join('\n'));
@@ -1710,6 +1825,20 @@ test('traceability-check.mjs: a consistent two-way matrix is clean', () => {
     '| T2 | resume | todo | — |\n');
   const r = runScript('traceability-check.mjs', dir);
   assert.equal(r.json.status, 'clean', `expected clean: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26, audit finding 26. NOT a discriminating regression test (see the
+// identical note on the quality-gate.mjs version of this test, above) — the
+// `\s*` in `/^\s*\|/` already tolerates a BOM by accident. Kept as a
+// confidence check against a future regex tightening.
+test('traceability-check.mjs: a leading byte-order mark does not break table parsing (defense in depth, not a demonstrated bug)', () => {
+  const dir = mkTmp('gru-tr-bom-');
+  writeReq(dir,
+    '﻿' + REQ_HEADER + '| R1 | Pause a task | 1 | T1 | `test_pause` -> exit 0 | met |\n',
+    PROG_HEADER + '| T1 | pause | done | verified: `test_pause` -> exit 0 (2026-07-19) |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a BOM-prefixed REQUIREMENTS.md must parse identically: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -2144,6 +2273,34 @@ test('dashboard.mjs: renders a self-contained, injection-safe HTML page', () => 
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-26 audit finding 26. `docs.objective.match(/^#\s+(.+)$/m)` looks
+// for the project name in OBJECTIVE.md's first heading. A leading UTF-8
+// byte-order mark sits before the `#`, breaking that match — verified by
+// execution — so the project name silently vanished from the rendered page.
+test('dashboard.mjs: a leading byte-order mark in OBJECTIVE.md does not hide the project name (2026-07-26 finding 26)', () => {
+  // A loose "does 'Expense Tracker' appear ANYWHERE in the page" assertion
+  // does not discriminate this bug: OBJECTIVE.md's raw text is ALSO rendered
+  // verbatim in a "Concept" section via mdToHtml(), whose own heading regex is
+  // `\s*#{1,6}` — and in JavaScript, `\s` matches U+FEFF (BOM) too, so that
+  // path tolerates the BOM by accident and renders the heading as <h3>
+  // regardless. The actual bug is in the STRICT `^#\s+` regex used to derive
+  // the page's <h1>/<title> project name, which has no such tolerance. The
+  // assertion has to target that specific element, not the page as a whole,
+  // or it passes even against the unfixed code — caught while writing this
+  // test: the first version of this assertion did exactly that.
+  const dir = mkTmp('gru-db-bom-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '﻿# Expense Tracker\nbrief\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | done thing | done | verified: ok |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written', r.stdout);
+  const html = fs.readFileSync(path.join(dir, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.match(html, /<h1>Expense Tracker<\/h1>/, 'the page HEADING (derived from the strict ^# match) must be the real project name, not the "Your project" fallback');
+  assert.match(html, /<title>Expense Tracker/, 'the page TITLE must also be the real project name');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('dashboard.mjs: Dev-Memory present but PROGRESS.md unreadable is blocked, not a crash', () => {
   const dir = mkTmp('gru-db-noprog-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
@@ -2476,6 +2633,18 @@ test('content-check.mjs: a Bangla-language "text" Medium value does not need alt
   writeContent(dir, CONTENT_HEADER + '| স্বাগতম বার্তা | টেক্সট | Claude bn+en | approved | original | — |\n');
   const r = runScript('content-check.mjs', dir);
   assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-26, audit finding 26. NOT a discriminating regression test (see the
+// identical note on the quality-gate.mjs version of this test) — the `\s*` in
+// `/^\s*\|/` already tolerates a BOM by accident. Kept as a confidence check
+// against a future regex tightening.
+test('content-check.mjs: a leading byte-order mark does not break table parsing (defense in depth, not a demonstrated bug)', () => {
+  const dir = mkTmp('gru-cc-bom-');
+  writeContent(dir, '﻿' + CONTENT_HEADER + '| onboarding | text | Claude bn+en | approved | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a BOM-prefixed CONTENT.md must still parse its table: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -3673,6 +3842,23 @@ function writeProgressRow(dir, evidenceCell) {
     `# Progress\n\n| ID | Task | Status | Evidence |\n| :-- | :-- | :-- | :-- |\n| T1 | Add login | done | ${evidenceCell} |\n`,
   );
 }
+
+// 2026-07-26, audit finding 26. NOT a discriminating regression test (see the
+// identical note on the quality-gate.mjs version of this test) — the `\s*` in
+// `/^\s*\|/` already tolerates a BOM by accident, checked by execution even
+// for this deliberately worst-case fixture (table starting at byte 0, no
+// preceding title). Kept as a confidence check against a future tightening.
+test('verify-progress.mjs: a leading byte-order mark does not break table parsing when the table starts on line 1 (defense in depth, not a demonstrated bug)', () => {
+  const dir = mkTmp('gru-vp-bom-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '﻿| ID | Task | Status | Evidence |\n| :-- | :-- | :-- | :-- |\n| T1 | Add login | done | verified: npm test -> exit 0 |\n',
+  );
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a BOM-prefixed, title-less PROGRESS.md must still parse its table: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
 
 test('verify-progress.mjs: structured evidence recording a FAILED run must block (2026-07-26 finding 1)', () => {
   // The exact reproduction from AUDIT-2026-07.md section 3.1.

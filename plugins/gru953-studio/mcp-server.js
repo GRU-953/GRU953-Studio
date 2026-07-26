@@ -63,7 +63,15 @@ async function getSkills() {
 }
 
 function parseFrontmatter(text) {
-  const m = text.match(/^---\n([\s\S]*?)\n---/);
+  // 2026-07-26 audit finding 9: this was the second (and last) LF-only
+  // frontmatter regex in the tree, alongside repo-integrity.mjs's — fixed for
+  // consistency with that fix and so the audit's "both fixed" claim is true.
+  // No executable test accompanies this: this file cannot be loaded at all
+  // today (finding 10 — ESM import syntax inside a package.json declaring
+  // "type":"commonjs"), and is scheduled for deletion rather than repair
+  // (finding 10/29, decided: it has never worked, is referenced nowhere, and
+  // is the sole reason the "zero third-party dependencies" claim is false).
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return {};
   const lines = m[1].split("\n");
   const result = {};

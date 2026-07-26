@@ -19,6 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { frontmatterBlock } from './lib.mjs';
 
 const repoRoot = process.argv[2] || process.cwd();
 const pluginRoot = path.join(repoRoot, 'plugins', 'gru953-studio');
@@ -33,9 +34,14 @@ function listDir(p) {
 }
 function frontmatterField(text, field) {
   if (!text) return null;
-  const m = text.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const line = m[1].split('\n').find((l) => new RegExp('^' + field + ':').test(l.trim()));
+  // 2026-07-26 audit finding 9: this used to be an LF-only inline regex,
+  // which failed on every single agent and skill at once on a CRLF (Windows)
+  // checkout. Delegated to lib.mjs's frontmatterBlock(), which every hook
+  // that reads frontmatter now shares, so this can't drift out of tolerance
+  // again on its own.
+  const block = frontmatterBlock(text);
+  if (block === null) return null;
+  const line = block.split('\n').find((l) => new RegExp('^' + field + ':').test(l.trim()));
   if (!line) return null;
   let value = line.slice(line.indexOf(':') + 1).trim();
   // 2026-07-11 Round 7 audit fix (dormant, not yet triggered by any

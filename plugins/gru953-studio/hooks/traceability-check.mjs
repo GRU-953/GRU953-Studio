@@ -37,7 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
@@ -69,8 +69,16 @@ const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // alphanumeric decoration, so the anchored REs see the bare status word.
 const deEmphStatus = (s) => String(s == null ? '' : s).replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '').replace(/^[^A-Za-z0-9]+/, '');
 
+// 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
+// fix — checked by execution rather than assumed: this file's table-row test
+// (`/^\s*\|/`) already tolerates a leading BOM by accident, because
+// JavaScript's `\s` class matches U+FEFF. stripBom() stops that correctness
+// depending on the accident, so a future tightening of the row pattern can't
+// silently reintroduce it. (memory-integrity.mjs and dashboard.mjs DID have a
+// real, reproduced BOM bug: both use a strict `^#` heading regex with no
+// `\s*` prefix, which a BOM genuinely defeats.)
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 function idsIn(cell) {
   if (!cell || PLACEHOLDER_RE.test(cell.trim())) return [];

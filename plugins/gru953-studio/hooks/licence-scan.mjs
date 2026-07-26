@@ -175,7 +175,7 @@ function severityRank(v) {
 function scanPython(root) {
   // Try pip-licenses first (most reliable)
   try {
-    const raw = execFileSync('pip-licenses', ['--format=json', '--with-license-file'], {
+    const raw = execFileSync(resolveExecutable('pip-licenses'), ['--format=json', '--with-license-file'], {
       cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
     });
     const pkgs = JSON.parse(raw);
@@ -240,6 +240,52 @@ export function detectLicenceFromText(text) {
   return null;
 }
 
+// 2026-07-26 audit finding 8. execFileSync() runs the named program directly
+// (no shell), which on Windows does not reliably search PATHEXT the way a
+// shell invocation does — a tool installed as a `.cmd` or `.bat` shim (which
+// is how pip and several other installers wrap a console entry point on
+// Windows) is not found by its bare name, and the whole ecosystem silently
+// degraded to "not checked" as a result.
+//
+// This resolves the real executable path — including its extension — before
+// handing it to execFileSync, so the actual binary being launched is never in
+// question. platform/pathEnv/pathExtEnv are parameters (defaulting to the
+// real environment) specifically so this can be unit-tested on any OS: the
+// algorithm itself (walking PATH x PATHEXT, checking the filesystem) is
+// exercised directly and verified by execution, even though the real Windows
+// spawn behaviour this defends against can only be proven by the Windows leg
+// of the CI matrix, not by a Linux sandbox.
+export function resolveExecutable(name, platform = process.platform, pathEnv = process.env.PATH || '', pathExtEnv = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD') {
+  if (platform !== 'win32') return name;
+  const dirs = pathEnv.split(path.delimiter).filter(Boolean);
+  const exts = pathExtEnv.split(';').filter(Boolean);
+  // Candidates compared case-INSENSITIVELY on purpose: real Windows
+  // filesystems fold case, but relying on that here would mean this
+  // algorithm's correctness could only ever be checked by actually running
+  // on Windows. Doing the case-folding ourselves makes the logic verifiably
+  // correct by execution on any OS, matching real Windows behaviour exactly
+  // rather than merely being untestable in the same way it is.
+  const wanted = new Set([name.toLowerCase(), ...exts.map((ext) => (name + ext).toLowerCase())]);
+  for (const dir of dirs) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue; // dir doesn't exist or isn't readable — keep looking elsewhere
+    }
+    for (const entry of entries) {
+      if (!wanted.has(entry.name.toLowerCase())) continue;
+      const full = path.join(dir, entry.name);
+      try {
+        if (fs.statSync(full).isFile()) return full;
+      } catch {
+        // vanished between readdir and stat, or a broken symlink — keep looking
+      }
+    }
+  }
+  return name; // not found anywhere; let execFileSync fail with its own ENOENT
+}
+
 export function findPubCacheRoot() {
   if (process.env.PUB_CACHE) return process.env.PUB_CACHE;
   if (process.platform === 'win32') {
@@ -272,7 +318,7 @@ export function classifyNonHostedDartPackages(packages) {
 function scanDartFlutter(root) {
   let parsed;
   try {
-    const raw = execFileSync('dart', ['pub', 'deps', '--json'], {
+    const raw = execFileSync(resolveExecutable('dart'), ['pub', 'deps', '--json'], {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -377,7 +423,7 @@ export function classifySpdxExpr(expr) {
 function scanCargo(root) {
   let parsed;
   try {
-    const raw = execFileSync('cargo', ['metadata', '--format-version', '1'], {
+    const raw = execFileSync(resolveExecutable('cargo'), ['metadata', '--format-version', '1'], {
       cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
     });
     parsed = JSON.parse(raw);
@@ -526,6 +572,41 @@ function main() {
   process.exit(0);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+// 2026-07-26 audit finding 3 (MAJOR — a gate that silently passes). This used
+// to compare `fileURLToPath(import.meta.url) === path.resolve(process.argv[1])`
+// as plain strings. On Windows, the drive letter can legitimately differ in
+// case between how Node resolved the module (`import.meta.url`) and how the
+// caller typed the invocation (`node C:\repo\...` vs `node c:\repo\...`) —
+// those are the SAME file, but the raw strings don't match, so `main()` was
+// never called: the script exited 0 having printed nothing. A licence gate
+// that silently does nothing is the worst possible failure mode for a check
+// whose entire job is to block a bad publish.
+//
+// Fixed by comparing REALPATHS (via the native syscall, which resolves
+// filesystem case on a case-insensitive volume — the same technique already
+// used for temp-dir resolution in the test harness, for the equivalent macOS
+// symlink issue) rather than raw strings, so a case or symlink difference that
+// still points at the identical file no longer breaks the comparison. Falls
+// back to the original string comparison if either path can't be resolved
+// (e.g. a genuinely different/nonexistent file), so a real mismatch still
+// correctly skips `main()` rather than throwing.
+//
+// This specific Windows drive-letter scenario could not be executed on this
+// Linux sandbox — real path semantics differ per platform and can't be
+// faked with string tests. The Windows leg of the CI matrix added in this
+// same change is what actually proves this guard fires there; the ordinary
+// same-platform invocation is covered by a portable test below, which passes
+// identically on every OS this runs on.
+function isDirectlyInvoked() {
+  if (!process.argv[1]) return false;
+  const modulePath = fileURLToPath(import.meta.url);
+  try {
+    return fs.realpathSync.native(modulePath) === fs.realpathSync.native(process.argv[1]);
+  } catch {
+    return modulePath === path.resolve(process.argv[1]);
+  }
+}
+
+if (isDirectlyInvoked()) {
   main();
 }

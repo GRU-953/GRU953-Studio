@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
@@ -44,8 +44,17 @@ const LOOKS_LIKE_PATH_RE = /(^|\/)[^/\s]+\.[A-Za-z0-9]+$|\//;
 // LOOKS_LIKE_PATH_RE and was silently skipped).
 const MD_LINK_RE = /^\[([^\]]*)\]\(([^)]+)\)$/;
 
+// 2026-07-26 audit finding 26. A leading UTF-8 byte-order mark (three
+// invisible bytes some Windows editors write at the start of a file) breaks
+// every `^`-anchored match against the very first line — here, that's the
+// heading detector this file uses to scope node definitions to `## Nodes`
+// (see the 2026-07-26 node-scoping fix above). Reproduced: a GRAPH.md whose
+// FIRST line is a BOM immediately followed by `## Nodes` failed to recognise
+// that heading at all, so a node genuinely defined there was reported as
+// undefined — a false BLOCK on legitimate data, caused by this file's own
+// fix above interacting badly with an unstripped BOM.
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
 // --- INDEX.md: every path-shaped "where" cell resolves to a real file --------

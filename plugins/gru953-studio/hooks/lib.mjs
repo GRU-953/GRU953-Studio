@@ -118,6 +118,41 @@ export function findStudioRoot(start) {
   }
 }
 
+// ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
+// 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
+// each read frontmatter with `text.match(/^---\n([\s\S]*?)\n---/)` — an
+// LF-only pattern. On a Windows checkout with git's default
+// core.autocrlf=true, every agent and skill file's frontmatter block is
+// CRLF, so this failed to match on ALL 38 agents and 35 skills at once —
+// reported as "missing name: frontmatter" across the board. Verified by
+// execution against a real CRLF-encoded fixture.
+//
+// Every markdown-parsing hook in this project already tolerates CRLF when
+// splitting body lines (`split(/\r?\n/)`); this frontmatter regex and its
+// counterpart in mcp-server.js were the only two LF-only holdouts in the
+// entire tree. Centralised here so future readers get this for free rather
+// than each hand-rolling their own `\r?\n` pattern (which is exactly how the
+// gap opened in the first place — one file's parser was never brought in
+// line with the rest).
+//
+// stripBom() additionally handles the UTF-8 byte-order mark some Windows
+// editors prepend, which would otherwise break the `^---` anchor the same
+// way a CRLF-only regex does — three invisible bytes, same failure shape.
+export function stripBom(text) {
+  return typeof text === 'string' && text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+// Extracts the frontmatter block's raw inner text (the part between the two
+// `---` fences), tolerant of LF, CRLF and a leading BOM. Returns null if there
+// is no frontmatter block at all — distinct from "frontmatter present but a
+// given field is absent", which is frontmatterField()'s job below.
+export function frontmatterBlock(text) {
+  const stripped = stripBom(text);
+  if (!stripped) return null;
+  const m = stripped.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  return m ? m[1] : null;
+}
+
 // ---- push-capable command matcher (fail CLOSED) ------------------------------
 // Shared by scan.mjs and gate.mjs, so the phase gate and the secret scan cover
 // exactly the same command set: a push-capable command cannot slip past one

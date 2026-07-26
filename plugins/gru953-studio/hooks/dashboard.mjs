@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
@@ -45,8 +45,11 @@ const GROUPS = [
   { key: 'done', label: 'Done', match: /^done\b/i },
 ];
 
+// 2026-07-26 audit finding 26: a leading UTF-8 byte-order mark breaks any
+// `^`-anchored heading match against the file's first line (this file uses
+// one to find the project name from OBJECTIVE.md's first `# Heading`).
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 function esc(s) {
   return String(s)

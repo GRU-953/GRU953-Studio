@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom } from './lib.mjs';
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
@@ -52,9 +52,16 @@ const TEXT_ONLY_RE = /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[
 // its sibling quality-gate.mjs already behaves. A gate that cannot read its
 // input must never claim its input is fine.
 const MISSING = Symbol('missing');
+// 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
+// fix — checked by execution rather than assumed: the table-row test below
+// (`/^\s*\|/`) already tolerates a leading BOM by accident, because
+// JavaScript's `\s` class matches U+FEFF. stripBom() stops that correctness
+// depending on the accident. (memory-integrity.mjs and dashboard.mjs DID
+// have a real, reproduced BOM bug: both use a strict `^#` heading regex with
+// no `\s*` prefix, which a BOM genuinely defeats.)
 function read(p) {
   try {
-    return fs.readFileSync(p, 'utf8');
+    return stripBom(fs.readFileSync(p, 'utf8'));
   } catch (e) {
     if (e && e.code === 'ENOENT') return MISSING;
     throw e; // surfaced by main()'s handler as a BLOCKING, explained problem

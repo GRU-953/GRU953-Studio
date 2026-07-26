@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells } from './lib.mjs';
+import { splitPipeCells, stripBom } from './lib.mjs';
 
 function main() {
   const root = process.argv[2] || process.cwd();
@@ -34,7 +34,14 @@ function main() {
     console.log(JSON.stringify({ status: 'no PROGRESS.md found', file }));
     process.exit(0);
   }
-  const text = fs.readFileSync(file, 'utf8');
+  // 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
+  // fix — checked by execution rather than assumed: the table-row test below
+  // (`/^\s*\|/`) already tolerates a leading BOM by accident, because
+  // JavaScript's `\s` class matches U+FEFF. stripBom() stops that correctness
+  // depending on the accident. (memory-integrity.mjs and dashboard.mjs DID
+  // have a real, reproduced BOM bug: both use a strict `^#` heading regex
+  // with no `\s*` prefix, which a BOM genuinely defeats.)
+  const text = stripBom(fs.readFileSync(file, 'utf8'));
   const lines = text.split(/\r?\n/);
   // 2026-07-12 audit fix (MAJOR false-clean, found by execution): matching
   // anywhere on the line let a Notes cell that honestly documents an OLD
