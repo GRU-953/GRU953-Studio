@@ -31,7 +31,7 @@ report concerns responsibly rather than opening a public issue.
 Please report security issues **privately**. Do not open a public issue for a
 suspected vulnerability.
 
-- **Email:** aninda.sh15@gmail.com
+- **Email:** gru953@gmail.com
 
 Include as much detail as you can: affected component, steps to reproduce,
 potential impact, and any proof-of-concept material. Please do not include

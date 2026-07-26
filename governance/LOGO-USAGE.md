@@ -43,7 +43,7 @@ the graphic mark itself is scoped by this policy (see also `TRADEMARKS.md`).
 
 ## Questions or permission requests
 
-Contact Aninda Sundar Howlader (GRU-953) at aninda.sh15@gmail.com.
+Contact GRU-953 at gru953@gmail.com.
 
 ---
 

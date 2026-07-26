@@ -1,0 +1,5 @@
+model-metadata-file: .aider.model.metadata.json
+read:
+  - Dev-Memory/PROGRESS.md
+  - Dev-Memory/PLAN.md
+  - Dev-Memory/REQUIREMENTS.md

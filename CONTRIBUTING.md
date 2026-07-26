@@ -110,4 +110,4 @@ under these terms, with a DCO 1.1 sign-off.
 All participation is governed by our
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Maintainer: **Aninda Sundar Howlader (GRU-953)** — aninda.sh15@gmail.com
+Maintainer: **GRU-953** — gru953@gmail.com

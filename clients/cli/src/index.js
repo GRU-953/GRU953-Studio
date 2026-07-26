@@ -22,8 +22,13 @@ switch (command) {
     case 'resume':
         console.log('Resuming studio...');
         break;
+    case 'init':
+        console.log('Initializing universal platform support...');
+        const { initializeUniversalRules } = require('./universal-init');
+        initializeUniversalRules();
+        break;
     case 'help':
     default:
-        console.log('Usage: gru953-studio [start|status|pause|resume|help]');
+        console.log('Usage: gru953-studio [start|status|pause|resume|init|help]');
         break;
 }

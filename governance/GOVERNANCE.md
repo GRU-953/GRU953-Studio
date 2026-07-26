@@ -49,7 +49,7 @@ of Steering**. The decision and its rationale are recorded publicly.
 
 The project is currently maintained and steered by:
 
-- **Aninda Sundar Howlader (GRU-953)** — Maintainer and Steering.
+- **GRU-953** — Maintainer and Steering.
 
 As the community grows, additional committers and maintainers will be invited
 in line with the roles above.

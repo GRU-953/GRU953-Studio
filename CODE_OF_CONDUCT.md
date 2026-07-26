@@ -55,11 +55,11 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may be
-reported to the project maintainer at **aninda.sh15@gmail.com**. All complaints
+reported to the project maintainer at **gru953@gmail.com**. All complaints
 will be reviewed and investigated promptly and fairly. All community leaders are
 obligated to respect the privacy and security of the reporter of any incident.
 
-> যেকোনো সমস্যা বা অভিযোগ জানাতে aninda.sh15@gmail.com ঠিকানায় ইমেল করুন; GRU953
+> যেকোনো সমস্যা বা অভিযোগ জানাতে gru953@gmail.com ঠিকানায় ইমেল করুন; GRU953
 > সম্প্রদায় আপনার গোপনীয়তা রক্ষা করবে এবং সম্মানের সঙ্গে বিষয়টি দেখবে।
 
 ## Enforcement guidelines

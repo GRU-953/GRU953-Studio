@@ -52,7 +52,7 @@ function isLikelyEphemeral() {
   return false;
 }
 
-function main() {
+async function main() {
   let input = '';
   try { input = readStdin(); } catch { input = ''; }
   const cwd = extractCwd(input) || process.cwd();

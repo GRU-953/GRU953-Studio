@@ -62,7 +62,7 @@ You never write or read a single line of code. You just answer questions, one
 clear pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **34 skills** (the internal playbooks the team follows) · **9 simple
+roles** · **35 skills** (the internal playbooks the team follows) · **10 simple
 commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
 and CI integrity checks) · **zero third-party code
 dependencies**.
@@ -239,7 +239,7 @@ recognised licence.
 
 **Selling something built with it?** Commercial use (including apps you build with
 GRU953-Studio and then sell) needs a separate paid licence — see
-[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md), or email **aninda.sh15@gmail.com**.
+[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md), or email **gru953@gmail.com**.
 
 > **A note on the GitHub licence label.** GitHub's automatic licence detector only
 > recognises the licences in its built-in catalogue, which does not include
@@ -271,7 +271,7 @@ it as your own.
 
 ## About
 
-Made by [Aninda Sundar Howlader](https://github.com/GRU-953) — for people who have
+Made by [GRU-953](https://github.com/GRU-953) — for people who have
 a real idea and just want the software part handled for them, simply and honestly.
 GRU953-Studio is actively maintained: every release is checked against Anthropic's
 own official documentation, and the team of specialists grows only when a real,
