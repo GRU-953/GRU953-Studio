@@ -40,6 +40,6 @@
     "@typescript-eslint/parser": "^5.59.1",
     "cross-env": "^10.1.0",
     "eslint": "^8.39.0",
-    "typescript": "^5.0.4"
+    "typescript": "^7.0.2"
   }
 }
