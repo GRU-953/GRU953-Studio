@@ -31,15 +31,15 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint src --ext ts"
+    "lint": "eslint src"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",
     "@types/node": "16.x",
-    "@typescript-eslint/eslint-plugin": "^5.59.1",
-    "@typescript-eslint/parser": "^5.59.1",
-    "cross-env": "^10.1.0",
-    "eslint": "^8.39.0",
-    "typescript": "^5.0.4"
+    "@eslint/js": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "eslint": "^10.8.0",
+    "typescript": "^6.0.3"
   }
 }
