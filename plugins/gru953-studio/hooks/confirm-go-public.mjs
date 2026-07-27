@@ -26,7 +26,11 @@ function main() {
   const start = process.argv[2] || process.cwd();
   const studioRoot = findStudioRoot(start);
   if (studioRoot === null) {
-    process.stderr.write('confirm-go-public: no Dev-Memory folder found up the tree from ' + start + ' — nothing to confirm.\n');
+    process.stderr.write(
+      'confirm-go-public: no Dev-Memory folder found up the tree from ' +
+        start +
+        ' — nothing to confirm.\n',
+    );
     process.exit(1);
   }
   const token = crypto.createHash('sha256').update(`studio-go-public:${studioRoot}`).digest('hex');
@@ -43,8 +47,14 @@ function main() {
   // 2026-07-26 audit fix: was a bare writeFileSync (reproduced: EISDIR with a
   // raw stack trace when the target is a directory instead of a file — see
   // lib.mjs's writeConfirmationRecordOrExit for the full reproduction).
-  writeConfirmationRecordOrExit(record, `STUDIO-GO-PUBLIC-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'confirm-go-public');
-  process.stdout.write('confirm-go-public: recorded go-public confirmation for ' + studioRoot + '\n');
+  writeConfirmationRecordOrExit(
+    record,
+    `STUDIO-GO-PUBLIC-CONFIRMED:${token}\nISSUED:${Date.now()}\n`,
+    'confirm-go-public',
+  );
+  process.stdout.write(
+    'confirm-go-public: recorded go-public confirmation for ' + studioRoot + '\n',
+  );
 }
 
 main();

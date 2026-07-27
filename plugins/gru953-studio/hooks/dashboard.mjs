@@ -57,7 +57,11 @@ const GROUPS = [
 // `^`-anchored heading match against the file's first line (this file uses
 // one to find the project name from OBJECTIVE.md's first `# Heading`).
 function read(p) {
-  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
+  try {
+    return stripBom(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 function esc(s) {
   return String(s)
@@ -79,10 +83,14 @@ function groupOf(status) {
 // engine (YAGNI) — just enough to render the studio's own structured files in
 // an organised, readable way without ever trusting their text as HTML.
 function inlineMd(s) {
-  return String(s).split(/(`[^`]+`)/g).map((p) => {
-    if (p.length >= 2 && p.startsWith('`') && p.endsWith('`')) return `<code>${esc(p.slice(1, -1))}</code>`;
-    return esc(p);
-  }).join('');
+  return String(s)
+    .split(/(`[^`]+`)/g)
+    .map((p) => {
+      if (p.length >= 2 && p.startsWith('`') && p.endsWith('`'))
+        return `<code>${esc(p.slice(1, -1))}</code>`;
+      return esc(p);
+    })
+    .join('');
 }
 function tableCells(row) {
   const cells = splitPipeCells(row);
@@ -94,7 +102,12 @@ function mdToHtml(md) {
   const lines = String(md).split(/\r?\n/);
   const out = [];
   let listType = null;
-  const closeList = () => { if (listType) { out.push(`</${listType}>`); listType = null; } };
+  const closeList = () => {
+    if (listType) {
+      out.push(`</${listType}>`);
+      listType = null;
+    }
+  };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/^\s*#{1,6}\s+/.test(line)) {
@@ -105,19 +118,43 @@ function mdToHtml(md) {
     } else if (/^\s*\|/.test(line)) {
       closeList();
       const block = [];
-      while (i < lines.length && /^\s*\|/.test(lines[i])) { block.push(lines[i]); i++; }
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        block.push(lines[i]);
+        i++;
+      }
       i--;
       const rows = block.filter((r) => !SEPARATOR_ROW_RE.test(r));
       if (rows.length) {
-        out.push('<table><thead><tr>' + tableCells(rows[0]).map((h) => `<th scope="col">${inlineMd(h)}</th>`).join('') + '</tr></thead><tbody>');
-        for (const r of rows.slice(1)) out.push('<tr>' + tableCells(r).map((c) => `<td>${inlineMd(c)}</td>`).join('') + '</tr>');
+        out.push(
+          '<table><thead><tr>' +
+            tableCells(rows[0])
+              .map((h) => `<th scope="col">${inlineMd(h)}</th>`)
+              .join('') +
+            '</tr></thead><tbody>',
+        );
+        for (const r of rows.slice(1))
+          out.push(
+            '<tr>' +
+              tableCells(r)
+                .map((c) => `<td>${inlineMd(c)}</td>`)
+                .join('') +
+              '</tr>',
+          );
         out.push('</tbody></table>');
       }
     } else if (/^\s*[-*]\s+/.test(line)) {
-      if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; }
+      if (listType !== 'ul') {
+        closeList();
+        out.push('<ul>');
+        listType = 'ul';
+      }
       out.push(`<li>${inlineMd(line.replace(/^\s*[-*]\s+/, ''))}</li>`);
     } else if (/^\s*\d+\.\s+/.test(line)) {
-      if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; }
+      if (listType !== 'ol') {
+        closeList();
+        out.push('<ol>');
+        listType = 'ol';
+      }
       out.push(`<li>${inlineMd(line.replace(/^\s*\d+\.\s+/, ''))}</li>`);
     } else if (/^\s*$/.test(line)) {
       closeList();
@@ -143,9 +180,17 @@ function parseFirstTable(text) {
   const rows = [];
   let inTable = false;
   for (const line of lines) {
-    if (!/^\s*\|/.test(line)) { if (headers) break; inTable = false; continue; }
+    if (!/^\s*\|/.test(line)) {
+      if (headers) break;
+      inTable = false;
+      continue;
+    }
     const cells = tableCells(line);
-    if (!inTable) { inTable = true; headers = cells; continue; }
+    if (!inTable) {
+      inTable = true;
+      headers = cells;
+      continue;
+    }
     if (SEPARATOR_ROW_RE.test(line)) continue;
     rows.push(cells);
   }
@@ -174,18 +219,26 @@ function renderBoard(projectName, docs, table, boardText) {
   // untouched; only the rendered pill list gains the group it was always
   // supposed to show.
   const pillGroups = [...GROUPS, { key: 'other', label: 'Other' }];
-  const summary = pillGroups.filter((g) => counts[g.key] > 0)
-    .map((g) => `<li class="pill ${g.key}"><span class="n">${counts[g.key]}</span> ${esc(g.label)}</li>`)
+  const summary = pillGroups
+    .filter((g) => counts[g.key] > 0)
+    .map(
+      (g) =>
+        `<li class="pill ${g.key}"><span class="n">${counts[g.key]}</span> ${esc(g.label)}</li>`,
+    )
     .join('');
 
   const headCells = table.headers.map((h) => `<th scope="col">${esc(h)}</th>`).join('');
-  const bodyRows = table.rows.map((r) => {
-    const cls = groupOf(statusIdx === -1 ? '' : r[statusIdx]);
-    const cells = table.headers.map((_, i) => `<td>${esc(r[i] || '')}</td>`).join('');
-    return `<tr class="row-${cls}">${cells}</tr>`;
-  }).join('\n');
+  const bodyRows = table.rows
+    .map((r) => {
+      const cls = groupOf(statusIdx === -1 ? '' : r[statusIdx]);
+      const cells = table.headers.map((_, i) => `<td>${esc(r[i] || '')}</td>`).join('');
+      return `<tr class="row-${cls}">${cells}</tr>`;
+    })
+    .join('\n');
 
-  const board = boardText ? `<section class="board"><h2>Status board</h2><pre>${esc(boardText)}</pre></section>` : '';
+  const board = boardText
+    ? `<section class="board"><h2>Status board</h2><pre>${esc(boardText)}</pre></section>`
+    : '';
   const tableSection = total
     ? `<table><caption>All tasks (${total})</caption><thead><tr>${headCells}</tr></thead><tbody>\n${bodyRows}\n</tbody></table>`
     : `<p class="empty">No tasks are recorded yet.</p>`;
@@ -270,12 +323,28 @@ function main() {
   // full reproduction (a crash instead of a plain message if Dev-Memory
   // disappears between the two calls).
   if (!isDirectory(devMemory)) {
-    console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to render', root }));
+    console.log(
+      JSON.stringify({
+        status: 'not a studio project',
+        reason: 'no Dev-Memory/ directory — nothing to render',
+        root,
+      }),
+    );
     process.exit(0);
   }
   const progText = read(path.join(devMemory, 'PROGRESS.md'));
   if (progText === null) {
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: 'Dev-Memory/ exists but PROGRESS.md is unreadable — nothing to render', root }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: 'Dev-Memory/ exists but PROGRESS.md is unreadable — nothing to render',
+          root,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   const docs = {
@@ -298,14 +367,31 @@ function main() {
   try {
     fs.writeFileSync(outFile, html);
   } catch (e) {
-    console.log(JSON.stringify({
-      status: 'BLOCKED',
-      reason: `could not write the dashboard to ${outFile}: ${formatFsError(e)}`,
-      fix: 'Check that the Dev-Memory folder is writable — not read-only, and the disk is not full — then run this again.',
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: `could not write the dashboard to ${outFile}: ${formatFsError(e)}`,
+          fix: 'Check that the Dev-Memory folder is writable — not read-only, and the disk is not full — then run this again.',
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
-  console.log(JSON.stringify({ status: 'written', file: outFile, tasks: table.rows.length, sections: Object.keys(docs).filter((k) => docs[k] !== null) }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        status: 'written',
+        file: outFile,
+        tasks: table.rows.length,
+        sections: Object.keys(docs).filter((k) => docs[k] !== null),
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 

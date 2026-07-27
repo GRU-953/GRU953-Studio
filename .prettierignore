@@ -1,0 +1,10 @@
+# hooks.test.mjs is excluded deliberately, not by oversight: it is slated for
+# a structural split into hooks/test/{unit,e2e,static}/ in a later round of
+# the audit programme, and reformatting a 4,900+ line file twice (once now,
+# once again during that split) is pure unrelated diff churn with no benefit.
+# It still gets linted (see eslint.config.mjs) — only the reformat is deferred.
+plugins/gru953-studio/hooks/hooks.test.mjs
+
+# npm-managed packages format themselves independently.
+clients/
+node_modules/

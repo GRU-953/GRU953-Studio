@@ -1,0 +1,33 @@
+name: CodeQL
+
+# Separate from ci.yml on purpose: CodeQL needs its own `security-events:
+# write` permission (broader than CI needs) and reports to the Security tab
+# rather than blocking a merge — the standard split. Scans the plugin's own
+# hook scripts and all three clients/ bridges; JavaScript covers both plain
+# .js and .mjs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, independent of any push, so a newly-disclosed CodeQL query
+    # still catches an existing pattern nobody has touched recently.
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: github/codeql-action/init@4187e74d05793876e9989daffde9c3e66b4acd07 # v3.37.3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@4187e74d05793876e9989daffde9c3e66b4acd07 # v3.37.3
+        with:
+          category: '/language:javascript-typescript'

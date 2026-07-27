@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Root repo-tooling manifest (ESLint, Prettier — dev-only, never shipped).
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+
+  # The three clients/ bridges each have their own lockfile and are
+  # independent npm packages, not part of the plugin's zero-dependency
+  # runtime (see CONTRIBUTING.md's "A note on dependencies").
+  - package-ecosystem: 'npm'
+    directory: '/clients/cli'
+    schedule:
+      interval: 'weekly'
+  - package-ecosystem: 'npm'
+    directory: '/clients/antigravity'
+    schedule:
+      interval: 'weekly'
+  - package-ecosystem: 'npm'
+    directory: '/clients/vscode'
+    schedule:
+      interval: 'weekly'
+
+  # The floating-tag risk this whole programme flagged applies to Dependabot
+  # itself as much as to hand-written workflows — keep the pinned actions in
+  # ci.yml and codeql.yml current.
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'

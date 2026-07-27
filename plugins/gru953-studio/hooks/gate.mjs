@@ -38,7 +38,18 @@ import path from 'node:path';
 import process from 'node:process';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck, LEXICAL_BOUNDARY, tokenConfirmedWithinTtl } from './lib.mjs';
+import {
+  allow,
+  deny,
+  readStdin,
+  extractCommand,
+  extractCwd,
+  findStudioRoot,
+  isPushCapable,
+  normalizeForPushCheck,
+  LEXICAL_BOUNDARY,
+  tokenConfirmedWithinTtl,
+} from './lib.mjs';
 
 // 2026-07-12 Claude-Topics compliance fix: the deny() messages below used to
 // embed the literal, un-substituted text "${CLAUDE_PLUGIN_ROOT}" — Claude
@@ -51,7 +62,11 @@ import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isP
 // process DOES have it set (same export), so resolve it once here and
 // interpolate the real value, with a fallback computed from this file's own
 // location in case the env var is ever unset for some other invocation path.
-const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || process.env.ANTIGRAVITY_PLUGIN_ROOT || process.env.PLUGIN_ROOT || path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const PLUGIN_ROOT =
+  process.env.CLAUDE_PLUGIN_ROOT ||
+  process.env.ANTIGRAVITY_PLUGIN_ROOT ||
+  process.env.PLUGIN_ROOT ||
+  path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 // 2026-07-12 Round 7 audit fix (real TOCTOU gap, found by direct code
 // reading, not a text-obfuscation bypass — a different bug class): neither
@@ -135,8 +150,10 @@ function isGoPublicCommand(rawC) {
   // public|internal fields are in the go-public set), so a private-scope token
   // (including a routine checkpoint) must not authorise `gh repo create --internal`.
   // `--private` stays out (the studio's own publish uses `gh repo create --private`).
-  const repoVisibility = /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
-    (new RegExp(`--(public|internal)['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) || /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
+  const repoVisibility =
+    /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?repo['"]?[ \t]+['"]?(create|edit)['"]?/i.test(c) &&
+    (new RegExp(`--(public|internal)['"]?${LEXICAL_BOUNDARY}`, 'i').test(c) ||
+      /--visibility['"]?[ \t=]+['"]?(public|internal)['"]?/i.test(c));
   // 2026-07-21 audit fix: the same visibility change performed via `gh api` (the
   // raw REST interface) — e.g. `gh api -X PATCH repos/me/app -f visibility=public`,
   // `-F private=false`, or an inline JSON body `{"visibility":"public"}`.
@@ -154,8 +171,12 @@ function isGoPublicCommand(rawC) {
   // and it previously slipped past the go-public gate (a public change authorised on
   // the private-publish token). Mirrors isPushCapable's `[ \t=]` field-flag tolerance.
   const FIELD = `(?:-[fF]|--field|--raw-field)[ \\t=]*['"]?`;
-  const apiExplicitPublic = new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?(public|internal)`, 'i').test(c) || new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(false|0|no)\\b`, 'i').test(c);
-  const apiExplicitPrivate = new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(true|1|yes)\\b`, 'i').test(c) || new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?private`, 'i').test(c);
+  const apiExplicitPublic =
+    new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?(public|internal)`, 'i').test(c) ||
+    new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(false|0|no)\\b`, 'i').test(c);
+  const apiExplicitPrivate =
+    new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(true|1|yes)\\b`, 'i').test(c) ||
+    new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?private`, 'i').test(c);
   // 2026-07-21 Round 2 fix: GitHub's REST default for repo creation is
   // `private:false` = PUBLIC, so a `gh api` write to a repo-creation endpoint
   // (/user/repos or orgs/<org>/repos) with visibility OMITTED still makes a public
@@ -165,7 +186,8 @@ function isGoPublicCommand(rawC) {
   // POST /repos/<owner>/<template>/generate (create-from-template), whose `private`
   // default is also false = PUBLIC — the Round 2 fix covered only /user/repos and
   // orgs/<org>/repos.
-  const apiRepoCreate = /\/?(user\/repos|orgs\/[^ \t/'"]+\/repos|repos\/[^ \t/'"]+\/[^ \t/'"]+\/generate)\b/i.test(c);
+  const apiRepoCreate =
+    /\/?(user\/repos|orgs\/[^ \t/'"]+\/repos|repos\/[^ \t/'"]+\/[^ \t/'"]+\/generate)\b/i.test(c);
   const apiVisibility = isGhApi && (apiExplicitPublic || (apiRepoCreate && !apiExplicitPrivate));
   return repoVisibility || apiVisibility;
 }
@@ -253,17 +275,25 @@ function main() {
     if (goPublicConfirmed(STUDIO_ROOT)) {
       allow();
     }
-    deny(`studio gate: refusing to change visibility to public — going public is a separate, explicit step from the private publish. Record it by running "node \\"${PLUGIN_ROOT}/hooks/confirm-go-public.mjs\\"" from the project root, only after the user has explicitly confirmed via its own pop-up (distinct from the private-publish confirmation).`);
+    deny(
+      `studio gate: refusing to change visibility to public — going public is a separate, explicit step from the private publish. Record it by running "node \\"${PLUGIN_ROOT}/hooks/confirm-go-public.mjs\\"" from the project root, only after the user has explicitly confirmed via its own pop-up (distinct from the private-publish confirmation).`,
+    );
   }
 
   // An ordinary (private) push is allowed by a publish confirmation, a per-phase
   // checkpoint confirmation, OR an opt-in memory-persistence confirmation. All
   // three are private-only: the go-public gate above has already run and is
   // unaffected by any of them.
-  if (publishConfirmed(STUDIO_ROOT) || checkpointConfirmed(STUDIO_ROOT) || memoryPersistConfirmed(STUDIO_ROOT)) {
+  if (
+    publishConfirmed(STUDIO_ROOT) ||
+    checkpointConfirmed(STUDIO_ROOT) ||
+    memoryPersistConfirmed(STUDIO_ROOT)
+  ) {
     allow();
   }
-  deny(`studio gate: refusing to push — this is a studio project but no push authorisation (publish or per-phase checkpoint) has been recorded. Pushing happens only after it is confirmed; record a publish by running "node \\"${PLUGIN_ROOT}/hooks/confirm-publish.mjs\\"" (reach the Publish stage or run /studio-publish first), or a per-phase backup checkpoint by running "node \\"${PLUGIN_ROOT}/hooks/confirm-checkpoint.mjs\\"" once the phase's quality gate is clean. Both write a project-bound record and authorise a PRIVATE push only.`);
+  deny(
+    `studio gate: refusing to push — this is a studio project but no push authorisation (publish or per-phase checkpoint) has been recorded. Pushing happens only after it is confirmed; record a publish by running "node \\"${PLUGIN_ROOT}/hooks/confirm-publish.mjs\\"" (reach the Publish stage or run /studio-publish first), or a per-phase backup checkpoint by running "node \\"${PLUGIN_ROOT}/hooks/confirm-checkpoint.mjs\\"" once the phase's quality gate is clean. Both write a project-bound record and authorise a PRIVATE push only.`,
+  );
 }
 
 main();

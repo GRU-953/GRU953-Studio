@@ -38,6 +38,25 @@ can say what the active task is, never authorise skipping a live confirmation
 (the same rule `project-lead` applies to every memory file). `memory-keeper`
 owns writing it, with the same secrets-scan-before-write as every memory file.
 
+The four bold-labelled lines below are the literal, on-disk shape — the exact
+field names and the `activePhase` value are the same ones
+`dev-memory/schemas/FOCUS.schema.json` names, so `hooks/memory-integrity.mjs`
+can check a real file against that schema (2026-07-27, closing the gap left
+when the schema was added with no format documented anywhere for it to check
+against):
+
+```
+**Objective:** Ship a working MVP that lets users book a table online.
+**Active phase:** Build
+**Active task:** T4 — wire the booking form to the availability API
+**Top constraints:** Tier: Standard; no new dependency without approval; money-handling paths need negative-path tests
+```
+
+`Active phase` must be one of the schema's documented lifecycle phases
+(`Brainstorm`/`Ideate`/`Design`/`Prototype`/`Content`/`Plan`/`Build`/`Test`/`Fix`/`Review`/`Publish`/`Maintain`);
+`Top constraints` is the 2-5 hard rules, semicolon-separated on one line since
+none of them legitimately contain a semicolon themselves.
+
 ## The re-orientation ritual (session start AND every stage boundary)
 
 **At the start of a new session**, this ritual IS `dev-memory`'s own five-file

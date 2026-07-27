@@ -26,7 +26,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 let ROLES;
 try {
   ROLES = new Set(
-    fs.readdirSync(path.join(HERE, '..', 'agents'))
+    fs
+      .readdirSync(path.join(HERE, '..', 'agents'))
       .filter((f) => f.endsWith('.md'))
       .map((f) => f.replace(/\.md$/, '')),
   );
@@ -38,7 +39,9 @@ function shortRoleName(name) {
   // Agent tool names a plugin-shipped subagent "<plugin>:<role>" — match on
   // the part after the colon, if present, so this works whether the caller
   // passed the qualified or bare form.
-  const bare = String(name || '').split(':').pop();
+  const bare = String(name || '')
+    .split(':')
+    .pop();
   return ROLES.has(bare) ? bare : null;
 }
 
@@ -56,7 +59,8 @@ for (const t of tasks) {
   const role = shortRoleName(t && t.name);
   if (!role || !t.id) continue; // not one of ours — leave default rendering
   const label = role.replace(/-/g, ' ');
-  const status = t.status === 'completed' ? 'done' : t.status === 'running' ? 'working' : String(t.status || '');
+  const status =
+    t.status === 'completed' ? 'done' : t.status === 'running' ? 'working' : String(t.status || '');
   let line = `GRU953-Studio — ${label} (${status})`;
   if (line.length > columns) line = line.slice(0, Math.max(0, columns - 1)) + '…';
   process.stdout.write(JSON.stringify({ id: t.id, content: line }) + '\n');

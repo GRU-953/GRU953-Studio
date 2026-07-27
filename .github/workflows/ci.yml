@@ -13,17 +13,38 @@ jobs:
     name: Static checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
+      - name: Install repo dev tooling (ESLint, Prettier — dev-only, never shipped; see CONTRIBUTING.md)
+        run: npm ci
+      # 2026-08 audit round 1, Phase 1.1: this and the two steps below deliver
+      # tooling a prior audit programme approved but never shipped. Scoped to
+      # plugins/gru953-studio/hooks/ — the clients/ bridges already carry
+      # their own separate lint setup, run in the `clients` job below.
+      - name: Lint hook scripts (ESLint)
+        run: npm run lint
+      - name: Check hook script formatting (Prettier)
+        run: npm run format:check
+      - name: Syntax-check every script, not just the hooks (.mjs and .js, repo-wide)
+        shell: bash
+        run: |
+          set -e
+          find . -path ./node_modules -prune -o \
+                 -path '*/node_modules' -prune -o \
+                 -path './clients' -prune -o \
+                 \( -name '*.mjs' -o -name '*.js' \) -print | while read -r f; do
+            node --check "$f" && echo "$f OK"
+          done
       - name: Validate JSON files parse
         run: |
           for f in .claude-plugin/marketplace.json \
                    plugins/gru953-studio/.claude-plugin/plugin.json \
-                   plugins/gru953-studio/hooks/hooks.json; do
+                   plugins/gru953-studio/hooks/hooks.json \
+                   package.json; do
             node -e "JSON.parse(require('fs').readFileSync('$f','utf8')); console.log('$f OK')"
           done
       - name: Required files present
@@ -74,10 +95,10 @@ jobs:
           - { os: macos-latest,   node: '22' }
           - { os: windows-latest, node: '22' }
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ matrix.node }}
       # Windows runners default the `run:` shell to PowerShell, not bash —
@@ -112,8 +133,8 @@ jobs:
       matrix:
         package: [cli, antigravity, vscode]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
       - name: Install dependencies

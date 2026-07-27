@@ -30,7 +30,17 @@ import crypto from 'node:crypto';
 // correct form in a .mjs file.
 import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
-import { allow, deny, readStdin, extractCommand, extractCwd, findStudioRoot, isPushCapable, normalizeForPushCheck, tokenConfirmedWithinTtl } from './lib.mjs';
+import {
+  allow,
+  deny,
+  readStdin,
+  extractCommand,
+  extractCwd,
+  findStudioRoot,
+  isPushCapable,
+  normalizeForPushCheck,
+  tokenConfirmedWithinTtl,
+} from './lib.mjs';
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
 // skill and confirm-memory-persist.mjs). When this project-bound token is
@@ -92,7 +102,9 @@ function extractForceAddPathspecs(cmd) {
     const m = /(?:^|[^A-Za-z0-9_])add(?:[ \t]|$)/.exec(seg);
     if (!m) continue;
     // a force flag: --force, or a short-flag cluster containing 'f' (-f, -Af, -fA)
-    const hasForce = /(?:^|[ \t])--force(?:[ \t=]|$)/.test(seg) || /(?:^|[ \t])-[A-Za-z]*f[A-Za-z]*(?:[ \t]|$)/.test(seg);
+    const hasForce =
+      /(?:^|[ \t])--force(?:[ \t=]|$)/.test(seg) ||
+      /(?:^|[ \t])-[A-Za-z]*f[A-Za-z]*(?:[ \t]|$)/.test(seg);
     if (!hasForce) continue;
     const hasAll = /(?:^|[ \t])(?:--all|-[A-Za-z]*A[A-Za-z]*)(?:[ \t]|$)/.test(seg);
     let sawDashDash = false;
@@ -107,12 +119,18 @@ function extractForceAddPathspecs(cmd) {
     // by normalizeForPushCheck before this runs — the disclosed normaliser boundary.)
     for (const raw of seg.slice(m.index + m[0].length).match(/"[^"]*"|'[^']*'|[^\s'"]+/g) || []) {
       let tok = raw;
-      if ((tok.startsWith('"') && tok.endsWith('"')) || (tok.startsWith("'") && tok.endsWith("'"))) {
+      if (
+        (tok.startsWith('"') && tok.endsWith('"')) ||
+        (tok.startsWith("'") && tok.endsWith("'"))
+      ) {
         tok = tok.slice(1, -1);
       }
       tok = tok.trim();
       if (!tok) continue;
-      if (!sawDashDash && tok === '--') { sawDashDash = true; continue; }
+      if (!sawDashDash && tok === '--') {
+        sawDashDash = true;
+        continue;
+      }
       if (!sawDashDash && tok.startsWith('-')) continue; // an option, not a pathspec
       specs.push(tok);
       anyPath = true;
@@ -136,7 +154,8 @@ function redact(type = 'unknown', file = '', line = '0') {
 // ---- git helper --------------------------------------------------------------
 function git(args, cwd, encoding = 'utf8') {
   const r = spawnSync('git', args, { cwd, encoding, maxBuffer: 1024 * 1024 * 256 });
-  if (r.error) return { status: 1, stdout: encoding === 'buffer' ? Buffer.alloc(0) : '', ok: false };
+  if (r.error)
+    return { status: 1, stdout: encoding === 'buffer' ? Buffer.alloc(0) : '', ok: false };
   return { status: r.status, stdout: r.stdout, ok: r.status === 0 };
 }
 
@@ -155,7 +174,8 @@ function strIsTextish(s) {
   let ok = 0;
   for (let k = 0; k < s.length; k++) {
     const c = s.charCodeAt(k);
-    if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126) || (c >= 0xa0 && c !== 0xfffd)) ok++;
+    if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126) || (c >= 0xa0 && c !== 0xfffd))
+      ok++;
   }
   return ok / s.length >= 0.85;
 }
@@ -281,15 +301,23 @@ function main() {
       .filter((s) => s.length > 0);
   const fileSet = new Set();
   for (const p of nulParts(git(['ls-files', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
-  for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
-  for (const p of nulParts(git(['ls-files', '--others', '--exclude-standard', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
+  for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout))
+    fileSet.add(p);
+  for (const p of nulParts(
+    git(['ls-files', '--others', '--exclude-standard', '-z'], REPO, 'buffer').stdout,
+  ))
+    fileSet.add(p);
   // 2026-07-21 Round 13 audit fix (HIGH): if THIS command force-adds ignored
   // files (`git add -f <path>` / `git add -A -f`), include the gitignored files
   // it would stage — otherwise a compound add+commit+push ships them unscanned.
   // Scoped to the force-add pathspecs, so a normal push (and a force-add of a
   // single file) never sweeps in unrelated ignored trees such as node_modules.
   for (const spec of extractForceAddPathspecs(CMD)) {
-    const out = git(['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', spec], REPO, 'buffer');
+    const out = git(
+      ['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', spec],
+      REPO,
+      'buffer',
+    );
     if (out.ok) for (const p of nulParts(out.stdout)) fileSet.add(p);
   }
   const FILES = Array.from(fileSet).sort();
@@ -318,7 +346,8 @@ function main() {
   // 2026-07-10 audit fix (MINOR): sk-[A-Za-z0-9]{20,} required contiguous
   // alphanumerics right after "sk-", missing today's hyphenated key formats
   // (sk-ant-api03-..., sk-proj-...). Loosened to tolerate internal hyphens.
-  const SECRET_RE = /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+  const SECRET_RE =
+    /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
   // 2026-07-11 fix (found live, pushing this very repo): this project's own
   // test fixtures (hooks.test.mjs) deliberately embed a realistic-looking
   // fake secret (AWS's own reserved "EXAMPLE"-suffixed placeholder key) so
@@ -347,7 +376,8 @@ function main() {
   // actually be quoted eliminates this whole class of false positive
   // without losing real detections (every example in this file's own
   // security review used a quoted literal).
-  const SECRETVAR_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
+  const SECRETVAR_RE =
+    /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
   // 2026-07-26 further-pass audit fix (false-allow, confirmed by execution):
   // no `/i` flag, and — unlike DEVMEMORY_RE just below, whose case
   // sensitivity is explained and deliberate — nothing here says this was on
@@ -393,7 +423,8 @@ function main() {
       if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(i + 1));
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          addFinding('secret', file, String(i + 1));
         if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(i + 1));
       }
     }
@@ -424,7 +455,8 @@ function main() {
       let n;
       const scanLine = (ln) => {
         lineNo++;
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret', file, String(lineNo));
+        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          addFinding('secret', file, String(lineNo));
         if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(lineNo));
       };
       while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
@@ -492,7 +524,24 @@ function main() {
     // reflects only the checkout, so both paths missed them). `--branches --tags
     // HEAD --not --remotes` is the finite superset of every pushable local ref not
     // already on a remote (HEAD kept explicitly to cover a detached-HEAD push).
-    const r = git(['log', '-p', '-m', '-U0', '--no-color', '--no-textconv', '--text', '--branches', '--tags', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    const r = git(
+      [
+        'log',
+        '-p',
+        '-m',
+        '-U0',
+        '--no-color',
+        '--no-textconv',
+        '--text',
+        '--branches',
+        '--tags',
+        'HEAD',
+        '--not',
+        '--remotes',
+      ],
+      REPO,
+      'buffer',
+    );
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     let file = '(unpushed history)';
     // 2026-07-21 Round 8 fix: parse the unified diff with minimal state instead of
@@ -539,7 +588,8 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(content, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split(String.fromCharCode(0)).join('\n').split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-history', file, '0');
+          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+            addFinding('secret-history', file, '0');
           if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
         }
       }
@@ -548,11 +598,23 @@ function main() {
       // Each `diff --git` starts a NEW file's diff, so flush the file just ended
       // (its added content is scanned under the previous `file` name); the final
       // file is flushed after the loop.
-      if (raw.startsWith('diff --git ')) { flushHistory(); inHunk = false; afterMinusHeader = false; continue; }
-      if (raw.startsWith('@@')) { inHunk = true; afterMinusHeader = false; continue; }
+      if (raw.startsWith('diff --git ')) {
+        flushHistory();
+        inHunk = false;
+        afterMinusHeader = false;
+        continue;
+      }
+      if (raw.startsWith('@@')) {
+        inHunk = true;
+        afterMinusHeader = false;
+        continue;
+      }
       if (!inHunk) {
         // pre-hunk header region: the only place `--- `/`+++ ` are real file headers
-        if (raw.startsWith('--- a/') || raw.startsWith('--- /dev/null')) { afterMinusHeader = true; continue; }
+        if (raw.startsWith('--- a/') || raw.startsWith('--- /dev/null')) {
+          afterMinusHeader = true;
+          continue;
+        }
         if (afterMinusHeader && raw.startsWith('+++ ')) {
           afterMinusHeader = false;
           file = raw.slice(4).replace(/^b\//, '').replace(/\t.*$/, '');
@@ -560,7 +622,8 @@ function main() {
           // file or Dev-Memory path committed then removed is still caught in history.
           if (file !== '/dev/null') {
             if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
-            if (DEVMEMORY_RE.test(file) && !allowDevMemory) addFinding('dev-memory-history', file, '0');
+            if (DEVMEMORY_RE.test(file) && !allowDevMemory)
+              addFinding('dev-memory-history', file, '0');
           }
           continue;
         }
@@ -581,7 +644,20 @@ function main() {
   const scanCommitMessages = () => {
     // %H<NUL>%B<RS> per commit: NUL splits sha from the (possibly multi-line) body,
     // RS (0x1e) separates records — neither occurs in a git commit message.
-    const r = git(['log', '--no-color', '--format=%H%x00%B%x1e', '--branches', '--tags', 'HEAD', '--not', '--remotes'], REPO, 'buffer');
+    const r = git(
+      [
+        'log',
+        '--no-color',
+        '--format=%H%x00%B%x1e',
+        '--branches',
+        '--tags',
+        'HEAD',
+        '--not',
+        '--remotes',
+      ],
+      REPO,
+      'buffer',
+    );
     if (!r.ok || !r.stdout || r.stdout.length === 0) return;
     const RS = String.fromCharCode(30);
     const Z = String.fromCharCode(0);
@@ -594,7 +670,8 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(message, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-commit-message', sha, '0');
+          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+            addFinding('secret-commit-message', sha, '0');
           if (SECRETVAR_RE.test(ln)) addFinding('secret-var-commit-message', sha, '0');
         }
       }
@@ -609,8 +686,17 @@ function main() {
   // a branch — is not detected as a tag push, so its message is not scanned.)
   const scanTagMessages = () => {
     const norm = normalizeForPushCheck(CMD);
-    if (!(/(?:^|[ \t])--tags(?![A-Za-z0-9_])/.test(norm) || /(?:^|[ \t])--follow-tags(?![A-Za-z0-9_])/.test(norm) || /(?:^|[ \t])--mirror(?![A-Za-z0-9_])/.test(norm) || /refs\/tags\//.test(norm))) return;
-    const listing = git(['for-each-ref', '--format=%(objecttype) %(refname:short)', 'refs/tags'], REPO);
+    if (!(
+      /(?:^|[ \t])--tags(?![A-Za-z0-9_])/.test(norm) ||
+      /(?:^|[ \t])--follow-tags(?![A-Za-z0-9_])/.test(norm) ||
+      /(?:^|[ \t])--mirror(?![A-Za-z0-9_])/.test(norm) ||
+      /refs\/tags\//.test(norm)
+    ))
+      return;
+    const listing = git(
+      ['for-each-ref', '--format=%(objecttype) %(refname:short)', 'refs/tags'],
+      REPO,
+    );
     if (!listing.ok || !listing.stdout) return;
     for (const line of listing.stdout.split('\n')) {
       const sp = line.indexOf(' ');
@@ -625,7 +711,8 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(msg.stdout, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER)) addFinding('secret-tag-message', tag, '0');
+          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+            addFinding('secret-tag-message', tag, '0');
           if (SECRETVAR_RE.test(ln)) addFinding('secret-var-tag-message', tag, '0');
         }
       }
@@ -679,18 +766,27 @@ function main() {
           } finally {
             fs.closeSync(fd0);
           }
-        } catch { /* fall through to the streaming path below */ }
+        } catch {
+          /* fall through to the streaming path below */
+        }
 
         if (head2 && head2[0] === 0x1f && head2[1] === 0x8b) {
           try {
             const packed = fs.readFileSync(abs);
-            const inflated = zlib.gunzipSync(packed, { maxOutputLength: MAX_PACKED_INFLATED_BYTES });
+            const inflated = zlib.gunzipSync(packed, {
+              maxOutputLength: MAX_PACKED_INFLATED_BYTES,
+            });
             if (bufIsTextish(inflated)) {
               scanText(inflated.toString('utf8'), f);
               continue;
             }
-          } catch { /* not valid gzip, or exceeded the output cap — fall through */ }
-        } else if (head2 && ((head2[0] === 0xff && head2[1] === 0xfe) || (head2[0] === 0xfe && head2[1] === 0xff))) {
+          } catch {
+            /* not valid gzip, or exceeded the output cap — fall through */
+          }
+        } else if (
+          head2 &&
+          ((head2[0] === 0xff && head2[1] === 0xfe) || (head2[0] === 0xfe && head2[1] === 0xff))
+        ) {
           try {
             const littleEndian = head2[0] === 0xff;
             const packed = fs.readFileSync(abs);
@@ -703,7 +799,9 @@ function main() {
                 continue;
               }
             }
-          } catch { /* fall through */ }
+          } catch {
+            /* fall through */
+          }
         }
       }
       // Do NOT silently skip on size: stream-scan the file instead (a large
@@ -778,7 +876,10 @@ function main() {
       // case; a UTF-16 file with NO byte-order mark remains out of scope and
       // stays disclosed, because guessing at unmarked wide encodings is how
       // false positives on genuine binaries start.
-      if (buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff))) {
+      if (
+        buf.length >= 2 &&
+        ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff))
+      ) {
         const littleEndian = buf[0] === 0xff;
         const body = Buffer.from(buf.subarray(2));
         if (body.length % 2 === 0) {
@@ -814,7 +915,9 @@ function main() {
   // "redacted to type+location" — i.e. promising exactly this information.
   // On a repo with many files this left no lead on where to look. Now
   // included, still secret-safe (redact() never emits the matched value).
-  deny(`studio scan: refusing to push — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set. Findings (redacted to type+location, never the actual value):\n${findings.join('\n')}\nRemove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.`);
+  deny(
+    `studio scan: refusing to push — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set. Findings (redacted to type+location, never the actual value):\n${findings.join('\n')}\nRemove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.`,
+  );
 }
 
 main();

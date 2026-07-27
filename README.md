@@ -80,7 +80,7 @@ you want, and every language specialist's toolkit names the real command
 that produces a finished, installable app. See
 [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
 
-Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.), bringing the skill count to 35. Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE).
+Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.). Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). (2026-07-27 fix: this line used to say v4.5.0 brought "the skill count to 35" — the real count at that point was 34; the current, correct count is stated once, above, as "35 skills.")
 
 ---
 

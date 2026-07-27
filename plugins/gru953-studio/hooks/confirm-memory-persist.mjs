@@ -37,16 +37,29 @@ function main() {
   const start = process.argv[2] || process.cwd();
   const studioRoot = findStudioRoot(start);
   if (studioRoot === null) {
-    process.stderr.write('confirm-memory-persist: no Dev-Memory folder found up the tree from ' + start + ' — nothing to confirm.\n');
+    process.stderr.write(
+      'confirm-memory-persist: no Dev-Memory folder found up the tree from ' +
+        start +
+        ' — nothing to confirm.\n',
+    );
     process.exit(1);
   }
-  const token = crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex');
+  const token = crypto
+    .createHash('sha256')
+    .update(`studio-memory-persist:${studioRoot}`)
+    .digest('hex');
   const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
   // 2026-07-26 audit fix: was a bare writeFileSync (reproduced: EISDIR with a
   // raw stack trace when the target is a directory instead of a file — see
   // lib.mjs's writeConfirmationRecordOrExit for the full reproduction).
-  writeConfirmationRecordOrExit(record, `STUDIO-MEMORY-PERSIST-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'confirm-memory-persist');
-  process.stdout.write('confirm-memory-persist: recorded memory-persistence authorisation for ' + studioRoot + '\n');
+  writeConfirmationRecordOrExit(
+    record,
+    `STUDIO-MEMORY-PERSIST-CONFIRMED:${token}\nISSUED:${Date.now()}\n`,
+    'confirm-memory-persist',
+  );
+  process.stdout.write(
+    'confirm-memory-persist: recorded memory-persistence authorisation for ' + studioRoot + '\n',
+  );
 }
 
 main();

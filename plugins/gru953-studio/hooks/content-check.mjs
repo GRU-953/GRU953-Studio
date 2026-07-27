@@ -37,7 +37,8 @@ const APPROVED_RE = /^\s*(approved|yes|pass(ed)?|ok|done|signed[ -]?off|human|fi
 // unless its Medium is explicitly, recognisably TEXT (in English or
 // Bangla) — ambiguous or foreign-language values default to requiring it,
 // never to silently skipping it.
-const TEXT_ONLY_RE = /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[- ]?text\b|in-app[- ]?text\b|টেক্সট|লেখা|কপি)/i;
+const TEXT_ONLY_RE =
+  /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[- ]?text\b|in-app[- ]?text\b|টেক্সট|লেখা|কপি)/i;
 
 // 2026-07-26 audit finding 6 (fail-OPEN). This returned null for BOTH "the file
 // isn't there" and "the file is there but I couldn't read it", and main() treats
@@ -73,7 +74,9 @@ function cells(line) {
   if (c.length && c[c.length - 1].trim() === '') c.pop();
   return c.map((x) => x.trim());
 }
-function ph(s) { return PLACEHOLDER_RE.test(String(s || '').trim()); }
+function ph(s) {
+  return PLACEHOLDER_RE.test(String(s || '').trim());
+}
 
 function main() {
   const root = process.argv[2] || process.cwd();
@@ -85,7 +88,13 @@ function main() {
   // two threw a raw stack trace instead of this project's own plain-English
   // contract. isDirectory() makes this one guarded call.
   if (!isDirectory(devMemory)) {
-    console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }));
+    console.log(
+      JSON.stringify({
+        status: 'not a studio project',
+        reason: 'no Dev-Memory/ directory — nothing to check',
+        root,
+      }),
+    );
     process.exit(0);
   }
   const contentPath = path.join(devMemory, 'CONTENT.md');
@@ -95,18 +104,30 @@ function main() {
   } catch (e) {
     // 2026-07-26 audit finding 6: fail CLOSED, and say why in plain English so
     // the user can act on it rather than guess.
-    console.log(JSON.stringify({
-      status: 'BLOCKED',
-      reason: 'CONTENT.md exists but could not be read, so its assets cannot be checked for approval, provenance, rights and alt-text',
-      file: 'Dev-Memory/CONTENT.md',
-      detail: `${e.code || 'read error'}: ${e.message}`,
-      fix: 'Make Dev-Memory/CONTENT.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason:
+            'CONTENT.md exists but could not be read, so its assets cannot be checked for approval, provenance, rights and alt-text',
+          file: 'Dev-Memory/CONTENT.md',
+          detail: `${e.code || 'read error'}: ${e.message}`,
+          fix: 'Make Dev-Memory/CONTENT.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   if (text === MISSING) {
     // No content declared — a project may legitimately have none.
-    console.log(JSON.stringify({ status: 'clean', reason: 'no CONTENT.md — no generated content declared for this project' }));
+    console.log(
+      JSON.stringify({
+        status: 'clean',
+        reason: 'no CONTENT.md — no generated content declared for this project',
+      }),
+    );
     process.exit(0);
   }
 
@@ -144,9 +165,14 @@ function main() {
         // "Alt/Caption" (and other slash/space-joined synonyms) — the anchored
         // single-word regex rejected it, so content-check blocked every media
         // asset that DID carry a caption. See content-creation/SKILL.md's template.
-        alt: find(/^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i),
+        alt: find(
+          /^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i,
+        ),
       };
-      if (found.asset !== -1 || found.medium !== -1) { idx = found; contentTableCaptured = true; } // the content table's columns
+      if (found.asset !== -1 || found.medium !== -1) {
+        idx = found;
+        contentTableCaptured = true;
+      } // the content table's columns
       continue;
     }
     if (SEPARATOR_ROW_RE.test(line)) continue;
@@ -158,28 +184,56 @@ function main() {
   const problems = [];
   if (rows.length === 0) {
     // CONTENT.md exists but has no readable asset table — treat as incomplete.
-    problems.push('CONTENT.md has no recognisable content table (need columns for asset, medium, source/provenance, approved, rights).');
+    problems.push(
+      'CONTENT.md has no recognisable content table (need columns for asset, medium, source/provenance, approved, rights).',
+    );
   }
   for (const r of rows) {
-    const name = (idx.asset !== -1 && r[idx.asset]) || (idx.medium !== -1 && r[idx.medium]) || 'asset';
-    const medium = idx.medium !== -1 ? (r[idx.medium] || '') : '';
-    const approved = idx.approved !== -1 ? (r[idx.approved] || '') : '';
-    const source = idx.source !== -1 ? (r[idx.source] || '') : '';
-    const rights = idx.rights !== -1 ? (r[idx.rights] || '') : '';
-    const alt = idx.alt !== -1 ? (r[idx.alt] || '') : '';
+    const name =
+      (idx.asset !== -1 && r[idx.asset]) || (idx.medium !== -1 && r[idx.medium]) || 'asset';
+    const medium = idx.medium !== -1 ? r[idx.medium] || '' : '';
+    const approved = idx.approved !== -1 ? r[idx.approved] || '' : '';
+    const source = idx.source !== -1 ? r[idx.source] || '' : '';
+    const rights = idx.rights !== -1 ? r[idx.rights] || '' : '';
+    const alt = idx.alt !== -1 ? r[idx.alt] || '' : '';
 
-    if (idx.approved === -1 || !APPROVED_RE.test(approved)) problems.push(`content "${name}": not approved (status "${approved || '(none)'}") — every shipped asset needs a recorded approval.`);
-    if (idx.source === -1 || ph(source)) problems.push(`content "${name}": no provenance recorded — which model/prompt made it, or that a human supplied it.`);
-    if (idx.rights === -1 || ph(rights)) problems.push(`content "${name}": no rights/licence note — AI-generated or sourced media needs a plain rights note.`);
+    if (idx.approved === -1 || !APPROVED_RE.test(approved))
+      problems.push(
+        `content "${name}": not approved (status "${approved || '(none)'}") — every shipped asset needs a recorded approval.`,
+      );
+    if (idx.source === -1 || ph(source))
+      problems.push(
+        `content "${name}": no provenance recorded — which model/prompt made it, or that a human supplied it.`,
+      );
+    if (idx.rights === -1 || ph(rights))
+      problems.push(
+        `content "${name}": no rights/licence note — AI-generated or sourced media needs a plain rights note.`,
+      );
     const isTextOnly = idx.medium !== -1 && TEXT_ONLY_RE.test(medium.trim());
-    if (!isTextOnly && (idx.alt === -1 || ph(alt))) problems.push(`content "${name}": media asset has no alt-text/caption/transcript — required for accessibility.`);
+    if (!isTextOnly && (idx.alt === -1 || ph(alt)))
+      problems.push(
+        `content "${name}": media asset has no alt-text/caption/transcript — required for accessibility.`,
+      );
   }
 
   if (problems.length === 0) {
-    console.log(JSON.stringify({ status: 'clean', reason: 'every recorded content asset has approval, provenance, rights and (for media) alt-text', assets: rows.length }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'clean',
+          reason:
+            'every recorded content asset has approval, provenance, rights and (for media) alt-text',
+          assets: rows.length,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
-  console.log(JSON.stringify({ status: 'BLOCKED', reason: 'content manifest incomplete', problems }, null, 2));
+  console.log(
+    JSON.stringify({ status: 'BLOCKED', reason: 'content manifest incomplete', problems }, null, 2),
+  );
   process.exit(1);
 }
 

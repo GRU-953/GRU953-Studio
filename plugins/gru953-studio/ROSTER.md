@@ -151,8 +151,32 @@ that floor — cost stays a decision, now per task, not only per role.
 
 ## v4.5.0 update (2026-07-26): Universal Agentic Protocol
 
-Added `skills/universal-platform-integration/SKILL.md` (expanding total skills to 35 — corrected 2026-07-26: this said "34," one short of the real post-this-addition count, verified directly by counting `skills/*/` on disk) enabling deployment across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q). Baseline role count stands at 38 roles (role count: 38).
+Added `skills/universal-platform-integration/SKILL.md`, enabling deployment
+across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin,
+Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q).
+Baseline role count stands at 38 roles (role count: 38). (2026-07-27 fix: this
+entry and the two below used to each state a running "total skills" figure —
+33, then 34, then a same-day "correction" to 34/35. Both original figures were
+historically accurate for the moment each was written; the correction was
+wrong, and it happened because a *different*, real defect — the entry below for
+`devops-engineer` never having been recorded at all — made the two existing
+figures look inconsistent with today's real count when they weren't. The
+running total is dropped from these entries entirely rather than re-derived a
+third time: the current skill count lives in exactly one place, `README.md`'s
+"35 skills," so a historical narrative line can never again be mistaken for a
+live count claim.)
 
 ## v4.4.0 update (2026-07-26): Google Antigravity Support
 
-Added `skills/google-antigravity-integration/SKILL.md` (expanding total skills to 34 — corrected 2026-07-26: this said "33," one short of the real post-this-addition count, for the same reason as the entry above) enabling full Google Antigravity (AGY SDK & Gemini Antigravity IDE) runtime execution alongside Claude Code. Baseline role count stands at 38 roles (role count: 38).
+Added `skills/google-antigravity-integration/SKILL.md`, enabling full Google
+Antigravity (AGY SDK & Gemini Antigravity IDE) runtime execution alongside
+Claude Code. Baseline role count stands at 38 roles (role count: 38).
+
+## v4.3.x update (2026-07-25): DevOps & Reliability
+
+Added `skills/devops-engineer/SKILL.md` — the protocol for the `devops-engineer`
+role (see the roster table above), covering the built app's build/package/
+deploy pipeline and its live-running reliability once shipped. Never recorded
+here until the 2026-07-27 fix above — this was the actual gap the "total
+skills" mismatch was a symptom of. Baseline role count stands at 38 roles
+(role count: 38).

@@ -23,7 +23,11 @@ function main() {
   const start = process.argv[2] || process.cwd();
   const studioRoot = findStudioRoot(start);
   if (studioRoot === null) {
-    process.stderr.write('confirm-publish: no Dev-Memory folder found up the tree from ' + start + ' — nothing to confirm.\n');
+    process.stderr.write(
+      'confirm-publish: no Dev-Memory folder found up the tree from ' +
+        start +
+        ' — nothing to confirm.\n',
+    );
     process.exit(1);
   }
   const token = crypto.createHash('sha256').update(`studio-publish:${studioRoot}`).digest('hex');
@@ -44,7 +48,11 @@ function main() {
   // 2026-07-26 audit fix: was a bare writeFileSync (reproduced: EISDIR with a
   // raw stack trace when the target is a directory instead of a file — see
   // lib.mjs's writeConfirmationRecordOrExit for the full reproduction).
-  writeConfirmationRecordOrExit(record, `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${Date.now()}\n`, 'confirm-publish');
+  writeConfirmationRecordOrExit(
+    record,
+    `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${Date.now()}\n`,
+    'confirm-publish',
+  );
   process.stdout.write('confirm-publish: recorded publish confirmation for ' + studioRoot + '\n');
 }
 

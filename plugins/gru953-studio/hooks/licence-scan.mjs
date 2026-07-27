@@ -25,8 +25,17 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ALLOWED = new Set([
-  'MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', '0BSD',
-  'Unlicense', 'CC0-1.0', 'Python-2.0', 'BlueOak-1.0.0', 'WTFPL'
+  'MIT',
+  'Apache-2.0',
+  'BSD-2-Clause',
+  'BSD-3-Clause',
+  'ISC',
+  '0BSD',
+  'Unlicense',
+  'CC0-1.0',
+  'Python-2.0',
+  'BlueOak-1.0.0',
+  'WTFPL',
 ]);
 // Licences that require sharing your own source back ("copyleft") — these
 // conflict with this project's own licence (Polyform Noncommercial +
@@ -66,9 +75,9 @@ function scanNode(root) {
   // Check package-lock.json / npm-shrinkwrap.json for lockfile-based scanning
   const lockFile = fs.existsSync(path.join(root, 'package-lock.json'))
     ? path.join(root, 'package-lock.json')
-    : (fs.existsSync(path.join(root, 'npm-shrinkwrap.json'))
+    : fs.existsSync(path.join(root, 'npm-shrinkwrap.json'))
       ? path.join(root, 'npm-shrinkwrap.json')
-      : null);
+      : null;
 
   // If lockfile exists and node_modules doesn't, use lockfile
   if (!fs.existsSync(nm) && lockFile) {
@@ -77,8 +86,10 @@ function scanNode(root) {
 
   // Otherwise use node_modules (existing logic) but also check lockfile for
   // packages that might not be in node_modules (e.g., optional deps)
-  const nodeModulesResult = fs.existsSync(nm) ? scanNodeFromNodeModules(root) : { ecosystem: 'npm', checked: false, findings: [] };
-  
+  const nodeModulesResult = fs.existsSync(nm)
+    ? scanNodeFromNodeModules(root)
+    : { ecosystem: 'npm', checked: false, findings: [] };
+
   if (lockFile) {
     const lockResult = scanNodeFromLockfile(root, lockFile);
     return mergeNodeFindings(nodeModulesResult, lockResult);
@@ -93,14 +104,21 @@ function scanNodeFromNodeModules(root) {
   const pkgDirs = [];
   const isDirLike = (dirent, full) => {
     if (dirent.isDirectory()) return true;
-    if (dirent.isSymbolicLink()) { try { return fs.statSync(full).isDirectory(); } catch { return false; } }
+    if (dirent.isSymbolicLink()) {
+      try {
+        return fs.statSync(full).isDirectory();
+      } catch {
+        return false;
+      }
+    }
     return false;
   };
   for (const d of dirs) {
     if (!isDirLike(d, path.join(nm, d.name))) continue;
     if (d.name.startsWith('@')) {
       const scoped = fs.readdirSync(path.join(nm, d.name), { withFileTypes: true });
-      for (const s of scoped) if (isDirLike(s, path.join(nm, d.name, s.name))) pkgDirs.push(path.join(d.name, s.name));
+      for (const s of scoped)
+        if (isDirLike(s, path.join(nm, d.name, s.name))) pkgDirs.push(path.join(d.name, s.name));
     } else if (d.name.startsWith('.') || d.name.startsWith('_')) {
       continue;
     } else {
@@ -112,14 +130,20 @@ function scanNodeFromNodeModules(root) {
     let licence = null;
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-      licence = typeof pkg.license === 'string' ? pkg.license : (pkg.license && pkg.license.type) || null;
+      licence =
+        typeof pkg.license === 'string' ? pkg.license : (pkg.license && pkg.license.type) || null;
     } catch {
-      findings.push({ package: p, licence: 'unreadable (missing or invalid package.json)', verdict: 'needs-review' });
+      findings.push({
+        package: p,
+        licence: 'unreadable (missing or invalid package.json)',
+        verdict: 'needs-review',
+      });
       continue;
     }
     const verdict = isAllowed(licence);
     if (verdict === false) findings.push({ package: p, licence, verdict: 'blocked' });
-    else if (verdict === null) findings.push({ package: p, licence: licence || 'unknown', verdict: 'needs-review' });
+    else if (verdict === null)
+      findings.push({ package: p, licence: licence || 'unknown', verdict: 'needs-review' });
   }
   return { ecosystem: 'npm', checked: true, findings };
 }
@@ -146,7 +170,9 @@ function scanNodeFromLockfile(root, lockFilePath) {
     // false clean.
     if (!lockContent.packages || typeof lockContent.packages !== 'object') {
       return {
-        ecosystem: 'npm', checked: false, findings: [],
+        ecosystem: 'npm',
+        checked: false,
+        findings: [],
         note: `${path.basename(lockFilePath)} has no "packages" map (lockfileVersion ${lockContent.lockfileVersion ?? '1 or unknown'}) — npm lockfiles older than v2 don't reliably record per-package licences; run \`npm install\` and re-scan, or review dependency licences manually before publish`,
       };
     }
@@ -158,7 +184,8 @@ function scanNodeFromLockfile(root, lockFilePath) {
       const licence = pkgInfo.license || pkgInfo.licenses?.[0]?.type || null;
       const verdict = isAllowed(licence);
       if (verdict === false) findings.push({ package: name, licence, verdict: 'blocked' });
-      else if (verdict === null) findings.push({ package: name, licence: licence || 'unknown', verdict: 'needs-review' });
+      else if (verdict === null)
+        findings.push({ package: name, licence: licence || 'unknown', verdict: 'needs-review' });
     }
     return { ecosystem: 'npm', checked: true, findings };
   } catch {
@@ -189,16 +216,28 @@ function severityRank(v) {
 function scanPython(root) {
   // Try pip-licenses first (most reliable)
   try {
-    const raw = execFileSync(resolveExecutable('pip-licenses'), ['--format=json', '--with-license-file'], {
-      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
-    });
+    const raw = execFileSync(
+      resolveExecutable('pip-licenses'),
+      ['--format=json', '--with-license-file'],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 60_000,
+      },
+    );
     const pkgs = JSON.parse(raw);
     const findings = [];
     for (const pkg of pkgs) {
       const licence = pkg.License || pkg.LicenseFile || null;
       const verdict = isAllowed(licence);
       if (verdict === false) findings.push({ package: pkg.Name, licence, verdict: 'blocked' });
-      else if (verdict === null) findings.push({ package: pkg.Name, licence: licence || 'unknown', verdict: 'needs-review' });
+      else if (verdict === null)
+        findings.push({
+          package: pkg.Name,
+          licence: licence || 'unknown',
+          verdict: 'needs-review',
+        });
     }
     return { ecosystem: 'python', checked: true, findings };
   } catch {
@@ -207,11 +246,11 @@ function scanPython(root) {
     for (const lf of lockFiles) {
       const lockPath = path.join(root, lf);
       if (fs.existsSync(lockPath)) {
-        return { 
-          ecosystem: 'python', 
-          checked: false, 
-          findings: [], 
-          note: `Found ${lf} — run \`pip-licenses\` or equivalent to review licences before publish` 
+        return {
+          ecosystem: 'python',
+          checked: false,
+          findings: [],
+          note: `Found ${lf} — run \`pip-licenses\` or equivalent to review licences before publish`,
         };
       }
     }
@@ -220,10 +259,18 @@ function scanPython(root) {
     let sitePackages = null;
     for (const c of candidates) {
       const guess = path.join(c, 'lib');
-      if (fs.existsSync(guess)) { sitePackages = guess; break; }
+      if (fs.existsSync(guess)) {
+        sitePackages = guess;
+        break;
+      }
     }
     if (!sitePackages) return { ecosystem: 'python', checked: false, findings: [] };
-    return { ecosystem: 'python', checked: false, findings: [], note: 'venv found but not deeply scanned — run pip-licenses manually and review before publish' };
+    return {
+      ecosystem: 'python',
+      checked: false,
+      findings: [],
+      note: 'venv found but not deeply scanned — run pip-licenses manually and review before publish',
+    };
   }
 }
 
@@ -240,14 +287,20 @@ export function detectLicenceFromText(text) {
   if (t.includes('SERVER SIDE PUBLIC LICENSE')) return { spdx: 'SSPL', allowed: false };
 
   if (t.includes('MIT LICENSE')) return { spdx: 'MIT', allowed: true };
-  if (t.includes('APACHE LICENSE') && t.includes('VERSION 2.0')) return { spdx: 'Apache-2.0', allowed: true };
-  if (t.includes('REDISTRIBUTION AND USE') && t.includes('BINARY FORM') && t.includes('NEITHER THE NAME')) {
+  if (t.includes('APACHE LICENSE') && t.includes('VERSION 2.0'))
+    return { spdx: 'Apache-2.0', allowed: true };
+  if (
+    t.includes('REDISTRIBUTION AND USE') &&
+    t.includes('BINARY FORM') &&
+    t.includes('NEITHER THE NAME')
+  ) {
     return { spdx: 'BSD-3-Clause', allowed: true };
   }
   if (t.includes('REDISTRIBUTION AND USE') && t.includes('BINARY FORM')) {
     return { spdx: 'BSD-2-Clause', allowed: true };
   }
-  if (t.includes('THIS IS FREE AND UNENCUMBERED SOFTWARE')) return { spdx: 'Unlicense', allowed: true };
+  if (t.includes('THIS IS FREE AND UNENCUMBERED SOFTWARE'))
+    return { spdx: 'Unlicense', allowed: true };
   if (t.includes('CC0')) return { spdx: 'CC0-1.0', allowed: true };
   if (t.includes('ISC LICENSE')) return { spdx: 'ISC', allowed: true };
 
@@ -269,7 +322,12 @@ export function detectLicenceFromText(text) {
 // exercised directly and verified by execution, even though the real Windows
 // spawn behaviour this defends against can only be proven by the Windows leg
 // of the CI matrix, not by a Linux sandbox.
-export function resolveExecutable(name, platform = process.platform, pathEnv = process.env.PATH || '', pathExtEnv = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD') {
+export function resolveExecutable(
+  name,
+  platform = process.platform,
+  pathEnv = process.env.PATH || '',
+  pathExtEnv = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD',
+) {
   if (platform !== 'win32') return name;
   const dirs = pathEnv.split(path.delimiter).filter(Boolean);
   const exts = pathExtEnv.split(';').filter(Boolean);
@@ -374,7 +432,11 @@ function scanDartFlutter(root) {
       .find((f) => fs.existsSync(f));
 
     if (!licenceFile) {
-      findings.push({ package: pkg.name, licence: 'unreadable (no LICENSE file found in pub cache)', verdict: 'needs-review' });
+      findings.push({
+        package: pkg.name,
+        licence: 'unreadable (no LICENSE file found in pub cache)',
+        verdict: 'needs-review',
+      });
       continue;
     }
 
@@ -382,13 +444,21 @@ function scanDartFlutter(root) {
     try {
       text = fs.readFileSync(licenceFile, 'utf8');
     } catch {
-      findings.push({ package: pkg.name, licence: 'unreadable (LICENSE file exists but could not be read)', verdict: 'needs-review' });
+      findings.push({
+        package: pkg.name,
+        licence: 'unreadable (LICENSE file exists but could not be read)',
+        verdict: 'needs-review',
+      });
       continue;
     }
 
     const detected = detectLicenceFromText(text);
     if (detected === null) {
-      findings.push({ package: pkg.name, licence: 'unrecognised licence text', verdict: 'needs-review' });
+      findings.push({
+        package: pkg.name,
+        licence: 'unrecognised licence text',
+        verdict: 'needs-review',
+      });
     } else if (detected.allowed === false) {
       findings.push({ package: pkg.name, licence: detected.spdx, verdict: 'blocked' });
     }
@@ -400,12 +470,19 @@ function scanDartFlutter(root) {
 // ---- SPDX expression classifier (for Cargo, Maven, etc.) ----
 export function classifySpdxExpr(expr) {
   if (!expr) return null;
-  const tokens = String(expr).replace(/\(/g, ' ( ').replace(/\)/g, ' ) ').trim().split(/\s+/).filter(Boolean);
+  const tokens = String(expr)
+    .replace(/\(/g, ' ( ')
+    .replace(/\)/g, ' ) ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
   if (!tokens.length) return null;
   let pos = 0;
   const peek = () => tokens[pos];
-  const AND = (a, b) => (a === false || b === false) ? false : (a === true && b === true) ? true : null;
-  const OR = (a, b) => (a === true || b === true) ? true : (a === false && b === false) ? false : null;
+  const AND = (a, b) =>
+    a === false || b === false ? false : a === true && b === true ? true : null;
+  const OR = (a, b) =>
+    a === true || b === true ? true : a === false && b === false ? false : null;
   const classifyId = (id, withExc) => {
     const up = (id + (withExc ? ' WITH ' + withExc : '')).toUpperCase();
     if (FLAG_SUBSTRINGS.some((f) => up.includes(f))) return false;
@@ -413,20 +490,34 @@ export function classifySpdxExpr(expr) {
   };
   const parseOr = () => {
     let v = parseAnd();
-    while (peek() && /^OR$/i.test(peek())) { pos++; v = OR(v, parseAnd()); }
+    while (peek() && /^OR$/i.test(peek())) {
+      pos++;
+      v = OR(v, parseAnd());
+    }
     return v;
   };
   function parseAnd() {
     let v = parseFactor();
-    while (peek() && /^AND$/i.test(peek())) { pos++; v = AND(v, parseFactor()); }
+    while (peek() && /^AND$/i.test(peek())) {
+      pos++;
+      v = AND(v, parseFactor());
+    }
     return v;
   }
   function parseFactor() {
-    if (peek() === '(') { pos++; const v = parseOr(); if (peek() === ')') pos++; return v; }
+    if (peek() === '(') {
+      pos++;
+      const v = parseOr();
+      if (peek() === ')') pos++;
+      return v;
+    }
     const id = tokens[pos++];
     if (id === undefined) return null;
     let withExc;
-    if (peek() && /^WITH$/i.test(peek())) { pos++; withExc = tokens[pos++]; }
+    if (peek() && /^WITH$/i.test(peek())) {
+      pos++;
+      withExc = tokens[pos++];
+    }
     return classifyId(id, withExc);
   }
   const result = parseOr();
@@ -438,11 +529,19 @@ function scanCargo(root) {
   let parsed;
   try {
     const raw = execFileSync(resolveExecutable('cargo'), ['metadata', '--format-version', '1'], {
-      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000,
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 60_000,
     });
     parsed = JSON.parse(raw);
   } catch {
-    return { ecosystem: 'rust/cargo', checked: false, findings: [], note: 'could not run `cargo metadata` (cargo not on PATH, or resolve failed) — run it and review each crate licence, or use `cargo deny check`, before publish' };
+    return {
+      ecosystem: 'rust/cargo',
+      checked: false,
+      findings: [],
+      note: 'could not run `cargo metadata` (cargo not on PATH, or resolve failed) — run it and review each crate licence, or use `cargo deny check`, before publish',
+    };
   }
   const findings = [];
   const members = new Set(parsed.workspace_members || []);
@@ -451,10 +550,18 @@ function scanCargo(root) {
     const licence = pkg.license || null;
     if (licence) {
       const verdict = classifySpdxExpr(licence);
-      if (verdict === false) findings.push({ package: `${pkg.name}@${pkg.version}`, licence, verdict: 'blocked' });
-      else if (verdict === null) findings.push({ package: `${pkg.name}@${pkg.version}`, licence, verdict: 'needs-review' });
+      if (verdict === false)
+        findings.push({ package: `${pkg.name}@${pkg.version}`, licence, verdict: 'blocked' });
+      else if (verdict === null)
+        findings.push({ package: `${pkg.name}@${pkg.version}`, licence, verdict: 'needs-review' });
     } else {
-      findings.push({ package: `${pkg.name}@${pkg.version}`, licence: pkg.license_file ? 'license-file only (no SPDX field)' : 'unknown (no license field)', verdict: 'needs-review' });
+      findings.push({
+        package: `${pkg.name}@${pkg.version}`,
+        licence: pkg.license_file
+          ? 'license-file only (no SPDX field)'
+          : 'unknown (no license field)',
+        verdict: 'needs-review',
+      });
     }
   }
   return { ecosystem: 'rust/cargo', checked: true, findings };
@@ -469,15 +576,20 @@ function scanJvm(root, kind) {
   const lockFiles = kind === 'java/maven' ? ['pom.xml'] : ['gradle.lockfile', 'build.gradle.lock'];
   for (const lf of lockFiles) {
     if (fs.existsSync(path.join(root, lf))) {
-      return { 
-        ecosystem: kind, 
-        checked: false, 
-        findings: [], 
-        note: `Found ${lf} — run maven/gradle license plugin to review licences before publish` 
+      return {
+        ecosystem: kind,
+        checked: false,
+        findings: [],
+        note: `Found ${lf} — run maven/gradle license plugin to review licences before publish`,
       };
     }
   }
-  return { ecosystem: kind, checked: false, findings: [], note: `${kind} project detected — dependency licences need the ecosystem's own report (e.g. \`mvn license:aggregate-third-party-report\` or a Gradle licence plugin, plus \`mvn dependency:tree\`/\`gradle dependencies\`); run it and review before publish` };
+  return {
+    ecosystem: kind,
+    checked: false,
+    findings: [],
+    note: `${kind} project detected — dependency licences need the ecosystem's own report (e.g. \`mvn license:aggregate-third-party-report\` or a Gradle licence plugin, plus \`mvn dependency:tree\`/\`gradle dependencies\`); run it and review before publish`,
+  };
 }
 
 // ---- C++ (vcpkg/Conan) ----
@@ -485,54 +597,74 @@ function scanCpp(root) {
   const lockFiles = ['vcpkg.json', 'vcpkg-configuration.json', 'conan.lock', 'conanfile.lock'];
   for (const lf of lockFiles) {
     if (fs.existsSync(path.join(root, lf))) {
-      return { 
-        ecosystem: 'c++', 
-        checked: false, 
-        findings: [], 
-        note: `Found ${lf} — run vcpkg/conan license check manually before publish` 
+      return {
+        ecosystem: 'c++',
+        checked: false,
+        findings: [],
+        note: `Found ${lf} — run vcpkg/conan license check manually before publish`,
       };
     }
   }
-  return { ecosystem: 'c++', checked: false, findings: [], note: 'C++ project detected — dependency/vendored licences have no single canonical manifest; review vcpkg/Conan and any vendored third-party licences manually before publish' };
+  return {
+    ecosystem: 'c++',
+    checked: false,
+    findings: [],
+    note: 'C++ project detected — dependency/vendored licences have no single canonical manifest; review vcpkg/Conan and any vendored third-party licences manually before publish',
+  };
 }
 
 // ---- Swift (SwiftPM) ----
 function scanSwift(root) {
   if (fs.existsSync(path.join(root, 'Package.resolved'))) {
-    return { 
-      ecosystem: 'swift/spm', 
-      checked: false, 
-      findings: [], 
-      note: 'Found Package.resolved — run swift package show-dependencies and review each licence before publish' 
+    return {
+      ecosystem: 'swift/spm',
+      checked: false,
+      findings: [],
+      note: 'Found Package.resolved — run swift package show-dependencies and review each licence before publish',
     };
   }
-  return { ecosystem: 'swift/spm', checked: false, findings: [], note: 'Swift package project detected — SwiftPM dependency licences need a manual review (Package.resolved lists the packages; check each licence) before publish' };
+  return {
+    ecosystem: 'swift/spm',
+    checked: false,
+    findings: [],
+    note: 'Swift package project detected — SwiftPM dependency licences need a manual review (Package.resolved lists the packages; check each licence) before publish',
+  };
 }
 
 // ---- .NET (NuGet) ----
 function scanDotnet(root) {
   if (fs.existsSync(path.join(root, 'packages.lock.json'))) {
-    return { 
-      ecosystem: '.net/nuget', 
-      checked: false, 
-      findings: [], 
-      note: 'Found packages.lock.json — run `dotnet list package --include-transitive` and review NuGet licences before publish' 
+    return {
+      ecosystem: '.net/nuget',
+      checked: false,
+      findings: [],
+      note: 'Found packages.lock.json — run `dotnet list package --include-transitive` and review NuGet licences before publish',
     };
   }
-  return { ecosystem: '.net/nuget', checked: false, findings: [], note: '.NET project detected — run `dotnet list package` and review NuGet licences before publish' };
+  return {
+    ecosystem: '.net/nuget',
+    checked: false,
+    findings: [],
+    note: '.NET project detected — run `dotnet list package` and review NuGet licences before publish',
+  };
 }
 
 // ---- Go (modules) ----
 function scanGo(root) {
   if (fs.existsSync(path.join(root, 'go.sum'))) {
-    return { 
-      ecosystem: 'go/modules', 
-      checked: false, 
-      findings: [], 
-      note: 'Found go.sum — run `go list -m all` (or `go-licenses`) and review module licences before publish' 
+    return {
+      ecosystem: 'go/modules',
+      checked: false,
+      findings: [],
+      note: 'Found go.sum — run `go list -m all` (or `go-licenses`) and review module licences before publish',
     };
   }
-  return { ecosystem: 'go/modules', checked: false, findings: [], note: 'Go module project detected — run `go list -m all` (or `go-licenses`) and review module licences before publish' };
+  return {
+    ecosystem: 'go/modules',
+    checked: false,
+    findings: [],
+    note: 'Go module project detected — run `go list -m all` (or `go-licenses`) and review module licences before publish',
+  };
 }
 
 // 2026-07-26 audit finding 2 (the vacuity this whole document opens with).
@@ -557,20 +689,53 @@ function scanGo(root) {
 // symlink cycle — real directories are walked by name, never followed as
 // symlinks) cannot make this run away.
 const SKIP_DIR_NAMES = new Set([
-  'node_modules', '.git', 'Dev-Memory', 'out', 'dist', 'build', 'coverage',
-  '.vscode-test', '.dart_tool', 'target', '.gradle', 'vendor', '.venv',
-  'venv', '__pycache__', 'Pods', 'DerivedData',
+  'node_modules',
+  '.git',
+  'Dev-Memory',
+  'out',
+  'dist',
+  'build',
+  'coverage',
+  '.vscode-test',
+  '.dart_tool',
+  'target',
+  '.gradle',
+  'vendor',
+  '.venv',
+  'venv',
+  '__pycache__',
+  'Pods',
+  'DerivedData',
 ]);
 const MAX_WALK_DEPTH = 6;
 const MANIFEST_FILE_NAMES = [
-  'package.json', 'requirements.txt', 'pyproject.toml', 'Pipfile', 'Pipfile.lock',
-  'pubspec.yaml', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts',
-  'settings.gradle', 'settings.gradle.kts', 'vcpkg.json', 'conanfile.txt',
-  'conanfile.py', 'CMakeLists.txt', 'Package.swift', 'Package.resolved',
-  'packages.lock.json', 'go.mod',
+  'package.json',
+  'requirements.txt',
+  'pyproject.toml',
+  'Pipfile',
+  'Pipfile.lock',
+  'pubspec.yaml',
+  'Cargo.toml',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'settings.gradle',
+  'settings.gradle.kts',
+  'vcpkg.json',
+  'conanfile.txt',
+  'conanfile.py',
+  'CMakeLists.txt',
+  'Package.swift',
+  'Package.resolved',
+  'packages.lock.json',
+  'go.mod',
 ];
 function dirEntries(dir) {
-  try { return fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
 }
 function hasAnyManifest(dir, entries) {
   const names = entries.map((e) => e.name);
@@ -614,14 +779,22 @@ function scanOneDirectory(dir) {
   // dependency) returned {"status":"clean","results":[]} — worse than the
   // disclosed "notChecked" pattern used everywhere else in this file, since
   // there was no entry at all to alert a human.
-  const hasRequirements = has('requirements.txt') || has('pyproject.toml') || has('Pipfile') || has('Pipfile.lock');
+  const hasRequirements =
+    has('requirements.txt') || has('pyproject.toml') || has('Pipfile') || has('Pipfile.lock');
   const hasPubspec = has('pubspec.yaml');
   const hasCargo = has('Cargo.toml');
   const hasMaven = has('pom.xml');
-  const hasGradle = has('build.gradle') || has('build.gradle.kts') || has('settings.gradle') || has('settings.gradle.kts');
-  const hasCpp = has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
+  const hasGradle =
+    has('build.gradle') ||
+    has('build.gradle.kts') ||
+    has('settings.gradle') ||
+    has('settings.gradle.kts');
+  const hasCpp =
+    has('vcpkg.json') || has('conanfile.txt') || has('conanfile.py') || has('CMakeLists.txt');
   const hasSwift = has('Package.swift') || has('Package.resolved');
-  const hasDotnet = dirEntries(dir).some((e) => e.name.endsWith('.csproj') || e.name.endsWith('.sln')) || has('packages.lock.json');
+  const hasDotnet =
+    dirEntries(dir).some((e) => e.name.endsWith('.csproj') || e.name.endsWith('.sln')) ||
+    has('packages.lock.json');
   const hasGo = has('go.mod');
 
   const dirResults = [];
@@ -648,12 +821,20 @@ function main() {
   }
 
   if (results.length === 0) {
-    console.log(JSON.stringify({ status: 'clean', reason: 'no recognised dependency manifests found', results: [] }, null, 2));
+    console.log(
+      JSON.stringify(
+        { status: 'clean', reason: 'no recognised dependency manifests found', results: [] },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
 
   const blocked = results.flatMap((r) => r.findings.filter((f) => f.verdict === 'blocked'));
-  const needsReview = results.flatMap((r) => r.findings.filter((f) => f.verdict === 'needs-review'));
+  const needsReview = results.flatMap((r) =>
+    r.findings.filter((f) => f.verdict === 'needs-review'),
+  );
   const notChecked = results.filter((r) => !r.checked);
 
   const output = { results, blocked, needsReview, notChecked };
@@ -663,11 +844,30 @@ function main() {
     process.exit(1);
   }
   if (notChecked.length > 0) {
-    console.log(JSON.stringify({ status: 'INCOMPLETE — install dependencies for every ecosystem present, then re-run', ...output }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'INCOMPLETE — install dependencies for every ecosystem present, then re-run',
+          ...output,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   if (needsReview.length > 0) {
-    console.log(JSON.stringify({ status: 'NEEDS HUMAN REVIEW — unrecognised licence strings found, ask the user before publishing', ...output }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status:
+            'NEEDS HUMAN REVIEW — unrecognised licence strings found, ask the user before publishing',
+          ...output,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   console.log(JSON.stringify({ status: 'clean', ...output }, null, 2));
