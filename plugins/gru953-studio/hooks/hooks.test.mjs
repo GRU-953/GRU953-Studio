@@ -5681,8 +5681,16 @@ const CORRUPTION_MATRIX = [
     gate: 'quality-gate.mjs',
     file: 'QUALITY-GATE.md',
     label: 'a required Definition-of-Done dimension (Accessibility) dropped entirely',
+    // 2026-08 R2 Phase 2.4 (found live by the hooks-crlf CI leg): a literal
+    // trailing '\n' here never matched this line's real ending once the
+    // fixture is CRLF-encoded (`\r\n`), so the mutation silently no-op'd and
+    // the test's own precondition assertion correctly caught it. `\r?\n`
+    // tolerates either line ending, same fix shape used throughout this repo.
     mutate: (t) =>
-      t.replace('| Accessibility | pass | keyboard-navigable, labelled form fields checked manually (2026-07-21) |\n', ''),
+      t.replace(
+        /\| Accessibility \| pass \| keyboard-navigable, labelled form fields checked manually \(2026-07-21\) \|\r?\n/,
+        '',
+      ),
     expect: /access/i,
   },
   {

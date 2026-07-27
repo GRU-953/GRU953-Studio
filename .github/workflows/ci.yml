@@ -152,14 +152,35 @@ jobs:
             [ -f "$f" ] || continue
             perl -pi -e 's/\r?\n/\r\n/' "$f"
           done
-      - name: Assert the working tree is genuinely dirty (the rewrite must not be a no-op)
+      - name: Assert every rewritten file genuinely contains CRLF bytes on disk (the rewrite must not be a no-op)
+        shell: bash
         run: |
-          if git diff --quiet; then
-            echo "The CRLF rewrite produced no changes — this leg would be proving nothing." >&2
+          # NOT `git diff --quiet`: .gitattributes' `eol=lf` makes git apply its
+          # own clean/normalize filter before diffing, so from git's point of
+          # view a CRLF-on-disk file whose attribute says eol=lf reports NO
+          # difference at all — proven live: the first version of this job used
+          # `git diff --quiet` here and it reported "clean" (i.e. "no rewrite
+          # happened") even though every file below genuinely has \r bytes on
+          # disk, which is exactly why every prior step logged "CRLF will be
+          # replaced by LF the next time Git touches it". Checking the raw bytes
+          # directly, independent of git's own view, is the only way this
+          # assertion can't be fooled by the same attribute that motivates the
+          # whole job.
+          set -e
+          count=0
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            if ! grep -qP '\r$' "$f"; then
+              echo "Not CRLF-encoded on disk (rewrite failed or was skipped): $f" >&2
+              exit 1
+            fi
+            count=$((count + 1))
+          done < <(git ls-files -- '*.md' '*.json' '*.mjs' '*.js' '*.yml' '*.yaml')
+          if [ "$count" -eq 0 ]; then
+            echo "No files matched — this leg would be proving nothing." >&2
             exit 1
           fi
-          echo "Working tree confirmed CRLF-dirtied:"
-          git diff --stat | tail -5
+          echo "Confirmed $count files are genuinely CRLF-encoded on disk."
       - name: Syntax-check every hook script (still parses fine as CRLF)
         run: |
           for f in plugins/gru953-studio/hooks/*.mjs; do
