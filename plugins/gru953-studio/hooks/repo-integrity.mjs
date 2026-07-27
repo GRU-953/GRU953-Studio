@@ -17,8 +17,10 @@
 // Exit 0 = every invariant holds. Exit 1 = at least one is violated (listed).
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 import { frontmatterBlock } from './lib.mjs';
 
 const repoRoot = process.argv[2] || process.cwd();
@@ -653,6 +655,127 @@ for (const rel of GUARDRAIL_FILES) {
     );
   }
 }
+
+// ---- INV 15: the root AI-host rule files match what universal-init.js generates ----
+// 2026-08 R3 Phase 3.1 (D6). Seven committed root files (.cursorrules,
+// .windsurfrules, .clinerules, .roomodes, .aider.conf.yml,
+// .github/copilot-instructions.md, .agents/AGENTS.md) exist so a browser of
+// this repo — or a copy of it opened directly in Cursor/Windsurf/Cline/Roo/
+// Aider/Copilot — sees a real, working example of what
+// clients/cli/src/universal-init.js actually generates for a built project.
+// Nothing checked they still matched. Found live, not hypothetically: the
+// committed .aider.conf.yml still carried a `model-metadata-file:` line that
+// a 2026-07-26 fix deliberately stopped generating (Aider has its own
+// built-in model metadata; pointing it at a file GRU953-Studio never creates
+// was a dead reference) — the code changed, the committed reference file
+// never did.
+//
+// Verified by execution before writing this check, not by re-deriving the
+// generator's template strings with a second, hand-maintained copy (a naive
+// regex-scrape of the template literal source was tried first and produced
+// FALSE drift reports on every file, because it doesn't account for the
+// backslash-escaped backticks inside the JS template literal — e.g. the
+// source text \`project-lead\` differs from the real string value
+// `project-lead` by two backslash characters the regex approach can't see).
+// The only reliable comparison is running the REAL generator and reading
+// its REAL output, which is exactly what this does: import
+// initializeUniversalRules from the actual CLI module and run it against a
+// throwaway temp directory, then diff its output (with the generator's own
+// BEGIN/END markers stripped, since the committed reference copies are
+// deliberately unmarked, human-readable examples) against each committed
+// file.
+async function checkHostRuleFiles() {
+  const generatorPath = path.join(repoRoot, 'clients', 'cli', 'src', 'universal-init.js');
+  if (!fs.existsSync(generatorPath)) {
+    fail(
+      `clients/cli/src/universal-init.js is missing — cannot verify the root AI-host rule files still match it`,
+    );
+    return;
+  }
+  let initializeUniversalRules;
+  try {
+    // 2026-08 R3 (found live on the Windows CI leg): a bare `import()` of a
+    // path.resolve()'d absolute path works on POSIX but throws on Windows —
+    // `D:\a\...` looks like a URL with scheme "d:" to Node's ESM loader
+    // ("Only URLs with a scheme in: file, data, and node are supported"),
+    // which made this whole check fail on every Windows run. pathToFileURL()
+    // builds the correct `file://` URL for either platform.
+    ({ initializeUniversalRules } = await import(pathToFileURL(path.resolve(generatorPath))));
+  } catch (e) {
+    fail(`clients/cli/src/universal-init.js could not be loaded: ${e.message}`);
+    return;
+  }
+  if (typeof initializeUniversalRules !== 'function') {
+    fail(
+      `clients/cli/src/universal-init.js no longer exports initializeUniversalRules — cannot verify the root AI-host rule files`,
+    );
+    return;
+  }
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gru953-hostrule-gen-'));
+  // initializeUniversalRules() calls console.log() for real CLI users' own
+  // benefit (it's meant to be run interactively) — but this script's stdout
+  // is reserved for the final JSON report (like every other hook in this
+  // repo, e.g. gate.mjs's own "stdout is reserved for the decision JSON").
+  // Confirmed by execution: without silencing it, stdout starts with
+  // "Initializing Universal Agentic Studio rules..." and every subsequent
+  // JSON.parse(stdout) call — including this project's own test harness —
+  // fails on invalid JSON. Restored in the finally block regardless of
+  // outcome, so a thrown error can never leave console.log silenced for the
+  // rest of the process.
+  const realConsoleLog = console.log;
+  console.log = () => {};
+  try {
+    initializeUniversalRules(tmpDir);
+    const HOST_RULE_FILES = [
+      '.cursorrules',
+      '.windsurfrules',
+      '.clinerules',
+      '.roomodes',
+      '.aider.conf.yml',
+      '.github/copilot-instructions.md',
+      '.agents/AGENTS.md',
+    ];
+    // Normalises line endings AND strips the generator's own markers, so a
+    // CRLF-encoded committed copy (a real Windows checkout — see
+    // .gitattributes' own header comment on exactly this class of issue) is
+    // compared on CONTENT, not line-ending style. Found live: this file's own
+    // CRLF regression test converts every .md file (including
+    // .github/copilot-instructions.md and .agents/AGENTS.md) to CRLF and
+    // asserted repo-integrity.mjs stays clean — it didn't, until `committed`
+    // was normalised the same way `generated` already is.
+    const normalise = (s) =>
+      s
+        .split(/\r?\n/)
+        .filter((line) => !/GRU953-STUDIO:(BEGIN|END)/.test(line))
+        .join('\n')
+        .trim();
+    for (const rel of HOST_RULE_FILES) {
+      const generated = read(path.join(tmpDir, rel));
+      const committed = read(path.join(repoRoot, rel));
+      if (generated === null) {
+        fail(
+          `INV15: universal-init.js no longer generates ${rel} at all — the committed copy is now orphaned`,
+        );
+        continue;
+      }
+      if (committed === null) {
+        fail(
+          `INV15: ${rel} is missing from the repo root but universal-init.js still generates it`,
+        );
+        continue;
+      }
+      if (normalise(generated) !== normalise(committed)) {
+        fail(
+          `INV15: ${rel} no longer matches what clients/cli/src/universal-init.js generates (the committed reference copy has drifted from the real generator output)`,
+        );
+      }
+    }
+  } finally {
+    console.log = realConsoleLog;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+await checkHostRuleFiles();
 
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {

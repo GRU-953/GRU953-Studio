@@ -3949,6 +3949,66 @@ test('repo-integrity.mjs INV14: a covered file that goes missing entirely is cau
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08 R3 Phase 3.1 (D6). INV15: the seven committed root AI-host rule
+// files (.cursorrules, .windsurfrules, .clinerules, .roomodes,
+// .aider.conf.yml, .github/copilot-instructions.md, .agents/AGENTS.md) must
+// match what clients/cli/src/universal-init.js actually generates. This is
+// the EXACT real reproduction found while first building this check: the
+// generator's own AIDER_CONFIG dropped a `model-metadata-file:` line in an
+// earlier fix, but the committed .aider.conf.yml never caught up.
+test('repo-integrity.mjs INV15: a real drift (the exact one found live) between .aider.conf.yml and the generator is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv15-aider-');
+  copyRepoTo(dir);
+  const aiderPath = path.join(dir, '.aider.conf.yml');
+  fs.writeFileSync(aiderPath, 'model-metadata-file: .aider.model.metadata.json\n' + fs.readFileSync(aiderPath, 'utf8'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'reintroducing the exact stale line must be caught');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('INV15') && p.includes('.aider.conf.yml')),
+    `expected a problem naming the drift, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV15: drift in any of the other host-rule files (not just .aider.conf.yml) is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv15-cursorrules-');
+  copyRepoTo(dir);
+  const p = path.join(dir, '.cursorrules');
+  fs.appendFileSync(p, '\n5. **A made-up rule the generator does not actually produce.**\n');
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a hand-edited addition to a host-rule file must be caught as drift');
+  assert.ok(
+    r.json.problems.some((p2) => p2.includes('INV15') && p2.includes('.cursorrules')),
+    `expected a problem naming the drift, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV15: a host-rule file deleted from the repo root while the generator still produces it is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv15-missing-');
+  copyRepoTo(dir);
+  fs.rmSync(path.join(dir, '.roomodes'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a deleted host-rule file must be caught, not silently skipped');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('INV15') && p.includes('.roomodes') && p.includes('missing from the repo root')),
+    `expected a problem naming the missing file, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// This is what actually matters: proving the check produces PURE JSON on
+// stdout even though it runs universal-init.js's own console.log-heavy
+// generator internally — reproduced against the pre-fix code before fixing
+// it: stdout began with "Initializing Universal Agentic Studio rules..."
+// and every JSON.parse(stdout) caller, including this test harness's own
+// runRepoIntegrity() helper above, failed on invalid JSON.
+test('repo-integrity.mjs INV15: running the generator internally does not pollute stdout with its own console.log output', () => {
+  const r = spawnSync(NODE, [path.join(HERE, 'repo-integrity.mjs'), REPO_ROOT], { encoding: 'utf8' });
+  assert.doesNotMatch(r.stdout, /Initializing Universal Agentic Studio rules/, `stdout must be pure JSON, not generator log noise: ${r.stdout.slice(0, 200)}`);
+  assert.doesNotThrow(() => JSON.parse(r.stdout), 'stdout must parse as JSON with no leading noise');
+});
+
 // ---------------------------------------------------------------------------
 // docs-consistency.mjs — 2026-07-26 audit stage 5. A new sibling to
 // repo-integrity.mjs (see its own header comment for why not an extension
@@ -4091,6 +4151,51 @@ test('docs-consistency.mjs: a duplicated marketplace tag is caught (finding 31)'
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a duplicated marketplace tag must be caught');
   assert.ok(r.json.problems.some((p) => p.includes('duplicate entry')), `expected a problem naming the duplicate tag, got: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08 R3 Phase 3.1 (D6). DC8: docs/index.html's own "install inside
+// Claude Code" command block is the one concrete, checkable claim on any
+// docs/*.html page (every other page there is a bare redirect stub to the
+// wiki, checked directly, with nothing to verify). If the plugin or
+// marketplace name is ever renamed in marketplace.json, this line would
+// otherwise silently keep telling every site visitor to run a broken command.
+test('docs-consistency.mjs: docs/index.html\'s install command naming a stale plugin/marketplace is caught (2026-08 R3 Phase 3.1, DC8)', () => {
+  const dir = mkTmp('gru-docsconsist-staleinstall-');
+  copyRepoTo(dir);
+  const indexPath = path.join(dir, 'docs', 'index.html');
+  const text = fs.readFileSync(indexPath, 'utf8');
+  const mutated = text.replace('/plugin install gru953-studio@gru953-studio', '/plugin install gru953-studio@old-marketplace-name');
+  assert.notEqual(mutated, text, 'precondition: the real file must still carry this exact install line');
+  fs.writeFileSync(indexPath, mutated);
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale marketplace name in the install command must be caught');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('old-marketplace-name')),
+    `expected a problem naming the stale marketplace, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: docs/index.html\'s install command naming a stale plugin name is caught (inverse angle, 2026-08 R3 Phase 3.1, DC8)', () => {
+  const dir = mkTmp('gru-docsconsist-staleplugin-');
+  copyRepoTo(dir);
+  const indexPath = path.join(dir, 'docs', 'index.html');
+  const text = fs.readFileSync(indexPath, 'utf8');
+  const mutated = text.replace('/plugin install gru953-studio@gru953-studio', '/plugin install old-plugin-name@gru953-studio');
+  assert.notEqual(mutated, text, 'precondition: the real file must still carry this exact install line');
+  fs.writeFileSync(indexPath, mutated);
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale plugin name in the install command must be caught');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('old-plugin-name')),
+    `expected a problem naming the stale plugin, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a docs/*.html redirect stub with no factual claim is never flagged (control, DC8)', () => {
+  const r = runDocsConsistency(REPO_ROOT);
+  assert.equal(r.json && r.json.status, 'clean', `the real docs/index.html install command must already match the real marketplace: ${JSON.stringify(r.json && r.json.problems)}`);
 });
 
 test('docs-consistency.mjs: a dangling specialist reference is caught — finding 27\'s exact class, reproduced (finding 27)', () => {

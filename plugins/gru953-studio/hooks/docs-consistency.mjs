@@ -499,6 +499,53 @@ for (const f of allMd) {
   }
 }
 
+// ---- DC8: docs/index.html's install command matches the real marketplace/plugin names (2026-08 R3 Phase 3.1, D6) --
+// docs/index.html is the one substantive page under docs/*.html — every
+// other page there (agents.html, skills.html, guide.html, faq.html,
+// troubleshooting.html, use-cases.html) is a thin redirect stub to the
+// wiki with no factual claim to verify at all (checked directly, not
+// assumed). index.html carries exactly one concrete, checkable claim: the
+// "install inside Claude Code" command block naming the marketplace repo
+// and the `plugin@marketplace` identifier. If the plugin or marketplace
+// name in .claude-plugin/marketplace.json is ever renamed, this line would
+// otherwise silently start telling every visitor to run a command that no
+// longer works.
+const indexHtmlText = read(path.join(repoRoot, 'docs', 'index.html'));
+if (indexHtmlText !== null) {
+  const installMatch = indexHtmlText.match(/\/plugin install ([a-z0-9-]+)@([a-z0-9-]+)/i);
+  if (!installMatch) {
+    fail(
+      `docs/index.html no longer states a "/plugin install <name>@<marketplace>" command — cannot verify it matches the real marketplace`,
+    );
+  } else {
+    const [, statedPlugin, statedMarketplace] = installMatch;
+    const marketRaw2 = read(path.join(repoRoot, '.claude-plugin', 'marketplace.json'));
+    if (marketRaw2 === null) {
+      fail(
+        `.claude-plugin/marketplace.json is missing or unreadable — cannot verify docs/index.html's install command`,
+      );
+    } else {
+      try {
+        const marketJson2 = JSON.parse(marketRaw2);
+        const realMarketplaceName = marketJson2.name;
+        const realPluginNames = (marketJson2.plugins || []).map((p) => p.name);
+        if (statedMarketplace !== realMarketplaceName) {
+          fail(
+            `docs/index.html's install command names marketplace "${statedMarketplace}", but .claude-plugin/marketplace.json's real name is "${realMarketplaceName}"`,
+          );
+        }
+        if (!realPluginNames.includes(statedPlugin)) {
+          fail(
+            `docs/index.html's install command names plugin "${statedPlugin}", which is not among marketplace.json's real plugin names (${realPluginNames.join(', ')})`,
+          );
+        }
+      } catch {
+        /* invalid JSON here is DC4's/repo-integrity's concern, not this gate's */
+      }
+    }
+  }
+}
+
 // ---- report -------------------------------------------------------------
 if (problems.length === 0) {
   console.log(JSON.stringify({ status: 'clean' }, null, 2));
