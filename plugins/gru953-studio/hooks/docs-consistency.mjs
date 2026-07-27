@@ -4,9 +4,15 @@
 // Zero dependencies (Node stdlib only). Added 2026-07-26 audit stage 5.
 //
 // A sibling to repo-integrity.mjs, deliberately NOT an extension of it.
-// repo-integrity.mjs is 470 lines with no functions, its whole value is a
-// readable top-to-bottom audit trail, and its 197 hooks.test.mjs cases are
-// pinned to its exact message strings — folding a fenced-block tokeniser, a
+// repo-integrity.mjs does hold a handful of small helper functions (reading a
+// file, walking a directory, matching a stated count) — the real point,
+// which held even when this was first written, is that its whole value is a
+// readable top-to-bottom audit trail with a large hooks.test.mjs suite
+// pinned to its exact message strings (2026-07-26 correction: this used to
+// give specific figures — "470 lines with no functions," "197... cases" —
+// that were already wrong the day this was written, and only get more stale
+// as both files grow; dropped the numbers rather than re-pin them to numbers
+// that will drift again). Folding a fenced-block tokeniser, a
 // number-word parser and a role-reference classifier into that file during
 // the same programme that already changed CI, OS and Node coverage is the
 // wrong risk to take on at once. This file's job is narrower and newer:

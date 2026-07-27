@@ -27,8 +27,10 @@ technical jargon.
    - **Blockers** — anything waiting on the user (a question, a sign-in),
      or "nothing is blocked" if all is clear.
 4. Also state the project's current Tier (Tiny/Standard/Complex) in one
-   clause, and mention that the full architecture, specifications and build plan
-   are available at a glance via `/studio-dashboard` (which renders them into a
-   single self-contained page).
+   clause, and mention that the full architecture and specifications, plus
+   the build plan so far (current phase's tasks; later phases show only
+   their one-line summary — 2026-07-26 correction: this used to say "full...
+   build plan"), are available at a glance via `/studio-dashboard` (which
+   renders them into a single self-contained page).
 5. Keep the whole report under ten short sentences. Explain any unavoidable
    technical term in one brief clause. Do not change any files.

@@ -1,8 +1,18 @@
 #!/usr/bin/env node
 //
 // verify-progress.mjs — checks that every task marked "done" in
-// Dev-Memory/PROGRESS.md actually carries a `verified: <command> → exit 0
-// (YYYY-MM-DD)` (or the human-judged protocol equivalent) Notes cell.
+// Dev-Memory/PROGRESS.md actually carries a real evidence Notes cell: a
+// `verified: <command> → exit 0 (YYYY-MM-DD)` line for an automated command,
+// or one of two accepted phrasings for a check that genuinely has no exit
+// code to point at — `verified: ... machine checks true` (an automated but
+// non-process check, e.g. a linter's own pass/fail report) or `verified: ...
+// user PASS` (a human-judged check, e.g. "does this look right" for a UI
+// change) — see VERIFIED_RE below for the exact three accepted forms
+// (2026-07-26 correction: this comment previously said "(or the human-judged
+// protocol equivalent)" as if a named protocol were documented elsewhere; it
+// wasn't — these two phrasings are now named and described here, and cross-
+// referenced from `tester.md`, instead of being an undocumented convention
+// only this file's regex knew about).
 // Also supports structured JSON evidence (2026-07-25) in the format:
 // {"taskId": "T3", "criterion": "...", "command": "...", "exitCode": 0,
 // "stdout": "...", "stderr": "", "durationMs": 1240, "artifacts": [...],

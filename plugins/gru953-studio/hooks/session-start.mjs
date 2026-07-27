@@ -56,7 +56,33 @@ function main() {
   const cwd = extractCwd(input) || process.cwd();
   const studioRoot = findStudioRoot(cwd);
   if (studioRoot === null) {
-    // Not a studio project — stand down silently.
+    // 2026-07-26 audit fix: this hook used to stand down silently here with
+    // no exception, which meant it could never fire the ONE reminder that
+    // matters most in exactly this case — a cloud/ephemeral container
+    // recycled since the last session, where local Dev-Memory/ is gone
+    // rather than never having existed. It deliberately does NOT try to
+    // verify that (e.g. by checking git for a memory/cloud-persist branch):
+    // session-start.mjs must never spawn a subprocess, full stop — see the
+    // "source contains no process-spawning call" test below, added after a
+    // past incident where exactly that (an unconfirmed git operation from
+    // this hook) rewrote a user's history without asking. So this is a hint,
+    // not a check: on a likely-ephemeral environment with no local
+    // Dev-Memory, say so, and point at the one place that would actually
+    // know — never assert or verify anything here.
+    if (isLikelyEphemeral()) {
+      const additionalContext = [
+        'No local Dev-Memory/ was found, and this looks like a cloud/ephemeral',
+        'session (the container may have been reclaimed since a prior one).',
+        'Before treating this as a brand-new project: check whether this',
+        'project\'s GitHub remote has a memory/cloud-persist branch — if so,',
+        'restore it first (see the dev-memory skill\'s "One named branch, and',
+        'how to restore from it" section) rather than starting over.',
+      ].join('\n');
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext },
+      }));
+    }
+    // Not a studio project (or nothing more to add) — stand down.
     process.exit(0);
   }
   const lines = [

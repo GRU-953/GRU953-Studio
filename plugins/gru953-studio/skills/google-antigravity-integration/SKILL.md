@@ -36,8 +36,14 @@ This skill governs how the studio coordinator (`project-lead`), memory keeper (`
    - Agents created inside built apps follow Google Antigravity SDK best practices, including explicit credential management via `GEMINI_API_KEY` (never hardcoding or committing keys).
 
 5. **Tool Permissions & Execution Safety**:
-   - Pre-tool hooks (`scan.mjs` and `gate.mjs`) guard all shell executions across both environments.
-   - Secret scanning covers Google API keys (`AIza...`), OAuth tokens, private keys, and credential files before any GitHub push or deployment.
+   - Pre-tool hooks (`scan.mjs` and `gate.mjs`) guard all shell executions under
+     Claude Code (2026-07-26 correction: this line asserted they guard "both
+     environments" — the exact overclaim Section 1's own correction above just
+     walked back to "intended, not proven." This line survived that edit
+     unchanged, in the same file. Restated once, here, for the mechanism: under
+     Google Antigravity, nothing in this repository currently wires these hooks
+     to fire before a shell command runs — see Section 1).
+   - Secret scanning covers Google API keys (`AIza...`), OAuth tokens, private keys, and credential files before any GitHub push or deployment, wherever `scan.mjs` does run.
 
 ---
 

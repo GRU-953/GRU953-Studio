@@ -51,8 +51,13 @@ The file is a plain table:
 
 A dimension may be marked **n/a with a reason** — but it may never be simply
 left out. `hooks/quality-gate.mjs` holds the required list itself, so deleting
-the "Security" row does not make the gate pass; it makes it **BLOCK** with
-"missing required dimension: security". This is deliberate: the single easiest
+the "Security" row does not make the gate pass; it makes it **BLOCK** with a
+message naming the missing dimension by its full label (2026-07-26 correction:
+this used to quote the message as literally "missing required dimension:
+security" — the code actually emits `missing required dimension: security /
+licence / privacy clean — no row in QUALITY-GATE.md covers it...`, the
+dimension's full label, not its short key; corrected to describe it rather
+than misquote it). This is deliberate: the single easiest
 way to ship below the bar is to quietly skip the check that would have caught
 it, and this closes that path mechanically.
 

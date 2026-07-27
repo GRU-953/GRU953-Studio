@@ -37,8 +37,11 @@ pack already covers React Native within the TypeScript ecosystem.
 ## Dependencies & licences
 
 - Dependencies are crates in `Cargo.toml`; the lockfile is `Cargo.lock`.
-- `hooks/licence-scan.mjs` reads `Cargo.toml`/`Cargo.lock` for the dependency
-  set; `security-compliance-auditor` runs it before Publish. For a deeper audit
+- `hooks/licence-scan.mjs` resolves the dependency set by running `cargo
+  metadata --format-version 1` (2026-07-26 correction: this said it "reads
+  `Cargo.toml`/`Cargo.lock`" directly — the real mechanism shells out to
+  Cargo itself, which needs `cargo` on `PATH`, rather than parsing those
+  files); `security-compliance-auditor` runs it before Publish. For a deeper audit
   `cargo deny check` (if available) covers licences and advisories — best-effort,
   never assumed installed.
 - Every added crate still passes the `yagni-rules` ladder — a crate is a

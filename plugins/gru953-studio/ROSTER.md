@@ -151,8 +151,8 @@ that floor — cost stays a decision, now per task, not only per role.
 
 ## v4.5.0 update (2026-07-26): Universal Agentic Protocol
 
-Added `skills/universal-platform-integration/SKILL.md` (expanding total skills to 34) enabling deployment across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI). Baseline role count stands at 38 roles (role count: 38).
+Added `skills/universal-platform-integration/SKILL.md` (expanding total skills to 35 — corrected 2026-07-26: this said "34," one short of the real post-this-addition count, verified directly by counting `skills/*/` on disk) enabling deployment across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q). Baseline role count stands at 38 roles (role count: 38).
 
 ## v4.4.0 update (2026-07-26): Google Antigravity Support
 
-Added `skills/google-antigravity-integration/SKILL.md` (expanding total skills to 33) enabling full Google Antigravity (AGY SDK & Gemini Antigravity IDE) runtime execution alongside Claude Code. Baseline role count stands at 38 roles (role count: 38).
+Added `skills/google-antigravity-integration/SKILL.md` (expanding total skills to 34 — corrected 2026-07-26: this said "33," one short of the real post-this-addition count, for the same reason as the entry above) enabling full Google Antigravity (AGY SDK & Gemini Antigravity IDE) runtime execution alongside Claude Code. Baseline role count stands at 38 roles (role count: 38).

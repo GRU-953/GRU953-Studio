@@ -85,6 +85,13 @@ Before writing test code — from the Plan stage on Standard/Complex Tier
     ```
     The legacy `verified: <command> → exit 0 (YYYY-MM-DD)` format is still
     accepted for backward compatibility but new evidence should use JSON.
+    Two named variants of the legacy line cover a check with no exit code to
+    point at (2026-07-26 — documented here for the first time; previously only
+    `verify-progress.mjs`'s own regex knew these were accepted): `verified:
+    ... machine checks true` for an automated but non-process check (e.g. a
+    linter's own pass/fail report), or `verified: ... user PASS` for a
+    genuinely human-judged check (e.g. "does this look right" for a UI
+    change).
  4. On failure, follow the `self-healing` skill: hand it to `fixer` for up
     to 2 quiet attempts (no user interruption yet) before the Project
     Lead's full Stuck Protocol. Report the failure plainly either way —

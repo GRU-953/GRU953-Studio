@@ -5,12 +5,18 @@
 //
 // This is the second of the studio's two Bash hooks. scan.mjs proves the
 // would-ship set is free of secrets; gate.mjs proves the studio is actually
-// meant to be pushing right now. A push-capable command is allowed only when
-// the user's publish confirmation has been recorded for this project — the
-// studio writes a `Dev-Memory/PUBLISH-APPROVED` file right after the user
-// picks "publish", and removes it once the push is done. With no such
-// record a push is blocked, so a push-capable command cannot fire outside
-// the publish phase even if the secret scan happens to pass on a clean tree.
+// meant to be pushing right now. An ordinary (private) push-capable command
+// is allowed when ANY ONE of three project-bound confirmation records exists
+// and is still within its TTL window: PUBLISH-APPROVED, CHECKPOINT-APPROVED,
+// or MEMORY-PERSIST-APPROVED (a public visibility change additionally
+// requires GO-PUBLIC-APPROVED — see the code below). The studio writes the
+// relevant file right after the user confirms that action (2026-07-26
+// correction: this comment previously said the record is "removed once the
+// push is done" — that was never true of any of these tokens; see the
+// TOCTOU note just below, which already correctly says so. The record
+// instead expires on its own after a bounded TTL). With no valid record a
+// push is blocked, so a push-capable command cannot fire outside an
+// authorised moment even if the secret scan happens to pass on a clean tree.
 //
 // The record is checked against a token DERIVED from this project, not a
 // fixed string: sha256("studio-publish:" + <studio root path>). Deriving the
