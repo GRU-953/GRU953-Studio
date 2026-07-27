@@ -2876,6 +2876,76 @@ test('lib.mjs isConfirmScriptOnly: confirm-memory-persist.mjs itself is never tr
 });
 
 // ---------------------------------------------------------------------------
+// 2026-08 audit round 1, Phase 1.2 (token-writer parity). All four confirm-
+// *.mjs scripts and gate.mjs's four *Confirmed() readers share the exact same
+// binding logic (verified by reading gate.mjs directly: each is
+// fs.accessSync + fs.readFileSync + lib.mjs's tokenConfirmedWithinTtl, with
+// only the hash prefix and filename differing) — but PUBLISH-APPROVED had
+// heavy dedicated coverage while CHECKPOINT-APPROVED, GO-PUBLIC-APPROVED and
+// MEMORY-PERSIST-APPROVED did not have their OWN cross-project-rejection,
+// CRLF/BOM-tolerance, or (for the two never covered at all) TTL-boundary
+// tests — only cross-token-non-substitution tests, which is a different
+// property. One parameterised suite closes all four at once, rather than
+// four hand-written near-duplicates.
+const TOKEN_CONFIGS = [
+  { record: 'PUBLISH-APPROVED', prefix: 'studio-publish', label: 'STUDIO-PUBLISH-CONFIRMED', pushCmd: 'git push origin main' },
+  { record: 'CHECKPOINT-APPROVED', prefix: 'studio-checkpoint', label: 'STUDIO-CHECKPOINT-CONFIRMED', pushCmd: 'git push origin main' },
+  { record: 'MEMORY-PERSIST-APPROVED', prefix: 'studio-memory-persist', label: 'STUDIO-MEMORY-PERSIST-CONFIRMED', pushCmd: 'git push origin main' },
+  { record: 'GO-PUBLIC-APPROVED', prefix: 'studio-go-public', label: 'STUDIO-GO-PUBLIC-CONFIRMED', pushCmd: 'gh repo edit me/app --visibility public' },
+];
+function tokenFor(cfg, studioRoot) {
+  return crypto.createHash('sha256').update(`${cfg.prefix}:${studioRoot}`).digest('hex');
+}
+function writeTokenFile(dir, cfg, { studioRoot = dir, issuedMs = Date.now(), eol = '\n', bom = false } = {}) {
+  const body = `${bom ? '﻿' : ''}${cfg.label}:${tokenFor(cfg, studioRoot)}${eol}ISSUED:${issuedMs}${eol}`;
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', cfg.record), body);
+}
+
+for (const cfg of TOKEN_CONFIGS) {
+  test(`gate.mjs: ${cfg.record} derived for a DIFFERENT project is rejected here (cross-project binding)`, () => {
+    const otherProject = mkTmp('gru-tok-otherproj-');
+    const dir = mkTmp('gru-tok-here-');
+    writeTokenFile(dir, cfg, { studioRoot: otherProject }); // token bound to the WRONG root
+    assert.equal(
+      runHook('gate.mjs', cfg.pushCmd, dir).decision,
+      'deny',
+      `${cfg.record} computed for a different project's root must not authorise this one`,
+    );
+    fs.rmSync(otherProject, RM_OPTS);
+    fs.rmSync(dir, RM_OPTS);
+  });
+
+  test(`gate.mjs: ${cfg.record} still validates with CRLF line endings`, () => {
+    const dir = mkTmp('gru-tok-crlf-');
+    writeTokenFile(dir, cfg, { eol: '\r\n' });
+    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'allow', `${cfg.record} with CRLF endings must still be honoured`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+
+  test(`gate.mjs: ${cfg.record} still validates with a leading UTF-8 BOM`, () => {
+    const dir = mkTmp('gru-tok-bom-');
+    writeTokenFile(dir, cfg, { bom: true });
+    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'allow', `${cfg.record} with a leading BOM must still be honoured`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// TTL boundaries specifically for CHECKPOINT-APPROVED and GO-PUBLIC-APPROVED
+// — PUBLISH-APPROVED and MEMORY-PERSIST-APPROVED already have dedicated
+// just-inside/just-outside coverage elsewhere in this file; these two did not.
+for (const cfg of [TOKEN_CONFIGS[1], TOKEN_CONFIGS[3]]) {
+  test(`gate.mjs: ${cfg.record} just inside its 60-minute TTL is honoured, just outside is not`, () => {
+    const dir = mkTmp('gru-tok-ttl-');
+    writeTokenFile(dir, cfg, { issuedMs: Date.now() - 59 * 60 * 1000 });
+    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'allow', `${cfg.record} at 59 minutes old must still be honoured`);
+    writeTokenFile(dir, cfg, { issuedMs: Date.now() - 61 * 60 * 1000 });
+    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'deny', `${cfg.record} at 61 minutes old must no longer be honoured`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 2026-07-19 Phase 5 — INV11 language-pack contract: a lang-* pack that omits
 // one of the five standard command families (build/test/lint/format/deps) must
 // be caught, so a language can never ship half-wired.
