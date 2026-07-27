@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 import { frontmatterBlock } from './lib.mjs';
 
 const repoRoot = process.argv[2] || process.cwd();
@@ -693,7 +694,13 @@ async function checkHostRuleFiles() {
   }
   let initializeUniversalRules;
   try {
-    ({ initializeUniversalRules } = await import(path.resolve(generatorPath)));
+    // 2026-08 R3 (found live on the Windows CI leg): a bare `import()` of a
+    // path.resolve()'d absolute path works on POSIX but throws on Windows —
+    // `D:\a\...` looks like a URL with scheme "d:" to Node's ESM loader
+    // ("Only URLs with a scheme in: file, data, and node are supported"),
+    // which made this whole check fail on every Windows run. pathToFileURL()
+    // builds the correct `file://` URL for either platform.
+    ({ initializeUniversalRules } = await import(pathToFileURL(path.resolve(generatorPath))));
   } catch (e) {
     fail(`clients/cli/src/universal-init.js could not be loaded: ${e.message}`);
     return;
