@@ -5416,3 +5416,127 @@ test('google-antigravity-integration: skill exists and satisfies repo-integrity 
   assert.equal(r.status, 0, `repo-integrity must pass with google-antigravity-integration added: ${r.stdout}`);
 });
 
+// ---------------------------------------------------------------------------
+// 2026-08 R2 Phase 2.1 (D4, end-to-end promise) — the golden Dev-Memory
+// corpus. Before this, all five project-level gates (verify-progress,
+// memory-integrity, quality-gate, traceability-check, content-check) had
+// fixtures only in isolation, one hook at a time; no single coherent
+// project tree existed that a real build would produce and that passed all
+// five together. test/fixtures/dev-memory/golden/ is that tree: a fictional
+// Standard-Tier "Habit Tracker" app, mid-Phase-2, with FOCUS/PROGRESS/
+// REQUIREMENTS/QUALITY-GATE/CONTENT/INDEX/GRAPH all cross-referencing the
+// same real task and requirement ids (T1-T5, R1-R5).
+//
+// The corruption matrix below seeds exactly one realistic defect at a time
+// into a COPY of this same tree — never a synthetic isolated fixture — and
+// asserts the SPECIFIC gate it targets BLOCKs with a named reason, while
+// every OTHER gate stays clean (a corruption in one file must not spuriously
+// trip an unrelated gate). Each corruption's inverse is the golden tree
+// itself, already proven clean by the control test immediately below.
+// ---------------------------------------------------------------------------
+const GOLDEN_FIXTURE = path.join(HERE, 'test', 'fixtures', 'dev-memory', 'golden');
+function copyGoldenTo(dir) {
+  fs.cpSync(GOLDEN_FIXTURE, dir, { recursive: true });
+}
+const PROJECT_GATES = [
+  'verify-progress.mjs',
+  'memory-integrity.mjs',
+  'quality-gate.mjs',
+  'traceability-check.mjs',
+  'content-check.mjs',
+];
+
+test('golden Dev-Memory corpus: a coherent Standard-Tier project passes all five project-level gates together (2026-08 R2 Phase 2.1)', () => {
+  for (const gate of PROJECT_GATES) {
+    const r = runScript(gate, GOLDEN_FIXTURE);
+    assert.equal(r.code, 0, `${gate} must pass clean against the golden corpus: ${r.stdout}`);
+  }
+});
+
+// Each entry: [gate under test, description, mutate(text)->text, expected substring
+// in the reason/problems]. `file` names which Dev-Memory file to mutate.
+const CORRUPTION_MATRIX = [
+  {
+    gate: 'verify-progress.mjs',
+    file: 'PROGRESS.md',
+    label: 'a "done" row with no verified: evidence',
+    mutate: (t) =>
+      t.replace(
+        '| T4 | Habit reminders (push notification) | todo | not started |',
+        '| T4 | Habit reminders (push notification) | done | not started |',
+      ),
+    expect: /verified/i,
+  },
+  {
+    gate: 'memory-integrity.mjs',
+    file: 'GRAPH.md',
+    label: 'a GRAPH link retargeted to an undefined node',
+    mutate: (t) => t.replace('- T3 implements R3', '- T3 implements R99'),
+    expect: /undefined node.*R99/,
+  },
+  {
+    gate: 'quality-gate.mjs',
+    file: 'QUALITY-GATE.md',
+    label: 'a required Definition-of-Done dimension (Accessibility) dropped entirely',
+    mutate: (t) =>
+      t.replace('| Accessibility | pass | keyboard-navigable, labelled form fields checked manually (2026-07-21) |\n', ''),
+    expect: /access/i,
+  },
+  {
+    gate: 'traceability-check.mjs',
+    file: 'REQUIREMENTS.md',
+    label: 'a new, non-deferred requirement with no task mapped to it (a dropped requirement)',
+    mutate: (t) => t + '| R6 | Users can pause reminders on holiday | 2 | — | pending | todo |\n',
+    expect: /R6/,
+  },
+  {
+    gate: 'content-check.mjs',
+    file: 'CONTENT.md',
+    label: 'a content asset whose Approved column is reverted to pending',
+    mutate: (t) => t.replace('| streak-flame-icon.svg | image | Gemini image, prompt #2 (2026-07-20) | approved |', '| streak-flame-icon.svg | image | Gemini image, prompt #2 (2026-07-20) | pending |'),
+    expect: /approv/i,
+  },
+];
+
+for (const c of CORRUPTION_MATRIX) {
+  test(`golden corpus corruption matrix: ${c.gate} catches "${c.label}" (2026-08 R2 Phase 2.1)`, () => {
+    const dir = mkTmp('gru-golden-corrupt-');
+    copyGoldenTo(dir);
+    const target = path.join(dir, 'Dev-Memory', c.file);
+    const original = fs.readFileSync(target, 'utf8');
+    const mutated = c.mutate(original);
+    assert.notEqual(mutated, original, `precondition: the mutation must actually change ${c.file}`);
+    fs.writeFileSync(target, mutated);
+
+    const r = runScript(c.gate, dir);
+    assert.equal(r.code, 1, `${c.gate} must BLOCK on "${c.label}": ${r.stdout}`);
+    assert.match(r.stdout, c.expect, `expected a reason matching ${c.expect} naming the defect, got: ${r.stdout}`);
+
+    // The corruption is scoped to one file — every OTHER gate must stay
+    // clean, proving this is a targeted defect, not a torn-up fixture that
+    // trips every checker at once.
+    for (const otherGate of PROJECT_GATES) {
+      if (otherGate === c.gate) continue;
+      const other = runScript(otherGate, dir);
+      assert.equal(other.code, 0, `${otherGate} must be unaffected by a "${c.label}" corruption scoped to ${c.file}: ${other.stdout}`);
+    }
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// Resume-rehearsal simulation: from the corpus alone, the next task must be
+// UNIQUELY determined and match FOCUS.md's own Active task — this is the
+// documented ritual (focus-guard/dev-memory skills) proven against a real
+// tree rather than merely asserted in prose. Not a new mechanical gate (no
+// hook currently cross-checks this); this test locks in that the fixture
+// itself — and the ritual it demonstrates — genuinely holds together.
+test('golden Dev-Memory corpus: the resume pointer is unique and matches FOCUS.md\'s Active task (2026-08 R2 Phase 2.1, D4)', () => {
+  const progress = fs.readFileSync(path.join(GOLDEN_FIXTURE, 'Dev-Memory', 'PROGRESS.md'), 'utf8');
+  const focus = fs.readFileSync(path.join(GOLDEN_FIXTURE, 'Dev-Memory', 'FOCUS.md'), 'utf8');
+  const resumeRows = progress.split('\n').filter((l) => l.includes('▶ RESUME HERE'));
+  assert.equal(resumeRows.length, 1, `exactly one row must carry the resume pointer, found ${resumeRows.length}`);
+  const resumeTaskId = resumeRows[0].match(/^\|\s*([A-Za-z0-9-]+)\s*\|/)[1];
+  const activeTaskLine = focus.match(/\*\*Active task:\*\*\s*(.*)$/m)[1];
+  assert.match(activeTaskLine, new RegExp(`^${resumeTaskId}\\b`), `FOCUS.md's Active task ("${activeTaskLine}") must start with the same id as the resume pointer's row ("${resumeTaskId}")`);
+});
+
