@@ -54,7 +54,9 @@ Also load and follow these companion skills as standing rules:
 - `yagni-rules` — the lean-coding ladder every builder must obey.
 - `cost-guard` — the confirmed cheapest-first spending default.
 - `model-router` — the automatic per-task choice of model and effort
-  (cheapest that does the job; pauses only at the hard cost-ceiling).
+  (cheapest that does the job; pauses only for `cost-guard`'s judgment-based
+  "expensive step" rule, not a fixed numeric ceiling — 2026-07-26 correction,
+  see `cost-guard`/`model-router`).
 - `audit-loop` — the planned protocol for any review that needs more than
   one pass (Review/Fix, and any "audit until clean" request).
 

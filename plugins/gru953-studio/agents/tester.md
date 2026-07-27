@@ -62,8 +62,13 @@ Before writing test code — from the Plan stage on Standard/Complex Tier
  1. For each acceptance criterion, write (or reuse) the exact test/command
     that proves it.
  2. Run it. Record the literal command and its literal output/exit code.
- 3. A task is only reported "done" when its test evidence is recorded in the
-    **structured JSON evidence format** embedded in the PROGRESS.md Notes column:
+ 3. A task is only reported "done" when its test evidence is recorded in
+    `PROGRESS.md`'s Notes column, in either the plain `verified:` form or
+    the **structured JSON evidence format** below (2026-07-26 correction:
+    this step previously said JSON specifically was required — self-
+    contradicting the very next sentence, which says the legacy format is
+    still accepted. `hooks/verify-progress.mjs` genuinely accepts both;
+    JSON is the richer option, not the only valid one):
     ```json
     {
       "taskId": "T3",

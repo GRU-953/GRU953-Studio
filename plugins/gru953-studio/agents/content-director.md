@@ -29,6 +29,13 @@ whenever content is added or revised. Follow the `content-creation` skill.
    media generation uses Google's paid cloud and the user's own key, and sends
    content to Google — get an explicit yes before any media is generated; record
    it. With no opt-in, plan placeholders + a step-by-step guide for the user.
+   **Also own the capability registry's currency** (2026-07-26 — `gemini-
+   integration`'s "Who applies this" assigns this role ownership of "the
+   registry currency," never stated here until now): before delegating any
+   media task, confirm the capability → current-model mapping (image/video/
+   audio) in `gemini-integration`'s registry is still accurate — Google
+   renames and reprices these often — rather than assuming a name from
+   memory.
 3. **Delegate per medium**: `text-content-specialist` (Claude, bn+en),
    `image-`/`audio-`/`video-content-specialist` (Gemini). Each uses the shared
    `model-router` to pick/switch model + effort.

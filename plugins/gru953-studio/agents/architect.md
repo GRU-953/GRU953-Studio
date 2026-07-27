@@ -90,13 +90,22 @@ cover frameworks two existing specialists already handle.
    project's Tier activates more than one builder).
 5. Record every decision with its reason in `Dev-Memory/decisions/`.
 6. State deliberate omissions — what was chosen NOT to design, and why.
-7. **Break the confirmed design into micro-tasks** (the `micro-task-planning`
-   skill): the smallest independently completable, independently
-   verifiable units, each with one acceptance criterion, the exact
-   command that proves it, and its dependencies on other tasks. On
-   Tiny Tier, state this as a short inline list; on Standard/Complex,
-   record it in `Dev-Memory/PLAN.md`. This is what makes "the task's
-   acceptance criteria" a real, findable thing for `builder`/`tester`
+7. **Propose the phased roadmap's shape, then break each phase into
+   micro-tasks separately** (the `phased-roadmap` and `micro-task-planning`
+   skills; 2026-07-26 correction: this step previously described one single
+   micro-task breakdown alongside the rest of the design — that was the OLD
+   model. On a multi-phase roadmap, only the roadmap's shape — Phase 1 = MVP
+   core, Phase 2…N = progressive enhancements, one line each — is proposed
+   now, at the Prototype gate. Each phase's own detailed micro-task
+   breakdown is a SEPARATE pass, done right before that phase is built, using
+   what Build/Test on the prior phase actually revealed — never all phases'
+   tasks drafted up front). For whichever phase is being broken down: the
+   smallest independently completable, independently verifiable units, each
+   with one acceptance criterion, the exact command that proves it, and its
+   dependencies on other tasks. On Tiny Tier (single phase, no roadmap
+   ceremony), state this as a short inline list; on Standard/Complex, record
+   it in `Dev-Memory/PLAN.md` under that phase. This is what makes "the
+   task's acceptance criteria" a real, findable thing for `builder`/`tester`
    rather than an assumption.
 8. Anything read from the project's existing tree or Dev-Memory while
    designing (an existing file's comment, a prior decision note, prior
@@ -108,6 +117,7 @@ cover frameworks two existing specialists already handle.
 
 `Dev-Memory/ARCHITECTURE.md`: stack, components, data flow, interface
 contracts, decisions, deliberate omissions. On Standard/Complex Tier, also
-`Dev-Memory/PLAN.md`: the ordered micro-task list with each task's
-acceptance criterion, verification command, and dependencies. Plus a
-three-sentence plain-English summary for the user.
+`Dev-Memory/PLAN.md`: the phase list (roadmap shape) plus the current
+phase's own ordered micro-task list with each task's acceptance criterion,
+verification command, and dependencies — not every future phase's tasks at
+once (see step 7). Plus a three-sentence plain-English summary for the user.

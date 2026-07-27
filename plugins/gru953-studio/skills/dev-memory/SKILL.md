@@ -90,23 +90,37 @@ Standard/Complex Tier, the `GRAPH.md` node and links for what changed (see the
 `memory-graph` skill). Checkpoint at every stage boundary — before starting the
 next stage, never after — so an interrupted session loses nothing.
 
-### Git-Backed Memory (2026-07-25 audit fix)
+### Git-Backed Memory (2026-07-25 audit fix; gating clarified 2026-07-26)
 
-Every memory write is also recorded as a signed Git commit on a private
-`memory/session-<id>` branch, providing full audit trail, conflict resolution,
-and the ability to roll back or review memory changes:
+Every memory write is also recorded as a signed Git commit, providing full
+audit trail, conflict resolution, and the ability to roll back or review
+memory changes:
 
 1. After the secrets-scan passes, stage the modified memory files: `git add Dev-Memory/`
 2. Commit with a conventional message and DCO sign-off:
    `git commit -s -m "memory: update FOCUS + PROGRESS [session: <session-id>]"`
-3. Push to the private memory branch: `git push origin memory/session-<session-id>`
+3. This **local** commit happens unconditionally, on every write, on every
+   project — it never leaves the machine, so it carries none of "Local-only,
+   and never shipped" below's risk. **Only push it** to the private
+   `memory/session-<session-id>` branch **if cloud persistence has been
+   opted into for this project** (see "Cloud persistence" below) — a plain
+   `git push origin memory/session-<session-id>`. On a normal local machine
+   with no opt-in, the commit stays local, exactly like every other write
+   (2026-07-26 correction: this section previously described the push as
+   happening unconditionally on every write, "not just cloud persistence" —
+   that reading directly contradicted "there is no *automatic* backup"
+   below, since an unconditional push to a remote branch on every session
+   IS an automatic backup. `memory-keeper.md`, the file that actually
+   performs this write, already read it as gated — this section is now
+   corrected to match that, not the other way round).
 4. On Standard/Complex Tier, major memory changes (Tier changes, architecture
    decisions) additionally open a PR-like review via `confirm-memory-persist.mjs`
-   before the memory push.
+   before any push (opt-in projects only, per point 3).
 
-This is separate from cloud persistence (which pushes the entire Dev-Memory
-folder to a private branch). Git-backed memory writes happen on **every** memory
-update, not just cloud persistence, and provide per-change history.
+This per-session branch is separate from `memory/cloud-persist` (which holds
+the whole Dev-Memory folder as one restorable snapshot — see "One named
+branch" below). Both are opt-in-gated the same way; neither ever pushes
+without that opt-in.
 
 ### Schema Validation (2026-07-25 audit fix; corrected 2026-07-26, finding 20)
 
