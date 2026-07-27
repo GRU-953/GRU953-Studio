@@ -4153,6 +4153,51 @@ test('docs-consistency.mjs: a duplicated marketplace tag is caught (finding 31)'
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08 R3 Phase 3.1 (D6). DC8: docs/index.html's own "install inside
+// Claude Code" command block is the one concrete, checkable claim on any
+// docs/*.html page (every other page there is a bare redirect stub to the
+// wiki, checked directly, with nothing to verify). If the plugin or
+// marketplace name is ever renamed in marketplace.json, this line would
+// otherwise silently keep telling every site visitor to run a broken command.
+test('docs-consistency.mjs: docs/index.html\'s install command naming a stale plugin/marketplace is caught (2026-08 R3 Phase 3.1, DC8)', () => {
+  const dir = mkTmp('gru-docsconsist-staleinstall-');
+  copyRepoTo(dir);
+  const indexPath = path.join(dir, 'docs', 'index.html');
+  const text = fs.readFileSync(indexPath, 'utf8');
+  const mutated = text.replace('/plugin install gru953-studio@gru953-studio', '/plugin install gru953-studio@old-marketplace-name');
+  assert.notEqual(mutated, text, 'precondition: the real file must still carry this exact install line');
+  fs.writeFileSync(indexPath, mutated);
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale marketplace name in the install command must be caught');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('old-marketplace-name')),
+    `expected a problem naming the stale marketplace, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: docs/index.html\'s install command naming a stale plugin name is caught (inverse angle, 2026-08 R3 Phase 3.1, DC8)', () => {
+  const dir = mkTmp('gru-docsconsist-staleplugin-');
+  copyRepoTo(dir);
+  const indexPath = path.join(dir, 'docs', 'index.html');
+  const text = fs.readFileSync(indexPath, 'utf8');
+  const mutated = text.replace('/plugin install gru953-studio@gru953-studio', '/plugin install old-plugin-name@gru953-studio');
+  assert.notEqual(mutated, text, 'precondition: the real file must still carry this exact install line');
+  fs.writeFileSync(indexPath, mutated);
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale plugin name in the install command must be caught');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('old-plugin-name')),
+    `expected a problem naming the stale plugin, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: a docs/*.html redirect stub with no factual claim is never flagged (control, DC8)', () => {
+  const r = runDocsConsistency(REPO_ROOT);
+  assert.equal(r.json && r.json.status, 'clean', `the real docs/index.html install command must already match the real marketplace: ${JSON.stringify(r.json && r.json.problems)}`);
+});
+
 test('docs-consistency.mjs: a dangling specialist reference is caught — finding 27\'s exact class, reproduced (finding 27)', () => {
   const dir = mkTmp('gru-docsconsist-danglingrole-');
   copyRepoTo(dir);
