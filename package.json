@@ -7,7 +7,7 @@
     "format:check": "prettier --check \"plugins/gru953-studio/hooks/*.mjs\" eslint.config.mjs"
   },
   "devDependencies": {
-    "eslint": "^9.39.5",
+    "eslint": "^10.8.0",
     "prettier": "^3.4.2"
   }
 }
