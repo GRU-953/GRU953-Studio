@@ -56,7 +56,11 @@ const REQUIRED = [
   { key: 'acceptance', match: /accept/i, label: 'acceptance criteria proven' },
   { key: 'tests', match: /\btest/i, label: 'tests pass (with evidence)' },
   { key: 'review', match: /review/i, label: 'independent code review' },
-  { key: 'security', match: /secur|secret|licen[cs]e|privac|vuln/i, label: 'security / licence / privacy clean' },
+  {
+    key: 'security',
+    match: /secur|secret|licen[cs]e|privac|vuln/i,
+    label: 'security / licence / privacy clean',
+  },
   { key: 'accessibility', match: /access/i, label: 'accessibility (or N/A with a reason)' },
   { key: 'docs', match: /\bdoc/i, label: 'documentation updated' },
   { key: 'build', match: /reproduc|\bbuild/i, label: 'reproducible build' },
@@ -114,7 +118,11 @@ const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // memory-integrity.mjs and dashboard.mjs both use a STRICT `^#` heading
 // regex with no `\s*` prefix, which a BOM genuinely defeats.)
 function read(p) {
-  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
+  try {
+    return stripBom(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 // Parse the FIRST markdown table in the file whose header has both an
@@ -166,7 +174,7 @@ function parseRows(text) {
     if (SEPARATOR_ROW_RE.test(line)) continue;
     const item = cells[idx.item] || '';
     const status = cells[idx.status] || '';
-    const evidence = idx.evidence === -1 ? '' : (cells[idx.evidence] || '');
+    const evidence = idx.evidence === -1 ? '' : cells[idx.evidence] || '';
     if (!item) continue;
     rows.push({ item, status, evidence, raw: line.trim() });
   }
@@ -185,7 +193,13 @@ function main() {
   // full reproduction (a crash instead of a plain message if Dev-Memory
   // disappears between the two calls).
   if (!isDirectory(devMemory)) {
-    console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to gate', root }));
+    console.log(
+      JSON.stringify({
+        status: 'not a studio project',
+        reason: 'no Dev-Memory/ directory — nothing to gate',
+        root,
+      }),
+    );
     process.exit(0);
   }
   const file = path.join(devMemory, 'QUALITY-GATE.md');
@@ -194,22 +208,33 @@ function main() {
     // A real studio project asked to be gated but has no Definition-of-Done
     // record at all. Fail closed — this is precisely the "shipped below the bar
     // with nothing recorded" case the gate exists to stop.
-    console.log(JSON.stringify({
-      status: 'BLOCKED',
-      reason: 'Dev-Memory/ exists but has no QUALITY-GATE.md — the Definition of Done has no record to verify. Create it (see the quality-gate skill) before a checkpoint commit or Publish.',
-      file,
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason:
+            'Dev-Memory/ exists but has no QUALITY-GATE.md — the Definition of Done has no record to verify. Create it (see the quality-gate skill) before a checkpoint commit or Publish.',
+          file,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   const rows = parseRows(text);
   const problems = [];
   if (rows.length === 0) {
-    problems.push('QUALITY-GATE.md contains no Definition-of-Done table (need a table with at least "Item" and "Status" columns).');
+    problems.push(
+      'QUALITY-GATE.md contains no Definition-of-Done table (need a table with at least "Item" and "Status" columns).',
+    );
   }
   for (const dim of REQUIRED) {
     const matches = rows.filter((r) => dim.match.test(r.item));
     if (matches.length === 0) {
-      problems.push(`missing required dimension: ${dim.label} — no row in QUALITY-GATE.md covers it (mark it pass with evidence, or "n/a" with a reason, but it may not be absent).`);
+      problems.push(
+        `missing required dimension: ${dim.label} — no row in QUALITY-GATE.md covers it (mark it pass with evidence, or "n/a" with a reason, but it may not be absent).`,
+      );
       continue;
     }
     // A dimension is satisfied when at least one matching row is a clean pass
@@ -220,27 +245,48 @@ function main() {
     // rows records nothing and does not block.
     for (const r of matches) {
       if (CONTRADICTION_RE.test(r.raw)) {
-        problems.push(`${dim.label}: a row is marked passing but its own text says it is currently failing/unverified → "${r.raw}"`);
+        problems.push(
+          `${dim.label}: a row is marked passing but its own text says it is currently failing/unverified → "${r.raw}"`,
+        );
         break;
       }
       if (PASS_RE.test(r.status)) {
         if (PLACEHOLDER_RE.test(r.evidence.trim())) {
-          problems.push(`${dim.label}: marked "${r.status}" but carries no evidence — a pass needs a concrete proof/command/reference.`);
+          problems.push(
+            `${dim.label}: marked "${r.status}" but carries no evidence — a pass needs a concrete proof/command/reference.`,
+          );
         }
       } else if (NA_RE.test(r.status)) {
         if (PLACEHOLDER_RE.test(r.evidence.trim())) {
-          problems.push(`${dim.label}: marked not-applicable but gives no reason — "n/a" needs a stated reason (e.g. "no user interface").`);
+          problems.push(
+            `${dim.label}: marked not-applicable but gives no reason — "n/a" needs a stated reason (e.g. "no user interface").`,
+          );
         }
       } else {
-        problems.push(`${dim.label}: status "${r.status || '(empty)'}" is not a pass — must be pass (with evidence) or n/a (with a reason).`);
+        problems.push(
+          `${dim.label}: status "${r.status || '(empty)'}" is not a pass — must be pass (with evidence) or n/a (with a reason).`,
+        );
       }
     }
   }
   if (problems.length === 0) {
-    console.log(JSON.stringify({ status: 'clean', reason: 'every required Definition-of-Done dimension passes or is consciously N/A with a reason', dimensions: REQUIRED.map((d) => d.key) }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'clean',
+          reason:
+            'every required Definition-of-Done dimension passes or is consciously N/A with a reason',
+          dimensions: REQUIRED.map((d) => d.key),
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
-  console.log(JSON.stringify({ status: 'BLOCKED', reason: 'Definition of Done not met', problems }, null, 2));
+  console.log(
+    JSON.stringify({ status: 'BLOCKED', reason: 'Definition of Done not met', problems }, null, 2),
+  );
   process.exit(1);
 }
 

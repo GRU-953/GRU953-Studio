@@ -56,10 +56,18 @@ const problems = [];
 const fail = (msg) => problems.push(msg);
 
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try {
+    return fs.readFileSync(p, 'utf8');
+  } catch {
+    return null;
+  }
 }
 function listDir(p) {
-  try { return fs.readdirSync(p, { withFileTypes: true }); } catch { return []; }
+  try {
+    return fs.readdirSync(p, { withFileTypes: true });
+  } catch {
+    return [];
+  }
 }
 function walk(dir, acc = []) {
   for (const d of listDir(dir)) {
@@ -74,8 +82,12 @@ function walk(dir, acc = []) {
 // ---- ground truth, computed the same way repo-integrity.mjs does ------------
 const agentsDir = path.join(pluginRoot, 'agents');
 const skillsDir = path.join(pluginRoot, 'skills');
-const agentFiles = listDir(agentsDir).filter((d) => d.isFile() && d.name.endsWith('.md')).map((d) => d.name);
-const skillDirs = listDir(skillsDir).filter((d) => d.isDirectory()).map((d) => d.name);
+const agentFiles = listDir(agentsDir)
+  .filter((d) => d.isFile() && d.name.endsWith('.md'))
+  .map((d) => d.name);
+const skillDirs = listDir(skillsDir)
+  .filter((d) => d.isDirectory())
+  .map((d) => d.name);
 const agentNames = new Set(agentFiles.map((f) => f.replace(/\.md$/, '')));
 const skillCount = skillDirs.length;
 
@@ -111,10 +123,7 @@ function isExempt(f) {
 // word "skill" singular) are both real phrasings this audit found live in
 // the repo and neither matches that shape. Checked as its own pattern,
 // against every markdown file except the two exemptions above.
-const skillCountPatterns = [
-  /skill count to (\d+)/gi,
-  /(\d+)\s+skills?\b/gi,
-];
+const skillCountPatterns = [/skill count to (\d+)/gi, /(\d+)\s+skills?\b/gi];
 for (const f of allMd) {
   if (isExempt(f)) continue;
   const text = read(f) || '';
@@ -124,7 +133,9 @@ for (const f of allMd) {
     while ((m = re.exec(text))) {
       const n = parseInt(m[1], 10);
       if (n !== skillCount) {
-        fail(`${path.relative(repoRoot, f)} states "${m[0]}" — the actual skill count is ${skillCount}`);
+        fail(
+          `${path.relative(repoRoot, f)} states "${m[0]}" — the actual skill count is ${skillCount}`,
+        );
       }
     }
   }
@@ -137,8 +148,21 @@ for (const f of allMd) {
 // stage added to that line updates this check's expectation automatically
 // instead of needing a second, hand-maintained number here.
 const NUMBER_WORDS = {
-  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
-  nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
 };
 const numberWordAlt = Object.keys(NUMBER_WORDS).join('|');
 
@@ -151,23 +175,34 @@ function countLifecycleStages(studioSkillText) {
   const para = m[1].replace(/\s+/g, ' ').trim();
   const plusMatch = para.match(/\(plus\s+([^)]+?)\s+for\b[^)]*\)/i);
   const bonusCount = plusMatch
-    ? plusMatch[1].split(/,|\band\b/i).map((s) => s.trim()).filter(Boolean).length
+    ? plusMatch[1]
+        .split(/,|\band\b/i)
+        .map((s) => s.trim())
+        .filter(Boolean).length
     : 0;
   const mainPart = para.split(/\(plus/i)[0];
-  const stages = mainPart.split('→').map((s) => s.replace(/\*/g, '').trim()).filter(Boolean);
+  const stages = mainPart
+    .split('→')
+    .map((s) => s.replace(/\*/g, '').trim())
+    .filter(Boolean);
   return stages.length + bonusCount;
 }
 const studioSkillText = read(path.join(skillsDir, 'studio', 'SKILL.md'));
 const actualStageCount = studioSkillText ? countLifecycleStages(studioSkillText) : null;
 if (actualStageCount === null) {
-  fail(`could not find studio/SKILL.md's "## The lifecycle" line — cannot verify stage-count claims elsewhere`);
+  fail(
+    `could not find studio/SKILL.md's "## The lifecycle" line — cannot verify stage-count claims elsewhere`,
+  );
 } else {
   // Scoped to "<word>-stage ... lifecycle" specifically, not any "<word>-stage"
   // phrase — found necessary by direct execution: this repo's own README
   // legitimately says "an eight-stage, exhaustive audit", which has nothing
   // to do with the studio's project lifecycle and must not be compared
   // against its stage count.
-  const stageCountRe = new RegExp(`\\b(${numberWordAlt})-stage\\b[^.\\n]{0,20}\\blifecycle\\b`, 'gi');
+  const stageCountRe = new RegExp(
+    `\\b(${numberWordAlt})-stage\\b[^.\\n]{0,20}\\blifecycle\\b`,
+    'gi',
+  );
   for (const f of allMd) {
     if (isExempt(f)) continue;
     const text = read(f) || '';
@@ -176,7 +211,9 @@ if (actualStageCount === null) {
     while ((m = stageCountRe.exec(text))) {
       const claimed = NUMBER_WORDS[m[1].toLowerCase()];
       if (claimed !== actualStageCount) {
-        fail(`${path.relative(repoRoot, f)} calls it a "${m[1]}-stage" lifecycle — studio/SKILL.md's own lifecycle line names ${actualStageCount} stages`);
+        fail(
+          `${path.relative(repoRoot, f)} calls it a "${m[1]}-stage" lifecycle — studio/SKILL.md's own lifecycle line names ${actualStageCount} stages`,
+        );
       }
     }
   }
@@ -199,7 +236,9 @@ if (studioSkillText) {
   while ((m = companionCountRe.exec(studioSkillText))) {
     const claimed = NUMBER_WORDS[m[1].toLowerCase()];
     if (claimed !== actualCompanionCount) {
-      fail(`studio/SKILL.md says "the ${m[1]} skills above" — its own companion-skill bullet list actually names ${actualCompanionCount} distinct skills`);
+      fail(
+        `studio/SKILL.md says "the ${m[1]} skills above" — its own companion-skill bullet list actually names ${actualCompanionCount} distinct skills`,
+      );
     }
   }
 }
@@ -216,7 +255,10 @@ if (studioSkillText) {
     seen.set(m[1], (seen.get(m[1]) || 0) + 1);
   }
   for (const [name, count] of seen) {
-    if (count > 1) fail(`studio/SKILL.md's companion-skill list names \`${name}\` ${count} times — a duplicate entry`);
+    if (count > 1)
+      fail(
+        `studio/SKILL.md's companion-skill list names \`${name}\` ${count} times — a duplicate entry`,
+      );
   }
 }
 // marketplace.json's tags array: the same tag listed twice.
@@ -230,7 +272,10 @@ if (marketplaceRaw !== null) {
       const seen = new Map();
       for (const t of tags) seen.set(t, (seen.get(t) || 0) + 1);
       for (const [tag, count] of seen) {
-        if (count > 1) fail(`.claude-plugin/marketplace.json's plugin '${p.name}' lists the tag "${tag}" ${count} times — a duplicate entry`);
+        if (count > 1)
+          fail(
+            `.claude-plugin/marketplace.json's plugin '${p.name}' lists the tag "${tag}" ${count} times — a duplicate entry`,
+          );
       }
     }
   } catch (e) {
@@ -248,24 +293,32 @@ if (marketplaceRaw !== null) {
 // table (historical names that are legitimately still discussed, just not
 // active), and a short, named exemption list for real non-role technical
 // terms that happen to share a suffix word by coincidence.
-const roleSuffixes = new Set(
-  [...agentNames].map((n) => n.split('-').pop()),
+const roleSuffixes = new Set([...agentNames].map((n) => n.split('-').pop()));
+const ROLE_SHAPED_RE = new RegExp(
+  '`([a-z0-9]+(?:-[a-z0-9]+)*-(?:' + [...roleSuffixes].join('|') + '))`',
+  'g',
 );
-const ROLE_SHAPED_RE = new RegExp('`([a-z0-9]+(?:-[a-z0-9]+)*-(?:' + [...roleSuffixes].join('|') + '))`', 'g');
 
 const rosterFile = path.join(pluginRoot, 'ROSTER.md');
 const rosterText = read(rosterFile) || '';
 const mergedRoleNames = new Set();
 {
-  const mergedTableRe = /^\|\s*([a-z0-9-]+)\s*\|\s*([a-z0-9-]+)\s*\|/gm;
-  let m;
   let inMergedTable = false;
   for (const line of rosterText.split(/\r?\n/)) {
-    if (/^##\s*v3\.0\.0 consolidation/i.test(line)) { inMergedTable = true; continue; }
-    if (/^##\s/.test(line)) { inMergedTable = false; continue; }
+    if (/^##\s*v3\.0\.0 consolidation/i.test(line)) {
+      inMergedTable = true;
+      continue;
+    }
+    if (/^##\s/.test(line)) {
+      inMergedTable = false;
+      continue;
+    }
     if (!inMergedTable) continue;
     const rm = line.match(/^\|\s*([a-z0-9-]+)\s*\|\s*([a-z0-9-]+)\s*\|/i);
-    if (rm) { mergedRoleNames.add(rm[1]); mergedRoleNames.add(rm[2]); }
+    if (rm) {
+      mergedRoleNames.add(rm[1]);
+      mergedRoleNames.add(rm[2]);
+    }
   }
 }
 // Real, non-role technical terms that are role-SHAPED by coincidence
@@ -287,7 +340,9 @@ for (const f of allMd) {
     if (agentNames.has(token)) continue;
     if (mergedRoleNames.has(token)) continue;
     if (NON_ROLE_EXEMPTIONS.has(token)) continue;
-    fail(`${path.relative(repoRoot, f)} references \`${token}\`, which names no current agent, no merged-away role in ROSTER.md, and is not an exempted non-role term — a dangling specialist reference (finding 27's class)`);
+    fail(
+      `${path.relative(repoRoot, f)} references \`${token}\`, which names no current agent, no merged-away role in ROSTER.md, and is not an exempted non-role term — a dangling specialist reference (finding 27's class)`,
+    );
   }
 }
 
@@ -306,13 +361,20 @@ let hasRealDependency = false;
 if (mcpPackageJsonRaw !== null) {
   try {
     const mcpPackageJson = JSON.parse(mcpPackageJsonRaw);
-    hasRealDependency = !!(mcpPackageJson.dependencies && Object.keys(mcpPackageJson.dependencies).length > 0);
-  } catch { /* invalid JSON here is repo-integrity's / licence-scan's concern, not this gate's */ }
+    hasRealDependency = !!(
+      mcpPackageJson.dependencies && Object.keys(mcpPackageJson.dependencies).length > 0
+    );
+  } catch {
+    /* invalid JSON here is repo-integrity's / licence-scan's concern, not this gate's */
+  }
 }
 const readmeText = read(path.join(repoRoot, 'README.md')) || '';
-const claimsZeroDependencies = /zero third-party code\s*\ndependencies|zero third-party code dependencies/i.test(readmeText);
+const claimsZeroDependencies =
+  /zero third-party code\s*\ndependencies|zero third-party code dependencies/i.test(readmeText);
 if (claimsZeroDependencies && hasRealDependency) {
-  fail(`README.md claims "zero third-party code dependencies" but plugins/gru953-studio/package.json declares a real dependency — finding 29 has regressed`);
+  fail(
+    `README.md claims "zero third-party code dependencies" but plugins/gru953-studio/package.json declares a real dependency — finding 29 has regressed`,
+  );
 }
 
 // ---- report -------------------------------------------------------------

@@ -34,7 +34,9 @@ import process from 'node:process';
 // sweep, Round 1).
 export function allow() {
   process.stdout.write(
-    JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' } }) + '\n'
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' },
+    }) + '\n',
   );
   process.exit(0);
 }
@@ -46,7 +48,7 @@ export function deny(reason) {
         permissionDecision: 'deny',
         permissionDecisionReason: String(reason),
       },
-    }) + '\n'
+    }) + '\n',
   );
   process.exit(0);
 }
@@ -86,7 +88,12 @@ export function extractCommand(input) {
   }
   const ti = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj.tool_input : undefined;
   if (ti === null || ti === undefined || typeof ti !== 'object' || Array.isArray(ti)) return '';
-  const cmd = typeof ti.command === 'string' ? ti.command : (typeof ti.script === 'string' ? ti.script : ti.CommandLine);
+  const cmd =
+    typeof ti.command === 'string'
+      ? ti.command
+      : typeof ti.script === 'string'
+        ? ti.script
+        : ti.CommandLine;
   return typeof cmd === 'string' ? cmd : '';
 }
 export function extractCwd(input) {
@@ -97,7 +104,12 @@ export function extractCwd(input) {
     return '';
   }
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
-  const c = typeof obj.cwd === 'string' ? obj.cwd : (obj.tool_input && typeof obj.tool_input.Cwd === 'string' ? obj.tool_input.Cwd : undefined);
+  const c =
+    typeof obj.cwd === 'string'
+      ? obj.cwd
+      : obj.tool_input && typeof obj.tool_input.Cwd === 'string'
+        ? obj.tool_input.Cwd
+        : undefined;
   return typeof c === 'string' ? c : '';
 }
 
@@ -146,7 +158,9 @@ export function findStudioRoot(start) {
 // "EISDIR: EISDIR: ...". Shared by writeConfirmationRecordOrExit below and
 // roster-check.mjs's own guarded read, so the two don't drift apart.
 export function formatFsError(e) {
-  return e.message && e.code && e.message.startsWith(e.code) ? e.message : `${e.code || 'error'}: ${e.message}`;
+  return e.message && e.code && e.message.startsWith(e.code)
+    ? e.message
+    : `${e.code || 'error'}: ${e.message}`;
 }
 
 // 2026-07-26 audit finding (further pass after stage 2): all four
@@ -207,7 +221,11 @@ export function writeConfirmationRecordOrExit(record, content, label) {
 export const CONFIRMATION_TTL_MS = 60 * 60 * 1000; // 60 minutes
 export function withinTtl(raw) {
   const issuedAt = parseInt(raw, 10);
-  return Number.isFinite(issuedAt) && Date.now() - issuedAt <= CONFIRMATION_TTL_MS && Date.now() - issuedAt >= 0;
+  return (
+    Number.isFinite(issuedAt) &&
+    Date.now() - issuedAt <= CONFIRMATION_TTL_MS &&
+    Date.now() - issuedAt >= 0
+  );
 }
 export function tokenConfirmedWithinTtl(text, expected) {
   const lines = text.split(/\r?\n/);
@@ -247,7 +265,8 @@ export function tokenConfirmedWithinTtl(text, expected) {
 // Moved here as the ONE shared pattern all three now use, so this specific
 // three-way drift — the exact failure mode a background review agent was
 // asked to hunt for — cannot recur.
-export const CONTRADICTION_RE = /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
+export const CONTRADICTION_RE =
+  /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
 
 // ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
 // 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
@@ -396,7 +415,9 @@ export function splitPipeCells(line) {
 // real usability gap and the exact divergence a background review agent was
 // asked to hunt for. Moved here so all three share it.
 export function deEmphasise(c) {
-  return String(c).replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '');
+  return String(c)
+    .replace(/^[\s*_`]+/, '')
+    .replace(/[\s*_`]+$/, '');
 }
 
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
@@ -470,21 +491,36 @@ export function normalizeForPushCheck(c) {
   // <<< $'pull\npush'`) is recognised as a genuine line break rather than
   // staying literal backslash-n text, which is what `mapfile`'s
   // one-element-per-line splitting depends on.
-  const ANSI_C_ESCAPES = { n: '\n', t: '\t', r: '\r', '\\': '\\', "'": "'", a: '\x07', b: '\b', f: '\f', v: '\v', e: '\x1b' };
+  const ANSI_C_ESCAPES = {
+    n: '\n',
+    t: '\t',
+    r: '\r',
+    '\\': '\\',
+    "'": "'",
+    a: '\x07',
+    b: '\b',
+    f: '\f',
+    v: '\v',
+    e: '\x1b',
+  };
   function decodeAnsiCTokens(text) {
     return text.replace(/\$'((?:\\.|[^'\\])*)'/g, (_m, inner) =>
       inner
         .replace(/\\x([0-9A-Fa-f]{1,2})/g, (_h, hex) => String.fromCharCode(parseInt(hex, 16)))
         .replace(/\\([0-7]{1,3})/g, (_o, oct) => String.fromCharCode(parseInt(oct, 8)))
-        .replace(/\\([ntr\\'abfve])/g, (_l, ch) => ANSI_C_ESCAPES[ch])
+        .replace(/\\([ntr\\'abfve])/g, (_l, ch) => ANSI_C_ESCAPES[ch]),
     );
   }
-  const arrayAssignRe = /(?:^|[;\n]|&&)\s*(?:export\s+|local\s+|readonly\s+|declare\s+(?:-a\s+)?|typeset\s+(?:-a\s+)?)?([A-Za-z_][A-Za-z0-9_]*)=\(([^)]*)\)/g;
+  const arrayAssignRe =
+    /(?:^|[;\n]|&&)\s*(?:export\s+|local\s+|readonly\s+|declare\s+(?:-a\s+)?|typeset\s+(?:-a\s+)?)?([A-Za-z_][A-Za-z0-9_]*)=\(([^)]*)\)/g;
   const knownArrays = new Map();
   for (const am of n.matchAll(arrayAssignRe)) {
     const name = am[1];
     const raw = am[2].trim();
-    const tokens = raw.length === 0 ? [] : raw.split(/\s+/).map((e) => decodeAnsiCTokens(e).replace(/^["']|["']$/g, ''));
+    const tokens =
+      raw.length === 0
+        ? []
+        : raw.split(/\s+/).map((e) => decodeAnsiCTokens(e).replace(/^["']|["']$/g, ''));
     const elems = tokens.flatMap(expandBraceListToElements);
     knownArrays.set(name, elems);
   }
@@ -502,7 +538,7 @@ export function normalizeForPushCheck(c) {
   // picks up the resolved number the same way it already handles any other
   // literal value.
   n = n.replace(/\$\{#([A-Za-z_][A-Za-z0-9_]*)\[[@*]\]\}/g, (m, name) =>
-    knownArrays.has(name) ? String(knownArrays.get(name).length) : m
+    knownArrays.has(name) ? String(knownArrays.get(name).length) : m,
   );
   // 2026-07-12 Round 3 audit fix (CRITICAL, found by adversarial combination
   // testing, then independently reproduced live before fixing): bash brace
@@ -682,10 +718,13 @@ export function normalizeForPushCheck(c) {
     const wrap = e.match(/^\$\(\(\s*(.*?)\s*\)\)$/);
     if (wrap) e = wrap[1];
     if (lookup) {
-      e = e.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (m, a, b, c) => {
-        const v = lookup(a || b || c);
-        return v !== undefined ? v : m;
-      });
+      e = e.replace(
+        /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|\b([A-Za-z_][A-Za-z0-9_]*)\b/g,
+        (m, a, b, c) => {
+          const v = lookup(a || b || c);
+          return v !== undefined ? v : m;
+        },
+      );
     }
     const m = e.match(/^(\d+)\s*([+-])\s*(\d+)$/);
     if (m) {
@@ -703,7 +742,8 @@ export function normalizeForPushCheck(c) {
   // resolves to `git push origin main` but was previously read as `git pu`.
   // This is distinct from the array `+=` case, which remains unsupported
   // (see the module-level comment above).
-  const varAssignRe = /(?:^|[;\n]|&&)\s*(export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)(\+)?=(?:"([^"]*)"|'([^']*)'|((?!\()[^\s;&|]*))/g;
+  const varAssignRe =
+    /(?:^|[;\n]|&&)\s*(export|local|readonly|declare|typeset)?\s*([A-Za-z_][A-Za-z0-9_]*)(\+)?=(?:"([^"]*)"|'([^']*)'|((?!\()[^\s;&|]*))/g;
   const known = new Map();
   for (const am of n.matchAll(varAssignRe)) {
     const hadKeyword = Boolean(am[1]);
@@ -798,7 +838,8 @@ export function normalizeForPushCheck(c) {
   // substitution/co-processes, disclosed below) — the value is literal
   // text already sitting in the command string; only its first line is
   // extracted, matching what `read` actually consumes.
-  const readHeredocRe = /read\s+([A-Za-z_][A-Za-z0-9_]*)\s*<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2\r?\n([\s\S]*?)\r?\n\3(?=[ \t]*(?:[;\n&|]|$))/g;
+  const readHeredocRe =
+    /read\s+([A-Za-z_][A-Za-z0-9_]*)\s*<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2\r?\n([\s\S]*?)\r?\n\3(?=[ \t]*(?:[;\n&|]|$))/g;
   for (const rm of n.matchAll(readHeredocRe)) {
     const varName = rm[1];
     const firstLine = rm[4].split(/\r?\n/)[0];
@@ -824,7 +865,8 @@ export function normalizeForPushCheck(c) {
   // process substitution would need real I/O this hook deliberately does
   // not perform, and remains an unclosed, disclosed gap the same shape as
   // command substitution.
-  const mapfileRe = /(?:mapfile|readarray)\s+(?:-t\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*<<<\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  const mapfileRe =
+    /(?:mapfile|readarray)\s+(?:-t\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*<<<\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
   for (const mm of n.matchAll(mapfileRe)) {
     const arrName = mm[1];
     let raw = decodeAnsiCTokens(mm[2] ?? mm[3] ?? mm[4] ?? '');
@@ -832,7 +874,9 @@ export function normalizeForPushCheck(c) {
       const kRe = new RegExp('\\$\\{' + kName + '\\}|\\$' + kName + '\\b', 'g');
       raw = raw.replace(kRe, () => kValue);
     }
-    const elems = raw.split(/\r?\n/).filter((_, i, arr) => !(i === arr.length - 1 && arr[i] === ''));
+    const elems = raw
+      .split(/\r?\n/)
+      .filter((_, i, arr) => !(i === arr.length - 1 && arr[i] === ''));
     knownArrays.set(arrName, elems);
   }
   // 2026-07-12 Round 13 audit fix (CRITICAL, found the same way as above):
@@ -849,7 +893,8 @@ export function normalizeForPushCheck(c) {
   const setPositionalRe = /(?:^|[;\n]|&&)\s*set\s+--\s+([^;\n&|]*)/g;
   for (const sm of n.matchAll(setPositionalRe)) {
     const raw = sm[1].trim();
-    const words = raw.length === 0 ? [] : raw.split(/\s+/).map((w) => w.replace(/^["']|["']$/g, ''));
+    const words =
+      raw.length === 0 ? [] : raw.split(/\s+/).map((w) => w.replace(/^["']|["']$/g, ''));
     words.forEach((w, i) => known.set(String(i + 1), w));
   }
   // 2026-07-12 Round 13 audit fix (CRITICAL, found the same way): bash's
@@ -928,14 +973,17 @@ export function normalizeForPushCheck(c) {
   // scalar map; the pattern is treated as a LITERAL string (a bar-raiser — bash
   // glob metacharacters in the pattern are not interpreted, consistent with this
   // matcher's stated "raises the bar, not a determined-adversary sandbox" scope).
-  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(\/\/?)([^/}]*)(?:\/([^}]*))?\}/g, (m, name, op, pat, repl) => {
-    if (!known.has(name) || pat === '') return m;
-    const v = known.get(name);
-    const r = repl === undefined ? '' : repl;
-    if (op === '//') return v.split(pat).join(r); // replace all
-    const i = v.indexOf(pat); // replace first
-    return i === -1 ? v : v.slice(0, i) + r + v.slice(i + pat.length);
-  });
+  n = n.replace(
+    /\$\{([A-Za-z_][A-Za-z0-9_]*)(\/\/?)([^/}]*)(?:\/([^}]*))?\}/g,
+    (m, name, op, pat, repl) => {
+      if (!known.has(name) || pat === '') return m;
+      const v = known.get(name);
+      const r = repl === undefined ? '' : repl;
+      if (op === '//') return v.split(pat).join(r); // replace all
+      const i = v.indexOf(pat); // replace first
+      return i === -1 ? v : v.slice(0, i) + r + v.slice(i + pat.length);
+    },
+  );
   n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(#{1,2}|%{1,2})([^}]*)\}/g, (m, name, op, pat) => {
     if (!known.has(name) || pat === '') return m;
     const v = known.get(name);
@@ -979,7 +1027,10 @@ export function normalizeForPushCheck(c) {
   // otherwise have cleaned this up). Fixed by normalising `$IFS`/`${IFS}`
   // to a space inside the subscript text itself before every other check.
   function resolveSubscript(sub) {
-    const s = sub.trim().replace(/\$\{IFS\}|\$IFS\b/g, ' ').trim();
+    const s = sub
+      .trim()
+      .replace(/\$\{IFS\}|\$IFS\b/g, ' ')
+      .trim();
     if (/^-?\d+$/.test(s)) return s;
     let m = s.match(/^\$\(\(\s*(.*?)\s*\)\)$/);
     if (m) return resolveSimpleArithmetic(m[1]);
@@ -1041,7 +1092,9 @@ export function normalizeForPushCheck(c) {
   // `${VAR:?msg}`/`${VAR?msg}` expands to VAR's value when set (msg only prints to
   // stderr on unset); the payload is the VALUE, not msg. Resolve to the known
   // value, else leave literal (we don't have the value to over-detect).
-  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?\?[^{}]*\}/g, (m, name) => (known.has(name) ? known.get(name) : m));
+  n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?\?[^{}]*\}/g, (m, name) =>
+    known.has(name) ? known.get(name) : m,
+  );
   n = n.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?[-=]([^{}]*)\}/g, (_m, name, def) => {
     if (knownArrays.has(name)) {
       const el = knownArrays.get(name)[0];
@@ -1314,9 +1367,15 @@ function hasLiveCompoundOperator(s) {
   return false;
 }
 function isConfirmScriptOnly(c) {
-  const afterCd = c.replace(/^[ \t]*cd[ \t]+(?:"[^"]+"|'[^']+'|[^ \t;&|]+)[ \t]*(?:&&|;)[ \t]*/, '');
+  const afterCd = c.replace(
+    /^[ \t]*cd[ \t]+(?:"[^"]+"|'[^']+'|[^ \t;&|]+)[ \t]*(?:&&|;)[ \t]*/,
+    '',
+  );
   if (hasLiveCompoundOperator(afterCd)) return false;
-  const m = /^node[ \t]+(?:"([^"]+)"|'([^']+)'|(\S+))(?:[ \t]+(?:"[^"]*"|'[^']*'|\S+))?[ \t\r\n]*$/.exec(afterCd);
+  const m =
+    /^node[ \t]+(?:"([^"]+)"|'([^']+)'|(\S+))(?:[ \t]+(?:"[^"]*"|'[^']*'|\S+))?[ \t\r\n]*$/.exec(
+      afterCd,
+    );
   if (!m) return false;
   const scriptPath = m[1] || m[2] || m[3];
   const base = path.basename(scriptPath).toLowerCase();
@@ -1324,7 +1383,12 @@ function isConfirmScriptOnly(c) {
   // filename contains no push keyword, but it is exempted here for the same
   // reason (it only writes a local marker file, never pushes), so running it to
   // RECORD a checkpoint authorisation is never itself mistaken for a push.
-  return base === 'confirm-publish.mjs' || base === 'confirm-go-public.mjs' || base === 'confirm-checkpoint.mjs' || base === 'confirm-memory-persist.mjs';
+  return (
+    base === 'confirm-publish.mjs' ||
+    base === 'confirm-go-public.mjs' ||
+    base === 'confirm-checkpoint.mjs' ||
+    base === 'confirm-memory-persist.mjs'
+  );
 }
 export function isPushCapable(rawC) {
   if (!rawC) return true;
@@ -1372,7 +1436,13 @@ export function isPushCapable(rawC) {
   // exponential blowup (verified: evil n=60 -> ~0ms; `git push`, `git -c a=b push`,
   // `GIT push`, `git "push"` still match; `git pushx`, `git status`, `git log
   // --all` still do not).
-  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?git['"]?(?:[ \\t]+[^ \\t]+)*?[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
+  if (
+    new RegExp(
+      `(^|[^A-Za-z0-9_])['"]?git['"]?(?:[ \\t]+[^ \\t]+)*?[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`,
+      'i',
+    ).test(c)
+  )
+    return true;
   // 2026-07-11 Round 5 audit fix (CRITICAL, found live via gate.mjs's real
   // isGoPublicCommand()): every `gh ...` regex below required the literal,
   // unquoted text "gh" — `"gh" repo edit ...` or `gh "repo" "edit" ...`
@@ -1384,8 +1454,16 @@ export function isPushCapable(rawC) {
   // regex above already tolerated quotes around `git`/`push` (Round A); the
   // gh regexes never got the same treatment. Added `['"]?` around every gh
   // token and sub-token.
-  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+(['"]?repo['"]?[ \t]+['"]?(create|edit|sync|clone)['"]?|['"]?pr['"]?[ \t]+['"]?create['"]?|['"]?release['"]?[ \t]+['"]?(create|upload)['"]?|['"]?gist['"]?[ \t]+['"]?create['"]?)/i.test(c)) return true;
-  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?gh['"]?[ \\t].*--push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
+  if (
+    /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+(['"]?repo['"]?[ \t]+['"]?(create|edit|sync|clone)['"]?|['"]?pr['"]?[ \t]+['"]?create['"]?|['"]?release['"]?[ \t]+['"]?(create|upload)['"]?|['"]?gist['"]?[ \t]+['"]?create['"]?)/i.test(
+      c,
+    )
+  )
+    return true;
+  if (
+    new RegExp(`(^|[^A-Za-z0-9_])['"]?gh['"]?[ \\t].*--push['"]?${LEXICAL_BOUNDARY}`, 'i').test(c)
+  )
+    return true;
   // 2026-07-21 audit fix (undisclosed bypass of BOTH gates): `gh api` is the
   // GitHub CLI's raw REST interface — a documented, non-obfuscated way to create
   // repos, change a repo's visibility, push refs, etc., i.e. everything these
@@ -1401,22 +1479,32 @@ export function isPushCapable(rawC) {
   // a visibility change whose value lives only inside an `--input` file, and a raw
   // `curl` to api.github.com, are not parsed here — the same "this hook does not
   // execute or read referenced files" boundary as elsewhere.)
-  if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c) &&
-      (/[ \t]['"]?(-X|--method)['"]?[ \t=]+['"]?(POST|PATCH|PUT|DELETE)['"]?/i.test(c) ||
-       /[ \t](--field|--raw-field|--input)[ \t=]/i.test(c) ||
-       // 2026-07-21 Round 2 fix: the earlier body-flag test required a separator
-       // right after -f/-F, so it missed pflag's standard ATTACHED-shorthand form
-       // `-fname=x` / `-Fname=x` (value glued to the flag) — a normal, documented
-       // gh api form, not obfuscation, that carries a POST body and so bypassed
-       // both gates. Match -f/-F followed by a separator OR immediately by a
-       // non-dash value character. Over-detection fails closed, so it is safe.
-       /[ \t]-[fF]([ \t=]|[^ \t-])/i.test(c))) return true;
+  if (
+    /(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+['"]?api['"]?([ \t]|$)/i.test(c) &&
+    (/[ \t]['"]?(-X|--method)['"]?[ \t=]+['"]?(POST|PATCH|PUT|DELETE)['"]?/i.test(c) ||
+      /[ \t](--field|--raw-field|--input)[ \t=]/i.test(c) ||
+      // 2026-07-21 Round 2 fix: the earlier body-flag test required a separator
+      // right after -f/-F, so it missed pflag's standard ATTACHED-shorthand form
+      // `-fname=x` / `-Fname=x` (value glued to the flag) — a normal, documented
+      // gh api form, not obfuscation, that carries a POST body and so bypassed
+      // both gates. Match -f/-F followed by a separator OR immediately by a
+      // non-dash value character. Over-detection fails closed, so it is safe.
+      /[ \t]-[fF]([ \t=]|[^ \t-])/i.test(c))
+  )
+    return true;
   // git aliases that resolve to push (e.g. `git -c alias.p=push p`, or
   // `git config alias.foo push` followed later by `git foo`).
-  if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/i.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])git[ \t]+config([ \t]+--\S+)*[ \t]+alias\.[A-Za-z0-9_.-]+[ \t]+['"]?push/i.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])git[ \t]+(-c[ \t]+)?alias\.[A-Za-z0-9_.-]+[ \t]*=[ \t]*['"]?push/i.test(c))
+    return true;
+  if (
+    /(^|[^A-Za-z0-9_])git[ \t]+config([ \t]+--\S+)*[ \t]+alias\.[A-Za-z0-9_.-]+[ \t]+['"]?push/i.test(
+      c,
+    )
+  )
+    return true;
   // git plumbing command that performs a push without the word "push".
-  if (new RegExp(`(^|[^A-Za-z0-9_])git[ \\t]+send-pack${LEXICAL_BOUNDARY}`, 'i').test(c)) return true;
+  if (new RegExp(`(^|[^A-Za-z0-9_])git[ \\t]+send-pack${LEXICAL_BOUNDARY}`, 'i').test(c))
+    return true;
   // gh's own alias mechanism, same shape of risk as git aliases.
   if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+alias[ \t]+set/i.test(c)) return true;
   // 2026-07-11 fix (found live, in real use, not just review): there used
@@ -1480,9 +1568,19 @@ export function isPushCapable(rawC) {
   // tokens recorded. Fixed with the same shared boundary as every other
   // regex in this function.
   const SCRIPT_INDIRECTION_KEYWORDS = /(deploy|release|publish|ship|public|visibility)/i;
-  if (new RegExp(`(^|[^A-Za-z0-9_])(\\.\\/|bash[ \\t]+|sh[ \\t]+|node[ \\t]+|python3?[ \\t]+)[^ \\t]*\\.(sh|mjs|js|py)${LEXICAL_BOUNDARY}`, 'i').test(c) &&
-      SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
+  if (
+    new RegExp(
+      `(^|[^A-Za-z0-9_])(\\.\\/|bash[ \\t]+|sh[ \\t]+|node[ \\t]+|python3?[ \\t]+)[^ \\t]*\\.(sh|mjs|js|py)${LEXICAL_BOUNDARY}`,
+      'i',
+    ).test(c) &&
+    SCRIPT_INDIRECTION_KEYWORDS.test(c)
+  )
+    return true;
   if (/(^|[^A-Za-z0-9_])make[ \t]+\S+/i.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
-  if (/(^|[^A-Za-z0-9_])(npm|pnpm|yarn)[ \t]+run[ \t]+\S+/i.test(c) && SCRIPT_INDIRECTION_KEYWORDS.test(c)) return true;
+  if (
+    /(^|[^A-Za-z0-9_])(npm|pnpm|yarn)[ \t]+run[ \t]+\S+/i.test(c) &&
+    SCRIPT_INDIRECTION_KEYWORDS.test(c)
+  )
+    return true;
   return false;
 }

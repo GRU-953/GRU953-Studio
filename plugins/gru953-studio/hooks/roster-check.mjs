@@ -58,9 +58,23 @@ function main() {
     // No per-project baseline — try the committed product baseline.
     const rosterFile = path.join(pluginRoot, 'ROSTER.md');
     let rosterText = null;
-    try { rosterText = fs.readFileSync(rosterFile, 'utf8'); } catch { rosterText = null; }
+    try {
+      rosterText = fs.readFileSync(rosterFile, 'utf8');
+    } catch {
+      rosterText = null;
+    }
     if (rosterText === null) {
-      console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles but no Dev-Memory/decisions/*roster*.md baseline and no committed ROSTER.md to check against`, currentCount }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            status: 'BLOCKED',
+            reason: `agents/ has ${currentCount} roles but no Dev-Memory/decisions/*roster*.md baseline and no committed ROSTER.md to check against`,
+            currentCount,
+          },
+          null,
+          2,
+        ),
+      );
       process.exit(1);
     }
     // 2026-07-12 Round 7 audit fix: bounded-but-arbitrary-gap search still
@@ -71,18 +85,46 @@ function main() {
     // narrates an earlier/hypothetical count before the authoritative one ("...50
     // considered (role count: 50) but settled on baseline = 5") would otherwise
     // read the wrong number, which in one direction hides real scope creep.
-    const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/ig)];
+    const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/gi)];
     const rm = rmAll.length ? rmAll[rmAll.length - 1] : null;
     if (!rm) {
-      console.log(JSON.stringify({ status: 'BLOCKED', reason: `ROSTER.md exists but states no numeric "role count: <n>"`, currentCount }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            status: 'BLOCKED',
+            reason: `ROSTER.md exists but states no numeric "role count: <n>"`,
+            currentCount,
+          },
+          null,
+          2,
+        ),
+      );
       process.exit(1);
     }
     const recordedBaseline = parseInt(rm[1], 10);
     if (currentCount > recordedBaseline) {
-      console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles, exceeding the committed ROSTER.md baseline of ${recordedBaseline} — update ROSTER.md with a named reason before this count is acceptable`, currentCount, recordedBaseline, source: 'ROSTER.md' }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            status: 'BLOCKED',
+            reason: `agents/ has ${currentCount} roles, exceeding the committed ROSTER.md baseline of ${recordedBaseline} — update ROSTER.md with a named reason before this count is acceptable`,
+            currentCount,
+            recordedBaseline,
+            source: 'ROSTER.md',
+          },
+          null,
+          2,
+        ),
+      );
       process.exit(1);
     }
-    console.log(JSON.stringify({ status: 'clean', currentCount, recordedBaseline, source: 'ROSTER.md' }, null, 2));
+    console.log(
+      JSON.stringify(
+        { status: 'clean', currentCount, recordedBaseline, source: 'ROSTER.md' },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
 
@@ -128,7 +170,17 @@ function main() {
   try {
     text = fs.readFileSync(latestPath, 'utf8');
   } catch (e) {
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: `could not read the latest roster decision file (${latest}): ${formatFsError(e)}`, currentCount }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: `could not read the latest roster decision file (${latest}): ${formatFsError(e)}`,
+          currentCount,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   // 2026-07-12 Round 7 audit fix: same immediate-adjacency tightening as
@@ -138,19 +190,47 @@ function main() {
   // 2026-07-21 audit fix: last match wins (see the ROSTER.md fallback above) so a
   // decision file that mentions an earlier count before the authoritative one
   // cannot silently set the wrong baseline.
-  const mAll = [...text.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/ig)];
+  const mAll = [...text.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/gi)];
   const m = mAll.length ? mAll[mAll.length - 1] : null;
   if (!m) {
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: `latest roster decision file (${latest}) doesn't state a numeric baseline`, currentCount }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: `latest roster decision file (${latest}) doesn't state a numeric baseline`,
+          currentCount,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   const recordedBaseline = parseInt(m[1], 10);
 
   if (currentCount > recordedBaseline) {
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: `agents/ has ${currentCount} roles, exceeding the last recorded baseline of ${recordedBaseline} (${latest}) — add a new *roster* decision file naming the gap and reason before this count is acceptable`, currentCount, recordedBaseline, latestDecisionFile: latest }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: `agents/ has ${currentCount} roles, exceeding the last recorded baseline of ${recordedBaseline} (${latest}) — add a new *roster* decision file naming the gap and reason before this count is acceptable`,
+          currentCount,
+          recordedBaseline,
+          latestDecisionFile: latest,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
-  console.log(JSON.stringify({ status: 'clean', currentCount, recordedBaseline, latestDecisionFile: latest }, null, 2));
+  console.log(
+    JSON.stringify(
+      { status: 'clean', currentCount, recordedBaseline, latestDecisionFile: latest },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 

@@ -45,15 +45,29 @@ import { splitPipeCells, stripBom, isDirectory } from './lib.mjs';
 // rather than silently accepting every word (a missing schema must never
 // widen what counts as a valid link).
 const GRAPH_SCHEMA_PATH = path.join(
-  path.dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'dev-memory', 'schemas', 'GRAPH.schema.json',
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'skills',
+  'dev-memory',
+  'schemas',
+  'GRAPH.schema.json',
 );
-const DOCUMENTED_LINK_VOCABULARY = ['implements', 'depends-on', 'relates-to', 'supersedes', 'caused-by', 'blocks'];
+const DOCUMENTED_LINK_VOCABULARY = [
+  'implements',
+  'depends-on',
+  'relates-to',
+  'supersedes',
+  'caused-by',
+  'blocks',
+];
 function loadLinkVocabulary() {
   try {
     const schema = JSON.parse(fs.readFileSync(GRAPH_SCHEMA_PATH, 'utf8'));
     const relationEnum = schema.items.properties.links.items.properties.relation.enum;
     if (Array.isArray(relationEnum) && relationEnum.length > 0) return relationEnum;
-  } catch { /* fall through to the documented vocabulary below */ }
+  } catch {
+    /* fall through to the documented vocabulary below */
+  }
   return DOCUMENTED_LINK_VOCABULARY;
 }
 
@@ -81,7 +95,11 @@ const MD_LINK_RE = /^\[([^\]]*)\]\(([^)]+)\)$/;
 // undefined — a false BLOCK on legitimate data, caused by this file's own
 // fix above interacting badly with an unstripped BOM.
 function read(p) {
-  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
+  try {
+    return stripBom(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 // --- INDEX.md: every path-shaped "where" cell resolves to a real file --------
@@ -93,7 +111,11 @@ function checkIndex(root, devMemory, problems) {
   let inTable = false;
   let whereCol = -1;
   for (const line of lines) {
-    if (!/^\s*\|/.test(line)) { inTable = false; whereCol = -1; continue; }
+    if (!/^\s*\|/.test(line)) {
+      inTable = false;
+      whereCol = -1;
+      continue;
+    }
     const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
@@ -108,10 +130,7 @@ function checkIndex(root, devMemory, problems) {
     if (!where || PLACEHOLDER_RE.test(where) || !LOOKS_LIKE_PATH_RE.test(where)) continue;
     // Resolve relative to the project root; also accept a path already relative
     // to Dev-Memory/ (a bare filename recorded in the index).
-    const candidates = [
-      path.resolve(root, where),
-      path.resolve(devMemory, where),
-    ];
+    const candidates = [path.resolve(root, where), path.resolve(devMemory, where)];
     if (!candidates.some((p) => fs.existsSync(p))) {
       problems.push(`INDEX.md points at "${where}", which does not exist — a stale recall entry.`);
     }
@@ -155,7 +174,10 @@ function checkGraph(devMemory, problems) {
   let inNodes = false;
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
-    if (heading) { inNodes = /node/i.test(heading[1]); continue; }
+    if (heading) {
+      inNodes = /node/i.test(heading[1]);
+      continue;
+    }
     if (!inNodes) continue;
     const m = line.match(NODE_DEF_RE);
     if (m) nodes.add(m[1]);
@@ -174,7 +196,10 @@ function checkGraph(devMemory, problems) {
   // ("- All links use verbs like implements and blocks") was parsed as a link and
   // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
   // introduced).
-  const LINK_RE = new RegExp(`^\\s*[-*]\\s+(\\S+)\\s+(${loadLinkVocabulary().join('|')})\\s+(\\S+)`, 'i');
+  const LINK_RE = new RegExp(
+    `^\\s*[-*]\\s+(\\S+)\\s+(${loadLinkVocabulary().join('|')})\\s+(\\S+)`,
+    'i',
+  );
   // 2026-07-26 further-pass audit fix (false-block, confirmed by execution).
   // The id groups are `\S+` with no boundary after them, so a link line
   // written as an ordinary sentence — "- T1 implements R1." — captured the
@@ -187,15 +212,20 @@ function checkGraph(devMemory, problems) {
   const stripTrailingPunctuation = (s) => s.replace(/[.,;:!?)\]]+$/, '');
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
-    if (heading) { inLinks = /link|edge/i.test(heading[1]); continue; }
+    if (heading) {
+      inLinks = /link|edge/i.test(heading[1]);
+      continue;
+    }
     if (!inLinks) continue;
     const m = line.match(LINK_RE);
     if (!m) continue;
     const [, rawSrc, type, rawDst] = m;
     const src = stripTrailingPunctuation(rawSrc);
     const dst = stripTrailingPunctuation(rawDst);
-    if (!nodes.has(src)) problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${src}".`);
-    if (!nodes.has(dst)) problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${dst}".`);
+    if (!nodes.has(src))
+      problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${src}".`);
+    if (!nodes.has(dst))
+      problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${dst}".`);
   }
 }
 
@@ -207,17 +237,31 @@ function main() {
   // full reproduction (a crash instead of a plain message if Dev-Memory
   // disappears between the two calls).
   if (!isDirectory(devMemory)) {
-    console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }));
+    console.log(
+      JSON.stringify({
+        status: 'not a studio project',
+        reason: 'no Dev-Memory/ directory — nothing to check',
+        root,
+      }),
+    );
     process.exit(0);
   }
   const problems = [];
   checkIndex(root, devMemory, problems);
   checkGraph(devMemory, problems);
   if (problems.length === 0) {
-    console.log(JSON.stringify({ status: 'clean', reason: 'recall index and knowledge graph are internally consistent' }, null, 2));
+    console.log(
+      JSON.stringify(
+        { status: 'clean', reason: 'recall index and knowledge graph are internally consistent' },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
-  console.log(JSON.stringify({ status: 'BLOCKED', reason: 'recall memory inconsistency', problems }, null, 2));
+  console.log(
+    JSON.stringify({ status: 'BLOCKED', reason: 'recall memory inconsistency', problems }, null, 2),
+  );
   process.exit(1);
 }
 

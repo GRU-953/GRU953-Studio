@@ -2620,6 +2620,7 @@ test('dashboard.mjs: an unrecognised status column or status word still shows in
   fs.writeFileSync(path.join(dir2, 'Dev-Memory', 'PROGRESS.md'),
     '| ID | Task | Status | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | a | Doing | x |\n| T2 | b | In Review | x |\n');
   const r2 = runScript('dashboard.mjs', dir2);
+  assert.equal(r2.json.status, 'written');
   const html2 = fs.readFileSync(path.join(dir2, 'Dev-Memory', 'dashboard.html'), 'utf8');
   assert.match(html2, /pill doing"><span class="n">1<\/span> Doing now/);
   assert.match(html2, /pill other"><span class="n">1<\/span> Other/, 'the synonym-status row must still be counted somewhere in the summary');

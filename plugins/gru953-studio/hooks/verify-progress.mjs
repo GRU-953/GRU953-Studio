@@ -64,12 +64,18 @@ function main() {
   try {
     text = stripBom(fs.readFileSync(file, 'utf8'));
   } catch (e) {
-    console.log(JSON.stringify({
-      status: 'BLOCKED',
-      reason: `PROGRESS.md exists but could not be read, so "done" tasks cannot be verified: ${formatFsError(e)}`,
-      file,
-      fix: 'Make Dev-Memory/PROGRESS.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: `PROGRESS.md exists but could not be read, so "done" tasks cannot be verified: ${formatFsError(e)}`,
+          file,
+          fix: 'Make Dev-Memory/PROGRESS.md readable (check it is a file, not a folder, and that you have permission to read it), then run this check again.',
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   const lines = text.split(/\r?\n/);
@@ -83,7 +89,8 @@ function main() {
   // trailing whitespace/table-cell padding) means only a `verified:` clause
   // that is the row's FINAL claim counts — a stale claim followed by a
   // later "but now fails" no longer matches.
-  const VERIFIED_RE = /verified:.*(→|->).*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
+  const VERIFIED_RE =
+    /verified:.*(→|->).*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
   // 2026-07-25: Structured JSON evidence format (machine-parseable)
   // Format: {"taskId":"T3","criterion":"...","command":"...","exitCode":0,"stdout":"...","stderr":"","durationMs":1240,"artifacts":[],"timestamp":"2026-07-25T10:30:00Z","verifier":"tester"}
   // 2026-07-26 audit finding 1 (MAJOR false-clean, found by execution). This
@@ -103,7 +110,8 @@ function main() {
   // lumped in with "no evidence at all". The shape regex still matches any code
   // — that is what lets us tell "this row has no evidence" apart from "this
   // row's evidence records a failure".
-  const JSON_EVIDENCE_SHAPE_RE = /\{\s*"taskId"\s*:\s*"[^"]+"\s*,\s*"criterion"\s*:\s*"[^"]*"\s*,\s*"command"\s*:\s*"[^"]*"\s*,\s*"exitCode"\s*:\s*(-?\d+)\s*,\s*"stdout"/i;
+  const JSON_EVIDENCE_SHAPE_RE =
+    /\{\s*"taskId"\s*:\s*"[^"]+"\s*,\s*"criterion"\s*:\s*"[^"]*"\s*,\s*"command"\s*:\s*"[^"]*"\s*,\s*"exitCode"\s*:\s*(-?\d+)\s*,\s*"stdout"/i;
   // 2026-07-12 audit fix (MAJOR false-clean, found by execution): VERIFIED_RE
   // only checks that its pattern appears SOMEWHERE on the line, so a Notes
   // cell that honestly documents an OLD passing run alongside a NEW,
@@ -166,7 +174,8 @@ function main() {
   // this gate failing OPEN. Strip surrounding emphasis, then any leading run of
   // non-alphanumeric decoration, before the "starts with the word done" test —
   // still rejecting "undone"/"donee" (Round 7) and tolerating "Done ✅"/"DONE!".
-  const isDoneValue = (c) => /^done\b/i.test(deEmphasise(String(c == null ? '' : c)).replace(/^[^A-Za-z0-9]+/, ''));
+  const isDoneValue = (c) =>
+    /^done\b/i.test(deEmphasise(String(c == null ? '' : c)).replace(/^[^A-Za-z0-9]+/, ''));
   // 2026-07-21 Round 12 audit fix (medium): GFM outer pipes are OPTIONAL per row,
   // so a piped `| a | b |` and a pipe-less `a | b` render identically but
   // splitPipeCells yields ['',a,b,''] vs [a,b]. If a data row's outer-pipe style
@@ -187,8 +196,8 @@ function main() {
   // ends the table.
   const looksLikeRow = (l) => l.trim() !== '' && l.includes('|');
 
-  const problems = [];      // "done" rows carrying no verified: evidence
-  const unidentified = [];  // task table(s) with a "done" claim we cannot verify (fail CLOSED)
+  const problems = []; // "done" rows carrying no verified: evidence
+  const unidentified = []; // task table(s) with a "done" claim we cannot verify (fail CLOSED)
   const failedEvidence = []; // "done" rows whose OWN structured evidence records a non-zero exit
 
   for (let i = 0; i < lines.length; i++) {
@@ -237,14 +246,17 @@ function main() {
         failedEvidence.push({ row: row.trim(), exitCode: jsonExitCode });
         continue;
       }
-      if ((!hasVerified && !hasPassingJsonEvidence) || CONTRADICTION_RE.test(row)) problems.push(row.trim());
+      if ((!hasVerified && !hasPassingJsonEvidence) || CONTRADICTION_RE.test(row))
+        problems.push(row.trim());
     }
     if (sawDoneUnknown) unidentified.push(header.trim());
     i = j - 1; // resume after this table (the for-loop's i++ advances to j)
   }
 
   if (problems.length === 0 && unidentified.length === 0 && failedEvidence.length === 0) {
-    console.log(JSON.stringify({ status: 'clean', reason: 'every "done" row has a verified: cell' }, null, 2));
+    console.log(
+      JSON.stringify({ status: 'clean', reason: 'every "done" row has a verified: cell' }, null, 2),
+    );
     process.exit(0);
   }
   const out = { status: 'BLOCKED' };
@@ -262,9 +274,12 @@ function main() {
     out.rows = problems;
   }
   if (unidentified.length) {
-    if (!out.reason) out.reason = 'a task table makes a "done" claim that cannot be verified (no identifiable Status column, or a row whose columns do not line up with the header)';
+    if (!out.reason)
+      out.reason =
+        'a task table makes a "done" claim that cannot be verified (no identifiable Status column, or a row whose columns do not line up with the header)';
     out.unverifiableTables = unidentified;
-    out.hint = 'Give the task table a clear "Status" (or "State") column and keep every row to the same columns, so "done" rows can be checked for verified: evidence. Failing closed.';
+    out.hint =
+      'Give the task table a clear "Status" (or "State") column and keep every row to the same columns, so "done" rows can be checked for verified: evidence. Failing closed.';
   }
   console.log(JSON.stringify(out, null, 2));
   process.exit(1);

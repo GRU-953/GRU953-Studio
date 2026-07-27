@@ -42,6 +42,8 @@ node plugins/gru953-studio/hooks/licence-scan.mjs .
 # 7. documentation stays internally consistent (counts, duplicates, role references)
 node plugins/gru953-studio/hooks/docs-consistency.mjs .
 # 8. every required file is present (see .github/workflows/ci.yml for the exact list)
+# 9. the hook scripts lint clean and are formatted consistently (root-level dev tooling)
+npm ci && npm run lint && npm run format:check
 ```
 
 If your change touches `clients/cli`, `clients/antigravity`, or `clients/vscode`,
@@ -59,7 +61,12 @@ just describe your app" can promise honestly. The three `clients/` bridges
 carry their own dev-only tooling (TypeScript, ESLint, `vsce`) to build and
 lint the VS Code extension — that's a deliberate exception, since none of it
 ships inside the plugin a user installs, and it shouldn't be "fixed" back
-out by a well-meaning cleanup.
+out by a well-meaning cleanup. The root `package.json` (added by a 2026-08
+audit round) is the same kind of exception, one level up: it holds ESLint and
+Prettier for linting/formatting the hook scripts themselves in CI, and is
+never referenced by anything a user installs — `docs-consistency.mjs`'s
+zero-dependency check looks only inside `plugins/gru953-studio/`, so this
+root manifest sits outside its remit on purpose, not by oversight.
 
 If your change touches a skill or hook that documents one of the five
 project-level gates (verify-progress.mjs, quality-gate.mjs, traceability-check.mjs,

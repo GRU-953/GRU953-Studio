@@ -74,7 +74,11 @@ const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // **deferred** likewise failed DEFERRED_RE, wrongly reporting a deferred row as a
 // dropped requirement. Strip surrounding emphasis, then a leading run of non-
 // alphanumeric decoration, so the anchored REs see the bare status word.
-const deEmphStatus = (s) => String(s == null ? '' : s).replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '').replace(/^[^A-Za-z0-9]+/, '');
+const deEmphStatus = (s) =>
+  String(s == null ? '' : s)
+    .replace(/^[\s*_`]+/, '')
+    .replace(/[\s*_`]+$/, '')
+    .replace(/^[^A-Za-z0-9]+/, '');
 
 // 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
 // fix — checked by execution rather than assumed: this file's table-row test
@@ -85,7 +89,11 @@ const deEmphStatus = (s) => String(s == null ? '' : s).replace(/^[\s*_`]+/, '').
 // real, reproduced BOM bug: both use a strict `^#` heading regex with no
 // `\s*` prefix, which a BOM genuinely defeats.)
 function read(p) {
-  try { return stripBom(fs.readFileSync(p, 'utf8')); } catch { return null; }
+  try {
+    return stripBom(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 function idsIn(cell) {
   if (!cell || PLACEHOLDER_RE.test(cell.trim())) return [];
@@ -116,7 +124,10 @@ function parseTable(text, wantHeaderRe) {
       if (cells.some((c) => wantHeaderRe.test(deEmphasise(c)))) headers = cells;
       continue;
     }
-    if (!headers) { inTable = false; continue; }
+    if (!headers) {
+      inTable = false;
+      continue;
+    }
     if (SEPARATOR_ROW_RE.test(line)) continue;
     rows.push({ cells, raw: line.trim() });
   }
@@ -135,17 +146,30 @@ function main() {
   // lib.mjs's isDirectory() for the full reproduction (a crash instead of a
   // plain message if Dev-Memory disappears between the two calls).
   if (!isDirectory(devMemory)) {
-    console.log(JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to trace', root }));
+    console.log(
+      JSON.stringify({
+        status: 'not a studio project',
+        reason: 'no Dev-Memory/ directory — nothing to trace',
+        root,
+      }),
+    );
     process.exit(0);
   }
   const reqFile = path.join(devMemory, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
   if (reqText === null) {
-    console.log(JSON.stringify({
-      status: 'BLOCKED',
-      reason: 'Dev-Memory/ exists but has no REQUIREMENTS.md — there is no traceability matrix to prove requirements map to tasks. Create it (see the focus-guard skill) before a checkpoint commit or Publish.',
-      file: reqFile,
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason:
+            'Dev-Memory/ exists but has no REQUIREMENTS.md — there is no traceability matrix to prove requirements map to tasks. Create it (see the focus-guard skill) before a checkpoint commit or Publish.',
+          file: reqFile,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
 
@@ -154,8 +178,16 @@ function main() {
 
   const reqTable = parseTable(reqText, /^(requirement|req|id)$/i);
   if (!reqTable) {
-    problems.push('REQUIREMENTS.md has no recognisable requirements table (need columns including a Requirement/ID, a Tasks, a Status, and a Verification column).');
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: 'traceability matrix unreadable', problems }, null, 2));
+    problems.push(
+      'REQUIREMENTS.md has no recognisable requirements table (need columns including a Requirement/ID, a Tasks, a Status, and a Verification column).',
+    );
+    console.log(
+      JSON.stringify(
+        { status: 'BLOCKED', reason: 'traceability matrix unreadable', problems },
+        null,
+        2,
+      ),
+    );
     process.exit(1);
   }
   const H = reqTable.headers;
@@ -164,28 +196,38 @@ function main() {
   const cTasks = col(H, /^(tasks?|task ?ids?|task ?refs?)$/i);
   const cStatus = col(H, /^status$/i);
   const cVerif = col(H, /^(verification|verify|evidence|proof)$/i);
-  if (cTasks === -1) problems.push('REQUIREMENTS.md has no "Tasks" column — cannot check that requirements map to tasks.');
+  if (cTasks === -1)
+    problems.push(
+      'REQUIREMENTS.md has no "Tasks" column — cannot check that requirements map to tasks.',
+    );
   if (cStatus === -1) problems.push('REQUIREMENTS.md has no "Status" column.');
 
   // Collect the task ids REQUIREMENTS.md references, and run FORWARD + STATUS.
   const referencedTaskIds = new Set();
   for (const { cells, raw } of reqTable.rows) {
-    const label = (cId !== -1 && cells[cId]) ? cells[cId] : (cReq !== -1 ? cells[cReq] : raw).slice(0, 60);
-    const status = cStatus !== -1 ? (cells[cStatus] || '') : '';
+    const label =
+      cId !== -1 && cells[cId] ? cells[cId] : (cReq !== -1 ? cells[cReq] : raw).slice(0, 60);
+    const status = cStatus !== -1 ? cells[cStatus] || '' : '';
     const statusForMatch = deEmphStatus(status); // decoration-stripped, for MET_RE/DEFERRED_RE
-    const taskCell = cTasks !== -1 ? (cells[cTasks] || '') : '';
+    const taskCell = cTasks !== -1 ? cells[cTasks] || '' : '';
     const ids = idsIn(taskCell);
     ids.forEach((id) => referencedTaskIds.add(id));
 
     if (cTasks !== -1 && ids.length === 0 && !DEFERRED_RE.test(statusForMatch)) {
-      problems.push(`requirement "${label}" maps to no task and is not marked deferred/future — a dropped or unplanned requirement.`);
+      problems.push(
+        `requirement "${label}" maps to no task and is not marked deferred/future — a dropped or unplanned requirement.`,
+      );
     }
     if (cStatus !== -1 && MET_RE.test(statusForMatch)) {
-      const verif = cVerif !== -1 ? (cells[cVerif] || '') : '';
+      const verif = cVerif !== -1 ? cells[cVerif] || '' : '';
       if (cVerif === -1 || PLACEHOLDER_RE.test(verif.trim())) {
-        problems.push(`requirement "${label}" is marked "${status.trim()}" but has no verification evidence — a met requirement needs proof.`);
+        problems.push(
+          `requirement "${label}" is marked "${status.trim()}" but has no verification evidence — a met requirement needs proof.`,
+        );
       } else if (CONTRADICTION_RE.test(raw)) {
-        problems.push(`requirement "${label}" is marked met but its own row says it is currently failing/unverified → "${raw}"`);
+        problems.push(
+          `requirement "${label}" is marked met but its own row says it is currently failing/unverified → "${raw}"`,
+        );
       }
     }
   }
@@ -193,7 +235,9 @@ function main() {
   // DANGLING + REVERSE need PROGRESS.md's task ids.
   const progText = read(path.join(devMemory, 'PROGRESS.md'));
   if (progText === null) {
-    notes.push('PROGRESS.md not found — dangling-reference and scope-creep (reverse) checks not run.');
+    notes.push(
+      'PROGRESS.md not found — dangling-reference and scope-creep (reverse) checks not run.',
+    );
   } else {
     const progTable = parseTable(progText, /^(id|task ?id|#|task)$/i);
     let idCol = -1;
@@ -208,27 +252,47 @@ function main() {
       }
     }
     if (progIds === null) {
-      notes.push('reverse (scope-creep) and dangling checks not run — PROGRESS.md has no dedicated "ID"/"Task ID" column to match against. Add one to enable full two-way traceability.');
+      notes.push(
+        'reverse (scope-creep) and dangling checks not run — PROGRESS.md has no dedicated "ID"/"Task ID" column to match against. Add one to enable full two-way traceability.',
+      );
     } else {
       // DANGLING: a requirement points at a task id that PROGRESS.md doesn't have.
       for (const id of referencedTaskIds) {
-        if (!progIds.has(id)) problems.push(`requirement references task "${id}" which does not exist in PROGRESS.md — a dangling reference.`);
+        if (!progIds.has(id))
+          problems.push(
+            `requirement references task "${id}" which does not exist in PROGRESS.md — a dangling reference.`,
+          );
       }
       // REVERSE: a PROGRESS task traces back to no requirement (scope creep),
       // unless the row is explicitly exempted as chore/infra.
       for (const [id, raw] of progIds) {
         if (!referencedTaskIds.has(id) && !EXEMPT_RE.test(raw)) {
-          problems.push(`task "${id}" in PROGRESS.md traces back to no requirement — possible scope creep. Link it to a requirement, or mark the row [chore]/[infra] if it is deliberately requirement-free.`);
+          problems.push(
+            `task "${id}" in PROGRESS.md traces back to no requirement — possible scope creep. Link it to a requirement, or mark the row [chore]/[infra] if it is deliberately requirement-free.`,
+          );
         }
       }
     }
   }
 
   if (problems.length === 0) {
-    console.log(JSON.stringify({ status: 'clean', reason: 'requirements and tasks are in sync', requirements: reqTable.rows.length, notes }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: 'clean',
+          reason: 'requirements and tasks are in sync',
+          requirements: reqTable.rows.length,
+          notes,
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
-  console.log(JSON.stringify({ status: 'BLOCKED', reason: 'traceability broken', problems, notes }, null, 2));
+  console.log(
+    JSON.stringify({ status: 'BLOCKED', reason: 'traceability broken', problems, notes }, null, 2),
+  );
   process.exit(1);
 }
 

@@ -1,0 +1,13 @@
+{
+  "name": "gru953-studio-repo-tools",
+  "private": true,
+  "description": "Dev-only repo tooling (lint/format) for GRU953-Studio. Not shipped inside the plugin — see CONTRIBUTING.md's 'A note on dependencies'.",
+  "scripts": {
+    "lint": "eslint plugins/gru953-studio/hooks",
+    "format:check": "prettier --check \"plugins/gru953-studio/hooks/*.mjs\" eslint.config.mjs"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "prettier": "^3.4.2"
+  }
+}

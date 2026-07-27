@@ -18,7 +18,7 @@ function output(additionalContext) {
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext },
-      }) + '\n'
+      }) + '\n',
     );
   }
   process.exit(0);
@@ -47,6 +47,6 @@ output(
   'A Bash command just failed inside an active GRU953-Studio project. ' +
     'Follow the self-healing skill: hand this to the fixer role for up to ' +
     '2 quiet attempts (reproduce, find the root cause, apply the smallest ' +
-    'fix, re-verify) before invoking the Project Lead\'s full Stuck Protocol. ' +
-    'This never applies to Publish or any push-capable action.'
+    "fix, re-verify) before invoking the Project Lead's full Stuck Protocol. " +
+    'This never applies to Publish or any push-capable action.',
 );

@@ -33,11 +33,20 @@ import { readStdin, extractCwd, findStudioRoot } from './lib.mjs';
 // in practice (see the comment above — never used for a safety decision),
 // but a genuine logic bug relative to how env-var flags are normally read.
 function isTruthyEnv(v) {
-  return ['1', 'true', 'yes'].includes(String(v ?? '').trim().toLowerCase());
+  return ['1', 'true', 'yes'].includes(
+    String(v ?? '')
+      .trim()
+      .toLowerCase(),
+  );
 }
 function isLikelyEphemeral() {
   const env = process.env;
-  if (isTruthyEnv(env.CLAUDE_CODE_WEB) || isTruthyEnv(env.CLAUDE_CODE_CLOUD) || isTruthyEnv(env.CLAUDE_CODE_REMOTE)) return true;
+  if (
+    isTruthyEnv(env.CLAUDE_CODE_WEB) ||
+    isTruthyEnv(env.CLAUDE_CODE_CLOUD) ||
+    isTruthyEnv(env.CLAUDE_CODE_REMOTE)
+  )
+    return true;
   // CODESPACES / GITPOD_WORKSPACE_ID are identifier-style presence flags (any
   // non-empty value legitimately means "set"), so a presence check is correct.
   // CI is a boolean-style flag, so it uses isTruthyEnv too — 2026-07-21 fix:
@@ -46,13 +55,19 @@ function isLikelyEphemeral() {
   if (env.CODESPACES || env.GITPOD_WORKSPACE_ID || isTruthyEnv(env.CI)) return true;
   try {
     if (fs.existsSync('/.dockerenv')) return true; // common container marker
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return false;
 }
 
 function main() {
   let input = '';
-  try { input = readStdin(); } catch { input = ''; }
+  try {
+    input = readStdin();
+  } catch {
+    input = '';
+  }
   const cwd = extractCwd(input) || process.cwd();
   const studioRoot = findStudioRoot(cwd);
   if (studioRoot === null) {
@@ -74,13 +89,15 @@ function main() {
         'No local Dev-Memory/ was found, and this looks like a cloud/ephemeral',
         'session (the container may have been reclaimed since a prior one).',
         'Before treating this as a brand-new project: check whether this',
-        'project\'s GitHub remote has a memory/cloud-persist branch — if so,',
+        "project's GitHub remote has a memory/cloud-persist branch — if so,",
         'restore it first (see the dev-memory skill\'s "One named branch, and',
         'how to restore from it" section) rather than starting over.',
       ].join('\n');
-      process.stdout.write(JSON.stringify({
-        hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext },
-      }));
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext },
+        }),
+      );
     }
     // Not a studio project (or nothing more to add) — stand down.
     process.exit(0);
@@ -99,7 +116,7 @@ function main() {
       '',
       'This looks like a cloud/ephemeral session (the container may be reclaimed',
       'between sessions). Dev-Memory lives only here unless persistence is enabled',
-      'for this project — follow the dev-memory skill\'s cloud-persistence rule so',
+      "for this project — follow the dev-memory skill's cloud-persistence rule so",
       'resume survives, and remember Ollama-based local features are unavailable',
       'here (they self-disable). Prefer the GitHub tools available in this session',
       'over a local `gh` CLI if one is not present.',
@@ -135,9 +152,11 @@ function main() {
 
   const additionalContext = lines.join('\n');
 
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext },
-  }));
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext },
+    }),
+  );
   process.exit(0);
 }
 

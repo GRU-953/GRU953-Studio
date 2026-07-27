@@ -27,10 +27,18 @@ const problems = [];
 const fail = (msg) => problems.push(msg);
 
 function read(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return null; }
+  try {
+    return fs.readFileSync(p, 'utf8');
+  } catch {
+    return null;
+  }
 }
 function listDir(p) {
-  try { return fs.readdirSync(p, { withFileTypes: true }); } catch { return []; }
+  try {
+    return fs.readdirSync(p, { withFileTypes: true });
+  } catch {
+    return [];
+  }
 }
 function frontmatterField(text, field) {
   if (!text) return null;
@@ -61,10 +69,18 @@ const skillsDir = path.join(pluginRoot, 'skills');
 const hooksDir = path.join(pluginRoot, 'hooks');
 const commandsDir = path.join(pluginRoot, 'commands');
 
-const agentFiles = listDir(agentsDir).filter((d) => d.isFile() && d.name.endsWith('.md')).map((d) => d.name);
-const skillDirs = listDir(skillsDir).filter((d) => d.isDirectory()).map((d) => d.name);
-const hookFiles = listDir(hooksDir).filter((d) => d.isFile() && d.name.endsWith('.mjs')).map((d) => d.name);
-const commandFiles = listDir(commandsDir).filter((d) => d.isFile() && d.name.endsWith('.md')).map((d) => d.name);
+const agentFiles = listDir(agentsDir)
+  .filter((d) => d.isFile() && d.name.endsWith('.md'))
+  .map((d) => d.name);
+const skillDirs = listDir(skillsDir)
+  .filter((d) => d.isDirectory())
+  .map((d) => d.name);
+const hookFiles = listDir(hooksDir)
+  .filter((d) => d.isFile() && d.name.endsWith('.mjs'))
+  .map((d) => d.name);
+const commandFiles = listDir(commandsDir)
+  .filter((d) => d.isFile() && d.name.endsWith('.md'))
+  .map((d) => d.name);
 
 const agentCount = agentFiles.length;
 const skillCount = skillDirs.length;
@@ -89,14 +105,18 @@ for (const f of agentFiles) {
   const desc = frontmatterField(text, 'description');
   const expected = f.replace(/\.md$/, '');
   if (!name) fail(`agent ${f}: missing 'name:' frontmatter`);
-  else if (name !== expected) fail(`agent ${f}: name '${name}' does not match filename '${expected}'`);
+  else if (name !== expected)
+    fail(`agent ${f}: name '${name}' does not match filename '${expected}'`);
   if (!desc) fail(`agent ${f}: missing 'description:' frontmatter`);
 }
 
 // ---- INV 2: skill frontmatter present & name matches directory ---------------
 for (const s of skillDirs) {
   const skillFile = path.join(skillsDir, s, 'SKILL.md');
-  if (!fs.existsSync(skillFile)) { fail(`skill '${s}': directory has no SKILL.md`); continue; }
+  if (!fs.existsSync(skillFile)) {
+    fail(`skill '${s}': directory has no SKILL.md`);
+    continue;
+  }
   const name = frontmatterField(read(skillFile), 'name');
   if (!name) fail(`skill '${s}': SKILL.md missing 'name:' frontmatter`);
   else if (name !== s) fail(`skill '${s}': name '${name}' does not match directory '${s}'`);
@@ -113,7 +133,8 @@ for (const f of allMd) {
   while ((m = re.exec(text))) referencedSkills.add(m[1]);
 }
 for (const s of referencedSkills) {
-  if (!knownSkillWords.has(s)) fail(`referenced skill '${s}' (as \`${s}\` skill) has no skills/${s}/SKILL.md`);
+  if (!knownSkillWords.has(s))
+    fail(`referenced skill '${s}' (as \`${s}\` skill) has no skills/${s}/SKILL.md`);
 }
 // Disclosed limitation (2026-07-12 final audit, confirmed by execution, not
 // fixed): this check and the bullet-list carve-out just below only match
@@ -146,7 +167,9 @@ if (fs.existsSync(studioSkillFile)) {
   let bm;
   while ((bm = bulletRe.exec(studioText))) {
     if (!knownSkillWords.has(bm[1])) {
-      fail(`skills/studio/SKILL.md's companion-skill list references \`${bm[1]}\`, which has no skills/${bm[1]}/SKILL.md`);
+      fail(
+        `skills/studio/SKILL.md's companion-skill list references \`${bm[1]}\`, which has no skills/${bm[1]}/SKILL.md`,
+      );
     }
   }
 }
@@ -154,11 +177,14 @@ if (fs.existsSync(studioSkillFile)) {
 // ---- INV 4: every referenced hook file exists --------------------------------
 const knownHooks = new Set(hookFiles);
 const refHook = /hooks\/([a-z0-9-]+\.mjs)/gi;
-for (const f of allFiles.filter((x) => x.endsWith('.md') || x.endsWith('.json') || x.endsWith('.yml') || x.endsWith('.mjs'))) {
+for (const f of allFiles.filter(
+  (x) => x.endsWith('.md') || x.endsWith('.json') || x.endsWith('.yml') || x.endsWith('.mjs'),
+)) {
   const text = read(f) || '';
   let m;
   while ((m = refHook.exec(text))) {
-    if (!knownHooks.has(m[1])) fail(`file ${path.relative(repoRoot, f)} references hooks/${m[1]} which does not exist`);
+    if (!knownHooks.has(m[1]))
+      fail(`file ${path.relative(repoRoot, f)} references hooks/${m[1]} which does not exist`);
   }
 }
 
@@ -186,7 +212,9 @@ function checkStatedCount(text, re, actual, label) {
   }
   const distinct = [...new Set(matches)];
   if (distinct.length > 1 || distinct[0] !== actual) {
-    fail(`README's stated ${label} count(s) [${distinct.join(', ')}] do not all match the actual count ${actual}`);
+    fail(
+      `README's stated ${label} count(s) [${distinct.join(', ')}] do not all match the actual count ${actual}`,
+    );
   }
 }
 checkStatedCount(readme, /(\d+)\s+(?:AI\s+)?specialist\s+roles?/gi, agentCount, 'role');
@@ -206,7 +234,8 @@ checkStatedCount(readme, /(\d+)\s+skills?/gi, skillCount, 'skill');
 // version is missing, in addition to a real mismatch.
 const pluginJsonRaw = read(path.join(pluginRoot, '.claude-plugin', 'plugin.json'));
 const marketJsonRaw = read(path.join(repoRoot, '.claude-plugin', 'marketplace.json'));
-if (pluginJsonRaw === null) fail(`plugins/gru953-studio/.claude-plugin/plugin.json is missing or unreadable`);
+if (pluginJsonRaw === null)
+  fail(`plugins/gru953-studio/.claude-plugin/plugin.json is missing or unreadable`);
 if (marketJsonRaw === null) fail(`.claude-plugin/marketplace.json is missing or unreadable`);
 // 2026-07-12 audit fix (SEVERE, found by execution): the missing-file guard
 // above only protects against `read()` returning null; a file that EXISTS
@@ -239,7 +268,8 @@ const pv = pluginJson.version;
 const mv = marketJson.metadata && marketJson.metadata.version;
 if (pv === undefined) fail(`plugin.json has no "version" field`);
 if (mv === undefined) fail(`marketplace.json has no metadata.version field`);
-if (pv !== undefined && mv !== undefined && pv !== mv) fail(`version mismatch: plugin.json=${pv} marketplace.json=${mv}`);
+if (pv !== undefined && mv !== undefined && pv !== mv)
+  fail(`version mismatch: plugin.json=${pv} marketplace.json=${mv}`);
 
 // ---- INV 9: marketplace.json's own plugin description role-count agrees -----
 // 2026-07-11 addition: this is the systemic fix for the exact bug the
@@ -266,15 +296,20 @@ if (pv !== undefined && mv !== undefined && pv !== mv) fail(`version mismatch: p
 // lost behind a raw stack trace instead of the structured problem list
 // this script exists to produce. Guarded with an early `else` so the rest
 // of this invariant only runs when there is a description to check.
-const marketPluginDesc = marketJson.plugins && marketJson.plugins[0] && marketJson.plugins[0].description;
+const marketPluginDesc =
+  marketJson.plugins && marketJson.plugins[0] && marketJson.plugins[0].description;
 if (!marketPluginDesc) {
   fail(`marketplace.json plugins[0].description is missing`);
 } else {
   const dm = marketPluginDesc.match(/up to (\d+) specialised roles/i);
   if (!dm) {
-    fail(`marketplace.json plugin description does not state a role count in the expected "up to N specialised roles" form: "${marketPluginDesc}"`);
+    fail(
+      `marketplace.json plugin description does not state a role count in the expected "up to N specialised roles" form: "${marketPluginDesc}"`,
+    );
   } else if (parseInt(dm[1], 10) !== agentCount) {
-    fail(`marketplace.json plugin description says "up to ${dm[1]} specialised roles" but agents/ has ${agentCount}`);
+    fail(
+      `marketplace.json plugin description says "up to ${dm[1]} specialised roles" but agents/ has ${agentCount}`,
+    );
   }
 }
 
@@ -306,12 +341,15 @@ if (!marketPluginDesc) {
 const rosterBaselineFile = path.join(pluginRoot, 'ROSTER.md');
 const rosterText = read(rosterBaselineFile);
 if (rosterText === null) {
-  fail(`no committed roster baseline at plugins/gru953-studio/ROSTER.md (needed so the product's own roster can be verified)`);
+  fail(
+    `no committed roster baseline at plugins/gru953-studio/ROSTER.md (needed so the product's own roster can be verified)`,
+  );
 } else {
-  const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/ig)];
+  const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/gi)];
   const rm = rmAll.length ? rmAll[rmAll.length - 1] : null;
   if (!rm) fail(`ROSTER.md does not state a numeric "role count: <n>"`);
-  else if (parseInt(rm[1], 10) !== agentCount) fail(`ROSTER.md role count ${rm[1]} != actual agent count ${agentCount}`);
+  else if (parseInt(rm[1], 10) !== agentCount)
+    fail(`ROSTER.md role count ${rm[1]} != actual agent count ${agentCount}`);
 }
 
 // ---- INV 10: hooks.json still actually wires the publish-safety hooks --------
@@ -354,9 +392,13 @@ if (rosterText === null) {
 // this check, exactly the same class of total, silent bypass Round 7 found
 // and fixed for PowerShell. Added the same INV10 coverage check for it.
 function matcherAlternatives(matcher) {
-  return matcher
-    .split(/[|,]/)
-    .map((part) => part.trim().replace(/^[(^]+/, '').replace(/[)$]+$/, '').trim());
+  return matcher.split(/[|,]/).map((part) =>
+    part
+      .trim()
+      .replace(/^[(^]+/, '')
+      .replace(/[)$]+$/, '')
+      .trim(),
+  );
 }
 function matcherCoversTool(matchers, toolName) {
   return matchers.some((m) => matcherAlternatives(m).includes(toolName));
@@ -374,17 +416,33 @@ if (hooksJsonText === null) {
     hooksJson = null;
   }
   if (hooksJson) {
-    const preToolUse = hooksJson.hooks && Array.isArray(hooksJson.hooks.PreToolUse) ? hooksJson.hooks.PreToolUse : [];
+    const preToolUse =
+      hooksJson.hooks && Array.isArray(hooksJson.hooks.PreToolUse)
+        ? hooksJson.hooks.PreToolUse
+        : [];
     const matchers = preToolUse.map((e) => String(e.matcher || ''));
     const coversBash = matcherCoversTool(matchers, 'Bash');
     const coversPowerShell = matcherCoversTool(matchers, 'PowerShell');
     const coversMonitor = matcherCoversTool(matchers, 'Monitor');
-    if (!coversBash) fail(`hooks.json's PreToolUse matcher no longer covers "Bash" — the publish-safety hooks would not run for ordinary shell commands`);
-    if (!coversPowerShell) fail(`hooks.json's PreToolUse matcher no longer covers "PowerShell" — the publish-safety hooks would silently not run on native Windows without Git Bash (2026-07-12 Round 7 fix regressed)`);
-    if (!coversMonitor) fail(`hooks.json's PreToolUse matcher no longer covers "Monitor" — a push-capable command run via the Monitor tool would bypass both scan.mjs and gate.mjs entirely (2026-07-12 Claude-Topics compliance fix regressed)`);
-    const allCommands = preToolUse.flatMap((e) => (Array.isArray(e.hooks) ? e.hooks : [])).map((h) => String(h.command || ''));
-    if (!allCommands.some((c) => /scan\.mjs/.test(c))) fail(`hooks.json no longer wires scan.mjs as a PreToolUse hook`);
-    if (!allCommands.some((c) => /gate\.mjs/.test(c))) fail(`hooks.json no longer wires gate.mjs as a PreToolUse hook`);
+    if (!coversBash)
+      fail(
+        `hooks.json's PreToolUse matcher no longer covers "Bash" — the publish-safety hooks would not run for ordinary shell commands`,
+      );
+    if (!coversPowerShell)
+      fail(
+        `hooks.json's PreToolUse matcher no longer covers "PowerShell" — the publish-safety hooks would silently not run on native Windows without Git Bash (2026-07-12 Round 7 fix regressed)`,
+      );
+    if (!coversMonitor)
+      fail(
+        `hooks.json's PreToolUse matcher no longer covers "Monitor" — a push-capable command run via the Monitor tool would bypass both scan.mjs and gate.mjs entirely (2026-07-12 Claude-Topics compliance fix regressed)`,
+      );
+    const allCommands = preToolUse
+      .flatMap((e) => (Array.isArray(e.hooks) ? e.hooks : []))
+      .map((h) => String(h.command || ''));
+    if (!allCommands.some((c) => /scan\.mjs/.test(c)))
+      fail(`hooks.json no longer wires scan.mjs as a PreToolUse hook`);
+    if (!allCommands.some((c) => /gate\.mjs/.test(c)))
+      fail(`hooks.json no longer wires gate.mjs as a PreToolUse hook`);
   }
 }
 
@@ -417,16 +475,28 @@ if (hooksJsonText === null) {
 const REQUIRED_PACK_COMMANDS = [
   { key: 'build', re: /\bbuild\b/i },
   { key: 'test', re: /\btest\b/i },
-  { key: 'lint', re: /\blint\b|\banalys|clippy|ktlint|detekt|checkstyle|clang-tidy|\bruff\b|flake8/i },
+  {
+    key: 'lint',
+    re: /\blint\b|\banalys|clippy|ktlint|detekt|checkstyle|clang-tidy|\bruff\b|flake8/i,
+  },
   { key: 'format', re: /\bformat\b|fmt|spotless|clang-format|\bblack\b/i },
-  { key: 'deps', re: /\bdepend|\bdeps\b|cargo\.toml|pubspec|requirements|pom\.xml|build\.gradle|vcpkg|conan|pip install|pub add|cargo add/i },
-  { key: 'package', re: /jpackage|pyinstaller|eas build|cargo tauri|exportarchive|dotnet publish|assemblerelease|bundlerelease|\bcpack\b|appimage|\.aab\b|\.ipa\b|\.dmg\b|\.msi\b|github releases?/i },
+  {
+    key: 'deps',
+    re: /\bdepend|\bdeps\b|cargo\.toml|pubspec|requirements|pom\.xml|build\.gradle|vcpkg|conan|pip install|pub add|cargo add/i,
+  },
+  {
+    key: 'package',
+    re: /jpackage|pyinstaller|eas build|cargo tauri|exportarchive|dotnet publish|assemblerelease|bundlerelease|\bcpack\b|appimage|\.aab\b|\.ipa\b|\.dmg\b|\.msi\b|github releases?/i,
+  },
 ];
 for (const s of skillDirs) {
   if (!/^lang-/.test(s)) continue;
   const text = read(path.join(skillsDir, s, 'SKILL.md')) || '';
   const missing = REQUIRED_PACK_COMMANDS.filter((c) => !c.re.test(text)).map((c) => c.key);
-  if (missing.length) fail(`language pack 'skills/${s}' does not declare the required command famil${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')} — a lang-* pack must cover build, test, lint, format, deps and package.`);
+  if (missing.length)
+    fail(
+      `language pack 'skills/${s}' does not declare the required command famil${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')} — a lang-* pack must cover build, test, lint, format, deps and package.`,
+    );
 }
 
 // ---- INV 12: the publish protocol enumerates all seven pre-flight checks -----
@@ -441,9 +511,19 @@ const publishSkill = read(path.join(pluginRoot, 'skills', 'publish-github', 'SKI
 if (publishSkill === null) {
   fail('skills/publish-github/SKILL.md is missing or unreadable — cannot verify the Publish gate');
 } else {
-  for (const h of ['scan.mjs', 'licence-scan.mjs', 'verify-progress.mjs', 'quality-gate.mjs', 'traceability-check.mjs', 'content-check.mjs', 'roster-check.mjs']) {
+  for (const h of [
+    'scan.mjs',
+    'licence-scan.mjs',
+    'verify-progress.mjs',
+    'quality-gate.mjs',
+    'traceability-check.mjs',
+    'content-check.mjs',
+    'roster-check.mjs',
+  ]) {
     if (!publishSkill.includes(h)) {
-      fail(`publish-github/SKILL.md no longer references ${h} — the Publish protocol must enumerate all seven blocking checks plus the roster check (2026-07-21 reconciliation regressed)`);
+      fail(
+        `publish-github/SKILL.md no longer references ${h} — the Publish protocol must enumerate all seven blocking checks plus the roster check (2026-07-21 reconciliation regressed)`,
+      );
     }
   }
 }
@@ -451,12 +531,18 @@ if (publishSkill === null) {
 // the "four vs seven" drift also lived in maintenance-agent.md and the
 // studio-publish command description. Guard every file on the publish path against
 // a stale "four ... checks" count so the reconciliation cannot silently regress.
-for (const rel of ['agents/maintenance-agent.md', 'commands/studio-publish.md', 'agents/publisher.md']) {
+for (const rel of [
+  'agents/maintenance-agent.md',
+  'commands/studio-publish.md',
+  'agents/publisher.md',
+]) {
   const t = read(path.join(pluginRoot, rel));
   if (t === null) {
     fail(`${rel} is missing or unreadable — cannot verify its publish pre-flight check count`);
   } else if (/\bfour\b[^.\n]{0,40}(blocking|security|pre-?flight)[^.\n]{0,24}checks/i.test(t)) {
-    fail(`${rel} still describes "four ... checks" on the publish path — the Publish gate now has seven blocking checks (2026-07-21 reconciliation regressed)`);
+    fail(
+      `${rel} still describes "four ... checks" on the publish path — the Publish gate now has seven blocking checks (2026-07-21 reconciliation regressed)`,
+    );
   }
 }
 
@@ -473,20 +559,40 @@ for (const rel of ['agents/maintenance-agent.md', 'commands/studio-publish.md', 
 // docs-consistency.mjs's own header comment for the corrected reasoning.)
 const claudeMdText = read(path.join(repoRoot, 'CLAUDE.md'));
 if (claudeMdText === null) {
-  fail(`CLAUDE.md is missing or unreadable — cannot verify docs-consistency.mjs is listed as a mandatory gate`);
+  fail(
+    `CLAUDE.md is missing or unreadable — cannot verify docs-consistency.mjs is listed as a mandatory gate`,
+  );
 } else if (!/docs-consistency\.mjs/.test(claudeMdText)) {
-  fail(`CLAUDE.md no longer lists docs-consistency.mjs among the mandatory gates (2026-07-26 wiring regressed)`);
+  fail(
+    `CLAUDE.md no longer lists docs-consistency.mjs among the mandatory gates (2026-07-26 wiring regressed)`,
+  );
 }
 const ciYmlText = read(path.join(repoRoot, '.github', 'workflows', 'ci.yml'));
 if (ciYmlText === null) {
-  fail(`.github/workflows/ci.yml is missing or unreadable — cannot verify docs-consistency.mjs runs in CI`);
+  fail(
+    `.github/workflows/ci.yml is missing or unreadable — cannot verify docs-consistency.mjs runs in CI`,
+  );
 } else if (!/docs-consistency\.mjs/.test(ciYmlText)) {
-  fail(`.github/workflows/ci.yml no longer runs docs-consistency.mjs (2026-07-26 wiring regressed)`);
+  fail(
+    `.github/workflows/ci.yml no longer runs docs-consistency.mjs (2026-07-26 wiring regressed)`,
+  );
 }
 
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {
-  console.log(JSON.stringify({ status: 'clean', agentCount, skillCount, hookCount: hookFiles.length, commandCount: commandFiles.length }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        status: 'clean',
+        agentCount,
+        skillCount,
+        hookCount: hookFiles.length,
+        commandCount: commandFiles.length,
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 console.log(JSON.stringify({ status: 'BLOCKED', problems, agentCount, skillCount }, null, 2));
