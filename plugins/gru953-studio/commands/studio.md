@@ -19,9 +19,12 @@ pipeline exactly.
   Then move into their actual project.
 
 - Then check for a `Dev-Memory/` folder in the current working directory.
-  If it exists, this is a RESUME: read the task table in
-  `Dev-Memory/PROGRESS.md`, the tail of `Dev-Memory/SESSION-LOG.md`, and
-  `Dev-Memory/INDEX.md`, then continue per the studio skill's Step 2 — the next task is the first one
+  If it exists, this is a RESUME: read `Dev-Memory/FOCUS.md`, then
+  `Dev-Memory/OBJECTIVE.md`, the task table in `Dev-Memory/PROGRESS.md`, the
+  tail of `Dev-Memory/SESSION-LOG.md`, and `Dev-Memory/INDEX.md` (2026-07-26
+  correction: this used to list only three of these five files while still
+  citing "the studio skill's Step 2" as the authority — Step 2 itself
+  requires all five), then continue per the studio skill's Step 2 — the next task is the first one
   whose Status is "todo" or "doing" and whose dependencies are all "done".
   A task marked "blocked" is never picked as next until a human unblocks
   it. The "▶ RESUME HERE" line is a human-friendly hint; the Status column

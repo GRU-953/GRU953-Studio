@@ -75,7 +75,11 @@ full seven, matching security-compliance-auditor.md, studio/SKILL.md and CLAUDE.
    `INCOMPLETE` all stop the publish.
 4. **Progress-evidence check** (2026-07-10 audit addition) —
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/verify-progress.mjs" .`. Exit 0 = every task marked "done" in
-   `Dev-Memory/PROGRESS.md` has a real `verified:` line; a non-zero exit
+   `Dev-Memory/PROGRESS.md` has real evidence — either a plain `verified:` line
+   or the structured JSON evidence format (2026-07-26 correction: this only
+   described the plain-line format; `tdd-workflow`'s Structured Evidence
+   Format section, corrected the same day, is an equally accepted
+   alternative, not a separate later step). A non-zero exit
    means something was marked done without evidence — fix the record (by
    actually running the missing verification) before publishing, never by
    editing the status back to make the check pass.

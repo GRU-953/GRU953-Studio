@@ -7,7 +7,15 @@
 // skill). 2026-07-19 enhancement: the dashboard is not just a task board — it
 // is the organised command centre, surfacing the software's CONCEPT
 // (OBJECTIVE.md), its ARCHITECTURE & specifications (ARCHITECTURE.md) and its
-// complete BUILD PLAN (PLAN.md, phases and all), alongside the live task board.
+// BUILD PLAN (PLAN.md) alongside the live task board. This script renders
+// PLAN.md verbatim through the generic markdown renderer below — it has no
+// phase-aware logic of its own — so whether the rendered plan shows only the
+// current phase's task detail (per `phased-roadmap`'s step 0) or everything
+// depends entirely on what `PLAN.md` actually contains, which is
+// `architect`/`memory-keeper`'s discipline to maintain, not something this
+// script enforces (2026-07-26 correction: this comment used to say "phases
+// and all," the exact framing `command-centre/SKILL.md` corrected away from
+// the same day — this file was never updated to match).
 //
 // It is a read-only view of the same source of truth; generating it changes no
 // project state. A deterministic generator (rather than free-hand HTML each

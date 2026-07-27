@@ -12,10 +12,15 @@ Generate the project's command-centre dashboard, following the
    project's Dev-Memory and writes a self-contained `Dev-Memory/dashboard.html`
    (all styling inline, no internet needed, nothing changed) showing, in one
    organised page: the **concept** (`OBJECTIVE.md`), the **architecture &
-   specifications** (`ARCHITECTURE.md`), the complete **build plan**
-   (`PLAN.md`), and the live task board. Never write the HTML by hand; the
-   generator is what guarantees the page is safe and self-contained.
+   specifications** (`ARCHITECTURE.md`), the **build plan** (`PLAN.md` — the
+   phase list plus the current phase's task detail; a phase not yet reached
+   shows only its one-line summary, not its tasks — 2026-07-26 correction:
+   this used to say "complete build plan," which read as if every future
+   phase's tasks already existed at once), and the live task board. Never
+   write the HTML by hand; the generator is what guarantees the page is safe
+   and self-contained.
 3. Tell the user in one or two sentences that the dashboard is ready and where
    it is (`Dev-Memory/dashboard.html`), and that they can open it in any web
-   browser to see the whole project — what it is, how it's built, the full plan,
-   and every task's status — at a glance. It is private and never published.
+   browser to see the whole project — what it is, how it's built, the plan so
+   far, and every task's status — at a glance. It is private and never
+   published.
