@@ -117,6 +117,55 @@ function isExempt(f) {
   return false;
 }
 
+// ---- the historical-section scope rule (diagnosed 2026-07-26, implemented 2026-07-27) --
+// A `total skills to (\d+)`-shaped count check was attempted and reverted
+// after breaking three tests, because it compared EVERY match against
+// TODAY's count — but a file's own dated "## vX.Y.Z ..." section is a
+// legitimate HISTORICAL statement ("expanding total skills to 33" was true
+// the day it was written), not a live claim, and EXEMPT_FILES alone can't
+// scope that: it exempts a whole FILE (AUDIT-2026-07.md, CHANGELOG.md), but
+// ROSTER.md is mostly live claims with a few dated sections mixed in, so
+// exempting the whole file would blind DC1/DC2 to a genuine live regression
+// anywhere else in it. The fix that actually holds is per-SECTION scope: any
+// heading shaped like a version tag — "## v4.5.0 update (2026-07-26): ..."
+// — opens a historical section that runs to the next "##" heading (any
+// level-2 heading, dated or not, closes it); a count claim whose match
+// position falls inside that range is a historical statement and is
+// skipped, not compared against today's ground truth. Phase 1.0 of this
+// same audit round additionally stripped ROSTER.md's own stale count
+// phrases outright (the concrete case found), but that is a one-file
+// workaround — this scope rule is what stops the exact same class of false
+// BLOCK recurring the next time any file legitimately narrates a past
+// count in a dated section. Verified by execution: reverted without this
+// rule, appending a "## v9.9.9 (2026-07-27)" section to ROSTER.md that
+// truthfully narrates an old count trips DC1 even though nothing today is
+// wrong; with the rule, it does not.
+const HISTORICAL_HEADING_RE = /^##\s*v\d/i;
+function getHistoricalSectionRanges(text) {
+  const ranges = [];
+  const lines = text.split(/\r?\n/);
+  const lineStartOffsets = [];
+  let offset = 0;
+  for (const line of lines) {
+    lineStartOffsets.push(offset);
+    offset += line.length + 1; // +1 for the split-away newline
+  }
+  let openStart = null;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^##\s/.test(lines[i])) continue;
+    if (openStart !== null) {
+      ranges.push({ start: openStart, end: lineStartOffsets[i] });
+      openStart = null;
+    }
+    if (HISTORICAL_HEADING_RE.test(lines[i])) openStart = lineStartOffsets[i];
+  }
+  if (openStart !== null) ranges.push({ start: openStart, end: text.length });
+  return ranges;
+}
+function isInHistoricalSection(ranges, index) {
+  return ranges.some((r) => index >= r.start && index < r.end);
+}
+
 // ---- DC1: stale count phrasing repo-integrity.mjs's narrower regexes can't see (findings 28, 30) ----
 // INV6 in repo-integrity.mjs matches only "<digit> skills" (digit-first).
 // "the skill count to 34" and "34 skills" (in the OTHER order, or with the
@@ -127,10 +176,12 @@ const skillCountPatterns = [/skill count to (\d+)/gi, /(\d+)\s+skills?\b/gi];
 for (const f of allMd) {
   if (isExempt(f)) continue;
   const text = read(f) || '';
+  const historicalRanges = getHistoricalSectionRanges(text);
   for (const re of skillCountPatterns) {
     let m;
     re.lastIndex = 0;
     while ((m = re.exec(text))) {
+      if (isInHistoricalSection(historicalRanges, m.index)) continue;
       const n = parseInt(m[1], 10);
       if (n !== skillCount) {
         fail(
@@ -206,9 +257,11 @@ if (actualStageCount === null) {
   for (const f of allMd) {
     if (isExempt(f)) continue;
     const text = read(f) || '';
+    const historicalRanges = getHistoricalSectionRanges(text);
     let m;
     stageCountRe.lastIndex = 0;
     while ((m = stageCountRe.exec(text))) {
+      if (isInHistoricalSection(historicalRanges, m.index)) continue;
       const claimed = NUMBER_WORDS[m[1].toLowerCase()];
       if (claimed !== actualStageCount) {
         fail(
@@ -232,8 +285,10 @@ function countCompanionSkills(text) {
 if (studioSkillText) {
   const actualCompanionCount = countCompanionSkills(studioSkillText);
   const companionCountRe = new RegExp(`\\bthe\\s+(${numberWordAlt})\\s+skills?\\s+above\\b`, 'gi');
+  const studioHistoricalRanges = getHistoricalSectionRanges(studioSkillText);
   let m;
   while ((m = companionCountRe.exec(studioSkillText))) {
+    if (isInHistoricalSection(studioHistoricalRanges, m.index)) continue;
     const claimed = NUMBER_WORDS[m[1].toLowerCase()];
     if (claimed !== actualCompanionCount) {
       fail(
@@ -375,6 +430,64 @@ if (claimsZeroDependencies && hasRealDependency) {
   fail(
     `README.md claims "zero third-party code dependencies" but plugins/gru953-studio/package.json declares a real dependency — finding 29 has regressed`,
   );
+}
+
+// ---- DC7: dangling cross-file "see `path`" references (2026-07-27 R1 Phase 1.3, new) --
+// No prior check verified this at all — a "see `some/file.md`" pointer whose
+// target moved or was deleted became invisible prose, silently. Scoped
+// deliberately narrow, the same "close the found case" discipline DC1-DC6
+// already document: only a backticked token that is unambiguously
+// PATH-shaped (contains a `/`, or ends in one of the real extensions this
+// repo's own docs actually use) and immediately follows the word "see"
+// (optionally "see also") counts as a reference at all. A bare backticked
+// identifier with no extension or slash (`architect`, `cost-guard`) is left
+// to DC5's own purpose-built role-reference check rather than guessed at
+// here, and a wildcard path ("commands/studio-*.md") is never one real file
+// and is skipped, not flagged.
+const SEE_REF_RE = /\bsee(?:\s+also)?\s+`([^`]+)`/gi;
+const REF_EXTENSIONS = /\.(md|mjs|js|json|ya?ml)$/i;
+function looksLikePathRef(token) {
+  if (token.includes('*') || token.includes('<') || token.includes('>')) return false;
+  if (!/^[A-Za-z0-9_./-]+$/.test(token)) return false;
+  return token.includes('/') || REF_EXTENSIONS.test(token);
+}
+const REF_BASE_DIRS = [
+  repoRoot,
+  pluginRoot,
+  path.join(pluginRoot, 'agents'),
+  path.join(pluginRoot, 'skills'),
+  path.join(pluginRoot, 'hooks'),
+  path.join(pluginRoot, 'commands'),
+];
+// A relative reference between two files in the SAME directory — e.g.
+// governance/LOGO-USAGE.md's real, legitimate "see `TRADEMARKS.md`" pointing
+// at its own sibling governance/TRADEMARKS.md — resolves only against the
+// referencing file's own directory, not any of the fixed base dirs above;
+// found live in this repo while first running this check, not hypothetical.
+function refResolves(token, referencingFile) {
+  const bases = [...REF_BASE_DIRS, path.dirname(referencingFile)];
+  return bases.some((base) => {
+    try {
+      return fs.statSync(path.join(base, token)).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+for (const f of allMd) {
+  if (isExempt(f)) continue;
+  const text = read(f) || '';
+  let m;
+  SEE_REF_RE.lastIndex = 0;
+  while ((m = SEE_REF_RE.exec(text))) {
+    const token = m[1];
+    if (!looksLikePathRef(token)) continue;
+    if (!refResolves(token, f)) {
+      fail(
+        `${path.relative(repoRoot, f)} says "see \`${token}\`", but no file at that path exists (checked the repo root, the plugin root, agents/, skills/, hooks/, and commands/) — a dangling cross-reference`,
+      );
+    }
+  }
 }
 
 // ---- report -------------------------------------------------------------

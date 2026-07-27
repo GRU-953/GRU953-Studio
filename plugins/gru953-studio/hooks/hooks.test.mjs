@@ -3382,6 +3382,201 @@ test('memory-integrity.mjs: the link vocabulary is genuinely read from GRAPH.sch
   fs.rmSync(dir2, RM_OPTS);
 });
 
+// 2026-07-27 R1 Phase 1.3 (audit finding: GRAPH.schema.json's `relation` enum
+// was validated at run time above, but its sibling `type` enum — the node
+// KIND, requirement/task/decision/file/lesson/entity — was read by nothing.
+// Reproduced against the pre-fix code before writing this test: a node
+// declaring an invalid kind returned {"status":"clean"}, with the id still
+// registered so any link referencing it also resolved cleanly.
+test('memory-integrity.mjs: a node declaring an unrecognised type is BLOCKED (2026-07-27 Phase 1.3)', () => {
+  const dir = mkTmp('gru-mi-badtype-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] milestone: a made-up kind\n\n## Links\n',
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `an undocumented node type must not be accepted: ${r.stdout}`);
+  assert.ok(
+    r.json.problems.some((p) => /"\[T1\]" declares type "milestone"/.test(p)),
+    `must name the offending node and its bad type: ${JSON.stringify(r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Inverse of the case above: the same node id, with each of the six real
+// documented kinds, must stay clean — proving the check discriminates on the
+// type word rather than blocking every node.
+test('memory-integrity.mjs: every documented node type is accepted (inverse of the type-enum check)', () => {
+  for (const kind of ['requirement', 'task', 'decision', 'file', 'lesson', 'entity']) {
+    const dir = mkTmp('gru-mi-goodtype-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), `## Nodes\n- [T1] ${kind}: a\n\n## Links\n`);
+    const r = runScript('memory-integrity.mjs', dir);
+    assert.equal(r.json.status, 'clean', `documented type "${kind}" must be accepted: ${r.stdout}`);
+    fs.rmSync(dir, RM_OPTS);
+  }
+});
+
+// A node line with no "type:" segment at all (bracket-only, or ordinary
+// prose) must be left exactly as tolerant as before this fix — the type
+// check only judges a type word that IS present, it never demands one.
+test('memory-integrity.mjs: a node line with no type segment is unaffected by the type-enum check (no over-correction)', () => {
+  const dir = mkTmp('gru-mi-notype-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+    '## Nodes\n- [T1] a label with no type colon at all\n\n## Links\n- T1 implements T1\n',
+  );
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a node with no type segment must not be blocked by the new check: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('memory-integrity.mjs: the node-type vocabulary is genuinely read from GRAPH.schema.json at run time, not hard-coded (2026-07-27 Phase 1.3, mirrors finding 7)', () => {
+  const original = fs.readFileSync(GRAPH_SCHEMA_PATH, 'utf8');
+  const dir = mkTmp('gru-mi-typeschemabinding-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  try {
+    const mutated = JSON.parse(original);
+    const typeEnum = mutated.items.properties.type.enum;
+    const idx = typeEnum.indexOf('entity');
+    typeEnum.splice(idx, 1, 'made-up-kind-for-this-test');
+    fs.writeFileSync(GRAPH_SCHEMA_PATH, JSON.stringify(mutated, null, 2));
+
+    // The made-up kind is now schema-valid — a node using it must be accepted.
+    fs.writeFileSync(
+      path.join(dir, 'Dev-Memory', 'GRAPH.md'),
+      '## Nodes\n- [T1] made-up-kind-for-this-test: a\n\n## Links\n',
+    );
+    const withMadeUpKind = runScript('memory-integrity.mjs', dir);
+    assert.equal(withMadeUpKind.json.status, 'clean', `a kind the mutated schema now allows must be accepted: ${withMadeUpKind.stdout}`);
+
+    // 'entity' was just removed from the schema — a node declaring it must
+    // now be rejected as an unrecognised kind.
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), '## Nodes\n- [T1] entity: a\n\n## Links\n');
+    const withRemovedKind = runScript('memory-integrity.mjs', dir);
+    assert.equal(withRemovedKind.json.status, 'BLOCKED', `a kind the mutated schema no longer lists must be rejected: ${withRemovedKind.stdout}`);
+  } finally {
+    fs.writeFileSync(GRAPH_SCHEMA_PATH, original);
+    fs.rmSync(dir, RM_OPTS);
+  }
+
+  const dir2 = mkTmp('gru-mi-typeschemabinding-restored-');
+  fs.mkdirSync(path.join(dir2, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir2, 'Dev-Memory', 'GRAPH.md'), '## Nodes\n- [T1] entity: a\n\n## Links\n');
+  const restored = runScript('memory-integrity.mjs', dir2);
+  assert.equal(restored.json.status, 'clean', `the real, restored schema must accept 'entity' again: ${restored.stdout}`);
+  fs.rmSync(dir2, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-27 R1 Phase 1.3 — FOCUS.md's first-ever test fixtures. Before this,
+// FOCUS.schema.json had 0 test references despite being a committed schema,
+// and no hook read FOCUS.md at all — a typo'd Active phase or a silently
+// dropped field went unnoticed. focus-guard/SKILL.md now documents the
+// literal on-disk shape (four bold-labelled lines); memory-integrity.mjs's
+// checkFocus() validates a real file against it.
+// ---------------------------------------------------------------------------
+function writeFocus(dir, overrides) {
+  const lines = {
+    objective: '**Objective:** Ship a working MVP that lets users book a table online.',
+    activePhase: '**Active phase:** Build',
+    activeTask: '**Active task:** T4 — wire the booking form to the availability API',
+    topConstraints: '**Top constraints:** Tier: Standard; no new dependency without approval',
+    ...overrides,
+  };
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'FOCUS.md'),
+    Object.values(lines).filter((l) => l !== null).join('\n') + '\n',
+  );
+}
+
+test('memory-integrity.mjs: no FOCUS.md is a no-op (nothing to validate)', () => {
+  const dir = mkTmp('gru-mi-focus-absent-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('memory-integrity.mjs: a well-formed FOCUS.md is clean', () => {
+  const dir = mkTmp('gru-mi-focus-clean-');
+  writeFocus(dir, {});
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('memory-integrity.mjs: FOCUS.md with an unrecognised Active phase is BLOCKED (2026-07-27 Phase 1.3)', () => {
+  const dir = mkTmp('gru-mi-focus-badphase-');
+  writeFocus(dir, { activePhase: '**Active phase:** Launched' });
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `an unrecognised Active phase must be caught: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => /Active phase "Launched"/.test(p)), JSON.stringify(r.json.problems));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The must-still-tolerate inverse: every documented phase is accepted.
+test('memory-integrity.mjs: every documented Active phase is accepted (inverse of the phase-enum check)', () => {
+  const phases = ['Brainstorm', 'Ideate', 'Design', 'Prototype', 'Content', 'Plan', 'Build', 'Test', 'Fix', 'Review', 'Publish', 'Maintain'];
+  for (const phase of phases) {
+    const dir = mkTmp('gru-mi-focus-goodphase-');
+    writeFocus(dir, { activePhase: `**Active phase:** ${phase}` });
+    const r = runScript('memory-integrity.mjs', dir);
+    assert.equal(r.json.status, 'clean', `documented phase "${phase}" must be accepted: ${r.stdout}`);
+    fs.rmSync(dir, RM_OPTS);
+  }
+});
+
+test('memory-integrity.mjs: FOCUS.md missing its Objective line is BLOCKED', () => {
+  const dir = mkTmp('gru-mi-focus-noobjective-');
+  writeFocus(dir, { objective: null });
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a missing Objective line must be caught: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => /"\*\*Objective:\*\*" line/.test(p)), JSON.stringify(r.json.problems));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('memory-integrity.mjs: FOCUS.md missing its Top constraints line is BLOCKED', () => {
+  const dir = mkTmp('gru-mi-focus-noconstraints-');
+  writeFocus(dir, { topConstraints: null });
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a missing Top constraints line must be caught: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => /"\*\*Top constraints:\*\*" line/.test(p)), JSON.stringify(r.json.problems));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('memory-integrity.mjs: the Active-phase vocabulary is genuinely read from FOCUS.schema.json at run time, not hard-coded (mirrors findings 7 and the node-type fix)', () => {
+  const FOCUS_SCHEMA_PATH = path.join(HERE, '..', 'skills', 'dev-memory', 'schemas', 'FOCUS.schema.json');
+  const original = fs.readFileSync(FOCUS_SCHEMA_PATH, 'utf8');
+  const dir = mkTmp('gru-mi-focusschemabinding-');
+  try {
+    const mutated = JSON.parse(original);
+    const idx = mutated.properties.activePhase.enum.indexOf('Maintain');
+    mutated.properties.activePhase.enum.splice(idx, 1, 'Launched');
+    fs.writeFileSync(FOCUS_SCHEMA_PATH, JSON.stringify(mutated, null, 2));
+
+    writeFocus(dir, { activePhase: '**Active phase:** Launched' });
+    const withMadeUpPhase = runScript('memory-integrity.mjs', dir);
+    assert.equal(withMadeUpPhase.json.status, 'clean', `a phase the mutated schema now allows must be accepted: ${withMadeUpPhase.stdout}`);
+
+    writeFocus(dir, { activePhase: '**Active phase:** Maintain' });
+    const withRemovedPhase = runScript('memory-integrity.mjs', dir);
+    assert.equal(withRemovedPhase.json.status, 'BLOCKED', `a phase the mutated schema no longer lists must be rejected: ${withRemovedPhase.stdout}`);
+  } finally {
+    fs.writeFileSync(FOCUS_SCHEMA_PATH, original);
+    fs.rmSync(dir, RM_OPTS);
+  }
+
+  const dir2 = mkTmp('gru-mi-focusschemabinding-restored-');
+  writeFocus(dir2, { activePhase: '**Active phase:** Maintain' });
+  const restored = runScript('memory-integrity.mjs', dir2);
+  assert.equal(restored.json.status, 'clean', `the real, restored schema must accept 'Maintain' again: ${restored.stdout}`);
+  fs.rmSync(dir2, RM_OPTS);
+});
+
 test('session-start.mjs: CI=false no longer falsely triggers the ephemeral note; CI=true does (2026-07-21 fix)', () => {
   const dirFalse = mkTmp('gru-ss-cifalse-');
   fs.mkdirSync(path.join(dirFalse, 'Dev-Memory'), { recursive: true });
@@ -3728,6 +3923,124 @@ test('docs-consistency.mjs: a real merged-away role name (ROSTER.md) is not fals
   fs.writeFileSync(architectPath, text + '\n\nHistorically this was `prompt-engineer`\'s job.\n');
   const r = runDocsConsistency(dir);
   assert.equal(r.json && r.json.status, 'clean', `a legitimately merged-away role name must not be flagged: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-27 R1 Phase 1.3 — the diagnosed historical-section scope rule (a
+// count claim inside a dated "## vX.Y.Z ..." section is a historical
+// statement, not a live claim, and must not be compared against today's
+// ground truth). Reproduced against the pre-fix code before writing this
+// test: appending exactly this section to ROSTER.md tripped DC1 even though
+// nothing about the product today is wrong.
+// ---------------------------------------------------------------------------
+test('docs-consistency.mjs: a truthful historical count inside a dated "## vX.Y.Z" section is not falsely flagged (2026-07-27 Phase 1.3 scope rule)', () => {
+  const dir = mkTmp('gru-docsconsist-historicalscope-');
+  copyRepoTo(dir);
+  const rosterPath = path.join(dir, 'plugins', 'gru953-studio', 'ROSTER.md');
+  fs.appendFileSync(
+    rosterPath,
+    '\n## v9.9.9 test entry (2026-07-27)\n\nHistorical narrative: this legitimately says "bringing the skill count to 12" as a dated, past-tense statement, not a claim about today.\n',
+  );
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a count claim inside a dated version section must not be flagged: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The must-still-BLOCK inverse: the identical stale count, OUTSIDE any dated
+// section (a live claim), must still be caught — proving the scope rule
+// discriminates on section, not on the phrase itself.
+test('docs-consistency.mjs: the same stale count OUTSIDE a dated section is still caught (inverse of the scope rule)', () => {
+  const dir = mkTmp('gru-docsconsist-historicalscope-inverse-');
+  copyRepoTo(dir);
+  const rosterPath = path.join(dir, 'plugins', 'gru953-studio', 'ROSTER.md');
+  fs.appendFileSync(
+    rosterPath,
+    '\n## Not a version heading\n\nThis undated section claims "bringing the skill count to 12" as if it were true today.\n',
+  );
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a live count claim outside any dated section must still be caught: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => p.includes('skill count to 12')));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// A historical section does not run forever — it closes at the NEXT level-2
+// heading, dated or not. A live claim placed in an ordinary section AFTER a
+// historical one must still be caught.
+test('docs-consistency.mjs: a historical section closes at the next heading — a live claim right after it is still caught', () => {
+  const dir = mkTmp('gru-docsconsist-historicalscope-closes-');
+  copyRepoTo(dir);
+  const rosterPath = path.join(dir, 'plugins', 'gru953-studio', 'ROSTER.md');
+  fs.appendFileSync(
+    rosterPath,
+    '\n## v9.9.9 test entry (2026-07-27)\n\nHistorical: "the skill count to 12" (true then).\n\n' +
+      '## Current state\n\nToday it is still "the skill count to 12" — this line is live prose and must be caught.\n',
+  );
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a live claim after the historical section closes must be caught: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-27 R1 Phase 1.3 — DC7, the first-ever cross-reference existence
+// check. Reproduced against the pre-fix code: a "see `renamed-file.md`"
+// pointer at a file that was deleted/renamed was invisible — no check
+// anywhere noticed. Found live while first running the new check against
+// the real repo (not hypothetical): governance/LOGO-USAGE.md's own
+// "see `TRADEMARKS.md`" resolves only against its OWN directory
+// (governance/TRADEMARKS.md), not any of the fixed base dirs — the sibling-
+// directory resolution below exists because of that real case.
+// ---------------------------------------------------------------------------
+test('docs-consistency.mjs: a "see `path`" reference to a file that does not exist is caught (2026-07-27 Phase 1.3, DC7 new check)', () => {
+  const dir = mkTmp('gru-docsconsist-danglingref-');
+  copyRepoTo(dir);
+  const architectPath = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'architect.md');
+  fs.appendFileSync(architectPath, '\n\nSee `plugins/gru953-studio/skills/does-not-exist/SKILL.md` for more.\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a dangling "see `path`" reference must be caught');
+  assert.ok(
+    r.json.problems.some((p) => p.includes('does-not-exist/SKILL.md') && p.includes('dangling cross-reference')),
+    `expected a problem naming the dangling reference, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The must-still-tolerate inverse: the identical phrasing pointing at a REAL
+// file must not be flagged — proving DC7 discriminates on existence, not on
+// the "see `...`" phrase itself.
+test('docs-consistency.mjs: a "see `path`" reference to a file that DOES exist is not flagged (inverse of DC7)', () => {
+  const dir = mkTmp('gru-docsconsist-realref-');
+  copyRepoTo(dir);
+  const architectPath = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'architect.md');
+  fs.appendFileSync(architectPath, '\n\nSee `plugins/gru953-studio/skills/studio/SKILL.md` for more.\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a "see \`path\`" reference to a real file must not be flagged: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// A relative, same-directory reference (the real governance/LOGO-USAGE.md ->
+// governance/TRADEMARKS.md shape) must resolve without a leading path.
+test('docs-consistency.mjs: a same-directory relative "see `sibling.md`" reference resolves (2026-07-27 Phase 1.3, DC7)', () => {
+  const dir = mkTmp('gru-docsconsist-siblingref-');
+  copyRepoTo(dir);
+  const logoPath = path.join(dir, 'governance', 'LOGO-USAGE.md');
+  const r = runDocsConsistency(dir);
+  assert.ok(
+    /see(?:\s+also)?\s+`TRADEMARKS\.md`/.test(fs.readFileSync(logoPath, 'utf8')),
+    'precondition: the real file must still carry this exact reference',
+  );
+  assert.equal(r.json && r.json.status, 'clean', `a real sibling-directory reference must resolve: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// A wildcard path is never one real file and must not be flagged as dangling.
+test('docs-consistency.mjs: a wildcard "see `path/*.md`" reference is not flagged as dangling (DC7 does not guess at globs)', () => {
+  const dir = mkTmp('gru-docsconsist-wildcardref-');
+  copyRepoTo(dir);
+  const architectPath = path.join(dir, 'plugins', 'gru953-studio', 'agents', 'architect.md');
+  fs.appendFileSync(architectPath, '\n\nSee `commands/studio-*.md` for the family of related commands.\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a wildcard reference must not be flagged: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -4724,10 +5037,30 @@ test('verify-progress.mjs: a leading byte-order mark does not break table parsin
   fs.rmSync(dir, RM_OPTS);
 });
 
+// A complete evidence object carrying all nine required fields (2026-07-27
+// R1 Phase 1.3 requires every one of them — see validateEvidenceObject() in
+// verify-progress.mjs); tests that are about exit-code handling, not field
+// completeness, build their fixture from this base so they keep testing what
+// they intend to test.
+function completeEvidence(overrides) {
+  return JSON.stringify({
+    taskId: 'T1',
+    criterion: 'tests pass',
+    command: 'npm test',
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    durationMs: 1240,
+    timestamp: '2026-07-27T10:30:00Z',
+    verifier: 'tester',
+    ...overrides,
+  });
+}
+
 test('verify-progress.mjs: structured evidence recording a FAILED run must block (2026-07-26 finding 1)', () => {
   // The exact reproduction from AUDIT-2026-07.md section 3.1.
   const dir = mkTmp('gru-vp-exit1-');
-  writeProgressRow(dir, '{"taskId":"T1","criterion":"tests pass","command":"npm test","exitCode":1,"stdout":"3 failing"}');
+  writeProgressRow(dir, completeEvidence({ exitCode: 1, stdout: '3 failing' }));
   const r = runScript('verify-progress.mjs', dir);
   assert.equal(r.code, 1, `evidence recording exitCode 1 must BLOCK, not report clean: ${r.stdout}`);
   assert.equal(r.json.status, 'BLOCKED');
@@ -4742,7 +5075,7 @@ test('verify-progress.mjs: structured evidence recording a FAILED run must block
 test('verify-progress.mjs: any non-zero exit code blocks, including negative and multi-digit', () => {
   for (const code of ['2', '127', '-1', '255']) {
     const dir = mkTmp('gru-vp-exitN-');
-    writeProgressRow(dir, `{"taskId":"T1","criterion":"c","command":"x","exitCode":${code},"stdout":"out"}`);
+    writeProgressRow(dir, completeEvidence({ exitCode: Number(code), stdout: 'out' }));
     const r = runScript('verify-progress.mjs', dir);
     assert.equal(r.code, 1, `exitCode ${code} must block: ${r.stdout}`);
     assert.equal(r.json.failedEvidence[0].exitCode, Number(code));
@@ -4752,10 +5085,70 @@ test('verify-progress.mjs: any non-zero exit code blocks, including negative and
 
 test('verify-progress.mjs: structured evidence recording a PASSING run is still clean (no regression)', () => {
   const dir = mkTmp('gru-vp-exit0-');
-  writeProgressRow(dir, '{"taskId":"T1","criterion":"tests pass","command":"npm test","exitCode":0,"stdout":"12 passing"}');
+  writeProgressRow(dir, completeEvidence({ stdout: '12 passing' }));
   const r = runScript('verify-progress.mjs', dir);
   assert.equal(r.code, 0, `exitCode 0 is genuine proof and must stay clean: ${r.stdout}`);
   assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-27 R1 Phase 1.3 (audit: the JSON evidence check used a shape regex
+// that only ever looked for 5 of the 9 documented-required fields — taskId,
+// criterion, command, exitCode, stdout — so a row whose evidence omitted
+// stderr/durationMs/timestamp/verifier entirely still read as complete proof
+// and reported clean). Reproduced against the pre-fix code before writing
+// this test: the fixture below returned {"status":"clean"}.
+test('verify-progress.mjs: structured evidence missing a required field (verifier) is BLOCKED, not clean (2026-07-27 Phase 1.3)', () => {
+  const dir = mkTmp('gru-vp-incomplete-');
+  writeProgressRow(
+    dir,
+    '{"taskId":"T1","criterion":"tests pass","command":"npm test","exitCode":0,"stdout":"12 passing"}',
+  );
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `evidence missing verifier/stderr/durationMs/timestamp must BLOCK: ${r.stdout}`);
+  assert.ok(Array.isArray(r.json.malformedEvidence), 'must report incomplete evidence distinctly');
+  assert.ok(
+    r.json.malformedEvidence[0].missingFields.includes('verifier'),
+    `must name verifier as missing: ${JSON.stringify(r.json.malformedEvidence)}`,
+  );
+  assert.ok(r.json.malformedEvidence[0].missingFields.includes('stderr'));
+  assert.ok(r.json.malformedEvidence[0].missingFields.includes('durationMs'));
+  assert.ok(r.json.malformedEvidence[0].missingFields.includes('timestamp'));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The must-still-BLOCK case above is paired with its inverse: the exact same
+// evidence, but complete, must NOT be blocked — proving the check discriminates
+// on completeness rather than always failing.
+test('verify-progress.mjs: the same evidence, once complete, is clean (inverse of the completeness check)', () => {
+  const dir = mkTmp('gru-vp-complete-');
+  writeProgressRow(dir, completeEvidence({ stdout: '12 passing' }));
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 0, `complete evidence must not be blocked: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('verify-progress.mjs: a required field of the wrong type (exitCode as a string) is BLOCKED as incomplete evidence (2026-07-27 Phase 1.3)', () => {
+  const dir = mkTmp('gru-vp-wrongtype-');
+  writeProgressRow(dir, completeEvidence({ exitCode: '0' }));
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `exitCode as a string, not a number, must BLOCK: ${r.stdout}`);
+  assert.ok(r.json.malformedEvidence[0].missingFields.includes('exitCode'));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// A JSON-shaped blob that is NOT valid JSON (an unescaped quote later in the
+// same object) must not crash the check, and must not be silently treated as
+// passing evidence either — it falls through to "no verified: cell found".
+test('verify-progress.mjs: JSON-shaped but syntactically invalid evidence does not crash and is not treated as proof (2026-07-27 Phase 1.3)', () => {
+  const dir = mkTmp('gru-vp-badjson-');
+  writeProgressRow(
+    dir,
+    '{"taskId":"T1","criterion":"tests "pass"","command":"npm test","exitCode":0,"stdout":""}',
+  );
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `invalid JSON must not be accepted as proof: ${r.stdout}`);
+  assert.ok(Array.isArray(r.json.rows) && r.json.rows.length > 0, 'must fall through to missing-evidence');
   fs.rmSync(dir, RM_OPTS);
 });
 

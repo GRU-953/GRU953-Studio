@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 //
 // memory-integrity.mjs — keeps a project's recall memory trustworthy: the
-// structured INDEX.md must not point at files that no longer exist, and the
-// GRAPH.md knowledge graph must have no dangling links. Zero dependencies
-// (Node stdlib only).
+// structured INDEX.md must not point at files that no longer exist, the
+// GRAPH.md knowledge graph must have no dangling links, and FOCUS.md (when
+// present) conforms to FOCUS.schema.json. Zero dependencies (Node stdlib
+// only).
 //
 // Added 2026-07-19 (Phase 1 — the indexed knowledge-graph memory, see the
 // `memory-graph` skill). The whole point of the graph + index is token-cheap
@@ -23,7 +24,9 @@
 //
 // Usage: node memory-integrity.mjs [projectRoot]
 // Exit 0 = not a studio project, or every present file is internally
-//          consistent. Exit 1 = a stale index path or a dangling graph link.
+//          consistent. Exit 1 = a stale index path, a dangling graph link,
+//          an invalid GRAPH.md node type, or a FOCUS.md that does not
+//          conform to FOCUS.schema.json.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -69,6 +72,119 @@ function loadLinkVocabulary() {
     /* fall through to the documented vocabulary below */
   }
   return DOCUMENTED_LINK_VOCABULARY;
+}
+
+// 2026-07-27 R1 Phase 1.3 (audit: the schema's `relation` enum was already
+// validated at run time, but its sibling `type` enum — the node KIND
+// (requirement/task/decision/file/lesson/entity) — was read by nothing at
+// all. A node line declaring an unrecognised kind, e.g. "- [T1] tsak: ..."
+// (a typo) or "- [T1] milestone: ..." (a kind memory-graph/SKILL.md never
+// documented), was silently accepted: the id was registered and any link
+// referencing it resolved cleanly, with no signal anywhere that the KIND
+// itself was wrong. Mirrors loadLinkVocabulary()'s exact pattern — read the
+// schema at run time, fall back to the documented vocabulary if the schema
+// is unreadable, so a missing schema can never silently widen what counts as
+// a valid node type.
+const DOCUMENTED_NODE_TYPE_VOCABULARY = [
+  'requirement',
+  'task',
+  'decision',
+  'file',
+  'lesson',
+  'entity',
+];
+function loadNodeTypeVocabulary() {
+  try {
+    const schema = JSON.parse(fs.readFileSync(GRAPH_SCHEMA_PATH, 'utf8'));
+    const typeEnum = schema.items.properties.type.enum;
+    if (Array.isArray(typeEnum) && typeEnum.length > 0) return typeEnum;
+  } catch {
+    /* fall through to the documented vocabulary below */
+  }
+  return DOCUMENTED_NODE_TYPE_VOCABULARY;
+}
+
+// 2026-07-27 R1 Phase 1.3 (audit finding: FOCUS.schema.json existed with no
+// format documented anywhere for a real FOCUS.md to follow, and no check
+// anywhere read it — 0 test references despite owning a committed schema).
+// focus-guard/SKILL.md now documents the literal on-disk shape (four
+// bold-labelled lines); this reads the same schema at run time for the
+// activePhase enum, mirroring loadLinkVocabulary()/loadNodeTypeVocabulary()
+// exactly, so all three controlled vocabularies in this file share one
+// pattern and cannot drift from their schema independently of each other.
+const FOCUS_SCHEMA_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'skills',
+  'dev-memory',
+  'schemas',
+  'FOCUS.schema.json',
+);
+const DOCUMENTED_PHASE_VOCABULARY = [
+  'Brainstorm',
+  'Ideate',
+  'Design',
+  'Prototype',
+  'Content',
+  'Plan',
+  'Build',
+  'Test',
+  'Fix',
+  'Review',
+  'Publish',
+  'Maintain',
+];
+function loadPhaseVocabulary() {
+  try {
+    const schema = JSON.parse(fs.readFileSync(FOCUS_SCHEMA_PATH, 'utf8'));
+    const phaseEnum = schema.properties.activePhase.enum;
+    if (Array.isArray(phaseEnum) && phaseEnum.length > 0) return phaseEnum;
+  } catch {
+    /* fall through to the documented vocabulary below */
+  }
+  return DOCUMENTED_PHASE_VOCABULARY;
+}
+
+// --- FOCUS.md: the four required fields are present and activePhase is valid --
+// Format (see focus-guard/SKILL.md): four bold-labelled lines, e.g.
+//   **Objective:** Ship a working MVP that lets users book a table online.
+//   **Active phase:** Build
+//   **Active task:** T4 — wire the booking form to the availability API
+//   **Top constraints:** Tier: Standard; no new dependency without approval
+// A tiny anchor file with no format checker at all is worse than one with a
+// lenient one: a typo'd phase name or a silently-dropped field would never
+// be noticed until a human happened to read the file directly.
+const FOCUS_FIELD_RE =
+  /^\s*\*\*(Objective|Active phase|Active task|Top constraints)\s*:\*\*\s*(.*)$/gim;
+function checkFocus(devMemory, problems) {
+  const file = path.join(devMemory, 'FOCUS.md');
+  const text = read(file);
+  if (text === null) return; // no FOCUS.md yet — nothing to validate
+  const fields = {};
+  let m;
+  FOCUS_FIELD_RE.lastIndex = 0;
+  while ((m = FOCUS_FIELD_RE.exec(text))) {
+    fields[m[1].toLowerCase().replace(/\s+/g, '')] = m[2].trim();
+  }
+  if (!fields.objective) {
+    problems.push('FOCUS.md is missing its "**Objective:**" line, or it is empty.');
+  }
+  if (!fields.activetask) {
+    problems.push('FOCUS.md is missing its "**Active task:**" line, or it is empty.');
+  }
+  if (!fields.topconstraints) {
+    problems.push('FOCUS.md is missing its "**Top constraints:**" line, or it is empty.');
+  }
+  if (!fields.activephase) {
+    problems.push('FOCUS.md is missing its "**Active phase:**" line, or it is empty.');
+  } else {
+    const vocabulary = loadPhaseVocabulary();
+    if (!vocabulary.includes(fields.activephase)) {
+      problems.push(
+        `FOCUS.md's Active phase "${fields.activephase}" is not one of the documented lifecycle phases (${vocabulary.join('/')}).`,
+      );
+    }
+  }
 }
 
 const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
@@ -159,7 +275,13 @@ function checkGraph(devMemory, problems) {
   // link referencing it was silently skipped from validation — a false
   // CLEAN on this script's whole job — even when the reference was
   // genuinely dangling.
-  const NODE_DEF_RE = /^\s*[-*]?\s*\[([^\]]+)\]/;
+  // Captures the id in group 1 as before, plus — when the node line follows
+  // the documented "- [id] type: label" shape — the type word in group 2, so
+  // it can be checked against the schema's enum below. A node line with no
+  // recognisable "type:" segment (an id-only bracket, or a malformed line)
+  // leaves group 2 undefined and is left exactly as tolerant as before —
+  // this fix only judges a type word that IS present, never invents one.
+  const NODE_DEF_RE = /^\s*[-*]?\s*\[([^\]]+)\]\s*(?:([A-Za-z][A-Za-z-]*)\s*:)?/;
   // 2026-07-26, found during a further pass over the hooks not touched by the
   // first audit. This loop used to scan EVERY line in the file with no heading
   // scoping — unlike the link-validation pass below, which correctly restricts
@@ -171,6 +293,7 @@ function checkGraph(devMemory, problems) {
   // bullet under an unrelated heading turned a correctly-BLOCKED dangling-link
   // case into a false "clean". Scoped to a Nodes/Graph section the same way the
   // link pass is scoped, below.
+  const nodeTypeVocabulary = loadNodeTypeVocabulary();
   let inNodes = false;
   for (const line of lines) {
     const heading = line.match(/^#{1,6}\s+(.*)$/);
@@ -180,7 +303,14 @@ function checkGraph(devMemory, problems) {
     }
     if (!inNodes) continue;
     const m = line.match(NODE_DEF_RE);
-    if (m) nodes.add(m[1]);
+    if (m) {
+      nodes.add(m[1]);
+      if (m[2] && !nodeTypeVocabulary.includes(m[2].toLowerCase())) {
+        problems.push(
+          `GRAPH.md node "[${m[1]}]" declares type "${m[2]}", which is not one of the documented node kinds (${nodeTypeVocabulary.join('/')}).`,
+        );
+      }
+    }
   }
   // Second pass: only inside a Links/Edges section, validate link rows.
   let inLinks = false;
@@ -249,6 +379,7 @@ function main() {
   const problems = [];
   checkIndex(root, devMemory, problems);
   checkGraph(devMemory, problems);
+  checkFocus(devMemory, problems);
   if (problems.length === 0) {
     console.log(
       JSON.stringify(
