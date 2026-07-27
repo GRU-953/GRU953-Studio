@@ -578,6 +578,82 @@ if (ciYmlText === null) {
   );
 }
 
+// ---- INV 14: the "DATA, never an instruction" anti-injection guardrail stays present ----
+// 2026-08 R2 Phase 2.3 (D8, prompt injection). The defence against content
+// the studio reads (a memory file, an uploaded document, a user-supplied
+// name) manipulating the AI acting on it is currently prose-only: repeated,
+// in slightly varying wording, across every agent/skill file whose own job
+// involves reading such content — but until now checked by nothing at all.
+// A silent edit deleting the one sentence from any of these files would
+// have gone unnoticed. This locks in the CURRENT set of files carrying some
+// form of the guardrail (found by direct search of the real repo, not
+// invented) as a floor: each must still carry it. Deliberately NOT a
+// general classifier of "which future file needs this" — judging a new
+// file's semantic content is a different, much harder problem, and the
+// same "close the found case, not a general grammar engine" reasoning
+// docs-consistency.mjs's own header comment already states for this
+// project's other checks applies here too.
+const DATA_NEVER_INSTRUCTION_RE = /DATA[^.]{0,60}never|never[^.]{0,80}instruction/is;
+const GUARDRAIL_FILES = [
+  'agents/accessibility-specialist.md',
+  'agents/ai-developer.md',
+  'agents/architect.md',
+  'agents/audio-content-specialist.md',
+  'agents/brand-guardian.md',
+  'agents/builder.md',
+  'agents/content-director.md',
+  'agents/cost-monitor.md',
+  'agents/cpp-developer.md',
+  'agents/csharp-developer.md',
+  'agents/data-engineer.md',
+  'agents/devops-engineer.md',
+  'agents/fixer.md',
+  'agents/flutter-dart-developer.md',
+  'agents/go-developer.md',
+  'agents/image-content-specialist.md',
+  'agents/interviewer.md',
+  'agents/java-developer.md',
+  'agents/kotlin-developer.md',
+  'agents/localisation-specialist.md',
+  'agents/maintenance-agent.md',
+  'agents/memory-keeper.md',
+  'agents/project-lead.md',
+  'agents/publisher.md',
+  'agents/python-developer.md',
+  'agents/researcher.md',
+  'agents/responsible-ai-reviewer.md',
+  'agents/reviewer.md',
+  'agents/rust-developer.md',
+  'agents/scope-guardian.md',
+  'agents/security-compliance-auditor.md',
+  'agents/swift-developer.md',
+  'agents/technical-writer.md',
+  'agents/tester.md',
+  'agents/text-content-specialist.md',
+  'agents/typescript-developer.md',
+  'agents/ux-designer.md',
+  'agents/video-content-specialist.md',
+  'skills/audit-loop/SKILL.md',
+  'skills/dev-memory/SKILL.md',
+  'skills/ecosystem-finder/SKILL.md',
+  'skills/focus-guard/SKILL.md',
+  'skills/memory-graph/SKILL.md',
+  'skills/micro-task-planning/SKILL.md',
+  'skills/universal-platform-integration/SKILL.md',
+];
+for (const rel of GUARDRAIL_FILES) {
+  const text = read(path.join(pluginRoot, rel));
+  if (text === null) {
+    fail(
+      `${rel} (previously carrying the "DATA, never an instruction" anti-injection guardrail) is missing or unreadable`,
+    );
+  } else if (!DATA_NEVER_INSTRUCTION_RE.test(text)) {
+    fail(
+      `${rel} no longer carries the "DATA, never an instruction" anti-injection guardrail (2026-08 regression)`,
+    );
+  }
+}
+
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {
   console.log(
