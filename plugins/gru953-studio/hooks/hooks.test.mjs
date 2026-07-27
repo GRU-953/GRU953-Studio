@@ -2875,6 +2875,45 @@ test('lib.mjs isConfirmScriptOnly: confirm-memory-persist.mjs itself is never tr
   assert.equal(isPushCapable('node confirm-memory-persist.mjs; git push'), true);
 });
 
+// 2026-08 R2 Phase 2.4 (Step 2 — re-attack Round 1's Phase 1.2 token-writer
+// parity fix, same lens that found the original gap). CHECKPOINT-APPROVED
+// and MEMORY-PERSIST-APPROVED both already had a dedicated "must never
+// authorise go-public" test (immediately above) — but PUBLISH-APPROVED, the
+// token semantically CLOSEST to "going public" and therefore the most
+// plausible accidental-substitution risk, never had the equivalent test.
+// Verified the underlying code was already correct before writing this
+// (publishToken()'s hash prefix "studio-publish:" can never satisfy
+// goPublicConfirmed()'s independently-derived "studio-go-public:" prefix) —
+// this closes a genuine COVERAGE gap, not a live bug, the same distinction
+// Phase 1.2's own header comment draws.
+test('gate.mjs: a publish token does NOT authorise going public (2026-08 R2 Phase 2.4 re-attack)', () => {
+  const dir = mkTmp('gru-publish-nogo-public-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'sanity: the publish token itself must still authorise an ordinary push');
+  for (const c of ['gh repo edit me/app --visibility public', 'gh repo create me/app --public', 'gh repo edit me/app --visibility="public"']) {
+    assert.equal(runHook('gate.mjs', c, dir).decision, 'deny', `publish token must never authorise go-public: "${c}"`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Combined edge case: even with ALL THREE ordinary-push tokens present at
+// once, going public still requires its own dedicated token — proving the
+// go-public gate isn't satisfiable by any quantity or combination of the
+// other three, only by the one token actually derived for it.
+test('gate.mjs: all three ordinary-push tokens together still do not authorise going public without GO-PUBLIC-APPROVED (2026-08 R2 Phase 2.4 re-attack)', () => {
+  const dir = mkTmp('gru-allthree-nogo-public-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  spawnSync(NODE, [path.join(HERE, 'confirm-checkpoint.mjs'), dir], { encoding: 'utf8' });
+  spawnSync(NODE, [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'gh repo edit me/app --visibility public', dir).decision, 'deny', 'no combination of the three ordinary-push tokens may substitute for GO-PUBLIC-APPROVED');
+  // Adding the real go-public token now, alongside the other three, must allow it.
+  spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', 'gh repo edit me/app --visibility public', dir).decision, 'allow', 'the real go-public token must still work once actually present');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // ---------------------------------------------------------------------------
 // 2026-08 audit round 1, Phase 1.2 (token-writer parity). All four confirm-
 // *.mjs scripts and gate.mjs's four *Confirmed() readers share the exact same
@@ -5240,6 +5279,41 @@ test('verify-progress.mjs: structured evidence recording a PASSING run is still 
   const r = runScript('verify-progress.mjs', dir);
   assert.equal(r.code, 0, `exitCode 0 is genuine proof and must stay clean: ${r.stdout}`);
   assert.equal(r.json.status, 'clean');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08 R2 Phase 2.4 (Step 2 re-attack of the Phase 1.3 JSON-evidence fix —
+// found live by execution, not hypothetically). The fix above only ever
+// inspected the FIRST taskId-bearing JSON object on a row via .find(), so a
+// row honestly narrating an old passing run followed by a re-run that
+// failed read the first object, saw exitCode 0, and reported clean — never
+// looking at the second object's recorded failure. Exactly finding 1's
+// class of bug (a stale passing claim masking a current failure), reopened
+// via the JSON path even though the prose path already closes it via
+// CONTRADICTION_RE. Reproduced against the pre-fix code before fixing it.
+test('verify-progress.mjs: a SECOND JSON evidence object on the same row recording a later failure is not masked by a first passing one (2026-08 R2 Phase 2.4)', () => {
+  const dir = mkTmp('gru-vp-second-json-fails-');
+  writeProgressRow(
+    dir,
+    `${completeEvidence({ timestamp: 't1' })} old run; re-run: ${completeEvidence({ exitCode: 1, stdout: '3 failing', timestamp: 't2' })}`,
+  );
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 1, `a second JSON object recording a failure must BLOCK even though the first object passed: ${r.stdout}`);
+  assert.ok(Array.isArray(r.json.failedEvidence) && r.json.failedEvidence.length > 0, JSON.stringify(r.json));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Inverse: TWO passing JSON objects on the same row (e.g. a re-run that
+// re-confirmed the same pass) must still be clean — proving this isn't
+// simply "any second object blocks", only a failing one does.
+test('verify-progress.mjs: two PASSING JSON evidence objects on the same row stay clean (inverse, 2026-08 R2 Phase 2.4)', () => {
+  const dir = mkTmp('gru-vp-second-json-passes-');
+  writeProgressRow(
+    dir,
+    `${completeEvidence({ timestamp: 't1' })} re-confirmed: ${completeEvidence({ timestamp: 't2' })}`,
+  );
+  const r = runScript('verify-progress.mjs', dir);
+  assert.equal(r.code, 0, `two passing JSON objects on the same row must stay clean: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 

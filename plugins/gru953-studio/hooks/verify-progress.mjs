@@ -316,18 +316,35 @@ function main() {
       // pasted into a Notes cell for some other reason is not misread as
       // evidence at all (and so falls through to the plain VERIFIED_RE check
       // below, same as any other prose cell).
-      const jsonCandidate = extractJsonObjects(row).find(
+      //
+      // 2026-08 R2 Phase 2.4 (Step 2 re-attack, found live by execution): this
+      // used to take only the FIRST such object via .find(), so a row
+      // honestly narrating an old passing run followed by a re-run that
+      // failed — "{...\"exitCode\":0...} old run; re-run: {...\"exitCode\":1
+      // ...}" — read the first object, saw exitCode 0, and reported clean,
+      // never looking at the second object's recorded failure. This is
+      // exactly finding 1's class of bug (a stale passing claim masking a
+      // current failure), reopened via the JSON path even though the prose
+      // path already closes it via CONTRADICTION_RE. Now evaluates EVERY
+      // taskId-bearing object on the row: any one malformed or any one
+      // recording a non-zero exit disqualifies the row, mirroring the prose
+      // rule that a row may honestly narrate history but not also currently
+      // claim to be failing and still count as done.
+      const jsonCandidates = extractJsonObjects(row).filter(
         (o) => o && typeof o === 'object' && !Array.isArray(o) && 'taskId' in o,
       );
       let hasPassingJsonEvidence = false;
-      if (jsonCandidate) {
-        const missingFields = validateEvidenceObject(jsonCandidate);
-        if (missingFields.length > 0) {
-          malformedEvidence.push({ row: row.trim(), missingFields });
+      if (jsonCandidates.length > 0) {
+        const malformed = jsonCandidates
+          .map((o) => ({ o, missingFields: validateEvidenceObject(o) }))
+          .filter((r) => r.missingFields.length > 0);
+        if (malformed.length > 0) {
+          malformedEvidence.push({ row: row.trim(), missingFields: malformed[0].missingFields });
           continue;
         }
-        if (jsonCandidate.exitCode !== 0) {
-          failedEvidence.push({ row: row.trim(), exitCode: jsonCandidate.exitCode });
+        const failing = jsonCandidates.find((o) => o.exitCode !== 0);
+        if (failing) {
+          failedEvidence.push({ row: row.trim(), exitCode: failing.exitCode });
           continue;
         }
         hasPassingJsonEvidence = true;
