@@ -120,6 +120,62 @@ jobs:
       - name: Documentation-consistency check
         run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
 
+  # 2026-08 audit round 2, Phase 2.2 (D3). Complements hooks.test.mjs's own
+  # in-process toCrlf() simulation with a real, end-to-end proof: an actual
+  # checkout, deliberately re-encoded to CRLF ON DISK afterwards (bypassing
+  # .gitattributes' own `eol=lf` pin, which is what stops this happening by
+  # ACCIDENT on a real Windows checkout — see .gitattributes' own header
+  # comment), then the same six gates run against that genuinely-dirtied
+  # tree. Runs on ubuntu-latest deliberately: the variable under test is
+  # CRLF CONTENT, not the Windows checkout mechanism itself, which
+  # .gitattributes already covers and the `hooks` job's own windows-latest
+  # leg already exercises. Found a real bug the first time this was run:
+  # docs-consistency.mjs's lifecycle-stage-count check located its target
+  # paragraph with a literal `\n\n` for "blank line", which a CRLF file
+  # never has (its blank lines are `\r\n\r\n`) — fixed in the same change
+  # that added this job, never shipped as a known-broken leg.
+  hooks-crlf:
+    name: hooks-crlf (CRLF working tree)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - name: Re-encode every tracked .md/.json/.mjs/.js/.yml/.yaml file to CRLF (deliberately, bypassing .gitattributes' eol=lf pin)
+        shell: bash
+        run: |
+          set -e
+          git ls-files -- '*.md' '*.json' '*.mjs' '*.js' '*.yml' '*.yaml' | while read -r f; do
+            [ -f "$f" ] || continue
+            perl -pi -e 's/\r?\n/\r\n/' "$f"
+          done
+      - name: Assert the working tree is genuinely dirty (the rewrite must not be a no-op)
+        run: |
+          if git diff --quiet; then
+            echo "The CRLF rewrite produced no changes — this leg would be proving nothing." >&2
+            exit 1
+          fi
+          echo "Working tree confirmed CRLF-dirtied:"
+          git diff --stat | tail -5
+      - name: Syntax-check every hook script (still parses fine as CRLF)
+        run: |
+          for f in plugins/gru953-studio/hooks/*.mjs; do
+            node --check "$f" && echo "$f OK"
+          done
+      - name: Behavioural test suite (hooks.test.mjs) against the CRLF-encoded repo
+        run: node plugins/gru953-studio/hooks/hooks.test.mjs
+      - name: Repository integrity check
+        run: node plugins/gru953-studio/hooks/repo-integrity.mjs .
+      - name: Roster check (role count vs committed baseline)
+        run: node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
+      - name: Smoke-test the licence scanner
+        run: node plugins/gru953-studio/hooks/licence-scan.mjs .
+      - name: Documentation-consistency check
+        run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
+
   # 2026-07-26 audit stage 6. Separate from `hooks` on purpose: `npm ci` here
   # must never put node_modules into the hooks job's own workspace, and these
   # three packages (the CLI, the Antigravity bridge, and the VS Code
@@ -157,7 +213,7 @@ jobs:
   ci-ok:
     name: CI
     if: always()
-    needs: [static, hooks, clients]
+    needs: [static, hooks, hooks-crlf, clients]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job did not succeed

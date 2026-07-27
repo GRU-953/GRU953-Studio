@@ -3803,6 +3803,28 @@ test('docs-consistency.mjs: the actual repo is clean (locks in current good stat
   assert.equal(r.json && r.json.status, 'clean', `expected clean, got: ${r.stdout}`);
 });
 
+// 2026-08 R2 Phase 2.2 (D3, cross-OS). Found by execution while building the
+// new hooks-crlf CI leg: DC2's lifecycle-stage-count check located its target
+// paragraph with a literal `\n\n` for "blank line", which a CRLF-encoded
+// studio/SKILL.md (a real Windows checkout, or any project file a Windows
+// editor saved) never has — its blank lines are `\r\n\r\n`, and two \n bytes
+// separated by a \r never match `\n\n`. Reproduced against the pre-fix code:
+// this exact fixture returned {"status":"BLOCKED","problems":["could not
+// find studio/SKILL.md's \"## The lifecycle\" line..."]}, not "clean".
+test('docs-consistency.mjs: a CRLF-encoded checkout is still clean (2026-08 R2 Phase 2.2, D3)', () => {
+  const dir = mkTmp('gru-docsconsist-crlf-');
+  copyRepoTo(dir);
+  toCrlf(dir);
+  const sample = fs.readFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md'),
+    'utf8',
+  );
+  assert.match(sample, /\r\n/, 'the fixture must genuinely be CRLF-encoded');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a CRLF checkout must be judged identically to an LF one: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // 2026-07-26 audit stage 6. Until this stage, README's "zero third-party code
 // dependencies" claim was untrue while plugins/gru953-studio/package.json
 // (mcp-server.js's manifest) declared @modelcontextprotocol/sdk — a disclosed,

@@ -221,7 +221,16 @@ function countLifecycleStages(studioSkillText) {
   // The lifecycle sentence wraps across several source lines (ordinary prose
   // word-wrap) — captured as the whole paragraph up to the next blank line,
   // then whitespace-collapsed, so a line-wrap can never truncate the count.
-  const m = studioSkillText.match(/##\s*The lifecycle\s*\n\n([\s\S]*?)\n\n/i);
+  // 2026-08 R2 Phase 2.2 (D3, cross-OS): a literal `\n\n` here required two
+  // adjacent LF bytes for a "blank line", which a CRLF-encoded file (a real
+  // Windows checkout, or any project whose SKILL.md a Windows editor saved)
+  // never has — its blank lines are `\r\n\r\n`, two \n bytes separated by a
+  // \r, which never matches `\n\n`. Reproduced: re-encoding this exact file
+  // to CRLF made this return null, and the whole DC2 check fail closed with
+  // "could not find studio/SKILL.md's lifecycle line" instead of validating
+  // anything. `\r?\n` tolerates either line ending, matching the pattern
+  // this file's own line-splitting already uses elsewhere.
+  const m = studioSkillText.match(/##\s*The lifecycle\s*\r?\n\r?\n([\s\S]*?)\r?\n\r?\n/i);
   if (!m) return null;
   const para = m[1].replace(/\s+/g, ' ').trim();
   const plusMatch = para.match(/\(plus\s+([^)]+?)\s+for\b[^)]*\)/i);
