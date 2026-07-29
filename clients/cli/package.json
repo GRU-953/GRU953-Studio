@@ -1,6 +1,6 @@
 {
   "name": "@gru953/studio-cli",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "",
   "main": "src/index.js",
   "scripts": {

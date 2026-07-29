@@ -2,7 +2,7 @@
   "name": "gru953-studio",
   "displayName": "Universal Agentic Studio",
   "description": "GRU953-Studio - Universal Agentic Studio for VS Code, Cursor, and Windsurf",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "publisher": "GRU-953",
   "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
   "license": "SEE LICENSE IN LICENSE",

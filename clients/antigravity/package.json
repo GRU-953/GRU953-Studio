@@ -1,6 +1,6 @@
 {
   "name": "@gru953/studio-antigravity",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "GRU953-Studio bridge for Google Antigravity.",
   "main": "src/index.js",
   "scripts": {

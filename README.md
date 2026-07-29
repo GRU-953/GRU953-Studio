@@ -67,7 +67,13 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 5.0.0
+### Latest version: 5.0.1
+
+Version 5.0.1 is a small bug-fix release on top of 5.0.0 — no roster, Tier,
+or workflow changes. It fixes a VS Code extension command that pointed at
+an npm package that was never actually published, and closes a handful of
+gaps in how five of the studio's own safety checks read **bold** text in
+markdown tables. Full detail in [CHANGELOG.md](CHANGELOG.md).
 
 Version 5.0.0 is a major hardening release: the result of an eight-stage,
 exhaustive audit of the whole repository (the full findings register is

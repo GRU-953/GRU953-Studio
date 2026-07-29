@@ -1,8 +1,11 @@
 # Changelog
 
-## Maintenance fixes (2026-07-29, since 5.0.0)
+## 5.0.1 — 2026-07-30
 
-Bug fixes only — no roster, Tier, or workflow changes.
+Bug fixes only — no roster, Tier, or workflow changes. This release is also
+the first time 5.0.0's own changes (below) reach a published GitHub
+Release — 5.0.0 was merged to `main` on 2026-07-26 but never tagged or
+released, so this release covers both.
 - The VS Code extension's Status command ran `npx @gru953/studio-cli
   status`, but `@gru953/studio-cli` has never actually been published to
   npm and there is no publish step anywhere in this repo, so that command
