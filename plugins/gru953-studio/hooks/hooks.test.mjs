@@ -21,7 +21,13 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
-import { isPushCapable, normalizeForPushCheck, isDirectory } from './lib.mjs';
+import {
+  isPushCapable,
+  normalizeForPushCheck,
+  isDirectory,
+  SEPARATOR_ROW_RE,
+  PLACEHOLDER_RE,
+} from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages, resolveExecutable } from './licence-scan.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +107,27 @@ function runHook(script, command, cwd) {
   }
   return { code: r.status, decision, stdout: r.stdout };
 }
+
+// ---------------------------------------------------------------------------
+// lib.mjs's shared markdown-table patterns (2026-07-29 maintenance fix, audit
+// finding 4) — SEPARATOR_ROW_RE and PLACEHOLDER_RE used to be six/three
+// hand-maintained copies respectively, which is exactly how verify-progress's
+// own SEPARATOR_ROW_RE drifted out of sync with its siblings. Direct unit
+// tests on the shared exports, the same pattern already used for
+// isPushCapable/normalizeForPushCheck below.
+// ---------------------------------------------------------------------------
+test('lib.mjs: SEPARATOR_ROW_RE matches a separator row with trailing whitespace (2026-07-29 maintenance fix — the case verify-progress.mjs\'s own pre-sync copy was missing)', () => {
+  assert.ok(SEPARATOR_ROW_RE.test('| :-- | :-- |  '), 'a separator row followed by trailing whitespace must still match');
+  assert.ok(SEPARATOR_ROW_RE.test('| :-- | :-- |'), 'control: no trailing whitespace must still match');
+  assert.ok(SEPARATOR_ROW_RE.test(':-- | :--'), 'control: a pipe-less GFM separator row must still match');
+});
+
+test('lib.mjs: PLACEHOLDER_RE still matches every intended placeholder form after the redundant "—" alternative was removed (2026-07-29 maintenance fix)', () => {
+  for (const v of ['', '-', '--', '—', '–', 'tbd', 'TODO', 'none', 'n/a', 'na', '...']) {
+    assert.ok(PLACEHOLDER_RE.test(v), `"${v}" must still be recognised as a placeholder`);
+  }
+  assert.ok(!PLACEHOLDER_RE.test('done'), 'control: a real value must not be treated as a placeholder');
+});
 
 // ---------------------------------------------------------------------------
 // isPushCapable — the shared matcher (the crown jewel; fails CLOSED)
@@ -1920,6 +1947,50 @@ test('quality-gate.mjs: "exit code N" phrasing is caught, not just bare "exit N"
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-29 maintenance fix regression guard (audit finding 3): the header
+// deEmphasise() fix (further-pass finding above) never reached the Status
+// VALUE cell — a bolded "**pass**"/"**n/a**" still failed PASS_RE/NA_RE as-is
+// and was wrongly reported as "not a pass".
+test('quality-gate.mjs: a bolded "**pass**" status value is still recognised as a pass (2026-07-29 maintenance fix — value-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-qg-bold-pass-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass |', '| Automated tests | **pass** |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a bolded pass value must still be recognised as a pass: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('quality-gate.mjs: a bolded "**n/a**" status value is still recognised as a reasoned N/A (2026-07-29 maintenance fix — value-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-qg-bold-na-');
+  writeGate(dir, FULL_DOD.replace('| Accessibility | n/a |', '| Accessibility | **n/a** |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a bolded n/a value must still be recognised as a reasoned N/A: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (round 3, F1): the value-cell
+// deEmphasise() fix directly above reached the Status cell but not the
+// Evidence cell beside it — a placeholder disguised in bold, e.g.
+// "**tbd**", still failed PLACEHOLDER_RE as-is and was wrongly accepted as
+// real evidence for a pass.
+test('quality-gate.mjs: a bolded "**tbd**" evidence value must still BLOCK a pass (2026-07-29 maintenance fix — evidence-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-qg-bold-evidence-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | **pass** | **tbd** |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a bolded "**tbd**" evidence must still BLOCK: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Same evidence-cell deEmphasise() fix as directly above, but for the N/A
+// branch — a reasoned "n/a" still needs a real, non-placeholder reason, and
+// that check must not be foolable by wrapping the placeholder in bold either.
+test('quality-gate.mjs: a bolded "**tbd**" reason must still BLOCK a reasoned N/A (2026-07-29 maintenance fix — evidence-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-qg-bold-na-evidence-');
+  writeGate(dir, FULL_DOD.replace('| Accessibility | n/a | no user interface — CLI only |', '| Accessibility | **n/a** | **tbd** |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a bolded "**tbd**" n/a reason must still BLOCK: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 function writeReq(dir, req, prog) {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'REQUIREMENTS.md'), req);
@@ -2023,6 +2094,20 @@ test('traceability-check.mjs: a met requirement without verification evidence is
   writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | — | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n');
   const r = runScript('traceability-check.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /no verification evidence/i.test(p)));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (round 3, F1): the status cell
+// was already de-emphasised (deEmphStatus), but the Verification cell beside
+// it was not — a placeholder disguised in bold, e.g. "**tbd**", still failed
+// PLACEHOLDER_RE as-is and was wrongly accepted as real verification
+// evidence for a "met" requirement.
+test('traceability-check.mjs: a bolded "**tbd**" verification value must still BLOCK a met requirement (2026-07-29 maintenance fix — verification-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-tr-bold-verif-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | T1 | **tbd** | met |\n', PROG_HEADER + '| T1 | pause | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a bolded "**tbd**" verification must still BLOCK: ${r.stdout}`);
   assert.ok(r.json.problems.some((p) => /no verification evidence/i.test(p)));
   fs.rmSync(dir, RM_OPTS);
 });
@@ -2169,6 +2254,57 @@ test('memory-integrity.mjs: a stale non-ASCII or markdown-link INDEX cell is sti
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /নথি\.md/.test(p)), 'a bare non-ASCII stale filename must be caught');
   assert.ok(r.json.problems.some((p) => /does-not-exist\.md/.test(p)), 'a stale markdown-link target must be caught');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (audit finding 2, part of
+// round 1's checkIndex() fail-closed change — the highest-risk behaviour
+// change in that round, since it is the one change that can newly BLOCK a
+// previously-passing project). A bolded "**Where**" header must still
+// resolve the column via deEmphasise() (round 1's own header fix) AND a
+// genuinely dangling path under it must still be caught, not silently waved
+// through as "header unrecognised, nothing to check".
+test('memory-integrity.mjs: a bolded "**Where**" header still catches a genuinely dangling INDEX path (fail-closed, 2026-07-29 maintenance regression guard)', () => {
+  const dir = mkTmp('gru-mi-bold-where-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | **Where** | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Gone | src/gone.js | deleted | x |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  assert.ok(r.json.problems.some((p) => /src\/gone\.js/.test(p)), 'a bolded Where header must still resolve the column and catch the dangling path');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (round 3, F1): the Where VALUE
+// cell had backticks stripped but not emphasis — a bolded path to a file
+// that genuinely EXISTS, e.g. "**src/real.js**", was resolved literally
+// (with the "**" still glued to the filename) and wrongly reported as a
+// dangling/non-existent path.
+test('memory-integrity.mjs: a bolded existing path value must not BLOCK (2026-07-29 maintenance fix — Where-value deEmphasise)', () => {
+  const dir = mkTmp('gru-mi-bold-where-value-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'real.js'), '// real\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Real | **src/real.js** | exists | x |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a bolded path to a file that genuinely exists must not BLOCK: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (audit finding 2). Round 1's
+// own fix for an unrecognised header column used to push its problem message
+// once per DATA ROW instead of once per table — three data rows under an
+// unrecognised header used to report the same sentence three times.
+test('memory-integrity.mjs: an unrecognised INDEX header column is reported once per table, not once per row (2026-07-29 maintenance fix)', () => {
+  const dir = mkTmp('gru-mi-unrecognised-once-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Description | Tags |\n| :-- | :-- | :-- |\n| A | a | x |\n| B | b | y |\n| C | c | z |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', r.stdout);
+  const occurrences = r.json.problems.filter((p) => /no recognisable file\/path\/where\/location header column/.test(p));
+  assert.equal(occurrences.length, 1, `expected the unrecognised-header problem exactly once, not once per row: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -2334,6 +2470,12 @@ function addAutoUpdateScaffolding(top, relativeDepth = ['plugins', 'gru953-studi
   fs.mkdirSync(hooksDir, { recursive: true });
   const scriptPath = path.join(hooksDir, 'auto-update.mjs');
   fs.copyFileSync(path.join(HERE, 'auto-update.mjs'), scriptPath);
+  // 2026-07-29 maintenance fix: auto-update.mjs now imports './lib.mjs'
+  // (audit finding 3, so it can use formatFsError() instead of letting a raw
+  // fs error propagate) — lib.mjs must sit alongside the copied script or
+  // the import fails with ERR_MODULE_NOT_FOUND in this isolated fixture,
+  // which none of these tests intend to exercise.
+  fs.copyFileSync(path.join(HERE, 'lib.mjs'), path.join(hooksDir, 'lib.mjs'));
   return scriptPath;
 }
 function runAutoUpdate(scriptPath, envOverride) {
@@ -3222,6 +3364,56 @@ test('content-check.mjs: a leading byte-order mark does not break table parsing 
   writeContent(dir, '﻿' + CONTENT_HEADER + '| onboarding | text | Claude bn+en | approved | original | — |\n');
   const r = runScript('content-check.mjs', dir);
   assert.equal(r.json.status, 'clean', `a BOM-prefixed CONTENT.md must still parse its table: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (round 1 already fixed HEADER
+// matching for a decorated column name; this locks it in with the exact
+// finding-2-style headers named in the maintenance brief).
+test('content-check.mjs: bolded headers ("**Asset**", "**Medium**", etc.) over an otherwise-correct table are clean, not BLOCKED (2026-07-29 maintenance fix)', () => {
+  const dir = mkTmp('gru-cc-bold-headers-');
+  const boldHeader =
+    '| **Asset** | **Medium** | **Source** | **Approved** | **Rights** | **Alt** |\n| :-- | :-- | :-- | :-- | :-- | :-- |\n';
+  writeContent(dir, boldHeader +
+    '| hero.png | image | Gemini image, prompt #4 | approved | AI-generated, user owns output | Family using the app |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (audit finding 3): round 1's
+// header deEmphasise() fix did not reach VALUE cells — a bolded "**approved**"
+// still failed APPROVED_RE as-is and was wrongly reported "not approved".
+test('content-check.mjs: a bolded "**approved**" status value is recognised as approved, not BLOCKED (2026-07-29 maintenance fix — value-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-cc-bold-approved-');
+  writeContent(dir, CONTENT_HEADER + '| onboarding | text | Claude bn+en | **approved** | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Same finding, the other value cell it affects: a bolded Medium value must
+// still be recognised as text-only (no alt-text required), not treated as an
+// unrecognised medium that defaults to requiring one.
+test('content-check.mjs: a bolded "**text**" Medium value is still recognised as text-only (2026-07-29 maintenance fix — value-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-cc-bold-medium-');
+  writeContent(dir, CONTENT_HEADER + '| onboarding | **text** | Claude bn+en | approved | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', r.stdout);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-29 maintenance fix regression guard (round 3, F1): ph() (used for
+// Source/Rights/Alt) tested the raw cell, so a placeholder disguised in
+// bold, e.g. "**tbd**", still failed PLACEHOLDER_RE as-is and was wrongly
+// accepted as real provenance/rights — same class of gap as the Approved/
+// Medium value-cell fixes directly above.
+test('content-check.mjs: a bolded "**tbd**" Source value must still BLOCK as missing provenance (2026-07-29 maintenance fix — evidence-cell deEmphasise)', () => {
+  const dir = mkTmp('gru-cc-bold-source-');
+  writeContent(dir, CONTENT_HEADER + '| onboarding | text | **tbd** | approved | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a bolded "**tbd**" source must still BLOCK: ${r.stdout}`);
+  assert.ok(r.json.problems.some((p) => /no provenance recorded/i.test(p)));
   fs.rmSync(dir, RM_OPTS);
 });
 

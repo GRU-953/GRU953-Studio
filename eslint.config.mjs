@@ -2,7 +2,8 @@
 // dependencies" section). Scoped to the plugin's own hook scripts, which are
 // zero-runtime-dependency ESM (.mjs) — the `clients/` bridges each carry their
 // own separate lint setup with their own lockfile (see clients/vscode's
-// .eslintrc.json), already wired into CI's `clients` job.
+// eslint.config.mjs, which replaced its old .eslintrc.json in PR #29),
+// already wired into CI's `clients` job.
 //
 // The rule that matters most here: NOT listing CommonJS globals
 // (`require`/`module`/`exports`/`__dirname`/`__filename`) makes referencing

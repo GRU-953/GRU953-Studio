@@ -2,9 +2,10 @@
   "name": "@gru953/studio-cli",
   "version": "5.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint src"
   },
   "keywords": [],
   "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
@@ -17,5 +18,9 @@
   },
   "bin": {
     "gru953-studio": "./src/index.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^10.8.0"
   }
 }

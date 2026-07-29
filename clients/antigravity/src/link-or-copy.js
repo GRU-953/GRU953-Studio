@@ -20,7 +20,7 @@ function linkOrCopy(sourceDir, targetPath, platform = process.platform) {
             fs.symlinkSync(sourceDir, targetPath);
         }
         return { ok: true, method: 'linked' };
-    } catch (linkErr) {
+    } catch {
         try {
             fs.cpSync(sourceDir, targetPath, { recursive: true });
             return { ok: true, method: 'copied (linking was not possible here)' };

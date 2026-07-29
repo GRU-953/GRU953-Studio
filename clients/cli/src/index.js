@@ -18,11 +18,12 @@ switch (command) {
     case 'status':
         printStatus();
         break;
-    case 'init':
+    case 'init': {
         console.log('Initializing universal platform support...');
         const { initializeUniversalRules } = require('./universal-init');
         initializeUniversalRules();
         break;
+    }
     case 'help':
     default:
         console.log('Usage: gru953-studio [status|init|help]');

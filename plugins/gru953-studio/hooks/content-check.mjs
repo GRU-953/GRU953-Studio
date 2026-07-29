@@ -25,9 +25,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, isDirectory } from './lib.mjs';
+import { splitPipeCells, stripBom, isDirectory, deEmphasise, SEPARATOR_ROW_RE } from './lib.mjs';
 
-const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+// 2026-07-29 maintenance fix (audit finding 4): kept as its own separate
+// constant rather than importing lib.mjs's shared PLACEHOLDER_RE — this one
+// is a deliberate SUPERSET (it additionally accepts "pending"/"placeholder"),
+// used for a different purpose (content provenance/rights, not evidence) than
+// the identical-except-for-this copy memory-integrity.mjs/quality-gate.mjs/
+// traceability-check.mjs shared and had drifted apart on, so it is not part
+// of that three-way sync.
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
 const APPROVED_RE = /^\s*(approved|yes|pass(ed)?|ok|done|signed[ -]?off|human|final)\b/i;
 // Found 2026-07-19: matching FOR media by English keyword silently skipped
@@ -74,8 +80,13 @@ function cells(line) {
   if (c.length && c[c.length - 1].trim() === '') c.pop();
   return c.map((x) => x.trim());
 }
+// 2026-07-29 maintenance fix (round 3, F1): tested the raw cell, so a
+// placeholder disguised in bold, e.g. "**tbd**", still failed PLACEHOLDER_RE
+// as-is and was wrongly accepted as real provenance/rights/alt-text — the
+// same value-cell gap this file's own APPROVED_RE/TEXT_ONLY_RE deEmphasise()
+// fix (audit finding 3) already closed for the Approved/Medium columns.
 function ph(s) {
-  return PLACEHOLDER_RE.test(String(s || '').trim());
+  return PLACEHOLDER_RE.test(deEmphasise(String(s || '')).trim());
 }
 
 function main() {
@@ -154,7 +165,12 @@ function main() {
     const c = cells(line);
     if (!inTable) {
       inTable = true;
-      const find = (re) => c.findIndex((h) => re.test(h));
+      // 2026-07-29 maintenance fix: header cells were tested as-is, so a
+      // bolded header (e.g. "**Approved**") never matched, wrongly reporting
+      // the whole content table as unrecognised. deEmphasise() (already used
+      // by verify-progress.mjs/quality-gate.mjs/traceability-check.mjs for
+      // exactly this) strips markdown emphasis before matching.
+      const find = (re) => c.findIndex((h) => re.test(deEmphasise(h)));
       const found = {
         asset: find(/^(asset|name|file|item)$/i),
         medium: find(/^(medium|type|kind)$/i),
@@ -197,7 +213,12 @@ function main() {
     const rights = idx.rights !== -1 ? r[idx.rights] || '' : '';
     const alt = idx.alt !== -1 ? r[idx.alt] || '' : '';
 
-    if (idx.approved === -1 || !APPROVED_RE.test(approved))
+    // 2026-07-29 maintenance fix (audit finding 3): the header-matching
+    // deEmphasise() fix above only reached header cells — a VALUE cell like
+    // "**approved**" or "**yes**" still failed APPROVED_RE/TEXT_ONLY_RE as-is
+    // and was wrongly BLOCKED. Same fix, one layer deeper (verify-progress.mjs
+    // already de-emphasises its status VALUE the same way).
+    if (idx.approved === -1 || !APPROVED_RE.test(deEmphasise(approved)))
       problems.push(
         `content "${name}": not approved (status "${approved || '(none)'}") — every shipped asset needs a recorded approval.`,
       );
@@ -209,7 +230,7 @@ function main() {
       problems.push(
         `content "${name}": no rights/licence note — AI-generated or sourced media needs a plain rights note.`,
       );
-    const isTextOnly = idx.medium !== -1 && TEXT_ONLY_RE.test(medium.trim());
+    const isTextOnly = idx.medium !== -1 && TEXT_ONLY_RE.test(deEmphasise(medium));
     if (!isTextOnly && (idx.alt === -1 || ph(alt)))
       problems.push(
         `content "${name}": media asset has no alt-text/caption/transcript — required for accessibility.`,

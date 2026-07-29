@@ -1,6 +1,17 @@
 const fs = require('fs');
 const path = require('path');
 
+// 2026-07-29 maintenance fix (audit finding 1): `@gru953/studio-cli` has
+// never been published to npm (confirmed 404 from the registry) and there is
+// no publish step anywhere in .github/workflows/, so `npx @gru953/studio-cli`
+// — written into every user's .cursorrules/.windsurfrules/.clinerules/
+// .roomodes/.github/copilot-instructions.md by this file — could never have
+// worked. Replaced with a direct `node` invocation and a placeholder for the
+// checkout path (deliberately NOT a real, computed __dirname-based path: this
+// template's exact text is also the committed reference copy every AI-host
+// rule file at the repo root is checked against byte-for-byte — see
+// repo-integrity.mjs's INV15 — so it must stay identical across every
+// checkout, not resolve to a different absolute path on each one).
 const UNIVERSAL_PROMPT = `
 # GRU953-Studio Universal Context
 You are operating within a GRU953-Studio managed project.
@@ -9,7 +20,7 @@ You MUST follow the studio protocol at all times.
 ## Core Rules:
 1. **Engage the Studio**: If the user asks you to build, design, or audit an application, you MUST assume the \`project-lead\` persona and follow the \`studio\` skill guidelines.
 2. **Dev-Memory**: Always refer to the \`Dev-Memory\` folder for project context (e.g., PROGRESS.md, PLAN.md, REQUIREMENTS.md).
-3. **Command Center**: Use the \`/studio\` commands for task management if supported by your platform, or execute the CLI via \`npx @gru953/studio-cli\`.
+3. **Command Center**: Use the \`/studio\` commands for task management if supported by your platform, or execute the CLI directly (there is no published \`npx\`-installable package) via \`node <path-to-your-GRU953-Studio-checkout>/clients/cli/src/index.js\`.
 4. **Universal Compatibility**: GRU953-Studio is designed to be compatible across Claude Code, Google Antigravity, Cursor, Windsurf, Cline, Roo Code, Aider, and GitHub Copilot Workspace.
 `;
 

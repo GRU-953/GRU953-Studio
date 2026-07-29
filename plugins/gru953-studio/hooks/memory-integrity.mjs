@@ -32,7 +32,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { splitPipeCells, stripBom, isDirectory } from './lib.mjs';
+import {
+  splitPipeCells,
+  stripBom,
+  isDirectory,
+  deEmphasise,
+  SEPARATOR_ROW_RE,
+  PLACEHOLDER_RE,
+} from './lib.mjs';
 
 // 2026-07-26 audit finding 7. GRAPH.schema.json and this file's own link
 // vocabulary used to be two hand-maintained copies of the same list, and had
@@ -187,8 +194,12 @@ function checkFocus(devMemory, problems) {
   }
 }
 
-const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
-const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|—)$/i;
+// 2026-07-29 maintenance fix (audit finding 4): SEPARATOR_ROW_RE and
+// PLACEHOLDER_RE used to be this file's own local copies (one of three
+// identical PLACEHOLDER_RE copies, alongside quality-gate.mjs and
+// traceability-check.mjs) — now imported from lib.mjs so all six/three
+// respectively cannot drift apart again (see lib.mjs's own comment on both).
+//
 // A cell that names a real filesystem path: has a dotted extension or a slash.
 // The filename stem uses `[^/\s]` rather than the ASCII-only `\w`, found
 // 2026-07-19: a bare non-ASCII/Bangla filename with no slash (e.g. "নথি.md")
@@ -226,21 +237,57 @@ function checkIndex(root, devMemory, problems) {
   const lines = text.split(/\r?\n/);
   let inTable = false;
   let whereCol = -1;
+  // 2026-07-29 maintenance fix (audit finding 2): reset alongside whereCol
+  // itself, at both places whereCol is (re)computed per table — the fix below
+  // pushes one problem per TABLE, not one per data row.
+  let unrecognisedHeaderReported = false;
   for (const line of lines) {
     if (!/^\s*\|/.test(line)) {
       inTable = false;
       whereCol = -1;
+      unrecognisedHeaderReported = false;
       continue;
     }
     const cells = splitPipeCells(line).map((c) => c.trim());
     if (!inTable) {
       inTable = true;
-      whereCol = cells.findIndex((c) => /^(file|path|where|location)$/i.test(c));
+      whereCol = cells.findIndex((c) => /^(file|path|where|location)$/i.test(deEmphasise(c)));
+      unrecognisedHeaderReported = false;
       continue;
     }
     if (SEPARATOR_ROW_RE.test(line)) continue;
-    if (whereCol === -1) continue;
-    let where = (cells[whereCol] || '').replace(/^`|`$/g, '').trim();
+    if (whereCol === -1) {
+      // 2026-07-29 maintenance fix: this used to `continue` silently, so a
+      // table whose header wasn't recognised (e.g. a genuine file/path/
+      // where/location column under a synonym or a typo) was treated as
+      // clean — the whole point of this check is to catch a stale INDEX.md
+      // reference, and an unrecognised header is exactly the case where that
+      // can't be verified at all. Recorded as a problem instead, matching
+      // this file's own pattern of pushing to `problems` rather than
+      // silently passing.
+      //
+      // 2026-07-29 maintenance fix (audit finding 2): that push used to run
+      // once per DATA ROW in the table (this branch is inside the per-row
+      // loop), so an unrecognised header emitted one identical sentence per
+      // row instead of once per table. `unrecognisedHeaderReported` reports
+      // it only the first time for this table.
+      if (!unrecognisedHeaderReported) {
+        problems.push(
+          'INDEX.md has a table with no recognisable file/path/where/location header column — its rows cannot be checked for stale references.',
+        );
+        unrecognisedHeaderReported = true;
+      }
+      continue;
+    }
+    // 2026-07-29 maintenance fix (round 3, F1): the backtick strip alone
+    // leaves surrounding emphasis in place — a bolded existing path like
+    // "**src/real.js**" still had the leading "**" glued to the filename
+    // stem, so it was wrongly reported as dangling, and a bolded path with
+    // no closing "**" right after the extension (e.g. "**readme.md**")
+    // failed LOOKS_LIKE_PATH_RE outright (needs the extension to end the
+    // string) and silently skipped the check entirely. deEmphasise() strips
+    // the emphasis the same way this file's own header-cell fix already does.
+    let where = deEmphasise((cells[whereCol] || '').replace(/^`|`$/g, '')).trim();
     const mdLink = where.match(MD_LINK_RE);
     if (mdLink) where = mdLink[2].trim();
     if (!where || PLACEHOLDER_RE.test(where) || !LOOKS_LIKE_PATH_RE.test(where)) continue;

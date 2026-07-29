@@ -221,6 +221,15 @@ jobs:
         if: matrix.package != 'vscode'
         working-directory: clients/${{ matrix.package }}
         run: npm test
+      # 2026-07-29 maintenance fix (audit finding 7): cli and antigravity had
+      # no lint step at all — the repo-wide `node --check` sweep above
+      # explicitly prunes `./clients`, so nothing here was syntax/lint-checked
+      # by CI beyond whatever `npm test` happened to import. Mirrors vscode's
+      # own lint step below, just without a compile step (plain JS, no TS).
+      - name: Lint
+        if: matrix.package == 'cli' || matrix.package == 'antigravity'
+        working-directory: clients/${{ matrix.package }}
+        run: npm run lint
       - name: Compile and lint
         if: matrix.package == 'vscode'
         working-directory: clients/vscode

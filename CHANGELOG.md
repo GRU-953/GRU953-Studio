@@ -1,5 +1,36 @@
 # Changelog
 
+## Maintenance fixes (2026-07-29, since 5.0.0)
+
+Bug fixes only — no roster, Tier, or workflow changes.
+- The VS Code extension's Status command ran `npx @gru953/studio-cli
+  status`, but `@gru953/studio-cli` has never actually been published to
+  npm and there is no publish step anywhere in this repo, so that command
+  could never have worked. It now runs the CLI's own entry file directly
+  (`node .../clients/cli/src/index.js`) when the extension is running from
+  inside a full GRU953-Studio checkout, and otherwise shows a plain error
+  explaining that the command needs one, instead of crashing the
+  integrated terminal with a raw "Cannot find module" stack trace.
+- Every generated AI-host rule file (`.cursorrules`, `.clinerules`,
+  `.windsurfrules`, `.roomodes`, `.github/copilot-instructions.md`,
+  `.agents/AGENTS.md`) told users to run the same never-published `npx
+  @gru953/studio-cli`. All now point at the real, working `node
+  <checkout>/clients/cli/src/index.js` command instead.
+- Five of a project's own gates — `quality-gate.mjs`, `content-check.mjs`,
+  `traceability-check.mjs` and `memory-integrity.mjs` — read markdown
+  tables and previously only tolerated **bold** column headers, not bold
+  values underneath them. A bolded status like `**pass**` or `**n/a**` is
+  now correctly recognised (it used to be wrongly BLOCKED); a bolded
+  placeholder like `**tbd**` in an evidence, verification, or reason cell
+  is now correctly still rejected (it used to be wrongly waved through as
+  real proof). `memory-integrity.mjs` additionally now correctly recognises
+  a bolded existing file path (e.g. `**src/real.js**`) instead of wrongly
+  reporting it as missing. One behaviour change worth knowing about
+  directly: `memory-integrity.mjs` now BLOCKS (rather than silently
+  passing) any table in `INDEX.md` whose header row has no recognisable
+  file/path/where/location column at all — previously that case was
+  skipped without comment.
+
 ## 5.0.0 — 2026-07-26
 
 A **major hardening release**, the result of an eight-stage, exhaustive audit

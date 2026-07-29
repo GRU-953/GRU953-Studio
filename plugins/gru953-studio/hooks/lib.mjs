@@ -268,6 +268,39 @@ export function tokenConfirmedWithinTtl(text, expected) {
 export const CONTRADICTION_RE =
   /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
 
+// ---- shared markdown-table patterns (fixes a six-way drift) ------------------
+// 2026-07-29 maintenance fix (audit finding 4). SEPARATOR_ROW_RE (the `| :-- |
+// :-- |` divider row every GFM table has) used to be defined separately in
+// content-check.mjs, dashboard.mjs, memory-integrity.mjs, traceability-check.mjs,
+// quality-gate.mjs and verify-progress.mjs — six hand-maintained copies, which
+// is exactly how verify-progress.mjs's copy drifted out of sync with the other
+// five (missing the trailing `\s*` before the closing `$`, so a separator row
+// with trailing whitespace was not recognised as one). Moved here as the ONE
+// shared pattern all six now use, the same "one shared pattern now, not three
+// that can drift" playbook CONTRADICTION_RE above already used for this exact
+// class of problem.
+//
+// 2026-07-29 maintenance fix (round 3, F2): `clients/cli/src/status.js` has a
+// seventh, identical copy of this same regex. That copy is not covered by
+// the "cannot drift apart again" claim above — and can't be, by necessity:
+// it ships in a separate CommonJS package with no shared module boundary
+// onto this ESM plugin, so it genuinely cannot import lib.mjs (see its own
+// file header comment). Keep both copies in sync by hand if this pattern
+// ever changes.
+export const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+// A cell that is really empty or a plain placeholder value — treated as no
+// evidence/no data by every gate that checks for meaningful content. Was
+// duplicated identically in memory-integrity.mjs, traceability-check.mjs and
+// quality-gate.mjs; moved here for the same reason as SEPARATOR_ROW_RE above.
+// content-check.mjs keeps its own separate, deliberately WIDER pattern (it
+// additionally accepts "pending"/"placeholder") rather than importing this
+// one, because it is a genuine superset used for a different purpose there
+// (content provenance/rights, not evidence) — forcing the two to be the same
+// pattern would either narrow content-check.mjs's real requirement or widen
+// what these other three files accept.
+export const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
+
 // ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
 // 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
 // each read frontmatter with `text.match(/^---\n([\s\S]*?)\n---/)` — an

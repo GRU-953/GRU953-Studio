@@ -37,7 +37,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise, isDirectory } from './lib.mjs';
+import {
+  splitPipeCells,
+  stripBom,
+  CONTRADICTION_RE,
+  deEmphasise,
+  isDirectory,
+  SEPARATOR_ROW_RE,
+  PLACEHOLDER_RE,
+} from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
 // B12). Narrow enough not to swallow ordinary prose words, wide enough for the
@@ -47,7 +55,6 @@ import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise, isDirectory } 
 // bare "T3" elsewhere could collide with and silently overwrite the
 // composite's Map entry, hiding real scope creep (found 2026-07-19).
 const TASK_ID_RE = /\b[A-Za-z]{1,4}-?\d+(?:-[A-Za-z]{1,4}-?\d+)?\b/g;
-const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 const DEFERRED_RE = /^\s*(deferred|future|backlog|later|parked|out[ \t]*of[ \t]*scope)\b/i;
 const MET_RE = /^\s*(met|done|complete[d]?|verified|pass(ed)?|shipped)\b/i;
 const EXEMPT_RE = /\[(chore|infra|infrastructure|no-?req)\]|\bno-?req\b/i;
@@ -62,10 +69,16 @@ const EXEMPT_RE = /\[(chore|infra|infrastructure|no-?req)\]|\bno-?req\b/i;
 // fallen behind quality-gate.mjs's — missing quality-gate.mjs's
 // `regress(?:ed|ion)` alternative. Reproduced: a requirement whose
 // Verification cell read "npm test green, but a regression was spotted in
-// nightly build", Status "Met", returned clean here. Now imports the one
-// shared pattern from lib.mjs instead of a local copy, so this file and its
-// two siblings cannot drift apart on this again.
-const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+// nightly build", Status "Met", returned clean here.
+//
+// 2026-07-29 maintenance fix (audit finding 4): the comment above already
+// claimed this "now imports the one shared pattern from lib.mjs instead of a
+// local copy," but the code below was still its own local const — the import
+// never actually landed. SEPARATOR_ROW_RE and PLACEHOLDER_RE are now genuinely
+// imported (see the import list above), making that claim true and closing
+// the exact six-file drift finding 4 of the 2026-07-29 maintenance review
+// found (this file's PLACEHOLDER_RE copy was one of the three identical
+// copies moved to lib.mjs, alongside quality-gate.mjs/memory-integrity.mjs).
 // 2026-07-21 Round 15 audit fix: de-emphasise a Status VALUE before matching, the
 // same way verify-progress.mjs (Round 12) does for its "done" values. Without it a
 // decorated status — "✅ met", `met` (code span), **met** (bold) — failed MET_RE, so
@@ -220,7 +233,12 @@ function main() {
     }
     if (cStatus !== -1 && MET_RE.test(statusForMatch)) {
       const verif = cVerif !== -1 ? cells[cVerif] || '' : '';
-      if (cVerif === -1 || PLACEHOLDER_RE.test(verif.trim())) {
+      // 2026-07-29 maintenance fix (round 3, F1): the status cell next to
+      // this was already de-emphasised (deEmphStatus, above) — the
+      // verification cell was not, so a placeholder disguised in bold, e.g.
+      // "**tbd**", still failed PLACEHOLDER_RE as-is and was wrongly
+      // accepted as real verification evidence.
+      if (cVerif === -1 || PLACEHOLDER_RE.test(deEmphasise(verif).trim())) {
         problems.push(
           `requirement "${label}" is marked "${status.trim()}" but has no verification evidence — a met requirement needs proof.`,
         );

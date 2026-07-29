@@ -47,8 +47,8 @@ npm ci && npm run lint && npm run format:check
 ```
 
 If your change touches `clients/cli`, `clients/antigravity`, or `clients/vscode`,
-also run that package's own `npm ci && npm test` (or, for the VS Code
-extension, `npm ci && npm run compile && npm run lint`) — see
+also run that package's own `npm ci && npm test && npm run lint` (or, for the
+VS Code extension, `npm ci && npm run compile && npm run lint`) — see
 `.github/workflows/ci.yml`'s `clients` job for the exact commands.
 
 ## A note on dependencies

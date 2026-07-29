@@ -35,7 +35,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, CONTRADICTION_RE, formatFsError, deEmphasise } from './lib.mjs';
+import {
+  splitPipeCells,
+  stripBom,
+  CONTRADICTION_RE,
+  formatFsError,
+  deEmphasise,
+  SEPARATOR_ROW_RE,
+} from './lib.mjs';
 
 function main() {
   const root = process.argv[2] || process.cwd();
@@ -205,10 +212,19 @@ function main() {
   // alternative (quality-gate.mjs only) had made it into this file's copy.
   // Reproduced by execution before fixing: a row reading "verified: npm test
   // -> exit 0; however a later re-run gave exit code 1" returned clean here
-  // while the identical text in quality-gate.mjs was correctly BLOCKED. Now
-  // imports the one shared pattern from lib.mjs instead of its own copy, so
-  // this specific three-way drift cannot recur.
-  const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+  // while the identical text in quality-gate.mjs was correctly BLOCKED. That
+  // fix imports CONTRADICTION_RE from lib.mjs (see the import list above).
+  //
+  // SEPARATOR_ROW_RE (the `| :-- | :-- |` divider row) had the SAME "own
+  // local copy" problem, and it had genuinely drifted: this file's copy was
+  // missing the trailing `\s*` before the closing `$` that content-check.mjs/
+  // dashboard.mjs/memory-integrity.mjs/quality-gate.mjs/traceability-check.mjs
+  // all already had, so a separator row with trailing whitespace was not
+  // recognised as one here. 2026-07-29 maintenance fix (audit finding 4):
+  // this comment previously claimed the regex was "now imported from
+  // lib.mjs," which was not yet true — the line below was still a local
+  // const with just the regex text patched to match. Genuinely imported now
+  // (see the import list above), closing the six-file drift for real.
   // 2026-07-21 Round 11 audit fix (fail-open on unrecognised table shape,
   // medium): this hook is the SOLE mechanical enforcer of "a task may only be
   // marked done with a verified: line", yet it used to fail OPEN whenever it

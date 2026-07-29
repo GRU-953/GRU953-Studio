@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { formatFsError } from './lib.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,9 +40,27 @@ const studioRoot = findGitRoot(__dirname) || path.resolve(__dirname, '..', '..',
 const force = process.argv.includes('--force');
 const checkFile = path.join(studioRoot, '.last-update-check');
 
+// 2026-07-29 maintenance fix (audit finding 3): this used to be two separate,
+// unguarded calls (`existsSync` then `statSync`) racing against anything else
+// that might touch this path in between — the same race lib.mjs's
+// isDirectory() was already fixed for elsewhere, just for a plain file
+// instead of a directory. isDirectory() itself doesn't fit here (this needs
+// the file's mtime, not an is-a-directory check), so this uses the same
+// single-guarded-call idiom scan.mjs already uses for the analogous case.
+//
+// 2026-07-29 maintenance fix (further pass): the catch block used to
+// reassign `stat = null`, which is redundant — `stat` is already `null` from
+// its declaration whenever statSync throws before ever assigning it.
+// Simplified to an empty catch body, matching this file's own convention
+// elsewhere for a deliberately-ignored error.
 if (!force) {
-  if (fs.existsSync(checkFile)) {
-    const stat = fs.statSync(checkFile);
+  let stat = null;
+  try {
+    stat = fs.statSync(checkFile);
+  } catch {
+    // checkFile doesn't exist yet, or couldn't be statted — stat stays null.
+  }
+  if (stat) {
     const now = new Date();
     const diffMs = now - stat.mtime;
     // 24 hours in milliseconds
@@ -51,8 +70,24 @@ if (!force) {
   }
 }
 
-// Touch the file to record the check time
-fs.writeFileSync(checkFile, new Date().toISOString(), 'utf8');
+// Touch the file to record the check time.
+// 2026-07-29 maintenance fix (audit finding 3): this was a bare, unguarded
+// fs.writeFileSync — the same "never show a raw stack trace" gap lib.mjs's
+// formatFsError()/writeConfirmationRecordOrExit() already closed elsewhere
+// (see dashboard.mjs's write, wrapped the same way). Not fatal: losing this
+// bookkeeping write only means the check runs more than once a day, so it is
+// reported (when running with --force, matching this file's own existing
+// convention for non-fatal check failures below) rather than aborting the
+// update check that follows.
+try {
+  fs.writeFileSync(checkFile, new Date().toISOString(), 'utf8');
+} catch (e) {
+  if (force) {
+    console.error(
+      `Universal Agentic Studio: could not record the update-check time at ${checkFile} (${formatFsError(e)}).`,
+    );
+  }
+}
 
 const isGitRepo = fs.existsSync(path.join(studioRoot, '.git'));
 if (isGitRepo) {
@@ -185,13 +220,25 @@ if (isGitRepo) {
     if (force) console.error('Update check failed:', e.message);
   }
 } else {
-  // If installed globally via npm (as @gru953/studio-cli for instance)
-  try {
-    // In a background process, we could run npm update, but for now just output a message if forced
-    if (force) {
-      console.log('Run `npm install -g @gru953/studio-cli@latest` to update.');
-    }
-  } catch {}
+  // 2026-07-29 maintenance fix (audit finding 1): `@gru953/studio-cli` has
+  // never been published to npm (confirmed 404 from the registry) and there
+  // is no publish step anywhere in .github/workflows/, so `npm install -g
+  // @gru953/studio-cli@latest` can never succeed — this used to tell users
+  // to run a command that always fails. This branch only runs when no `.git`
+  // was found anywhere above this file (see findGitRoot above), so the
+  // git-based update path above cannot apply either: the honest answer is
+  // that there is currently no automatic update mechanism for this kind of
+  // installation.
+  // 2026-07-29 maintenance fix (audit finding 10): the try/catch around this
+  // single console.log with an empty catch block was dead code — nothing
+  // here can throw — so it is removed along with the fix above rather than
+  // kept for a single non-throwing call.
+  if (force) {
+    console.log(
+      'No automatic update is available for this installation (it is not a git checkout). ' +
+        'Re-clone https://github.com/GRU-953/GRU953-Studio.git to get the latest version.',
+    );
+  }
 }
 
 // Deliberately NOT process.exit(0) — that would silently overwrite

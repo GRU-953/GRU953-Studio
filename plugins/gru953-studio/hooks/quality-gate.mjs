@@ -35,7 +35,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, CONTRADICTION_RE, deEmphasise, isDirectory } from './lib.mjs';
+import {
+  splitPipeCells,
+  stripBom,
+  CONTRADICTION_RE,
+  deEmphasise,
+  isDirectory,
+  SEPARATOR_ROW_RE,
+  PLACEHOLDER_RE,
+} from './lib.mjs';
 
 // The required Definition-of-Done dimensions. Each must appear as at least one
 // row in QUALITY-GATE.md whose Item cell contains the keyword, marked pass (with
@@ -84,8 +92,11 @@ const PASS_RE = /^\s*(pass(ed)?\b|ok\b|green\b|done\b|met\b|yes\b|✅|✓)/i;
 // A status cell that counts as a conscious not-applicable. Requires a reason in
 // the evidence cell (checked below) so "n/a" alone can't wave a dimension past.
 const NA_RE = /^\s*(n\/?a|not[ \t]+applicable|skip(ped)?)\b/i;
-// An evidence cell that is really empty / a placeholder — treated as no evidence.
-const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
+// An evidence cell that is really empty / a placeholder — treated as no
+// evidence. 2026-07-29 maintenance fix (audit finding 4): this used to be its
+// own local copy, identical to memory-integrity.mjs's and
+// traceability-check.mjs's — now imported from lib.mjs (see its own comment)
+// so the three cannot drift apart again.
 // A row that narrates it is currently broken/unproven invalidates any otherwise
 // passing status on the same row — the same guard verify-progress.mjs uses, so
 // "passed on the old build, now fails" can't count as done.
@@ -104,7 +115,10 @@ const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
 // verify-progress.mjs's and traceability-check.mjs's own copies, which is
 // exactly how findings 1/35 above escaped this file's two siblings for as
 // long as they did. One shared pattern now, not three that can drift.
-const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+//
+// SEPARATOR_ROW_RE (the `| :-- | :-- |` divider row) is imported from
+// lib.mjs for the same reason, as of the 2026-07-29 maintenance fix (audit
+// finding 4) — see lib.mjs's own comment.
 
 // 2026-07-26, audit finding 26. Strips a leading UTF-8 byte-order mark before
 // parsing. Checked precisely rather than assumed: this file's own table-row
@@ -237,12 +251,12 @@ function main() {
       );
       continue;
     }
-    // A dimension is satisfied when at least one matching row is a clean pass
-    // (or a reasoned N/A); but ANY row for that dimension that is explicitly
-    // failing or self-contradicting still blocks — you cannot pass "tests" by
-    // adding a second green row beside a red one. Blocking is driven purely by
-    // problems pushed here, so a dimension with one clean pass and no other
-    // rows records nothing and does not block.
+    // A dimension is satisfied only when EVERY matching row is a clean pass
+    // (with evidence) or a reasoned N/A — a single row that is unevidenced,
+    // self-contradicting, or has any other non-pass status still blocks. You
+    // cannot pass "tests" by adding a second green row beside a red one.
+    // Blocking is driven purely by problems pushed here, so a dimension whose
+    // matching rows are all clean records nothing and does not block.
     for (const r of matches) {
       if (CONTRADICTION_RE.test(r.raw)) {
         problems.push(
@@ -250,14 +264,25 @@ function main() {
         );
         break;
       }
-      if (PASS_RE.test(r.status)) {
-        if (PLACEHOLDER_RE.test(r.evidence.trim())) {
+      // 2026-07-29 maintenance fix (audit finding 3): the header-matching
+      // deEmphasise() fix elsewhere in this file only reached header cells —
+      // a decorated status VALUE like "**pass**" or "**n/a**" still failed
+      // PASS_RE/NA_RE as-is and was wrongly BLOCKED. Same fix, one layer
+      // deeper (verify-progress.mjs already de-emphasises its status VALUE
+      // the same way).
+      //
+      // 2026-07-29 maintenance fix (round 3, F1): that same value-cell fix
+      // never reached the EVIDENCE cell next to it — a placeholder disguised
+      // in bold, e.g. "**tbd**", still failed PLACEHOLDER_RE as-is and was
+      // wrongly accepted as real evidence.
+      if (PASS_RE.test(deEmphasise(r.status))) {
+        if (PLACEHOLDER_RE.test(deEmphasise(r.evidence).trim())) {
           problems.push(
             `${dim.label}: marked "${r.status}" but carries no evidence — a pass needs a concrete proof/command/reference.`,
           );
         }
-      } else if (NA_RE.test(r.status)) {
-        if (PLACEHOLDER_RE.test(r.evidence.trim())) {
+      } else if (NA_RE.test(deEmphasise(r.status))) {
+        if (PLACEHOLDER_RE.test(deEmphasise(r.evidence).trim())) {
           problems.push(
             `${dim.label}: marked not-applicable but gives no reason — "n/a" needs a stated reason (e.g. "no user interface").`,
           );

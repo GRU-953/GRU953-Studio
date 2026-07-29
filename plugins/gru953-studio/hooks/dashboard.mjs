@@ -36,9 +36,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, formatFsError, isDirectory } from './lib.mjs';
-
-const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+import { splitPipeCells, stripBom, formatFsError, isDirectory, SEPARATOR_ROW_RE } from './lib.mjs';
 
 // Status groups in the order a person cares about them, each with a stable CSS
 // class. Anything not recognised falls into "other" so it is shown, never
