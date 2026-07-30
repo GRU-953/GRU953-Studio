@@ -182,6 +182,13 @@ skills stay available from any directory. Do not try to run it from inside the
 GRU953-Studio repo while "pointing" it elsewhere: that would either find no project or
 create `Dev-Memory/` inside the repo itself.
 
+**Before starting, confirm first-run is already complete.** The studio's own Step 0 runs
+a one-off setup (including a demo Tiny project that auto-publishes to GitHub) the very
+first time it's ever used on a machine, before it even reads the idea in brackets. That
+would add an unplanned publish and interruptions this plan doesn't budget for. If it has
+never run before on this machine, run it once, separately, before sitting 1 — do not let
+it fire mid-sitting.
+
 **Findings register, named before any finding is recorded:**
 `.kilo/plans/1785410295000-session-findings.md`, with two tables so a later sitting can
 create it without guessing:
@@ -352,8 +359,8 @@ observe pass), and it is recorded in §8 as such.
 
 Measure first; thresholds are fixed now so nothing is a judgement call later.
 
-- **Test-suite time.** Currently **47-49s across repeated runs** (measured: 45.7, 46.9,
-  48.8, 48.8, 49.7 — about 4% variance, so a 30% target sits well clear of noise).
+- **Test-suite time.** Currently **45.7-49.7s across repeated runs** (measured: 45.7,
+  46.9, 48.8, 48.8, 49.7 — about 4% variance, so a 30% target sits well clear of noise).
   **Target ≤33s**, via `time node plugins/gru953-studio/hooks/hooks.test.mjs`, with test
   count and pass count **identical** (both printed by that command). Investigate
   `node:test` concurrency and reusing test data. If 30% is unreachable without losing
@@ -625,20 +632,31 @@ described. It also found citations to `AUDIT-2026-08.md` §5 "item 3" and "item 
 pointed at a different numbered list entirely, and the missing `node --check` sweep that
 `CLAUDE.md` requires.
 
-**Round 5** — final planned round: attacked Round 4's seven edits and ran the loop's
-completeness reflection across all eight standing dimensions. Six of seven edits verified
-correct; **one** real issue found — an arithmetic slip in the owner-interruption estimate
-(the itemised components total 14-16, not the stated 14-17). Fixed. The reflection found no
-remaining gap in any dimension, and an end-to-end read confirmed sitting 1 is executable
-without further questions.
+**Round 5** — last of the originally-planned five rounds: attacked Round 4's seven edits and
+ran the loop's completeness reflection across all eight standing dimensions. Six of seven
+edits verified correct; **one** real issue found — an arithmetic slip in the
+owner-interruption estimate (the itemised components total 14-16, not the stated 14-17).
+Fixed. The reflection found no remaining gap in any dimension, and an end-to-end read
+confirmed sitting 1 is executable without further questions.
 
-**Convergence status — stated honestly.** Findings per round fell **28 → ~40 → 17 → 6 → 1**.
+**Round 6** — an owner-requested confirming round beyond the original budget, run as two
+lenses: one re-verifying Round 5's fix, one trying to actually *start* sitting 1 rather than
+just reading it. The first found **one** real issue — the test-suite-time headline said
+"47-49s" while its own cited measurements (45.7, 46.9, 48.8, 48.8, 49.7) run wider than that;
+fixed to state the honest range. The second reported the plan genuinely executable
+right now with zero open questions, and separately surfaced one non-blocking portability
+gap by actually trying to begin rather than only reading: the studio's own one-off first-run
+setup (which auto-publishes a demo project) was never accounted for as a precondition. Added
+as an explicit check at the top of §5.
+
+**Convergence status — stated honestly.** Findings per round: **28 → ~40 → 17 → 6 → 1 → 1**.
 The protocol's formal bar is *two consecutive* rounds finding zero issues; that bar is **not
-yet met**, because Round 5 found one (now-fixed) error. What is true: the last round found a
-single arithmetic slip in one table cell, its completeness reflection across every dimension
-found nothing open, and every substantive claim in this document has been verified by
-execution. Treat it as converged in substance but not by the letter of the rule — one further
-confirming round would formally close it.
+yet met** — every round so far, including this extra one, has found at least one real thing,
+though the size has fallen from double digits to single, isolated, now-fixed items. What is
+true: nothing found across the last three rounds combined has been structural — each was one
+factual or arithmetic slip in one place, caught and fixed, with the loop's own completeness
+reflection (Round 5) and a real attempt to start executing (Round 6) both coming back clean
+on everything else. Treat this as converged in substance, still short of the formal rule.
 
 **Rulings escalated to the owner:** three, all recorded in §4 — placeholder-detection
 authorisation, session shape, and the publisher name.
