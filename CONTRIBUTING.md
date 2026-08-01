@@ -155,6 +155,14 @@ will either fail outright or (worse) attempt a real publish with no pause:
    Microsoft has announced this token type will be retired; check
    Microsoft's own current documentation before relying on this step, since
    the exact mechanism may have changed by the time you read this.
+4. **Sign your release tags with GPG.** Generate a key (`gpg --full-generate-key`),
+   add the public key to your GitHub account (Settings → SSH and GPG keys),
+   and set `git config --global user.signingkey <key-id>` plus
+   `git config --global tag.gpgsign true`. Push a tag with `git tag -s`
+   (not plain `-a`) and GitHub will show it as **Verified** on the tag and
+   release page — check this on GitHub after pushing, not just that `git
+   tag -v` succeeds locally, since a signature only proves anything once
+   the corresponding public key is actually on your GitHub account.
 
 ## Sign-off (DCO)
 
