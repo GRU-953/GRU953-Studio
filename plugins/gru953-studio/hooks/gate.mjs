@@ -255,7 +255,49 @@ function goPublicConfirmed(studioRoot) {
 }
 
 function main() {
-  const INPUT = readStdin();
+  // 2026-07-31 maintenance fix (F1): readStdin() now throws StdinReadFailure
+  // rather than returning '' when it could not reliably read the tool-call
+  // payload (see lib.mjs). Losing the payload here means losing both the
+  // command text AND the cwd, which can make the studio-run check below
+  // stand down (allow) on a command this gate never actually inspected —
+  // exactly the failure this gate exists to prevent. Deny, don't allow, when
+  // the read itself could not be trusted.
+  let INPUT;
+  try {
+    INPUT = readStdin();
+  } catch (e) {
+    deny(
+      `studio gate: refusing to allow — could not reliably read the tool-call payload from ` +
+        `stdin (${e && e.message ? e.message : 'read failure'}). This can happen under a ` +
+        `transient timing race between this hook and the process invoking it. Retry the ` +
+        `command; refusing to let an unread command through unauthorised.`,
+    );
+  }
+  // 2026-07-31 further maintenance fix (R1 part 2, defence in depth): a
+  // NON-EMPTY stdin payload that isn't valid JSON is not "no input" — it is
+  // evidence of a read that produced something untrustworthy (truncated,
+  // corrupted, or otherwise malformed), which extractCommand()/extractCwd()
+  // both quietly turn into '' on a parse failure. Falling through on that ''
+  // the same way genuinely-empty stdin does is exactly the bypass a lost or
+  // truncated read created (see lib.mjs's readStdinCore fix above this same
+  // maintenance pass): isPushCapable('') fails closed, but extractCwd('')
+  // falling back to this process's own cwd can still resolve the WRONG
+  // studio root and allow() a command this gate never actually inspected.
+  // Denying here closes that residual regardless of how a future caller
+  // might reintroduce a partial read. A genuinely empty string (real "no
+  // data") is unaffected — only "got something, but it doesn't parse" denies.
+  if (INPUT !== '') {
+    try {
+      JSON.parse(INPUT);
+    } catch {
+      deny(
+        `studio gate: refusing to allow — the tool-call payload read from stdin is non-empty ` +
+          `but is not valid JSON, so its command and working directory cannot be trusted. This ` +
+          `can happen under a partial/corrupted read. Retry the command; refusing to let an ` +
+          `unparsed payload fall through to an unauthorised allow().`,
+      );
+    }
+  }
   const CMD = extractCommand(INPUT);
 
   if (!isPushCapable(CMD)) {

@@ -67,13 +67,27 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 5.0.1
+### Latest version: 5.1.0
+
+Version 5.1.0 is the first release built from a genuine, end-to-end functional
+test: the studio was watched building two real projects from scratch — an
+interview, a mock-up gate tested both ways, parallel builders in separate
+working copies, and a cold-restart resume test — the first time any of that
+had actually been observed rather than assumed. That test found real defects,
+including two that briefly weakened this project's own push-safety checks
+while fixing something else; all are closed, each with a regression test
+proven to fail if its own fix is reverted. The two npm packages
+(`@gru953/studio-cli`, `@gru953/studio-antigravity`) are now genuinely
+published and installable — previously they never were, despite this file
+advertising them. Node 20 (past its own end of life) was dropped from
+testing; the default moved to Node 24. Full detail in
+[CHANGELOG.md](CHANGELOG.md).
 
 Version 5.0.1 is a small bug-fix release on top of 5.0.0 — no roster, Tier,
 or workflow changes. It fixes a VS Code extension command that pointed at
 an npm package that was never actually published, and closes a handful of
 gaps in how five of the studio's own safety checks read **bold** text in
-markdown tables. Full detail in [CHANGELOG.md](CHANGELOG.md).
+markdown tables.
 
 Version 5.0.0 is a major hardening release: the result of an eight-stage,
 exhaustive audit of the whole repository (the full findings register is

@@ -73,6 +73,49 @@ function memoryPersistAllowed(studioRoot) {
   return tokenConfirmedWithinTtl(text, expected);
 }
 
+// ---- Dev-Memory content probe (2026-07-31 maintenance fix) -------------------
+// Bounded recursive check for "does Dev-Memory/ contain at least one real
+// file anywhere under it". Deliberately narrow, not a general directory
+// walker: git itself can never track or ship an empty directory — there is
+// no way to commit one at all — so a bare, empty Dev-Memory/ carries no real
+// shipping risk regardless of what .gitignore says, and denying a push over
+// one would be a pure false positive with no safety upside. (Verified live:
+// this exact shape — an empty Dev-Memory/ created only to mark a studio
+// project, never gitignored — is how this project's OWN test fixtures
+// throughout hooks.test.mjs already set up a "studio project" for dozens of
+// unrelated scan.mjs tests; treating mere existence as a violation broke 39
+// of them on contact, none of which had anything to do with Dev-Memory.)
+// Short-circuits on the first file found; visits real directories only
+// (never follows a symlink, so a symlink cycle cannot loop forever) and is
+// bounded (MAX_ENTRIES) against a pathological tree — the same "bounded
+// walk, not a general engine" discipline licence-scan.mjs's own directory
+// walk already documents choosing over a full .gitignore parser.
+function devMemoryHasAnyFile(devMemoryPath) {
+  const MAX_ENTRIES = 20000;
+  let visited = 0;
+  const stack = [devMemoryPath];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (++visited > MAX_ENTRIES) return true; // fail closed on a pathological tree
+      if (entry.isSymbolicLink()) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else if (entry.isFile()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // ---- push-tree resolution ------------------------------------------------------
 function resolvePushTree(cmd, fallback) {
   let m = /(?:^|[^A-Za-z0-9_])git[ \t]+-C[ \t]+(?:"([^"]+)"|'([^']+)'|([^ \t]+))/.exec(cmd);
@@ -267,7 +310,49 @@ function decodeAndNormalize(buf) {
 }
 
 function main() {
-  const INPUT = readStdin();
+  // 2026-07-31 maintenance fix (F1): readStdin() now throws StdinReadFailure
+  // rather than returning '' when it could not reliably read the tool-call
+  // payload (see lib.mjs). Losing the payload here means losing both the
+  // command text AND the cwd, which can make the studio-run check below
+  // stand down on a command this scan never actually inspected — the exact
+  // opposite of what a secret scan is for. Deny, don't allow, when the read
+  // itself could not be trusted.
+  let INPUT;
+  try {
+    INPUT = readStdin();
+  } catch (e) {
+    deny(
+      `studio scan: refusing to allow — could not reliably read the tool-call payload from ` +
+        `stdin (${e && e.message ? e.message : 'read failure'}). This can happen under a ` +
+        `transient timing race between this hook and the process invoking it. Retry the ` +
+        `command; refusing to let an unread command through unscanned.`,
+    );
+  }
+  // 2026-07-31 further maintenance fix (R1 part 2, defence in depth): a
+  // NON-EMPTY stdin payload that isn't valid JSON is not "no input" — it is
+  // evidence of a read that produced something untrustworthy (truncated,
+  // corrupted, or otherwise malformed), which extractCommand()/extractCwd()
+  // both quietly turn into '' on a parse failure. Falling through on that ''
+  // the same way genuinely-empty stdin does is exactly the bypass a lost or
+  // truncated read created (see lib.mjs's readStdinCore fix above this same
+  // maintenance pass): isPushCapable('') fails closed, but extractCwd('')
+  // falling back to this process's own cwd can still resolve the WRONG
+  // studio root and allow() a command this scan never actually inspected.
+  // Denying here closes that residual regardless of how a future caller
+  // might reintroduce a partial read. A genuinely empty string (real "no
+  // data") is unaffected — only "got something, but it doesn't parse" denies.
+  if (INPUT !== '') {
+    try {
+      JSON.parse(INPUT);
+    } catch {
+      deny(
+        `studio scan: refusing to allow — the tool-call payload read from stdin is non-empty ` +
+          `but is not valid JSON, so its command and working directory cannot be trusted. This ` +
+          `can happen under a partial/corrupted read. Retry the command; refusing to let an ` +
+          `unparsed payload fall through to an unscanned allow().`,
+      );
+    }
+  }
   const CMD = extractCommand(INPUT);
 
   if (!isPushCapable(CMD)) {
@@ -286,25 +371,186 @@ function main() {
   // `git push` in a LATER call scanned the original project root instead of
   // the tree actually being pushed. Fallback is now SESSION_DIR, the actual
   // working directory of THIS command.
+  //
+  // 2026-07-31 maintenance fix: moved above the Dev-Memory-gitignore check
+  // just below (it used to run after this), because that check now needs
+  // REPO to compare the push target's work tree against STUDIO_ROOT's — see
+  // that check's own comment for why.
   const REPO = path.resolve(SESSION_DIR, resolvePushTree(CMD, SESSION_DIR));
 
   if (!git(['rev-parse', '--is-inside-work-tree'], REPO).ok) {
     deny('studio scan: not a git work tree; cannot prove the push set is clean');
   }
 
+  // 2026-07-31 maintenance fix (real gap, found live): this project's own
+  // documented rule — Dev-Memory/ never ships, it stays local-only (the
+  // "Local-only, and never shipped" section of the dev-memory skill, and the
+  // matching line in checkpoint-commit's skill) — had NO mechanical check
+  // proving that rule is actually in force. The scan further below
+  // (DEVMEMORY_RE / addFinding('dev-memory', …)) only ever catches a
+  // Dev-Memory FILE that happens to already be in THIS push's tracked,
+  // staged, or untracked-non-ignored file set — it says nothing about
+  // whether Dev-Memory/ is genuinely excluded by .gitignore at all. An
+  // empty, just-created Dev-Memory folder (nothing in it yet, so nothing for
+  // git ls-files to report) or a project whose .gitignore was later edited
+  // to drop the rule sails through with zero findings until the next file
+  // happens to land inside it. This is a second, independent, PREVENTIVE
+  // check — not a replacement for the one below — firing purely on whether
+  // Dev-Memory/ exists on disk and is actively excluded, regardless of what
+  // this particular push happens to contain.
+  //
+  // "Actively excluded" is decided by asking git itself (`git check-ignore`),
+  // never a hand-rolled pattern matcher: this file already delegates every
+  // other gitignore decision to git (the FILES set below is built from `git
+  // ls-files --exclude-standard`; the force-add path further down uses `git
+  // ls-files --ignored --exclude-standard`) rather than parsing .gitignore
+  // text by hand — the same discipline licence-scan.mjs documents choosing
+  // ("a bounded recursive walk rather than a full .gitignore parser").
+  // Reusing git's real matcher also gets a subtlety right for free that a
+  // naive string/regex check would not: git does NOT report an
+  // already-TRACKED path as ignored, no matter how the pattern reads —
+  // correctly so, since a Dev-Memory folder committed before any .gitignore
+  // rule existed will still ship on this push regardless of the rule, and
+  // this check must fail closed in exactly that case, not pass it.
+  //
+  // Only fires when Dev-Memory/ holds at least one real file (see
+  // devMemoryHasAnyFile above) — an empty Dev-Memory/ cannot be tracked or
+  // shipped by git at all, so it is not a violation of anything.
+  //
+  // Suspended, exactly once, by a fresh memory-persist-approved token
+  // (memoryPersistAllowed) — the same opt-in the dev-memory finding below
+  // already defers to. Without this exemption, a deliberate, freshly
+  // confirmed opt-in push of Dev-Memory to a private branch would be denied
+  // by THIS check for the very reason it was just approved (Dev-Memory not
+  // being gitignored is the point of that opt-in) — weakening, not
+  // reinforcing, the existing mechanism, which the fix for this gap must not
+  // do.
+  // 2026-07-31 further-pass maintenance fix (F5, independent reviewer
+  // finding): findStudioRoot() walks up the FILESYSTEM looking for a
+  // Dev-Memory/ folder — it can find one in a PARENT directory that isn't a
+  // git repository at all (or is a different, unrelated repository), while
+  // the tree actually being pushed (REPO, just resolved above) is a
+  // separate, clean child repo with no Dev-Memory/ of its own. The check
+  // below used to run `git check-ignore` at STUDIO_ROOT unconditionally and
+  // treat "git errored because there's no repository there" (exit 128) the
+  // same as "genuinely not ignored" (exit 1) — denying an entirely innocent
+  // push, with advice ("add Dev-Memory/ to .gitignore") that cannot possibly
+  // fix the reported problem since there is no relevant .gitignore to add it
+  // to. Reproduced: a parent folder holding a real Dev-Memory/notes.md with
+  // NO .git anywhere in it, containing a genuinely separate, clean git repo
+  // with no Dev-Memory/ of its own — a push from that clean child repo was
+  // denied.
+  //
+  // Fixed by only running this check when STUDIO_ROOT and REPO resolve to
+  // the SAME work tree (`git rev-parse --show-toplevel` from each,
+  // compared) — if they differ, or if STUDIO_ROOT isn't a git repository at
+  // all (rev-parse fails there), this check does not apply and is skipped
+  // entirely, never denied. Separately, `git check-ignore` exit 1 ("not
+  // ignored" — the genuine violation) is now distinguished from any OTHER
+  // non-zero exit (e.g. 128, "not a git repository" — an execution failure,
+  // not an answer): only exit 1 denies; any other failure skips the check
+  // rather than denying on a tool failure with a misleading fix suggestion.
+  if (!memoryPersistAllowed(STUDIO_ROOT)) {
+    const devMemoryPath = path.join(STUDIO_ROOT, 'Dev-Memory');
+    let devMemoryExists = false;
+    try {
+      devMemoryExists = fs.statSync(devMemoryPath).isDirectory();
+    } catch {
+      devMemoryExists = false;
+    }
+    if (devMemoryExists && devMemoryHasAnyFile(devMemoryPath)) {
+      // Deliberately checked against STUDIO_ROOT (the project root
+      // findStudioRoot just resolved), not REPO — REPO is the tree THIS push
+      // command targets (which a `cd <temp-clone> && git push` can point
+      // somewhere else entirely), while Dev-Memory/ always lives at the
+      // studio project's own root by construction (see findStudioRoot). git
+      // resolves the enclosing repository and the pathspec relative to the
+      // given cwd on its own, exactly as every other git(...) call in this
+      // file already relies on — but ONLY when that repository is actually
+      // the one being pushed; see the same-work-tree guard immediately below.
+      const studioTop = git(['rev-parse', '--show-toplevel'], STUDIO_ROOT);
+      const repoTop = git(['rev-parse', '--show-toplevel'], REPO);
+      const sameWorkTree =
+        studioTop.ok &&
+        repoTop.ok &&
+        path.resolve(studioTop.stdout.trim()) === path.resolve(repoTop.stdout.trim());
+      if (sameWorkTree) {
+        const ignoreCheck = git(['check-ignore', '-q', '--', 'Dev-Memory'], STUDIO_ROOT);
+        if (ignoreCheck.status === 1) {
+          deny(
+            'studio scan: refusing to push — Dev-Memory/ exists in this project but is not ' +
+              "excluded by .gitignore, so it would ship. This project's rule is that Dev-Memory/ " +
+              'never ships and always stays local-only (see the dev-memory and checkpoint-commit ' +
+              'skills). Fix: add Dev-Memory/ to .gitignore at the project root, then retry.',
+          );
+        }
+      }
+    }
+  }
+
   // ---- build the working-tree/index/untracked would-ship file set ------------
   // (the unpushed-commit history is scanned separately, after this loop)
+  //
+  // 2026-07-31 further-pass maintenance fix (F6, independent reviewer
+  // finding). `git ls-files` (and `git ls-files --others --exclude-standard`)
+  // with NO pathspec defaults to "files under the current directory", not
+  // "files in the repository" — unlike `git diff --cached --name-only`
+  // just below, which is already always repo-root-relative regardless of
+  // cwd. REPO is the actual working directory of the command being scanned
+  // (resolved above from `git -C`/`cd`, or SESSION_DIR); when a push is run
+  // from a SUBDIRECTORY of the repo rather than its root, REPO is that
+  // subdirectory, and both bare `ls-files` calls silently went blind to
+  // every file elsewhere in the repo — tracked files outside REPO, and
+  // untracked files (including a secret-shaped one) outside REPO — despite
+  // those files still being part of what a `git push` from there ships.
+  // Reproduced: from a repo root, `other/creds.txt` (tracked) and
+  // `sub/untracked-secret.txt` (untracked); run from `sub/`, plain `git
+  // ls-files` returned nothing (missing `other/creds.txt`, which is not
+  // under `sub/`) and `git ls-files --others --exclude-standard` returned
+  // only `untracked-secret.txt` relative to `sub/` — `other/creds.txt` never
+  // appeared in either. Run from the repo root, both calls saw it.
+  //
+  // Fixed with the `:/` pathspec (git's "top of the work tree, regardless of
+  // cwd" magic pathspec — see gitglossary(7) — not used elsewhere in this
+  // codebase yet, so introduced here rather than reusing an existing
+  // convention). Anchoring to `:/` restores full-repo coverage while git
+  // still reports each path RELATIVE TO cwd (REPO), using a leading `../` for
+  // anything outside REPO — so the existing `path.join(REPO, f)` a few lines
+  // below (and in the force-add loop just after this) keeps resolving to the
+  // correct absolute file with no further change: `path.join('/repo/sub',
+  // '../other/creds.txt')` correctly yields `/repo/other/creds.txt`. Verified
+  // by execution against the same reproduction above.
+  //
+  // 2026-07-31 second further-pass fix (R2, independent reviewer finding):
+  // `git diff --cached --name-only` returns paths relative to the REPO ROOT
+  // regardless of cwd (verified by execution — unlike the two `ls-files`
+  // calls above, it never adopted the `:/`-relative-to-REPO convention).
+  // Joined against REPO with the same `path.join(REPO, f)` as the other two
+  // sources, a repo-root-relative path from a subdirectory push resolves to
+  // the wrong (usually nonexistent) file — harmless for coverage today, since
+  // every staged file is also reported correctly by the `ls-files -- :/` call
+  // above, but it leaves a dead, wrongly-resolved entry in FILES. Converted
+  // below to the same REPO-relative convention as the other two sources by
+  // resolving each path against the repo's own toplevel, then taking it
+  // relative to REPO — so all three sources agree before path.join(REPO, f).
+  const repoToplevelForDiff = git(['rev-parse', '--show-toplevel'], REPO);
   const nulParts = (buf) =>
     buf
       .toString('utf8')
       .split('\0')
       .filter((s) => s.length > 0);
   const fileSet = new Set();
-  for (const p of nulParts(git(['ls-files', '-z'], REPO, 'buffer').stdout)) fileSet.add(p);
-  for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout))
+  for (const p of nulParts(git(['ls-files', '-z', '--', ':/'], REPO, 'buffer').stdout))
     fileSet.add(p);
+  for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout)) {
+    if (repoToplevelForDiff.ok) {
+      fileSet.add(path.relative(REPO, path.join(repoToplevelForDiff.stdout.trim(), p)));
+    } else {
+      fileSet.add(p); // couldn't resolve toplevel; fall back to the raw (possibly wrong) path rather than dropping it
+    }
+  }
   for (const p of nulParts(
-    git(['ls-files', '--others', '--exclude-standard', '-z'], REPO, 'buffer').stdout,
+    git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'], REPO, 'buffer').stdout,
   ))
     fileSet.add(p);
   // 2026-07-21 Round 13 audit fix (HIGH): if THIS command force-adds ignored

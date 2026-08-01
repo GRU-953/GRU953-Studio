@@ -54,12 +54,143 @@ export function deny(reason) {
 }
 
 // ---- read the tool call ------------------------------------------------------
-export function readStdin() {
-  try {
-    return fs.readFileSync(0, 'utf8');
-  } catch {
-    return '';
+// 2026-07-31 maintenance fix (HIGH, pre-existing, reproduced by execution):
+// `fs.readFileSync(0)` throws EAGAIN/EWOULDBLOCK when fd 0 is a non-blocking
+// pipe that has not yet had its payload written by the parent process — a
+// real, reproducible race when the harness spawning this hook (Claude Code
+// invoking scan.mjs/gate.mjs as PreToolUse hooks) hasn't finished writing the
+// tool-call JSON before this process's Node startup reaches this read.
+// Reproduced deterministically: a child process reading fd 0 via
+// `fs.readFileSync(0,'utf8')` while the parent writes to the far end of a
+// pipe after a short delay throws EAGAIN before the write lands (proven in
+// hooks.test.mjs's readStdinCore unit tests, which inject a mock reader
+// rather than depend on real OS timing — a real EAGAIN race can't be made to
+// fire reliably from spawnSync(..., {input}), which always hands the child a
+// fully-written buffer synchronously).
+//
+// The previous bare `catch { return ''; }` treated that TRANSIENT failure
+// identically to "stdin genuinely has no data" (a real, immediate EOF, which
+// readFileSync returns as '' with no error at all) — so a lost read silently
+// became an empty command AND an empty cwd. scan.mjs/gate.mjs both then read
+// CMD as '' (isPushCapable('') happens to fail closed on its own), but
+// extractCwd(INPUT) also comes back '', which can make findStudioRoot()
+// resolve against the wrong fallback (this hook process's own cwd, not the
+// tool call's actual cwd) and stand down (allow()) on a command it never
+// actually inspected — a real, if narrow, bypass window for a `git push` or
+// `gh repo create --public` racing this exact timing.
+//
+// Fix: retry ONLY on EAGAIN/EWOULDBLOCK, for a short bounded total wait
+// (STDIN_RETRY_BUDGET_MS), then give up. Critically, "gave up" is signalled
+// by THROWING StdinReadFailure, never by returning '' — a caller that gets ''
+// back has proof there was no data; a caller that gets a thrown failure has
+// no such proof and must fail closed. scan.mjs and gate.mjs both DENY on this
+// exception (see their main()); the three non-security callers of readStdin
+// (session-start.mjs, subagent-statusline.mjs, self-heal-nudge.mjs) each
+// already catch it (or now do) and fall back to their existing "no input"
+// behaviour, since none of them is a security gate.
+//
+// 2026-07-31 further maintenance fix (HIGH, third-reviewer finding,
+// reproduced live against a real non-blocking FIFO with a deliberately
+// chunked writer before this fix, then re-confirmed fixed): the retry above
+// re-ran `fs.readFileSync(0,'utf8')` as a single, WHOLE-READ call on every
+// attempt. That call is not idempotent on a real non-blocking pipe: Node's
+// readFileSync loops internally, and when a real writer dribbles bytes in
+// more than one chunk, the FIRST call can genuinely consume whatever bytes
+// are currently available on the fd and THEN throw EAGAIN waiting for more —
+// the bytes it already consumed are gone from the pipe but never returned to
+// the caller, because readFileSync only returns a value on total success. A
+// later retry of the SAME whole-read call then only sees the bytes written
+// AFTER that point, and — critically — returns them as a clean, error-free
+// success once EOF is reached, indistinguishable from a genuine complete
+// read. Reproduced: a 66-byte JSON payload written as 57 bytes, an 80ms
+// pause, then the remaining 9 bytes, came back from the old retry loop as
+// exactly those trailing 9 bytes with no exception at all — a silently
+// truncated, invalid-JSON payload that both extractCommand() and
+// extractCwd() then read as `''`, reproducing the exact bypass window
+// described two paragraphs up (verified end-to-end: with a real committed
+// secret, zero confirmation tokens, and the hook process's own cwd differing
+// from the lost tool-call cwd, both scan.mjs and gate.mjs `allow`ed a `git
+// push` under this exact chunked-read condition).
+//
+// Fixed by never treating a single call to the underlying reader as "the
+// whole message". The reader passed in is now a per-CHUNK primitive (see
+// readStdin() below, which hands `readStdinCore` a `fs.readSync(0, buf, ...)`
+// closure), and this function itself owns the accumulation: each
+// successful chunk (however many bytes it returns, including zero, which
+// signals real EOF) is appended to a growing buffer, and only decoded to a
+// string once EOF is reached or the retry budget is exhausted. An EAGAIN
+// during this loop discards NOTHING already accumulated — it just waits
+// briefly and retries the NEXT chunk read, appending to what is already
+// held. This is what makes the loop idempotent: unlike readFileSync, a
+// single chunk read either returns a byte count with those bytes genuinely
+// consumed and kept, or throws having consumed nothing at all — there is no
+// third "consumed silently and discarded" outcome for the retry to land on.
+// Giving up (never reaching EOF within budget) still throws
+// StdinReadFailure, exactly as before, rather than returning whatever
+// partial bytes happened to accumulate — a caller must not be able to
+// mistake a partial read for a complete one.
+//
+// readStdinCore takes the actual per-chunk read operation as a parameter
+// specifically so hooks.test.mjs can drive the retry/accumulate/give-up
+// logic deterministically with a mock reader that returns controlled partial
+// byte counts and/or fails a controlled number of times before succeeding
+// (or never succeeds, to prove the give-up path) — a flaky, real-timing-
+// dependent test would be worse than no test at all. readStdin() below is
+// the one real caller, using the real synchronous read.
+export class StdinReadFailure extends Error {}
+export const STDIN_RETRY_BUDGET_MS = 500;
+export const STDIN_RETRY_DELAY_MS = 10;
+// Size of each accumulation chunk for the real reader. Large enough that an
+// ordinary tool-call JSON payload (a few hundred bytes to a few KB) is read
+// in one or two chunks in the common case — no added latency there — while
+// still bounding a single read call's memory use.
+const STDIN_CHUNK_BYTES = 65536;
+function sleepMs(ms) {
+  // A genuinely blocking sleep with no dependency: setTimeout/Promises don't
+  // run inside a synchronous top-to-bottom hook script with no event loop
+  // turn given back to them. Atomics.wait blocks the current thread for real.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+// `readChunk(buf)` must behave like `fs.readSync`: fill (a prefix of) `buf`
+// and return the number of bytes written, with `0` meaning genuine EOF, or
+// throw (with `.code` set for a transient EAGAIN/EWOULDBLOCK) having written
+// nothing. It must NOT return a full string — that per-call "all or nothing"
+// contract is exactly what made the old single-shot readFileSync call
+// non-idempotent under a real chunked write (see the long comment above).
+export function readStdinCore(readChunk, opts = {}) {
+  const budgetMs = opts.budgetMs ?? STDIN_RETRY_BUDGET_MS;
+  const delayMs = opts.delayMs ?? STDIN_RETRY_DELAY_MS;
+  const chunkBytes = opts.chunkBytes ?? STDIN_CHUNK_BYTES;
+  const start = Date.now();
+  const chunks = [];
+  let lastErr = null;
+  for (;;) {
+    const buf = Buffer.allocUnsafe(chunkBytes);
+    let n;
+    try {
+      n = readChunk(buf);
+    } catch (e) {
+      lastErr = e;
+      const transient = Boolean(e) && (e.code === 'EAGAIN' || e.code === 'EWOULDBLOCK');
+      if (!transient || Date.now() - start >= budgetMs) break;
+      sleepMs(delayMs);
+      continue; // nothing was consumed by the failed attempt — retry the SAME unread data
+    }
+    if (n === 0) {
+      // Genuine EOF: everything accumulated so far (possibly nothing at all,
+      // a real empty stdin) IS the whole message.
+      return Buffer.concat(chunks).toString('utf8');
+    }
+    // A successful partial read is real data, kept permanently — an EAGAIN
+    // on a LATER iteration can never discard it, since it is not the loop
+    // variable being retried.
+    chunks.push(n === buf.length ? buf : buf.subarray(0, n));
   }
+  const detail = (lastErr && (lastErr.code || lastErr.message)) || 'unknown error';
+  throw new StdinReadFailure(`could not read stdin (${detail}) after retrying`);
+}
+export function readStdin() {
+  return readStdinCore((buf) => fs.readSync(0, buf, 0, buf.length, null));
 }
 // 2026-07-12 Round 7 audit fix (real gap, verified via Claude Code's own
 // docs and a live GitHub issue, not previously disclosed): hooks.json's
@@ -447,10 +578,80 @@ export function splitPipeCells(line) {
 // dimension not being blocked is the danger, not a false block), but it's a
 // real usability gap and the exact divergence a background review agent was
 // asked to hunt for. Moved here so all three share it.
+// 2026-07-31 maintenance fix: closing an evasion route in every gate that
+// runs PLACEHOLDER_RE against a deEmphasise()'d cell. The whitespace/*/_/`
+// stripping above only ever covered THREE of the markdown/HTML forms a real
+// evidence/status cell can be decorated with — a placeholder disguised as
+// strikethrough (`~~tbd~~`), an HTML bold/strong tag (`<b>tbd</b>`,
+// `<strong>tbd</strong>`), or wrapped in a matching pair of quotes
+// (`"tbd"`, curly `"tbd"` too) still reached PLACEHOLDER_RE completely
+// intact and evaded every one of quality-gate.mjs, content-check.mjs,
+// traceability-check.mjs and memory-integrity.mjs. Reproduced live before
+// fixing: all three forms passed PLACEHOLDER_RE.test(deEmphasise(x)) as
+// `false` (should be `true`), while the existing */_/` cases were correctly
+// `true` throughout.
+//
+// Each new form is stripped ONLY when it wraps the WHOLE remaining string
+// (anchored at both ends, exactly like the existing */_/` handling) — never
+// when it merely appears somewhere inside a longer sentence. That anchoring
+// is what keeps ordinary prose safe: a real evidence cell reading `The user
+// said "it works" during review` starts with a plain letter, not a quote,
+// so the quote-strip never fires and the sentence passes through unchanged.
+// An HTML tag pair only strips when the closing tag name matches the
+// opening one (case-insensitively, via backreference) and wraps the whole
+// string, so unrelated `<b>` text next to other content is left alone.
+//
+// Bounded loop (not open-ended, not a general nested-markup parser): a
+// realistic cell combines at most one or two of these decorations (e.g. a
+// quoted strikethrough `"~~tbd~~"` needs the quotes stripped, THEN the
+// strikethrough, before the plain tbd is left). Five passes is generous
+// headroom for that, stopping as soon as a pass makes no further change —
+// it is not trying to solve arbitrary nesting, which these four gates never
+// realistically see.
+//
+// 2026-07-31 further-pass maintenance fix (F7, independent reviewer
+// finding): the three paired-delimiter patterns (strikethrough, HTML
+// bold/strong tag, straight quotes) originally captured their inner content
+// with the greedy, dot-matches-everything `[\s\S]*`. The outer `^...$`
+// anchors DO stop this from mangling a cell where the decorated span isn't
+// the last thing before the end of the string (verified: `<b>README</b> and
+// <b>CONTRIBUTING</b> updated` does not match at all, and is left alone,
+// because the string does not end immediately after a closing `</b>`) — but
+// a cell that combines TWO separately decorated spans and legitimately ENDS
+// right after the second closing delimiter, e.g. `<b>README</b> and
+// <b>CONTRIBUTING</b>` or `~~a~~ and ~~b~~` or `"a" and "b"`, still matched
+// as ONE span: the greedy inner group walked past the first span's own
+// closing delimiter and swallowed everything up to the LAST one, so
+// `<b>README</b> and <b>CONTRIBUTING</b>` came out as the mangled
+// `README</b> and <b>CONTRIBUTING` — decoration half-stripped, tags left
+// dangling in the middle of ordinary text.
+//
+// Fixed by excluding the delimiter's own character from the inner capture
+// (`[^<]*` for the HTML-tag case, `[^~]*` for strikethrough, `[^"]*` /
+// `[^”]*` for the two quote forms) instead of allowing it to match anything.
+// This does not change any single-decoration case (the four already-required
+// forms — `~~tbd~~`, `<b>tbd</b>`, `<strong>tbd</strong>`, `"tbd"` — contain
+// no instance of their own delimiter inside the decorated text, so nothing
+// changes for them). For a genuine multi-span cell it instead makes the whole
+// pattern FAIL to match — because the excluded character appears before the
+// real closing delimiter is reached — which correctly leaves the cell
+// untouched rather than corrupting it; deEmphasise's job is to strip
+// decoration it can safely and unambiguously identify, not to guess at
+// nested/repeated markup.
 export function deEmphasise(c) {
-  return String(c)
-    .replace(/^[\s*_`]+/, '')
-    .replace(/[\s*_`]+$/, '');
+  let s = String(c);
+  for (let i = 0; i < 5; i++) {
+    const before = s;
+    s = s
+      .replace(/^[\s*_`]+/, '')
+      .replace(/[\s*_`]+$/, '')
+      .replace(/^~~([^~]*)~~$/, '$1')
+      .replace(/^<(b|strong)>([^<]*)<\/\1>$/i, '$2')
+      .replace(/^"([^"]*)"$/, '$1')
+      .replace(/^“([^”]*)”$/, '$1');
+    if (s === before) break;
+  }
+  return s;
 }
 
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';

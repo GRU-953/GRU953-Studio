@@ -1,11 +1,11 @@
 {
   "name": "@gru953/studio-cli",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "description": "",
   "main": "src/index.js",
   "scripts": {
     "test": "node --test",
-    "lint": "eslint src"
+    "lint": "eslint src test"
   },
   "keywords": [],
   "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
@@ -13,14 +13,18 @@
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/GRU-953/GRU953-Studio.git",
+    "url": "git+https://github.com/GRU-953/GRU953-Studio.git",
     "directory": "clients/cli"
   },
   "bin": {
-    "gru953-studio": "./src/index.js"
+    "gru953-studio": "src/index.js"
   },
+  "files": [
+    "src",
+    "LICENSE"
+  ],
   "devDependencies": {
-    "@eslint/js": "^9.0.0",
+    "@eslint/js": "^10.0.1",
     "eslint": "^10.8.0"
   }
 }

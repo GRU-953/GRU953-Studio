@@ -139,6 +139,19 @@ traceability check runs at every stage boundary. The goal is never bureaucracy
 — it is that a two-week, five-session build never quietly loses or exceeds the
 target the user agreed.
 
+**On Tiny Tier, `hooks/traceability-check.mjs` treats a genuinely missing
+`REQUIREMENTS.md` as clean, not `BLOCKED`** (2026-07-31 maintenance fix — it
+previously blocked every Tier unconditionally, including Tiny, which this
+section had never actually needed to have a file at all). It tells Tiny apart
+from Standard/Complex by reading the one exact line `studio/SKILL.md`'s Tier
+questions mandate in `OBJECTIVE.md` — `**Tier:** Tiny` /
+`**Tier:** Standard` / `**Tier:** Complex`. A missing, conflicting, or
+malformed Tier line is read as ambiguous and fails CLOSED exactly like
+Standard/Complex — silently treating an unreadable Tier as the more lenient
+Tiny would be a new fail-open bug, not a fix, so only an unambiguous "Tiny"
+ever relaxes the check. Standard/Complex behaviour — `BLOCKED` when
+`REQUIREMENTS.md` is missing — is unchanged.
+
 ## Who applies this
 
 - **project-lead** runs the re-orientation ritual and restates the goal.

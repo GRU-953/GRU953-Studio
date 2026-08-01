@@ -120,6 +120,42 @@ for a new role they start only once that RFC has been Accepted, not before.
 3. Ensure CI is green and address review feedback.
 4. A maintainer will review and merge once the change is ready.
 
+## Publishing (maintainers only, one-time setup)
+
+`.github/workflows/publish.yml` publishes the two npm packages
+(`@gru953/studio-cli`, `@gru953/studio-antigravity`) and the VS Code
+extension whenever a version tag (`v5.0.1`, `v5.1.0`, etc.) is pushed. Three
+things need setting up once, before the first tag push, or that workflow
+will either fail outright or (worse) attempt a real publish with no pause:
+
+1. **Create the three GitHub Environments** the workflow references —
+   `publish-npm-cli`, `publish-npm-antigravity`, `publish-vscode-marketplace`
+   (Settings → Environments → New environment). For each, add yourself (or
+   another maintainer) as a **required reviewer**. Without this, pushing a
+   tag triggers each publish job with no human pause at all — the whole
+   point of naming these Environments in the workflow.
+2. **Configure npm Trusted Publishing** for each npm package, on
+   npmjs.com (Package settings → Trusted Publishers): register this exact
+   repository, workflow file (`.github/workflows/publish.yml`), and
+   environment name as trusted. This must be done once per package,
+   **after** the package has been published at least once by hand (npm
+   requires an existing package to attach Trusted Publishing to) — see the
+   npm documentation on Trusted Publishers for the current exact steps, and
+   verify what you find against npm's own current docs rather than trusting
+   this note to still be accurate later. No npm access token is ever
+   created or stored; this is the entire point of using Trusted Publishing.
+3. **Create a VS Code Marketplace access token** and add it as the repo
+   secret `VSCE_PAT` (Settings → Secrets and variables → Actions). Create it
+   at dev.azure.com under a publisher named exactly `GRU953` (the brand name,
+   per `governance/TRADEMARKS.md` — not `GRU-953`, which that file reserves
+   for the GitHub account handle only), with the **Marketplace (Manage)**
+   permission scoped to **All accessible organizations**. Add the secret
+   yourself, directly in GitHub's UI or via `gh secret set VSCE_PAT` in your
+   own terminal — never paste a real token into a chat session or a commit.
+   Microsoft has announced this token type will be retired; check
+   Microsoft's own current documentation before relying on this step, since
+   the exact mechanism may have changed by the time you read this.
+
 ## Sign-off (DCO)
 
 This project uses the **Developer Certificate of Origin (DCO) 1.1** — a short

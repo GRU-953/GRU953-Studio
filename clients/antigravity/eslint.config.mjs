@@ -9,6 +9,13 @@
 // TypeScript plugin needed. `sourceType: 'commonjs'` recognises `require`/
 // `module`/`exports` without listing them as globals; `__dirname`/
 // `__filename` are not covered by that and are listed explicitly below.
+// 2026-07-31 maintenance fix: the `test/**/*.test.mjs` files live outside
+// `src/`, so the original single `files: ['src/**/*.js']` block never
+// covered them, and ci.yml's repo-wide `node --check` step prunes
+// `./clients` too — so nothing here lint-checked the test suite itself.
+// Test files are ES modules (`import`/`export`, `node:test`), not the
+// plain CommonJS of src/, so they need their own languageOptions block
+// rather than being folded into the existing one.
 import js from '@eslint/js';
 
 export default [
@@ -23,6 +30,17 @@ export default [
         console: 'readonly',
         __dirname: 'readonly',
         __filename: 'readonly',
+      },
+    },
+  },
+  {
+    files: ['test/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
       },
     },
   },

@@ -31,8 +31,13 @@
 // ships unbuilt or scope creep ships unnoticed.
 //
 // Usage: node traceability-check.mjs [projectRoot]
-// Exit 0 = not a studio project, OR the matrix is internally consistent.
-// Exit 1 = at least one traceability problem (all listed).
+// Exit 0 = not a studio project, OR the matrix is internally consistent, OR
+//          (2026-07-31) Tiny Tier with no REQUIREMENTS.md file, per the
+//          focus-guard skill's Tier-scaling section — read from an
+//          unambiguous `**Tier:** Tiny` line in Dev-Memory/OBJECTIVE.md.
+// Exit 1 = at least one traceability problem (all listed), including a
+//          missing REQUIREMENTS.md on Standard/Complex Tier, or any Tier
+//          that could not be read unambiguously as Tiny (fails closed).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -108,9 +113,110 @@ function read(p) {
     return null;
   }
 }
+// 2026-07-31 maintenance fix (consistency tidy, not a demonstrated live bug):
+// every other PLACEHOLDER_RE/decoration call site in this file (deEmphStatus
+// above, the header-cell col()/parseTable() checks, and the verification-cell
+// check further down) already runs deEmphasise() first; this was the one
+// remaining call site testing the raw, undecorated cell. A decorated task-id
+// cell (e.g. "**T1**") happened to reach the same "no valid task ID" outcome
+// either way today, because it fails TASK_ID_RE too — so this closes the gap
+// for consistency and to stop that outcome being an accident of two unrelated
+// regexes rather than a deliberate, uniform decoration-stripping rule.
 function idsIn(cell) {
-  if (!cell || PLACEHOLDER_RE.test(cell.trim())) return [];
-  return (cell.match(TASK_ID_RE) || []).map((s) => s.toUpperCase());
+  const value = deEmphasise(cell || '').trim();
+  if (!value || PLACEHOLDER_RE.test(value)) return [];
+  return (value.match(TASK_ID_RE) || []).map((s) => s.toUpperCase());
+}
+
+// 2026-07-31 maintenance fix — reproduced live: a genuine Tiny-Tier project
+// (no `REQUIREMENTS.md`, exactly as the focus-guard skill's Tier-scaling
+// section says is correct — "On Tiny Tier the matrix may be a short inline
+// list rather than a full REQUIREMENTS.md table") was BLOCKED here anyway,
+// because the missing-file branch below used to block unconditionally with
+// no Tier awareness at all. There was no documented, machine-parseable place
+// to read the Tier from — `studio/SKILL.md` only said "Record ... the
+// resulting Tier in OBJECTIVE.md," no exact line. The fix has two halves:
+// `studio/SKILL.md` now mandates one exact line, `**Tier:** Tiny` /
+// `**Tier:** Standard` / `**Tier:** Complex`, the same bold-label convention
+// `focus-guard/SKILL.md` already documents and `memory-integrity.mjs`
+// already machine-checks for FOCUS.md's four fields — and this function
+// reads it.
+//
+// Fails CLOSED on anything that isn't an unambiguous, single "Tiny": no
+// OBJECTIVE.md, no Tier line, more than one (conflicting) Tier line, or a
+// value that isn't one of the three documented Tiers all return null, which
+// the caller treats exactly like Standard/Complex (BLOCKED if
+// REQUIREMENTS.md is missing). Silently defaulting an unreadable Tier to the
+// MORE LENIENT Tiny would be a new fail-open bug, not a fix — only a genuine,
+// unambiguous "Tiny" record ever relaxes the check.
+//
+// 2026-07-31 maintenance fix (F2/F3, independent reviewer finding, both
+// real): the value captured after `**Tier:**` used to be run through
+// deEmphasise() then split on whitespace and only the FIRST word kept.
+// deEmphasise() strips markdown decoration (`~~strikethrough~~` included) —
+// authorised elsewhere in this file specifically to TIGHTEN placeholder
+// detection (a decorated "tbd" is still a placeholder), never to loosen a
+// Tier read. Reproduced: `**Tier:** ~~Tiny~~` (a human striking through a
+// stale value — the natural way to mark "ignore this") read as a clean
+// `Tiny`, silently relaxing the REQUIREMENTS.md-required gate. The
+// first-word split had its own separate problem: `**Tier:** Tiny or
+// Standard, still deciding` (genuinely ambiguous prose) and `**Tier:** Tiny /
+// Standard / Complex` (an unfilled template) both read as a confident
+// `Tiny`, again wrongly relaxing the gate.
+//
+// Fixed by requiring an EXACT, whole-value match: after trimming only
+// surrounding whitespace (no decoration-stripping, no word-splitting), the
+// captured text must equal exactly one of the literal strings "Tiny",
+// "Standard" or "Complex" — nothing before or after it on that line.
+// Anything else (decorated, multi-word, trailing prose, wrong case) is
+// `__malformed__`, which the caller below still treats as unreadable ->
+// fails closed, never a lenient default.
+//
+// 2026-07-31 maintenance fix (F4): a `**Tier:** Tiny` line that appears only
+// inside a fenced code block (a documentation example of the required line
+// format) or an indented example (4+ leading spaces/a tab — the CommonMark
+// indented-code-block convention) is not the project's real recorded value
+// and must not count. No fenced/indented-code tokeniser already exists
+// anywhere in this file or lib.mjs to reuse (checked: repo-integrity.mjs
+// explicitly documents this exact gap as a disclosed, unfixed limitation of
+// its own, unrelated skill-reference check) — but the SAME anchoring
+// discipline this file's other context-sensitive checks already use for a
+// comparable problem (anchor the match so it only fires on the value's own
+// line, e.g. deEmphasise()'s "only strip when the decoration wraps the WHOLE
+// string" rule) is reused here in the same spirit: a per-LINE state machine,
+// scoped to only the two concrete cases named above, not a general markdown
+// parser.
+const TIER_LABEL_RE = /^\s*\*\*Tier\s*:\*\*\s*(.*)$/i;
+const KNOWN_TIERS = ['Tiny', 'Standard', 'Complex'];
+// 2026-07-31 second further-pass fix (R4, independent reviewer finding):
+// returns { tier, sawTierLine } rather than just a bare Tier-or-null, so the
+// caller can tell "no **Tier:** line at all" apart from "found one, but it
+// didn't parse unambiguously" — the two cases need a different BLOCKED
+// message (the second one names the actual problem instead of only pointing
+// at REQUIREMENTS.md, which isn't what's actually wrong for a genuinely
+// Tiny-Tier owner whose Tier line just didn't parse).
+function readTier(devMemory) {
+  const text = read(path.join(devMemory, 'OBJECTIVE.md'));
+  if (text === null) return { tier: null, sawTierLine: false };
+  const found = new Set();
+  let sawTierLine = false;
+  let inFence = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence; // toggle; the fence line itself is never a value line
+      continue;
+    }
+    if (inFence) continue;
+    if (/^(?: {4,}|\t)/.test(line)) continue; // indented example, not the real value
+    const m = TIER_LABEL_RE.exec(line);
+    if (!m) continue;
+    sawTierLine = true;
+    const value = m[1].trim();
+    found.add(KNOWN_TIERS.includes(value) ? value : '__malformed__');
+  }
+  if (found.size !== 1) return { tier: null, sawTierLine }; // no line, or conflicting lines -> ambiguous
+  const [only] = found;
+  return { tier: only === '__malformed__' ? null : only, sawTierLine };
 }
 
 // Generic per-table parser: returns { headers, rows } for the FIRST table whose
@@ -171,12 +277,40 @@ function main() {
   const reqFile = path.join(devMemory, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
   if (reqText === null) {
+    // Tiny Tier is documented (focus-guard/SKILL.md, Tier-scaling) as never
+    // needing a REQUIREMENTS.md FILE — a short inline list is enough on that
+    // Tier. Only an unambiguous "Tiny" read from OBJECTIVE.md's mandated
+    // `**Tier:** ...` line relaxes this; anything else (Standard, Complex,
+    // or an unreadable/ambiguous Tier) keeps today's BLOCKED behaviour
+    // exactly, unchanged.
+    const { tier, sawTierLine } = readTier(devMemory);
+    if (tier === 'Tiny') {
+      console.log(
+        JSON.stringify(
+          {
+            status: 'clean',
+            reason:
+              'Tiny Tier (Dev-Memory/OBJECTIVE.md records "**Tier:** Tiny") — no REQUIREMENTS.md file is required on this Tier; the focus-guard skill allows a short inline list instead. Nothing to trace.',
+            root,
+          },
+          null,
+          2,
+        ),
+      );
+      process.exit(0);
+    }
+    // 2026-07-31 second further-pass fix (R4): a project that wrote a
+    // **Tier:** line that just didn't parse (decorated, ambiguous, wrong
+    // case, two conflicting lines...) is told THAT, and given the three
+    // exact accepted values — not just pointed at REQUIREMENTS.md, which
+    // isn't their actual problem if they're genuinely Tiny Tier.
     console.log(
       JSON.stringify(
         {
           status: 'BLOCKED',
-          reason:
-            'Dev-Memory/ exists but has no REQUIREMENTS.md — there is no traceability matrix to prove requirements map to tasks. Create it (see the focus-guard skill) before a checkpoint commit or Publish.',
+          reason: sawTierLine
+            ? 'Dev-Memory/OBJECTIVE.md has a "**Tier:**" line but it could not be read as exactly one of Tiny, Standard, or Complex — check for decoration, extra wording, or more than one conflicting line. Until it reads as an unambiguous "**Tier:** Tiny", "**Tier:** Standard", or "**Tier:** Complex", this project is treated as Standard/Complex, which needs Dev-Memory/REQUIREMENTS.md — there is no traceability matrix to prove requirements map to tasks. Fix the Tier line, or create REQUIREMENTS.md (see the focus-guard skill), before a checkpoint commit or Publish.'
+            : 'Dev-Memory/ exists but has no REQUIREMENTS.md — there is no traceability matrix to prove requirements map to tasks. Create it (see the focus-guard skill) before a checkpoint commit or Publish.',
           file: reqFile,
         },
         null,

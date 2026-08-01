@@ -20,6 +20,8 @@ skill.
 | deps | Swift Package Manager — declare in `Package.swift`; resolve with `swift package resolve` |
 | package (2026-07-26 audit finding 15) | `xcodebuild archive` then `xcodebuild -exportArchive` produces a real `.ipa` (iOS) or `.app`/`.dmg` (macOS) — **shipping to a real iOS device or the App Store needs a paid Apple Developer account; say this plainly to the user before committing to iOS** |
 
+**`swift test` needs the full Xcode app (roughly 7GB), not just Command Line Tools** (2026-07-31 maintenance fix, found live this session) — on a Command-Line-Tools-only Mac, an ordinary and common setup, neither `XCTest` nor Swift's newer `Testing` module can even be imported, so `swift test` fails outright with "no such module". Check with `xcode-select -p`: `/Library/Developer/CommandLineTools` means the full app is missing; a path ending `Xcode.app/Contents/Developer` means it's installed.
+
 ## Idioms and gotchas
 
 - Prefer value types (`struct`/`enum`) and optionals over force-unwrap (`!`);

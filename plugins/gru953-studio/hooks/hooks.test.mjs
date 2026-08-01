@@ -27,6 +27,9 @@ import {
   isDirectory,
   SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
+  readStdinCore,
+  StdinReadFailure,
+  deEmphasise,
 } from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages, resolveExecutable } from './licence-scan.mjs';
 
@@ -1991,6 +1994,71 @@ test('quality-gate.mjs: a bolded "**tbd**" reason must still BLOCK a reasoned N/
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-07-31 maintenance fix regression guard: deEmphasise() previously only
+// stripped whitespace/*/_/` from a cell before testing PLACEHOLDER_RE — a
+// placeholder disguised as strikethrough (~~tbd~~) or wrapped in a matching
+// pair of quotes ("tbd") reached PLACEHOLDER_RE completely intact and was
+// wrongly accepted as real evidence for a pass. Confirmed live before fixing.
+test('quality-gate.mjs: a strikethrough "~~tbd~~" evidence value must still BLOCK a pass (2026-07-31 maintenance fix — decorated-placeholder deEmphasise)', () => {
+  const dir = mkTmp('gru-qg-strike-evidence-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | ~~tbd~~ |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a strikethrough "~~tbd~~" evidence must still BLOCK: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('quality-gate.mjs: a quoted ""tbd"" evidence value must still BLOCK a pass (2026-07-31 maintenance fix — decorated-placeholder deEmphasise)', () => {
+  const dir = mkTmp('gru-qg-quoted-evidence-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | "tbd" |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED', `a quoted "tbd" evidence must still BLOCK: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Real evidence cells legitimately use quotes (a project owner quoting a test
+// runner's own output, or a reviewer's remark) — the fix above must strip
+// wrapping quotes without losing or misidentifying that content. A fully
+// quoted, genuine evidence sentence must still count as real evidence...
+//
+// 2026-07-31 further-pass audit note (F8): this test and the one directly
+// below it pass identically whether or not the F7 greedy-inner-capture fix
+// (lib.mjs's deEmphasise(), `[^"]*` etc. instead of `[\s\S]*`) is applied —
+// neither sentence contains a second, separately-quoted span, so nothing here
+// exercises the specific bug F7 fixed. They are OVER-STRIPPING guards (they
+// prove the quote-strip added on 2026-07-31 doesn't mangle or misidentify
+// ordinary, real evidence text), not regression coverage for F7. Kept
+// deliberately — that's still a real property worth guarding — but do not
+// mistake a pass here for proof the F7 fix exists; see the two-span cases in
+// the "F7" test block further down for that.
+test('quality-gate.mjs: a fully-quoted realistic evidence sentence is still recognised as real evidence, not a placeholder (2026-07-31 maintenance fix — over-stripping guard, NOT F7 regression coverage: see comment above)', () => {
+  const dir = mkTmp('gru-qg-quoted-real-evidence-');
+  writeGate(dir, FULL_DOD.replace(
+    '| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |',
+    '| Automated tests | pass | "Ran npm test manually on 2026-07-30, all cases pass" |',
+  ));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a genuine quoted evidence sentence must not be misidentified as a placeholder: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ...and a sentence that merely CONTAINS quotes (not wrapped by them at both
+// ends) must pass through completely untouched, since the anchored strip
+// only ever fires when the quote sits at the very start AND end of the cell.
+// Same F8 note as directly above: this also passes identically with or
+// without the F7 fix (it never reaches the quote-strip branch at all, since
+// the cell doesn't start with a quote), so it is an over-stripping guard, not
+// F7 regression coverage.
+test('quality-gate.mjs: an evidence sentence with embedded (non-wrapping) quotes is not mangled (2026-07-31 maintenance fix — over-stripping guard, NOT F7 regression coverage: see comment above)', () => {
+  const dir = mkTmp('gru-qg-embedded-quote-evidence-');
+  writeGate(dir, FULL_DOD.replace(
+    '| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |',
+    '| Automated tests | pass | The user said "it works" during review (2026-07-30) |',
+  ));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'clean', `an embedded-quote sentence must not be mangled or misidentified as a placeholder: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 function writeReq(dir, req, prog) {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'REQUIREMENTS.md'), req);
@@ -2014,6 +2082,68 @@ test('traceability-check.mjs: Dev-Memory but no REQUIREMENTS.md fails closed', (
   assert.equal(r.code, 1);
   assert.equal(r.json.status, 'BLOCKED');
   fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-31 maintenance fix — reproduced live: a genuine Tiny-Tier project
+// (no REQUIREMENTS.md, exactly as focus-guard/SKILL.md's Tier-scaling section
+// says is correct on Tiny) was BLOCKED unconditionally, regardless of Tier.
+// studio/SKILL.md now mandates one exact, machine-readable line in
+// OBJECTIVE.md — `**Tier:** Tiny`/`**Tier:** Standard`/`**Tier:** Complex` —
+// and traceability-check.mjs reads it. These three tests cover: the fix
+// actually working on Tiny, Standard staying exactly as strict as before
+// (no weakening), and every ambiguous/malformed/missing Tier record failing
+// CLOSED rather than being silently treated as the more lenient Tiny.
+// ---------------------------------------------------------------------------
+test('traceability-check.mjs: a genuine Tiny-Tier project with no REQUIREMENTS.md is NOT blocked (2026-07-31 maintenance fix)', () => {
+  const dir = mkTmp('gru-tr-tiny-ok-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# A tiny one-off script\n\n**Tier:** Tiny\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 0, `Tiny Tier with no REQUIREMENTS.md must not be BLOCKED: ${r.stdout}`);
+  assert.notEqual(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('traceability-check.mjs: a Standard-Tier project with no REQUIREMENTS.md still BLOCKS (unchanged, not weakened)', () => {
+  const dir = mkTmp('gru-tr-standard-still-blocks-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# A typical web app\n\n**Tier:** Standard\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 1, `Standard Tier with no REQUIREMENTS.md must still be BLOCKED: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('traceability-check.mjs: a Complex-Tier project with no REQUIREMENTS.md still BLOCKS (unchanged, not weakened)', () => {
+  const dir = mkTmp('gru-tr-complex-still-blocks-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# Handles payments\n\n**Tier:** Complex\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 1, `Complex Tier with no REQUIREMENTS.md must still be BLOCKED: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('traceability-check.mjs: an ambiguous, missing, or malformed Tier record fails closed — never silently treated as Tiny (2026-07-31 maintenance fix)', () => {
+  const cases = [
+    ['no OBJECTIVE.md at all', null],
+    ['a Tier value that is not one of Tiny/Standard/Complex', '**Tier:** Sometimes\n'],
+    ['two conflicting **Tier:** lines', '**Tier:** Tiny\nSome notes.\n**Tier:** Standard\n'],
+    ['a **Tier:** line with no value', '**Tier:**\n'],
+    ['"tiny" only as prose, not the exact bold-label line', 'This is a tiny little app.\n'],
+  ];
+  for (const [label, objectiveText] of cases) {
+    const dir = mkTmp('gru-tr-ambig-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    if (objectiveText !== null) {
+      fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), objectiveText);
+    }
+    const r = runScript('traceability-check.mjs', dir);
+    assert.equal(r.code, 1, `${label}: an unreadable Tier must fail CLOSED (BLOCKED), not be silently treated as Tiny: ${r.stdout}`);
+    assert.equal(r.json.status, 'BLOCKED', `${label}: expected BLOCKED, got ${JSON.stringify(r.json)}`);
+    fs.rmSync(dir, RM_OPTS);
+  }
 });
 
 test('traceability-check.mjs: a consistent two-way matrix is clean', () => {
@@ -2128,6 +2258,23 @@ test('traceability-check.mjs: without a PROGRESS id column the reverse check is 
   const r = runScript('traceability-check.mjs', dir);
   assert.equal(r.json.status, 'clean');
   assert.ok(r.json.notes.some((n) => /reverse.*not run/i.test(n)), `expected a disclosed not-run note: ${JSON.stringify(r.json.notes)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-31 maintenance fix (consistency tidy — see idsIn()'s own comment):
+// applies deEmphasise() at this file's one remaining PLACEHOLDER_RE/TASK_ID_RE
+// call site that skipped it. Not a discriminating regression test — a bolded
+// "**T1**" already matched TASK_ID_RE's \b-bounded pattern before this fix,
+// confirmed directly (`"**T1**".match(TASK_ID_RE)` returns `["T1"]` with or
+// without deEmphasise) — kept as a confidence check that a decorated task-id
+// reference in the Tasks cell is recognised identically to a plain one,
+// matching every other call site in this file.
+test('traceability-check.mjs: a bolded "**T1**" task-id reference in the Tasks cell is recognised the same as a plain one (2026-07-31 maintenance fix — idsIn() deEmphasise consistency tidy)', () => {
+  const dir = mkTmp('gru-tr-boldtaskid-');
+  writeReq(dir, REQ_HEADER + '| R1 | Pause | 1 | **T1** | `test_pause` -> exit 0 | met |\n',
+    PROG_HEADER + '| T1 | pause | done | verified: `test_pause` -> exit 0 (2026-07-19) |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a bolded "**T1**" Tasks-cell reference must be recognised the same as a plain "T1": ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -2289,6 +2436,36 @@ test('memory-integrity.mjs: a bolded existing path value must not BLOCK (2026-07
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Real | **src/real.js** | exists | x |\n');
   const r = runScript('memory-integrity.mjs', dir);
   assert.equal(r.json.status, 'clean', `a bolded path to a file that genuinely exists must not BLOCK: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-07-31 maintenance fix regression guard: deEmphasise() previously never
+// stripped an HTML bold/strong tag pair, so a Where cell reading "<b>tbd</b>"
+// was NOT recognised as the placeholder it plainly is. Because the closing
+// tag's own "/" satisfies LOOKS_LIKE_PATH_RE's "contains a slash" branch,
+// checkIndex() did not skip the row either — it fell through to the
+// file-existence check, resolved "<b>tbd</b>" as a literal (non-existent)
+// path, and wrongly reported it as a stale INDEX.md reference. Confirmed
+// live before fixing: this genuinely flipped from BLOCKED to clean.
+test('memory-integrity.mjs: an HTML "<b>tbd</b>" Where value is recognised as a placeholder, not falsely flagged as a stale path (2026-07-31 maintenance fix — decorated-placeholder deEmphasise)', () => {
+  const dir = mkTmp('gru-mi-htmlbold-where-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Note | <b>tbd</b> | not yet linked | x |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `an HTML-bold "tbd" placeholder must not be falsely reported as a stale path: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Same fix, the <strong> form — proves the tag-pair strip is not hard-coded
+// to <b> alone (the shared regex matches either tag name via backreference).
+test('memory-integrity.mjs: an HTML "<strong>tbd</strong>" Where value is recognised as a placeholder, not falsely flagged as a stale path (2026-07-31 maintenance fix — decorated-placeholder deEmphasise)', () => {
+  const dir = mkTmp('gru-mi-htmlstrong-where-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Note | <strong>tbd</strong> | not yet linked | x |\n');
+  const r = runScript('memory-integrity.mjs', dir);
+  assert.equal(r.json.status, 'clean', `an HTML-strong "tbd" placeholder must not be falsely reported as a stale path: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -6046,5 +6223,640 @@ test('golden Dev-Memory corpus: the resume pointer is unique and matches FOCUS.m
   const resumeTaskId = resumeRows[0].match(/^\|\s*([A-Za-z0-9-]+)\s*\|/)[1];
   const activeTaskLine = focus.match(/\*\*Active task:\*\*\s*(.*)$/m)[1];
   assert.match(activeTaskLine, new RegExp(`^${resumeTaskId}\\b`), `FOCUS.md's Active task ("${activeTaskLine}") must start with the same id as the resume pointer's row ("${resumeTaskId}")`);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-07-31 maintenance fix (real gap, found live). This project's own rule
+// — Dev-Memory/ never ships, it stays local-only (the dev-memory skill's
+// "Local-only, and never shipped" section; the matching line in
+// checkpoint-commit's skill) — had NO mechanical check proving the rule is
+// actually in force: nothing verified that a real studio project's own
+// Dev-Memory/ is genuinely excluded by .gitignore before a push. A real test
+// session found this out the hard way — Dev-Memory/ was committed into a
+// project's history for several commits before anyone noticed, because
+// nothing stopped it. scan.mjs now runs an independent, preventive check
+// (only at push time, only for a real studio project, only when Dev-Memory/
+// actually holds a real file — an empty directory can never be tracked or
+// shipped by git at all, so it is not a violation of anything) asking git
+// itself (`git check-ignore`) whether Dev-Memory/ is genuinely, actively
+// excluded, never a hand-rolled string/regex matcher.
+// ---------------------------------------------------------------------------
+
+test('scan.mjs: Dev-Memory present with real content and NOT gitignored is denied at push time, naming the rule and the fix (2026-07-31 maintenance fix)', () => {
+  const dir = mkTmp('gru-scan-devmem-notignored-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'notes.md'), 'private working notes\n');
+  git(['add', '-A'], dir); // no .gitignore at all — Dev-Memory/ gets committed, tracked, and about to ship
+  git(['commit', '-qm', 'accidentally tracked Dev-Memory'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `an un-gitignored Dev-Memory/ with real content must deny the push: ${r.stdout}`);
+  assert.match(r.stdout, /Dev-Memory/, 'the deny reason must name Dev-Memory/ specifically');
+  assert.match(r.stdout, /gitignore/i, 'the deny reason must name the missing .gitignore exclusion as the rule being enforced');
+  assert.match(r.stdout, /add Dev-Memory\/ to \.gitignore/i, 'the deny reason must give the one-line fix');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: Dev-Memory present with real content and correctly gitignored still pushes fine, unchanged (2026-07-31 maintenance fix)', () => {
+  const dir = mkTmp('gru-scan-devmem-ignored-ok-');
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, '.gitignore'), '/Dev-Memory/\n');
+  fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+  git(['add', '-A'], dir);
+  git(['commit', '-qm', 'init with correct gitignore'], dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'notes.md'), 'private working notes\n'); // untracked, ignored, never staged
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `a correctly gitignored Dev-Memory/ must not block the push: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: no Dev-Memory/ at all is a no-op — not a studio project, allowed unchanged (2026-07-31 maintenance fix)', () => {
+  const dir = mkTmp('gru-scan-devmem-absent-');
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+  git(['add', '-A'], dir);
+  git(['commit', '-qm', 'init'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `a repo with no Dev-Memory/ at all must not be affected by this check: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: this check only fires at push time — a plain local commit with an un-gitignored Dev-Memory/ is still allowed (2026-07-31 maintenance fix)', () => {
+  const dir = mkTmp('gru-scan-devmem-commitonly-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'notes.md'), 'private working notes\n');
+  fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("ok");\n');
+  git(['add', 'app.js'], dir); // Dev-Memory left untracked and un-gitignored on purpose
+  const r = runHook('scan.mjs', 'git commit -am "wip"', dir);
+  assert.equal(r.decision, 'allow', `a plain local commit must never be blocked by this push-only check: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('scan.mjs: a .gitignore that only mentions "Dev-Memory" as a comment or an unrelated pattern is NOT a real exclusion, and still denies (2026-07-31 maintenance fix)', () => {
+  // (a) commented out
+  const d1 = mkTmp('gru-scan-devmem-comment-');
+  initRepo(d1);
+  fs.writeFileSync(path.join(d1, '.gitignore'), '# Dev-Memory/ (not really ignored)\n');
+  fs.writeFileSync(path.join(d1, 'README.md'), 'hello\n');
+  git(['add', '-A'], d1);
+  git(['commit', '-qm', 'init with a decoy comment'], d1);
+  fs.mkdirSync(path.join(d1, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(d1, 'Dev-Memory', 'notes.md'), 'private working notes\n');
+  const r1 = runHook('scan.mjs', 'git push origin main', d1);
+  assert.equal(r1.decision, 'deny', `a Dev-Memory string that only appears inside a comment must not count as a real exclusion: ${r1.stdout}`);
+  fs.rmSync(d1, RM_OPTS);
+
+  // (b) an unrelated pattern that merely contains "Dev-Memory" as a substring
+  const d2 = mkTmp('gru-scan-devmem-substring-');
+  initRepo(d2);
+  fs.writeFileSync(path.join(d2, '.gitignore'), 'NotDev-Memory/\n');
+  fs.writeFileSync(path.join(d2, 'README.md'), 'hello\n');
+  git(['add', '-A'], d2);
+  git(['commit', '-qm', 'init with an unrelated pattern'], d2);
+  fs.mkdirSync(path.join(d2, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(d2, 'Dev-Memory', 'notes.md'), 'private working notes\n');
+  const r2 = runHook('scan.mjs', 'git push origin main', d2);
+  assert.equal(r2.decision, 'deny', `an unrelated pattern that merely contains the substring "Dev-Memory" must not count as a real exclusion: ${r2.stdout}`);
+  fs.rmSync(d2, RM_OPTS);
+});
+
+test('scan.mjs: an empty Dev-Memory/ (no files at all) never triggers the gitignore check — matches every other fixture in this suite (2026-07-31 maintenance fix)', () => {
+  const dir = mkTmp('gru-scan-devmem-empty-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true }); // empty on purpose, no .gitignore entry
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+  git(['add', '-A'], dir);
+  git(['commit', '-qm', 'init'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `an empty, content-free Dev-Memory/ can never be tracked or shipped by git, so it must not be denied: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// This is the sharpest demonstration of the real gap: `git ls-files` and
+// `git ls-files --others --exclude-standard` — the exact commands the
+// dev-memory FINDING further below in scan.mjs already relies on to build
+// its would-ship file set — silently scope themselves to the CURRENT
+// DIRECTORY and below when given no pathspec, so a push run with its cwd
+// inside an ordinary SUBDIRECTORY of the project (ordinary: any ordinary
+// Bash call whose cwd is not the project root) makes an un-gitignored
+// Dev-Memory/ at the project root completely invisible to that file-set scan
+// — confirmed directly: `git ls-files --others --exclude-standard` run from
+// a subdirectory returned nothing for a real, untracked Dev-Memory/notes.md
+// living one level up, while the identical command run from the project
+// root correctly reported it. This check is immune to that scoping gap
+// because it asks git about STUDIO_ROOT directly (`git check-ignore` against
+// the resolved project root), never a directory-scoped listing.
+test('scan.mjs: Dev-Memory not gitignored is still caught when the push runs with its cwd in an ordinary project subdirectory (2026-07-31 maintenance fix — closes a real scoping gap in the pre-existing file-set scan)', () => {
+  const dir = mkTmp('gru-scan-devmem-subdir-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'subdir'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'notes.md'), 'private working notes\n'); // untracked, un-gitignored
+  fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+  git(['add', 'README.md'], dir);
+  git(['commit', '-qm', 'init'], dir);
+  fs.writeFileSync(path.join(dir, 'subdir', 'app.js'), 'console.log("ok");\n');
+  git(['add', 'subdir/app.js'], dir);
+  git(['commit', '-qm', 'add subdir app'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', path.join(dir, 'subdir'));
+  assert.equal(r.decision, 'deny', `an un-gitignored Dev-Memory/ at the project root must still be caught when the push's cwd is a subdirectory: ${r.stdout}`);
+  assert.match(r.stdout, /Dev-Memory/, 'the deny reason must name Dev-Memory/');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ===========================================================================
+// 2026-07-31 maintenance fixes (independent reviewer audit of today's six
+// maintenance batches, five real defects, two genuine gate weaknesses).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// F1 — lib.mjs's readStdin()/readStdinCore() (HIGH, pre-existing). A bare
+// `catch { return ''; }` around `fs.readFileSync(0)` treated a transient
+// EAGAIN/EWOULDBLOCK (a real race when the harness spawning this hook hasn't
+// finished writing the payload yet) identically to "stdin genuinely has no
+// data" — silently discarding the tool-call payload and risking a fail-open
+// allow() downstream in scan.mjs/gate.mjs. Fixed by retrying on EAGAIN for a
+// bounded budget, then THROWING (never returning '') if it still can't get a
+// real read; both security gates now DENY on that exception.
+//
+// readStdinCore's unit tests below use an injectable mock reader rather than
+// real OS-level stdin timing: spawnSync's own `input` option always hands a
+// child a fully-written buffer synchronously, so a real EAGAIN race can never
+// be reproduced through it — a flaky, timing-dependent test would be worse
+// than no test at all.
+// ---------------------------------------------------------------------------
+// 2026-07-31 further maintenance fix (R1, third-reviewer finding): readOnce()
+// used to be a WHOLE-READ mock (no args in, a complete string or a throw
+// out). readStdinCore now owns per-chunk accumulation, so every mock reader
+// below matches fs.readSync's real contract instead: `reader(buf)` fills a
+// prefix of `buf` and returns the byte count (0 == genuine EOF), or throws
+// having written nothing. The retry-count assertions are updated to include
+// the extra EOF call every success path now needs (accumulation cannot know
+// a chunk was the LAST one until a following call proves it via 0/EOF).
+test('lib.mjs: readStdinCore retries on EAGAIN and returns the real read once it succeeds (2026-07-31 maintenance fix, F1)', () => {
+  const payload = Buffer.from('{"tool_input":{"command":"git push"}}', 'utf8');
+  let calls = 0;
+  const reader = (buf) => {
+    calls++;
+    if (calls <= 3) {
+      const e = new Error('EAGAIN: resource temporarily unavailable, read');
+      e.code = 'EAGAIN';
+      throw e;
+    }
+    if (calls === 4) {
+      payload.copy(buf);
+      return payload.length;
+    }
+    return 0; // EOF on the call after the data was delivered
+  };
+  const result = readStdinCore(reader, { budgetMs: 1000, delayMs: 0 });
+  assert.equal(result, '{"tool_input":{"command":"git push"}}');
+  assert.equal(
+    calls,
+    5,
+    'must have retried exactly 3 times, then read the data on the 4th call, then confirmed EOF on the 5th',
+  );
+});
+
+test('lib.mjs: readStdinCore also retries on EWOULDBLOCK (the same transient condition under a different errno name) (2026-07-31 maintenance fix, F1)', () => {
+  let calls = 0;
+  const reader = (buf) => {
+    calls++;
+    if (calls === 1) {
+      const e = new Error('EWOULDBLOCK');
+      e.code = 'EWOULDBLOCK';
+      throw e;
+    }
+    if (calls === 2) {
+      buf.write('ok', 0, 'utf8');
+      return 2;
+    }
+    return 0; // EOF
+  };
+  assert.equal(readStdinCore(reader, { budgetMs: 1000, delayMs: 0 }), 'ok');
+  assert.equal(calls, 3);
+});
+
+test('lib.mjs: readStdinCore gives up and THROWS StdinReadFailure — never silently returns "" — once EAGAIN persists past the retry budget (2026-07-31 maintenance fix, F1)', () => {
+  let calls = 0;
+  const reader = () => {
+    calls++;
+    const e = new Error('EAGAIN: resource temporarily unavailable, read');
+    e.code = 'EAGAIN';
+    throw e;
+  };
+  assert.throws(
+    () => readStdinCore(reader, { budgetMs: 30, delayMs: 5 }),
+    StdinReadFailure,
+    'must throw StdinReadFailure, not silently return an empty string, once the retry budget is exhausted',
+  );
+  assert.ok(calls >= 2, 'must have retried at least once before giving up');
+});
+
+test('lib.mjs: readStdinCore does NOT retry a non-transient error — it fails fast, distinct from the EAGAIN retry path (2026-07-31 maintenance fix, F1)', () => {
+  let calls = 0;
+  const reader = () => {
+    calls++;
+    const e = new Error('EBADF: bad file descriptor, read');
+    e.code = 'EBADF';
+    throw e;
+  };
+  const start = Date.now();
+  assert.throws(() => readStdinCore(reader, { budgetMs: 1000, delayMs: 50 }), StdinReadFailure);
+  assert.equal(calls, 1, 'a non-transient error must not be retried at all');
+  assert.ok(
+    Date.now() - start < 500,
+    'a non-transient error must fail fast, not consume the (unrelated) retry budget',
+  );
+});
+
+test('lib.mjs: readStdinCore returns a genuine, error-free empty read as "" — a real EOF is not itself a failure (2026-07-31 maintenance fix, F1)', () => {
+  const reader = () => 0; // EOF on the very first call
+  assert.equal(readStdinCore(reader, { budgetMs: 1000, delayMs: 0 }), '');
+});
+
+// ---------------------------------------------------------------------------
+// R1 (HIGH, third-reviewer finding, 2026-07-31 further maintenance fix). The
+// retry loop used to re-run ONE whole-read call on every attempt. On a real
+// non-blocking pipe that is not idempotent: a call can genuinely consume
+// whatever bytes are currently available and THEN throw EAGAIN waiting for
+// more, and those already-consumed bytes are gone — a later successful call
+// only ever sees what arrives AFTER that point, and returns it as a clean,
+// unflagged success once EOF is reached. Reproduced live against a real FIFO
+// before this fix (a 66-byte JSON payload written as 57 bytes, an 80ms pause,
+// then the remaining 9 bytes) came back from the OLD loop as just the
+// trailing 9 bytes with no exception at all — silently truncated, invalid
+// JSON, which both extractCommand()/extractCwd() read as '', reproducing a
+// real allow() bypass end-to-end (verified with a real committed secret,
+// zero confirmation tokens, and a cwd mismatch between the hook process and
+// the lost tool-call cwd: both scan.mjs and gate.mjs allowed a `git push`).
+//
+// The mock below reproduces the same shape deterministically (a real chunked
+// read with a genuine mid-stream EAGAIN), per this file's own established
+// "inject a mock reader, never depend on real OS pipe timing" discipline.
+// ---------------------------------------------------------------------------
+test('lib.mjs: readStdinCore reconstructs the FULL payload across a chunked read with an EAGAIN in the middle — no truncation (2026-07-31 further maintenance fix, R1)', () => {
+  const payload = Buffer.from(
+    '{"tool_input":{"command":"git push origin main"},"pad":"xxxxxxxxxxxxxxxxxxxx"}',
+    'utf8',
+  );
+  const splitAt = 57; // matches the reviewer's reproduced byte split
+  assert.ok(splitAt < payload.length, 'the split point must land before the end of the payload');
+  let calls = 0;
+  const reader = (buf) => {
+    calls++;
+    if (calls === 1) {
+      // First chunk genuinely available right now, consumed and returned —
+      // exactly like the real pipe's first partial write.
+      payload.copy(buf, 0, 0, splitAt);
+      return splitAt;
+    }
+    if (calls === 2) {
+      // The rest hasn't arrived yet: a real EAGAIN, nothing consumed.
+      const e = new Error('EAGAIN: resource temporarily unavailable, read');
+      e.code = 'EAGAIN';
+      throw e;
+    }
+    if (calls === 3) {
+      // The writer's second chunk has now landed.
+      const rest = payload.subarray(splitAt);
+      rest.copy(buf, 0);
+      return rest.length;
+    }
+    return 0; // EOF
+  };
+  const result = readStdinCore(reader, { budgetMs: 1000, delayMs: 0 });
+  assert.equal(
+    result,
+    payload.toString('utf8'),
+    'must reconstruct the full payload, not just the bytes read after the EAGAIN (the truncation this fix closes)',
+  );
+  assert.equal(calls, 4, 'first chunk, one EAGAIN retry, second chunk, then EOF confirmation');
+});
+
+// End-to-end proof of R1 part 2 (defence in depth): even independent of HOW a
+// payload became truncated/corrupted, a NON-EMPTY stdin string that fails to
+// parse as JSON must now DENY rather than fall through the same path as
+// genuinely-empty stdin (isPushCapable('') fails closed on its own, but
+// extractCwd('') falling back to this process's own cwd can still resolve
+// the wrong studio root and allow() a command neither hook actually
+// inspected — exactly the bypass a lost/truncated read created). Uses
+// spawnSync's ordinary `input` option (a ordinary, fully-buffered write, no
+// FIFO/timing involved at all) specifically so this is deterministic: the
+// point of this test is the JSON-validity check itself, not how the bad
+// string arose.
+test('scan.mjs and gate.mjs: a non-empty but invalid-JSON stdin payload is DENIED, never allowed through as if it were "no command" (2026-07-31 further maintenance fix, R1 part 2)', () => {
+  const dir = mkTmp('gru-truncated-json-'); // deliberately no Dev-Memory/ anywhere near this tree
+  for (const script of ['scan.mjs', 'gate.mjs']) {
+    const r = spawnSync(NODE, [path.join(HERE, script)], {
+      cwd: dir,
+      input: 'not-valid-json{{{"tool_input"',
+      encoding: 'utf8',
+    });
+    let decision = null;
+    try {
+      decision = JSON.parse(r.stdout).hookSpecificOutput.permissionDecision;
+    } catch {
+      decision = null;
+    }
+    assert.equal(
+      decision,
+      'deny',
+      `${script} must DENY a non-empty, invalid-JSON stdin payload rather than allow it through: stdout=${r.stdout} stderr=${r.stderr}`,
+    );
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// End-to-end proof that scan.mjs and gate.mjs actually DENY (never allow)
+// when the real readStdin() cannot get a trustworthy read, using a
+// deterministic (non-timing-dependent) way to force a genuine read failure:
+// a directory file descriptor. Reading fd 0 via fs.readFileSync(0) when fd 0
+// is a directory throws a real, reproducible EISDIR — a non-transient error,
+// so readStdinCore fails fast rather than retrying, and both hooks' catch
+// blocks must turn that into a deny(), not an allow().
+test('scan.mjs and gate.mjs: a genuine (non-EAGAIN) stdin read failure is DENIED, never silently allowed through (2026-07-31 maintenance fix, F1)', () => {
+  const dir = mkTmp('gru-stdinfail-'); // deliberately no Dev-Memory/ anywhere near this tree
+  for (const script of ['scan.mjs', 'gate.mjs']) {
+    const dirFd = fs.openSync(dir, 'r');
+    let r;
+    try {
+      r = spawnSync(NODE, [path.join(HERE, script)], {
+        cwd: dir,
+        stdio: [dirFd, 'pipe', 'pipe'],
+        encoding: 'utf8',
+      });
+    } finally {
+      fs.closeSync(dirFd);
+    }
+    let decision = null;
+    try {
+      decision = JSON.parse(r.stdout).hookSpecificOutput.permissionDecision;
+    } catch {
+      decision = null;
+    }
+    assert.equal(
+      decision,
+      'deny',
+      `${script} must DENY on a genuine stdin read failure rather than silently allow: stdout=${r.stdout} stderr=${r.stderr}`,
+    );
+    assert.match(r.stdout, /stdin/i, `${script}'s deny reason should name the stdin read failure`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// F2/F3/F4 — traceability-check.mjs's readTier() (HIGH, cross-batch). Added
+// earlier the same day, but too lenient in three ways: it ran deEmphasise()
+// on the captured Tier value (authorised elsewhere in this file specifically
+// to TIGHTEN placeholder detection, never to loosen a Tier read), it kept
+// only the FIRST whitespace-split word of the value, and it had no awareness
+// that a **Tier:** line inside a fenced/indented example is not the real
+// recorded value.
+// ---------------------------------------------------------------------------
+test('traceability-check.mjs: a struck-through Tier value ("**Tier:** ~~Tiny~~") is NOT read as a clean Tiny (2026-07-31 maintenance fix, F2)', () => {
+  const dir = mkTmp('gru-tr-tier-struck-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# App\n\n**Tier:** ~~Tiny~~\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 1, `a struck-through Tier value must fail closed (BLOCKED), not be read as a clean Tiny: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('traceability-check.mjs: an ambiguous multi-word Tier value ("Tiny or Standard, still deciding") is NOT read as Tiny (2026-07-31 maintenance fix, F3)', () => {
+  const dir = mkTmp('gru-tr-tier-ambigwords-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'),
+    '# App\n\n**Tier:** Tiny or Standard, still deciding\n',
+  );
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 1, `a genuinely ambiguous, multi-word Tier value must fail closed: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('traceability-check.mjs: an unfilled Tier template ("Tiny / Standard / Complex") is NOT read as Tiny (2026-07-31 maintenance fix, F3)', () => {
+  const dir = mkTmp('gru-tr-tier-template-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'),
+    '# App\n\n**Tier:** Tiny / Standard / Complex\n',
+  );
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.code, 1, `an unfilled Tier template must fail closed, not default to its first word: ${r.stdout}`);
+  assert.equal(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('traceability-check.mjs: a **Tier:** line inside a fenced code example is ignored — the real value elsewhere on the page still reads correctly (2026-07-31 maintenance fix, F4)', () => {
+  const dir = mkTmp('gru-tr-tier-fenced-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const text =
+    '# A tiny one-off script\n\n**Tier:** Tiny\n\nExample of the required line format:\n\n' +
+    '```\n**Tier:** Complex\n```\n';
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), text);
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(
+    r.code,
+    0,
+    `the fenced decoy ("**Tier:** Complex") must not create a false conflict with the real, top-level "**Tier:** Tiny" line: ${r.stdout}`,
+  );
+  assert.notEqual(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('traceability-check.mjs: a **Tier:** line inside an indented example is ignored the same way as a fenced one (2026-07-31 maintenance fix, F4)', () => {
+  const dir = mkTmp('gru-tr-tier-indented-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const text = '# A tiny one-off script\n\n**Tier:** Tiny\n\nExample:\n\n    **Tier:** Complex\n';
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), text);
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(
+    r.code,
+    0,
+    `the indented decoy ("**Tier:** Complex") must not create a false conflict with the real, top-level "**Tier:** Tiny" line: ${r.stdout}`,
+  );
+  assert.notEqual(r.json.status, 'BLOCKED');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// F5 — scan.mjs's Dev-Memory-gitignore-not-excluded deny check (HIGH).
+// findStudioRoot() walks up the FILESYSTEM, which can find a Dev-Memory/
+// folder in a PARENT directory that is not even a git repository (or is a
+// different, unrelated repository), while the actual repo being pushed is a
+// separate, clean child repo with no Dev-Memory/ of its own. The check used
+// to run `git check-ignore` at that unrelated parent location and treat "no
+// repository there" (exit 128) the same as "genuinely not ignored" (exit
+// 1) — denying an entirely innocent push with advice that cannot possibly
+// fix the reported problem.
+// ---------------------------------------------------------------------------
+test('scan.mjs: an unrelated PARENT Dev-Memory/ with no .git of its own does not false-positive-deny a push from a separate, clean child repo (2026-07-31 maintenance fix, F5)', () => {
+  const parent = mkTmp('gru-scan-f5-parent-');
+  fs.mkdirSync(path.join(parent, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(parent, 'Dev-Memory', 'notes.md'), "someone else's private notes\n");
+  // Deliberately NO `git init` anywhere in `parent` — it is not a git
+  // repository at all, matching the reproduction in the fix's own comment.
+  const child = path.join(parent, 'child-repo');
+  fs.mkdirSync(child, { recursive: true });
+  initRepo(child);
+  fs.writeFileSync(path.join(child, 'README.md'), 'hello\n');
+  git(['add', '-A'], child);
+  git(['commit', '-qm', 'init'], child);
+  const r = runHook('scan.mjs', 'git push origin main', child);
+  assert.equal(
+    r.decision,
+    'allow',
+    `a clean push from a separate child repo must not be denied over an unrelated parent Dev-Memory/ that isn't even a git repository: ${r.stdout}`,
+  );
+  fs.rmSync(parent, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// F6 — scan.mjs's file-set scan (2026-07-31 further-pass audit, independent
+// reviewer finding). Unlike the Dev-Memory-gitignore check just above (F5's
+// neighbour, added the same day), the ORIGINAL secret-scanning file-set scan
+// — `git ls-files` and `git ls-files --others --exclude-standard`, both with
+// no pathspec — is cwd-scoped: git's own default for "no pathspec" is "files
+// under the current directory", not "files in the repository". When the push
+// command's actual working directory (REPO) is a subdirectory of the repo
+// rather than its root, both calls went blind to every file OUTSIDE that
+// subdirectory — tracked or untracked, secret-shaped or not — despite those
+// files still being part of what the push ships. Fixed by anchoring both
+// calls to the `:/` pathspec (git's own "top of the work tree regardless of
+// cwd" magic pathspec), which restores full-repo coverage while git still
+// reports each path relative to cwd (with a leading `../` where needed), so
+// the existing `path.join(REPO, f)` file-reading logic needs no other change.
+// ---------------------------------------------------------------------------
+test('scan.mjs: a secret-shaped untracked file OUTSIDE the invoking cwd is caught when the push runs from a subdirectory of the repo (2026-07-31 further-pass maintenance fix, F6)', () => {
+  const dir = mkTmp('gru-scan-f6-subdir-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+  fs.writeFileSync(path.join(dir, 'sub', 'app.js'), 'console.log("ok");\n');
+  git(['add', '-A'], dir);
+  git(['commit', '-qm', 'init'], dir);
+  // Untracked, sitting OUTSIDE the subdirectory the push will run from.
+  const akia = 'AKIA' + 'IOSFODNN7EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'other-untracked-secret.txt'), 'aws_access_key_id = "' + akia + '"\n');
+  const r = runHook('scan.mjs', 'git push origin main', path.join(dir, 'sub'));
+  assert.equal(
+    r.decision,
+    'deny',
+    `a secret-shaped untracked file outside the push's cwd must still be caught: ${r.stdout}`,
+  );
+  assert.match(r.stdout, /other-untracked-secret\.txt/, 'the deny reason must name the actual file');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Companion case: a TRACKED file outside the subdirectory (caught by the
+// bare `git ls-files` call, the other half of the same fix) must also still
+// be caught, not only the untracked half above.
+//
+// This needs care to actually isolate the ls-files bug rather than being
+// confounded by the unpushed-commit history scan (scanUnpushedHistory),
+// which walks `--branches --tags HEAD --not --remotes` regardless of cwd and
+// would independently catch a secret that is still part of any NOT-YET-
+// pushed commit — masking the ls-files bug entirely (confirmed live: an
+// earlier draft of this test that simply committed the secret and pushed to
+// a bare 'origin' URL that was never actually configured as a remote passed
+// even with the bug still present, for exactly this reason). To isolate the
+// working-tree/index component specifically, the secret commit is pushed to
+// a REAL bare remote first, so it is no longer "unpushed" (the history scan
+// finds nothing new) while the file remains tracked and present in the
+// working tree — the only thing that can still catch it on a later push is
+// the tracked-file-set (`git ls-files`) component this fix targets.
+test('scan.mjs: a secret-shaped TRACKED file OUTSIDE the invoking cwd, already committed and already on the remote, is still caught by the tracked-file-set scan when the push runs from a subdirectory (2026-07-31 further-pass maintenance fix, F6)', () => {
+  const bareRemote = mkTmp('gru-scan-f6-remote-');
+  fs.rmSync(bareRemote, RM_OPTS);
+  git(['init', '-q', '--bare', bareRemote], path.dirname(bareRemote));
+  const dir = mkTmp('gru-scan-f6-subdir-tracked-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'other'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
+  initRepo(dir);
+  const akia = 'AKIA' + 'IOSFODNN8EXAMPLE';
+  fs.writeFileSync(path.join(dir, 'other', 'creds.txt'), 'aws_access_key_id = "' + akia + '"\n');
+  fs.writeFileSync(path.join(dir, 'sub', 'app.js'), 'console.log("ok");\n');
+  git(['add', '-A'], dir);
+  git(['commit', '-qm', 'init'], dir);
+  git(['remote', 'add', 'origin', bareRemote], dir);
+  const pushed = git(['push', 'origin', 'main'], dir);
+  assert.equal(pushed.status, 0, `setup: the secret commit must actually land on the bare remote first: ${pushed.stderr}`);
+  // Sanity check: with the commit now on the remote, the unpushed-commit
+  // history scan (the confound above) genuinely has nothing to find.
+  const nothingUnpushed = git(['log', '--branches', '--tags', 'HEAD', '--not', '--remotes'], dir);
+  assert.equal(nothingUnpushed.stdout.trim(), '', 'setup: there must be no unpushed commits left, or this test would not isolate the ls-files bug');
+  const r = runHook('scan.mjs', 'git push origin main', path.join(dir, 'sub'));
+  assert.equal(
+    r.decision,
+    'deny',
+    `a secret-shaped TRACKED file outside the push's cwd must still be caught by the working-tree/index scan alone: ${r.stdout}`,
+  );
+  assert.match(r.stdout, /other\/creds\.txt|other\\creds\.txt/, 'the deny reason must name the actual file');
+  fs.rmSync(dir, RM_OPTS);
+  fs.rmSync(bareRemote, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// F7 — lib.mjs's deEmphasise() (2026-07-31 further-pass audit, independent
+// reviewer finding). The paired-delimiter strips (strikethrough, HTML
+// bold/strong, straight quotes) used a greedy `[\s\S]*` inner capture. The
+// outer `^...$` anchors already prevent this from firing on a cell where the
+// decorated span isn't immediately followed by the end of the string (see
+// the "and updated" case below, unchanged either way) — but a cell that
+// legitimately ends right after a SECOND, separately-decorated span still
+// matched as one span, corrupting it (e.g. `<b>README</b> and
+// <b>CONTRIBUTING</b>` came out as `README</b> and <b>CONTRIBUTING`). Fixed
+// by excluding the delimiter's own character from the inner capture, which
+// makes a genuine multi-span cell FAIL to match (left untouched) instead of
+// matching wrongly.
+//
+// Tested directly against deEmphasise() with exact string equality, not
+// indirectly through quality-gate.mjs's clean/BLOCKED status: PLACEHOLDER_RE
+// only matches short, exact placeholder tokens (tbd/n-a/etc — see its
+// anchored definition in lib.mjs), so a mangled multi-span string like
+// `README</b> and <b>CONTRIBUTING` still fails PLACEHOLDER_RE and quality-
+// gate.mjs still reports "clean" identically whether the string is mangled
+// or intact — an end-to-end quality-gate.mjs test would not actually
+// distinguish the buggy behaviour from the fixed one (the same trap F8's two
+// pre-existing tests fell into). Exact output comparison is the only
+// assertion that genuinely regresses on the old greedy pattern.
+// ---------------------------------------------------------------------------
+test('lib.mjs: deEmphasise() leaves a cell with TWO separately HTML-decorated spans completely unchanged, rather than corrupting it into dangling tags (2026-07-31 further-pass maintenance fix, F7)', () => {
+  const input = '<b>README</b> and <b>CONTRIBUTING</b>';
+  assert.equal(deEmphasise(input), input, 'a genuine two-span HTML-decorated cell must be left untouched, not partially stripped into mismatched tags');
+});
+
+test('lib.mjs: deEmphasise() leaves a cell with TWO separately strikethrough-decorated spans completely unchanged (2026-07-31 further-pass maintenance fix, F7)', () => {
+  const input = '~~a~~ and ~~b~~';
+  assert.equal(deEmphasise(input), input, 'a genuine two-span strikethrough cell must be left untouched, not corrupted');
+});
+
+test('lib.mjs: deEmphasise() leaves a cell with TWO separately quote-decorated spans completely unchanged (2026-07-31 further-pass maintenance fix, F7)', () => {
+  const input = '"a" and "b"';
+  assert.equal(deEmphasise(input), input, 'a genuine two-span quoted cell must be left untouched, not corrupted');
+});
+
+// Control, matching the task brief's own claim: a decorated span that is NOT
+// immediately followed by the end of the string was already safe before this
+// fix, purely from the outer ^...$ anchor — confirm that still holds after F7.
+test('lib.mjs: deEmphasise() still leaves an HTML-decorated span alone when trailing text follows it, unaffected by the F7 change (control case)', () => {
+  const input = '<b>README</b> and <b>CONTRIBUTING</b> updated';
+  assert.equal(deEmphasise(input), input, 'a cell not ending immediately after a closing tag must be left untouched, exactly as before F7');
+});
+
+// The four already-required single-decoration cases must still strip
+// correctly after tightening the inner capture groups.
+test('lib.mjs: deEmphasise() still strips each of the four required single-decoration forms after the F7 tightening (2026-07-31 further-pass maintenance fix, F7)', () => {
+  assert.equal(deEmphasise('~~tbd~~'), 'tbd');
+  assert.equal(deEmphasise('<b>tbd</b>'), 'tbd');
+  assert.equal(deEmphasise('<strong>tbd</strong>'), 'tbd');
+  assert.equal(deEmphasise('"tbd"'), 'tbd');
 });
 

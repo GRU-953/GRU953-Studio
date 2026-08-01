@@ -1,0 +1,119 @@
+name: Publish
+
+# Triggered by pushing a version tag (v5.0.1, v5.1.0, etc.) — never by an
+# ordinary push to main, so publishing a new version is always a deliberate,
+# separate act from merging code.
+#
+# Three independent jobs, each gated behind its own GitHub Environment
+# (publish-npm-cli / publish-npm-antigravity / publish-vscode-marketplace).
+# An Environment with required reviewers configured (Settings > Environments
+# in the GitHub UI, or the API — this workflow file only names the
+# environment; the actual reviewer requirement is repo configuration, not
+# something expressible here) makes GitHub pause each job and wait for a
+# human to click Approve before it runs — three separate approvals for one
+# tag push, matching the plan's own rule that "each first publish gets its
+# own explicit confirmation at the time, never bundled into a general
+# approval." Until those three Environments are created with a reviewer set,
+# every job here has an effectively empty approval gate and pushing a tag
+# would trigger a real publish attempt with no pause — so do not push a
+# version tag until the three Environments exist. See CONTRIBUTING.md's
+# publishing section for the exact one-time setup steps.
+#
+# Uses npm's Trusted Publishing (generally available since npm CLI 11.5.1):
+# the workflow proves its identity to npm via GitHub's own OIDC token
+# (`permissions: id-token: write`, job-scoped only — never repository-wide,
+# and never added to ci.yml or codeql.yml), so no npm access token is ever
+# created, stored as a secret, or capable of leaking. This requires the
+# package (and this repo) to already be public, which both already are, and
+# requires the npm package to be configured on npmjs.com to trust this exact
+# workflow file and repo before the first publish — done once, on npmjs.com,
+# by whoever owns the @gru953 npm account.
+#
+# The VS Code Marketplace side still needs a real secret (VSCE_PAT) — the
+# Marketplace has no OIDC/trusted-publishing equivalent yet. See
+# CONTRIBUTING.md for how that token is created and added.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish-npm-cli:
+    name: Publish @gru953/studio-cli to npm
+    runs-on: ubuntu-latest
+    environment: publish-npm-cli
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Ensure npm is new enough for Trusted Publishing (11.5.1+)
+        run: npm install -g npm@latest
+      - name: Install dependencies
+        working-directory: clients/cli
+        run: npm ci
+      - name: Run the same tests and lint CI already requires
+        working-directory: clients/cli
+        run: |
+          npm test
+          npm run lint
+      - name: Publish
+        working-directory: clients/cli
+        run: npm publish --access public
+
+  publish-npm-antigravity:
+    name: Publish @gru953/studio-antigravity to npm
+    runs-on: ubuntu-latest
+    environment: publish-npm-antigravity
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Ensure npm is new enough for Trusted Publishing (11.5.1+)
+        run: npm install -g npm@latest
+      - name: Install dependencies
+        working-directory: clients/antigravity
+        run: npm ci
+      - name: Run the same tests and lint CI already requires
+        working-directory: clients/antigravity
+        run: |
+          npm test
+          npm run lint
+      - name: Publish
+        working-directory: clients/antigravity
+        run: npm publish --access public
+
+  publish-vscode-marketplace:
+    name: Publish the VS Code extension to the Marketplace
+    runs-on: ubuntu-latest
+    environment: publish-vscode-marketplace
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        working-directory: clients/vscode
+        run: npm ci
+      - name: Run the same compile and lint CI already requires
+        working-directory: clients/vscode
+        run: |
+          npm run compile
+          npm run lint
+      - name: Package and publish
+        working-directory: clients/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --pat "$VSCE_PAT"

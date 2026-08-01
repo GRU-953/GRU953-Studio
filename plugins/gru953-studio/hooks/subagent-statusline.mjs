@@ -45,7 +45,17 @@ function shortRoleName(name) {
   return ROLES.has(bare) ? bare : null;
 }
 
-const raw = readStdin();
+// 2026-07-31 maintenance fix (F1): readStdin() now THROWS (StdinReadFailure)
+// instead of returning '' when it could not reliably read stdin (see
+// lib.mjs). This hook is not a security gate — the safe fallback here is
+// exactly what a genuine empty read already did: emit nothing and leave
+// every row on the platform's default rendering.
+let raw;
+try {
+  raw = readStdin();
+} catch {
+  raw = '';
+}
 let input;
 try {
   input = JSON.parse(raw);

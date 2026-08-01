@@ -1,5 +1,76 @@
 # Changelog
 
+## 5.1.0 — 2026-08-01
+
+The first release built from a real, end-to-end functional test — not a
+static read of the code. A minor version, not a patch: the publishing
+pipeline below is new functionality, even though most of this release is
+bug fixes.
+
+**The studio was watched building two real projects from scratch**, for the
+first time ever: a Tiny-Tier command-line tool and a Standard-Tier app,
+including a genuinely blind, cold-restart resume test (a fresh agent, given
+only a file path and no other context, correctly picked up exactly where
+work had stopped). This found real defects — most were caught immediately;
+a few were only caught by a third review pass specifically attacking the
+first round's own fixes, which is exactly why that discipline exists.
+
+- **Two of the studio's own push-safety checks could be silently bypassed**
+  by an ordinary timing race: if a hook's process started reading its input
+  before its caller had finished writing it, the read could return a
+  silently truncated message that looked like a normal, valid "no command"
+  read. `scan.mjs` (the secret scanner) and `gate.mjs` (the publish/go-public
+  confirmation gate) both now retry a genuinely interrupted read by
+  accumulating what was already received, and refuse to proceed at all
+  rather than guess, if a read still can't be completed.
+- `scan.mjs`'s file scan went blind to secrets outside the current
+  directory when a push command ran from a subdirectory of a project —
+  found once, and the fix for it introduced a narrower version of the exact
+  same gap in a different call site, found by a later review pass and
+  fixed properly this time.
+- A new check: `Dev-Memory/` — a project's private working notes, which
+  this project's own rules say must never be shared — is now mechanically
+  blocked from being pushed if it isn't excluded by `.gitignore`. Previously
+  nothing checked this at all; it was a rule with no enforcement.
+- Tiny-Tier projects no longer need a `REQUIREMENTS.md` file they were never
+  supposed to need — `traceability-check.mjs` now reads a project's
+  recorded Tier (a new, exact `**Tier:** Tiny`/`Standard`/`Complex` line in
+  `OBJECTIVE.md`) and only relaxes for a genuinely unambiguous Tiny. Two
+  follow-up rounds closed real gaps in that same fix: a struck-through or
+  multi-word Tier value could switch the check off, and a Tier line shown
+  only as an example inside a code block was being read as the real one.
+- The bold-text tolerance from 5.0.1 didn't reach every form of decoration —
+  a placeholder written as `~~tbd~~`, `<b>tbd</b>`, or `"tbd"` still slipped
+  past four gates. Closed, the same way 5.0.1 closed it for `**tbd**`.
+- The two npm command-line packages (`@gru953/studio-cli`,
+  `@gru953/studio-antigravity`) **are now genuinely published on npm** —
+  this file and the README have advertised them for months, but neither
+  had ever actually been shipped. A new release pipeline
+  (`.github/workflows/publish.yml`) publishes both, plus the VS Code
+  extension to its Marketplace, whenever a version tag is pushed — each of
+  the three publish steps needs its own separate human approval before it
+  runs, using npm's Trusted Publishing so no long-lived npm token is ever
+  stored as a secret.
+- `clients/antigravity` had no real way to be installed or run as a
+  package (no `bin`, no `files` field). Fixed, and given a README stating
+  plainly that — like the CLI — it currently only works from inside a full
+  checkout, not as a standalone install, since it needs the rest of this
+  repo's own files to function.
+- Node 20 reached its own end of life in April 2026 and was still being
+  tested against; dropped, and the project's own default moved to Node 24.
+  Two GitHub Actions pins were a version behind or mislabelled; corrected.
+- A handful of smaller fixes: a missing dependency manifest and
+  `.gitignore` convention for new Python projects; a caveat that Swift's
+  tests need the full Xcode app, not just Command Line Tools; a lint gap
+  that meant two client packages' own source was never actually checked in
+  CI; small consistency and documentation fixes throughout.
+- **One target not met, recorded honestly rather than quietly dropped:** the
+  test suite's own speed was measured at ~51 seconds against a 33-second
+  goal. The real cause — nearly 400 tests, most launching a separate small
+  program — would need rewriting the whole suite to fix, which is out of
+  proportion to a speed goal for safety-critical test coverage. Measured
+  and recorded; not forced.
+
 ## 5.0.1 — 2026-07-30
 
 Bug fixes only — no roster, Tier, or workflow changes. This release is also

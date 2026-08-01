@@ -71,6 +71,28 @@ user to approve **both** the warframe and the phased plan together. This gate is
   against (a build-vs-warframe parity check at Review), so the app that ships
   matches what the user agreed to.
 
+**Caveat — a technical-constraint change can silently be a design change too
+(2026-07-31 maintenance finding, added after a live test session found this
+exact gap):** a change to the *implementation approach* — programming
+language, framework, platform — is not by itself a design change, and does
+not automatically need re-approval. But check every such change for whether
+it ALSO changes what the user will actually see or interact with, because it
+can, even when the reason for the change was purely technical rather than a
+deliberate design choice. The case that prompted this rule: a project
+switched from Swift to Python mid-build because of a genuine
+environment/tooling constraint that forced the switch; the decision record
+for it discussed only programming-language logic, and the switch quietly
+took the interface with it too — the graphical mock-up the owner had
+approved at this gate shipped as a command-line tool instead — and that
+interface change was never checked for, and never re-presented through this
+gate at all. If an implementation-approach change turns out to also change
+the approved warframe's user-facing shape (which screens/commands exist, how
+the user interacts with them, GUI vs CLI, etc.), that part IS a design
+change like any other, and it must go back through this same hard approval
+gate — the "Change requested → revise the warframe/plan and re-present" step
+above — before Build continues. It is never absorbed silently just because
+the underlying reason was a technical constraint rather than a design choice.
+
 ## Who applies this
 
 - **ux-designer** leads the warframe; a **builder** implements the HTML.

@@ -134,6 +134,20 @@ Record the three answers and the resulting Tier in `OBJECTIVE.md` so it's
 auditable later, not just asserted. Show the user the Tier and what it
 means in plain English, and let them raise or lower it at any time.
 
+**The resulting Tier must be recorded as one exact, on-disk line** —
+`**Tier:** Tiny`, `**Tier:** Standard`, or `**Tier:** Complex` — the same
+bold-label convention `focus-guard/SKILL.md` already uses for `FOCUS.md`'s
+four fields (`**Objective:**`, `**Active phase:**`, etc.), so a project's
+Tier is something a script can read, not only something prose asserts
+(2026-07-31 maintenance fix: nothing previously specified an exact line or
+heading for this, which is why `hooks/traceability-check.mjs` had no way to
+tell a genuine Tiny-Tier project — which never needs a `REQUIREMENTS.md`
+file, per `focus-guard/SKILL.md`'s Tier-scaling section — from one that had
+simply lost the file; it now reads exactly this line). If the Tier changes
+later, rewrite this line in place rather than appending a second one — a
+project with two different `**Tier:**` lines is read as ambiguous and fails
+closed the same as a missing one.
+
 **Q4: Where will people use your app? (2026-07-26 audit finding 14 — this
 question did not previously exist anywhere, so `architect`'s platform → stack
 map had no real input to route from; nobody was ever actually asked.)**
