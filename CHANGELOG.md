@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.1.1 — 2026-08-01
+
+One fix, found by checking 5.1.0's own release rather than trusting it.
+
+- `clients/vscode/package.json`'s `publisher` field still said `GRU-953`
+  (the GitHub account handle) rather than `GRU953` (the actual registered
+  VS Code Marketplace publisher — a distinction this project's own
+  trademark rules already draw). The 5.1.0 release's automated publish
+  step reported success — "Published GRU-953.gru953-studio v5.1.0" — but
+  no such publisher exists on the Marketplace, and nothing ever actually
+  appeared there under either name. Independently checked directly against
+  the Marketplace (not the tool's own report) before concluding this;
+  confirmed fixed the same way afterwards. The npm packages published
+  correctly in 5.1.0 and are unaffected.
+
 ## 5.1.0 — 2026-08-01
 
 The first release built from a real, end-to-end functional test — not a

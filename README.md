@@ -67,7 +67,15 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 5.1.0
+### Latest version: 5.1.1
+
+Version 5.1.1 fixes one thing from 5.1.0's own release: the VS Code
+extension's publisher name in its manifest still said `GRU-953` (the
+GitHub account handle) instead of `GRU953` (the actual registered
+Marketplace publisher), so its first publish attempt silently went
+nowhere — reported as a success by the tool that ran it, but nothing
+ever appeared on the Marketplace. Caught by checking the real result
+rather than trusting that report, and fixed here.
 
 Version 5.1.0 is the first release built from a genuine, end-to-end functional
 test: the studio was watched building two real projects from scratch — an
