@@ -51,7 +51,7 @@ published safely to your own GitHub account, under your name.<br>
 
 ## What is GRU953-Studio?
 
-GRU953-Studio is a **Universal Agentic Studio**. You can talk to it in plain English inside **Claude Code**, **Google Antigravity** (SDK & IDE), or project it into any major 2026 AI agentic platform (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI). You tell it what
+You can talk to GRU953-Studio in plain English inside **Claude Code**, **Google Antigravity** (SDK & IDE), or project it into any major 2026 AI agentic platform (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI). You tell it what
 you want — "a habit tracker for my phone", "a page that lists my recipes" — it
 asks a few multiple-choice questions to understand exactly what you mean, and then
 a team of behind-the-scenes AI specialists **designs it, shows you a clickable
@@ -67,15 +67,17 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 5.1.1
+### Latest version: 5.1.2
 
-Version 5.1.1 fixes one thing from 5.1.0's own release: the VS Code
-extension's publisher name in its manifest still said `GRU-953` (the
-GitHub account handle) instead of `GRU953` (the actual registered
-Marketplace publisher), so its first publish attempt silently went
-nowhere — reported as a success by the tool that ran it, but nothing
-ever appeared on the Marketplace. Caught by checking the real result
-rather than trusting that report, and fixed here.
+Version 5.1.2 gives the VS Code extension an icon for the first time (the
+Soaring Bird mark) and removes an old marketing phrase, "Universal Agentic
+Studio", that had crept into the product's own displayed name in several
+places — the extension's Marketplace listing, its command title, and every
+console message the CLI, the Google Antigravity bridge and the update
+checker print. Every one of those now says "GRU953-Studio" instead. Also
+fixes the publish pipeline itself: re-pushing a tag (as re-signing a release
+does) used to make it fail loudly trying to republish an already-live
+version; it now skips cleanly instead.
 
 Version 5.1.0 is the first release built from a genuine, end-to-end functional
 test: the studio was watched building two real projects from scratch — an

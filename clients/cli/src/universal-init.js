@@ -80,7 +80,7 @@ function writeManagedBlock(fullPath, content, commentStyle) {
 }
 
 function initializeUniversalRules(projectRoot = process.cwd()) {
-    console.log('Initializing Universal Agentic Studio rules for all platforms...');
+    console.log('Initializing GRU953-Studio rules for all platforms...');
 
     const targets = [
         { file: '.cursorrules', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
@@ -105,7 +105,7 @@ function initializeUniversalRules(projectRoot = process.cwd()) {
         console.log(`[${result}] ${target.file}`);
     }
 
-    console.log('Universal Agentic Studio initialization complete.');
+    console.log('GRU953-Studio initialization complete.');
 }
 
 module.exports = {

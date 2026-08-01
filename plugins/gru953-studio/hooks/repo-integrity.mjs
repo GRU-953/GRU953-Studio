@@ -717,7 +717,7 @@ async function checkHostRuleFiles() {
   // is reserved for the final JSON report (like every other hook in this
   // repo, e.g. gate.mjs's own "stdout is reserved for the decision JSON").
   // Confirmed by execution: without silencing it, stdout starts with
-  // "Initializing Universal Agentic Studio rules..." and every subsequent
+  // "Initializing GRU953-Studio rules..." and every subsequent
   // JSON.parse(stdout) call — including this project's own test harness —
   // fails on invalid JSON. Restored in the finally block regardless of
   // outcome, so a thrown error can never leave console.log silenced for the

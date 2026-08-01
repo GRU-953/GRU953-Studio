@@ -1,5 +1,37 @@
 # Changelog
 
+## 5.1.2 — 2026-08-01
+
+A branding-consistency and reliability release — no behaviour change to how
+the studio itself works.
+
+- The VS Code extension had no icon at all. It now ships the official
+  Soaring Bird mark (`clients/vscode/icon.png`, 1024×1024, from
+  `docs/brand/`), wired in via `package.json`'s new `icon` field. The same
+  mark was also added to the project wiki (`Home.md`, the sidebar), and a
+  1280×640 image was prepared for the repository's GitHub social-preview
+  setting (that setting has no public API, so it still needs a one-time
+  manual upload — see the repo's Settings → General → Social preview).
+- The phrase "Universal Agentic Studio" — an old marketing tagline — had
+  crept into the product's own displayed *name* rather than staying
+  descriptive text: the VS Code extension's Marketplace listing
+  (`displayName`) and command title, the CLI's and Google Antigravity
+  bridge's own startup/status console output, and the plugin marketplace
+  descriptions. All of it now says "GRU953-Studio" — the one name this
+  project's own `governance/TRADEMARKS.md` names as correct — wherever it
+  stands in as the product's name. Descriptive prose (README, the
+  `universal-platform-integration` skill) was trimmed rather than rewritten
+  to keep saying the same thing without the phrase.
+- `.github/workflows/publish.yml` failed loudly the one time a v5.1.1 tag
+  was deleted and recreated (to add a GPG signature after the fact — see
+  the git history): the recreated tag re-triggered the workflow, which
+  tried to republish a version already live on npm and the Marketplace, and
+  every job failed with "already exists". The real packages were always
+  fine; only the workflow run showed red. Each job now checks first and
+  skips cleanly instead of failing when its version is already published —
+  so recreating a tag (for signing, or any other reason) can never produce
+  a false failure like this again.
+
 ## 5.1.1 — 2026-08-01
 
 One fix, found by checking 5.1.0's own release rather than trusting it.
@@ -198,7 +230,7 @@ individual finding, with the exact file and line it was found at.
 
 ## 4.5.0 — 2026-07-26
 
-A **feature release** transforming GRU953-Studio from a Claude Code plugin into a **Universal Agentic Studio** deployable across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI).
+A **feature release** taking GRU953-Studio beyond a Claude Code plugin, deployable across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI).
 
 **Universal Platform Support:**
 - Added `skills/universal-platform-integration/SKILL.md` (the 34th skill), establishing the Universal Agentic Protocol.

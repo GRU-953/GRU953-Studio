@@ -7,7 +7,7 @@ description: The Universal Agentic Protocol for running GRU953-Studio across all
 
 ## Overview
 
-GRU953-Studio is a **Universal Agentic Studio**. While originally built as a Claude Code plugin, it natively supports the full 2026 agentic coding ecosystem through this protocol.
+While originally built as a Claude Code plugin, GRU953-Studio natively supports the full 2026 agentic coding ecosystem through this protocol.
 
 This skill governs how the studio coordinator (`project-lead`) and the AI developer (`ai-developer`) project the studio's architecture into other platforms, and how the studio operates when hosted inside them.
 

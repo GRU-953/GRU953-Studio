@@ -10,7 +10,7 @@
 
 const { printStatus } = require('./status');
 
-console.log('Universal Agentic Studio CLI initializing...');
+console.log('GRU953-Studio CLI initializing...');
 
 const command = process.argv[2] || 'help';
 

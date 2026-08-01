@@ -1,8 +1,9 @@
 {
   "name": "gru953-studio",
-  "displayName": "Universal Agentic Studio",
-  "description": "GRU953-Studio - Universal Agentic Studio for VS Code, Cursor, and Windsurf",
-  "version": "5.1.1",
+  "displayName": "GRU953-Studio",
+  "description": "GRU953-Studio for VS Code, Cursor, and Windsurf",
+  "icon": "icon.png",
+  "version": "5.1.2",
   "publisher": "GRU953",
   "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
   "license": "SEE LICENSE IN LICENSE",
@@ -23,7 +24,7 @@
     "commands": [
       {
         "command": "gru953-studio.status",
-        "title": "Universal Agentic Studio: Status"
+        "title": "GRU953-Studio: Status"
       }
     ]
   },

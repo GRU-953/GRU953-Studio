@@ -62,7 +62,20 @@ jobs:
         run: |
           npm test
           npm run lint
+      - name: Check if this version is already published
+        id: check
+        working-directory: clients/cli
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "$PKG@$VER" version >/dev/null 2>&1; then
+            echo "::notice::$PKG@$VER is already on npm — a tag was likely re-pushed (e.g. after re-signing). Skipping, nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish
+        if: steps.check.outputs.exists == 'false'
         working-directory: clients/cli
         run: npm publish --access public
 
@@ -89,7 +102,20 @@ jobs:
         run: |
           npm test
           npm run lint
+      - name: Check if this version is already published
+        id: check
+        working-directory: clients/antigravity
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "$PKG@$VER" version >/dev/null 2>&1; then
+            echo "::notice::$PKG@$VER is already on npm — a tag was likely re-pushed (e.g. after re-signing). Skipping, nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish
+        if: steps.check.outputs.exists == 'false'
         working-directory: clients/antigravity
         run: npm publish --access public
 
@@ -112,7 +138,30 @@ jobs:
         run: |
           npm run compile
           npm run lint
+      - name: Check if this version is already published
+        id: check
+        working-directory: clients/vscode
+        run: |
+          PUBLISHER=$(node -p "require('./package.json').publisher")
+          NAME=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          RESPONSE=$(curl -s -X POST "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json;api-version=3.0-preview.1" \
+            -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$PUBLISHER.$NAME\"}]}],\"flags\":914}")
+          LATEST=$(node -e "
+            const d = JSON.parse(process.argv[1]);
+            const ext = d.results?.[0]?.extensions?.[0];
+            console.log(ext?.versions?.[0]?.version || '');
+          " "$RESPONSE")
+          if [ "$LATEST" = "$VER" ]; then
+            echo "::notice::$PUBLISHER.$NAME v$VER is already on the Marketplace — a tag was likely re-pushed (e.g. after re-signing). Skipping, nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Package and publish
+        if: steps.check.outputs.exists == 'false'
         working-directory: clients/vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}

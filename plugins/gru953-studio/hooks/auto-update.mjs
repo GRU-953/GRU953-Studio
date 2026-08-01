@@ -84,7 +84,7 @@ try {
 } catch (e) {
   if (force) {
     console.error(
-      `Universal Agentic Studio: could not record the update-check time at ${checkFile} (${formatFsError(e)}).`,
+      `GRU953-Studio: could not record the update-check time at ${checkFile} (${formatFsError(e)}).`,
     );
   }
 }
@@ -121,7 +121,7 @@ if (isGitRepo) {
     );
 
     if (Number.isFinite(behindCount) && behindCount > 0) {
-      console.log('Universal Agentic Studio: Update available. Applying now...');
+      console.log('GRU953-Studio: Update available. Applying now...');
       // 2026-07-26, found during a further pass. Two distinct bugs here,
       // and the first fix attempt at this only caught the first one.
       //
@@ -179,7 +179,7 @@ if (isGitRepo) {
           .map((l) => l.trim())
           .filter(Boolean);
         if (conflicted.length > 0) {
-          console.error('Universal Agentic Studio: the update did NOT apply cleanly.');
+          console.error('GRU953-Studio: the update did NOT apply cleanly.');
           console.error(
             `Your own uncommitted changes conflicted with the update in: ${conflicted.join(', ')}`,
           );
@@ -191,14 +191,14 @@ if (isGitRepo) {
           );
           process.exitCode = 1;
         } else {
-          console.log('Universal Agentic Studio: update applied successfully.');
+          console.log('GRU953-Studio: update applied successfully.');
           if (pullOutput.trim()) console.log(pullOutput.trim());
         }
       } catch (pullError) {
         const rebaseInProgress =
           fs.existsSync(path.join(studioRoot, '.git', 'rebase-merge')) ||
           fs.existsSync(path.join(studioRoot, '.git', 'rebase-apply'));
-        console.error('Universal Agentic Studio: the update did NOT apply cleanly.');
+        console.error('GRU953-Studio: the update did NOT apply cleanly.');
         if (rebaseInProgress) {
           console.error(
             'A rebase is still in progress and some files may contain unresolved conflict markers.',
@@ -212,7 +212,7 @@ if (isGitRepo) {
         process.exitCode = 1;
       }
     } else if (force) {
-      console.log('Universal Agentic Studio is up to date.');
+      console.log('GRU953-Studio is up to date.');
     }
   } catch (e) {
     // Network/remote errors reaching `git remote update` or `git status`

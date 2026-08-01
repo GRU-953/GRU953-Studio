@@ -4369,12 +4369,12 @@ test('repo-integrity.mjs INV15: a host-rule file deleted from the repo root whil
 // This is what actually matters: proving the check produces PURE JSON on
 // stdout even though it runs universal-init.js's own console.log-heavy
 // generator internally — reproduced against the pre-fix code before fixing
-// it: stdout began with "Initializing Universal Agentic Studio rules..."
+// it: stdout began with "Initializing GRU953-Studio rules..."
 // and every JSON.parse(stdout) caller, including this test harness's own
 // runRepoIntegrity() helper above, failed on invalid JSON.
 test('repo-integrity.mjs INV15: running the generator internally does not pollute stdout with its own console.log output', () => {
   const r = spawnSync(NODE, [path.join(HERE, 'repo-integrity.mjs'), REPO_ROOT], { encoding: 'utf8' });
-  assert.doesNotMatch(r.stdout, /Initializing Universal Agentic Studio rules/, `stdout must be pure JSON, not generator log noise: ${r.stdout.slice(0, 200)}`);
+  assert.doesNotMatch(r.stdout, /Initializing GRU953-Studio rules/, `stdout must be pure JSON, not generator log noise: ${r.stdout.slice(0, 200)}`);
   assert.doesNotThrow(() => JSON.parse(r.stdout), 'stdout must parse as JSON with no leading noise');
 });
 

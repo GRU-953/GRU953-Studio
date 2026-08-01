@@ -1,6 +1,6 @@
 # GRU953-Studio for VS Code
 
-A thin bridge that adds a **Universal Agentic Studio: Status** command to
+A thin bridge that adds a **GRU953-Studio: Status** command to
 VS Code (and any VS Code-compatible editor, such as Cursor or Windsurf),
 so you can check a GRU953-Studio project's progress without leaving the
 editor.

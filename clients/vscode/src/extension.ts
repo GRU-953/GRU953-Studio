@@ -42,17 +42,17 @@ import * as path from 'node:path';
 // clients/cli/src/status.js), so this button is no longer connected to a
 // package that doesn't exist or a command that lies about doing something.
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Universal Agentic Studio extension is now active!');
+    console.log('GRU953-Studio extension is now active!');
 
     const statusCommand = vscode.commands.registerCommand('gru953-studio.status', () => {
         const cliEntry = path.join(__dirname, '..', '..', '..', 'clients', 'cli', 'src', 'index.js');
         if (!fs.existsSync(cliEntry)) {
             vscode.window.showErrorMessage(
-                'Universal Agentic Studio: Status needs a full GRU953-Studio checkout — this command only works when the extension is running from inside the repository (e.g. cloned for development), not from a normally-installed, packaged extension.',
+                'GRU953-Studio: Status needs a full GRU953-Studio checkout — this command only works when the extension is running from inside the repository (e.g. cloned for development), not from a normally-installed, packaged extension.',
             );
             return;
         }
-        vscode.window.showInformationMessage('Universal Agentic Studio: Fetching status...');
+        vscode.window.showInformationMessage('GRU953-Studio: Fetching status...');
         const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
         terminal.show();
         terminal.sendText(`node "${cliEntry}" status`);

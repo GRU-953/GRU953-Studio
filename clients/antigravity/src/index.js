@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { linkOrCopy } = require('./link-or-copy');
 
-console.log('Initializing Universal Agentic Studio for Google Antigravity...');
+console.log('Initializing GRU953-Studio for Google Antigravity...');
 
 const workspaceDir = process.cwd();
 const agentsDir = path.join(workspaceDir, '.agents');
@@ -57,9 +57,9 @@ if (!fs.existsSync(devMemoryDir)) {
 }
 
 if (skillsReady) {
-    console.log('Universal Agentic Studio for Google Antigravity initialized successfully!');
+    console.log('GRU953-Studio for Google Antigravity initialized successfully!');
     console.log('You can now run agents with Google Antigravity that utilize the studio protocol.');
 } else {
-    console.error('Universal Agentic Studio for Google Antigravity did NOT initialize successfully — see the errors above.');
+    console.error('GRU953-Studio for Google Antigravity did NOT initialize successfully — see the errors above.');
     process.exitCode = 1;
 }
