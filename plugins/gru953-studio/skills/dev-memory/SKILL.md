@@ -261,6 +261,18 @@ survive — is enough to state what's done and what's next. A project that
 only resumes from the soon-to-be-wiped local copy has not actually proven it
 resumes on the web (2026-07-19, Phase 5).
 
+**2026-08-01, run for real.** This whole rehearsal — not just its logic —
+was actually performed: a scratch project's Dev-Memory was pushed to an
+orphan `memory/cloud-persist` branch, a genuinely separate clone (a fresh
+`git clone` with no local Dev-Memory at all, standing in for a recycled
+container) restored `Dev-Memory/` from that branch alone via `git checkout
+origin/memory/cloud-persist -- Dev-Memory`, and a blind subagent — given
+only the project's file path and the "read before acting" sequence above,
+no other context — correctly reported the Tier, the active task, the exact
+`▶ RESUME HERE` task ID, and the last session-log entry, matching the
+original container's state exactly. This closes the one part of the
+mechanism that had only ever been described, never demonstrated.
+
 ## Local-only, and never shipped (with one opt-in cloud exception)
 
 Dev-Memory lives on the user's own machine by default. It is never part of the
