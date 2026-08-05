@@ -1,23 +1,71 @@
-# Root-anchored (leading slash) ON PURPOSE: this ignores a project's private
-# working-memory folder if one ever appears at the repo root, but must NOT
-# match the plugin's own `plugins/gru953-studio/skills/dev-memory/` skill.
-# Without the leading slash, `Dev-Memory/` matched that skill folder
-# case-insensitively on macOS (git core.ignorecase=true), so the skill was
-# silently never committed — the published plugin shipped with 5 skills, not
-# 6, and CI failed on a clean Linux checkout. 2026-07-11 fix.
-/Dev-Memory/
+```
+# Dependencies
 node_modules/
-.DS_Store
-*.log
-.env
-.env.*
-plugins/*.zip
-.last-update-check
+package-lock.json
 
-# 2026-07-26 audit finding 34: clients/vscode/out/ is compiled output
-# (`tsc -p .`), not source — it was committed by mistake and had drifted
-# from the source that produces it more than once already. Untracked here;
-# `npm run compile` regenerates it locally, and the CI step that builds the
-# extension does the same before packaging.
-/clients/vscode/out/
-*.vsix
+# Environment
+.env
+.env.local
+.env.*
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Editors
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py~
+*.pyc~
+*.pyo~
+*.pyd~
+*.py~
+
+# Build outputs
+dist/
+build/
+target/
+out/
+bin/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+coverage/
+.pytest_cache/
+.mypy_cache/
+
+# Compression
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```
