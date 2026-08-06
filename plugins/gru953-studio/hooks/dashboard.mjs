@@ -36,7 +36,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, formatFsError, isDirectory, SEPARATOR_ROW_RE } from './lib.mjs';
+import {
+  splitPipeCells,
+  stripBom,
+  formatFsError,
+  isDirectory,
+  SEPARATOR_ROW_RE,
+  deEmphasise,
+} from './lib.mjs';
 
 // Status groups in the order a person cares about them, each with a stable CSS
 // class. Anything not recognised falls into "other" so it is shown, never
@@ -70,7 +77,12 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 function groupOf(status) {
-  const g = GROUPS.find((x) => x.match.test(status || ''));
+  // 2026-08-05 further-pass audit fix: a decorated status VALUE ("**done**",
+  // `done`, _done_) never matched the GROUPS keyword regexes and silently fell
+  // into "other" — the same value-cell gap the sibling gates closed (e.g.
+  // verify-progress.mjs's isDoneValue, audit finding 3). De-emphasise before
+  // classifying, so the CSS class and the count pill match what a reader sees.
+  const g = GROUPS.find((x) => x.match.test(deEmphasise(String(status || ''))));
   return g ? g.key : 'other';
 }
 
@@ -196,7 +208,12 @@ function parseFirstTable(text) {
 }
 
 function renderBoard(projectName, docs, table, boardText) {
-  const statusIdx = table.headers.findIndex((h) => /^status$/i.test(h));
+  // 2026-08-05 further-pass audit fix: the status HEADER was matched raw, so a
+  // decorated "**Status**"/`Status` header made statusIdx === -1 and every row
+  // fell into "other" — the sibling gates already de-emphasise headers the
+  // same way (quality-gate.mjs's find(), audit finding 3). De-emphasise before
+  // matching so the board actually groups by the task's real status.
+  const statusIdx = table.headers.findIndex((h) => /^status$/i.test(deEmphasise(h)));
   const counts = {};
   for (const g of GROUPS) counts[g.key] = 0;
   counts.other = 0;

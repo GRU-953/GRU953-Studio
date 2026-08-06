@@ -1331,6 +1331,25 @@ test('repo-integrity.mjs INV10: a comma-separated matcher is recognised as valid
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08-05 further-pass audit finding (verified by execution): a single-sided
+// wrapper like "(Bash|PowerShell|Monitor" (a stray "(", no closing ")") still
+// named all three tools after the strip step, so INV10 reported the
+// publish-safety hooks covered when the matcher was a malformed config error.
+// An unbalanced matcher must fail closed (BLOCKED), never count as coverage.
+test('repo-integrity.mjs INV10: an unbalanced matcher wrapper is not accepted as coverage (2026-08-05 further-pass finding)', () => {
+  for (const matcher of ['(Bash|PowerShell|Monitor', '[Bash|PowerShell|Monitor', 'Bash|PowerShell|Monitor)']) {
+    const dir = mkTmp('gru-repointeg-inv10-unbalanced-');
+    copyRepoTo(dir);
+    const hooksJsonPath = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'hooks.json');
+    const hj = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'));
+    hj.hooks.PreToolUse[0].matcher = matcher;
+    fs.writeFileSync(hooksJsonPath, JSON.stringify(hj, null, 2));
+    const r = runRepoIntegrity(dir);
+    assert.equal(r.json && r.json.status, 'BLOCKED', `an unbalanced matcher "${matcher}" must not count as coverage, got: ${JSON.stringify(r.json)}`);
+    fs.rmSync(dir, RM_OPTS);
+  }
+});
+
 test('roster-check.mjs: decision-file "latest" selection sorts by actual date, not filename text (2026-07-12 MAJOR fix)', () => {
   // Decision files are named YYYY-MM-DD-*.md; the old code assumed lexical
   // sort was chronological, which breaks the moment any file uses a
@@ -1441,6 +1460,69 @@ test('verify-progress.mjs: a real multi-clause "done" row (exit 0 not the last c
   );
   const r = spawnSync(NODE, [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
   assert.equal(r.status, 0, `a real multi-clause done row must not be a false-block regression: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass audit finding (verified by execution): VERIFIED_RE's
+// `.*` between the arrow and "exit 0" swallowed a NEGATION, so a done row
+// reading "verified: npm test → NOT exit 0" matched VERIFIED_RE while
+// CONTRADICTION_RE (which only looks for non-zero exits) never fired — a
+// documented proof of the OPPOSITE of done, accepted clean. The negation guard
+// in VERIFIED_RE must block it.
+test('verify-progress.mjs: "verified: ... → NOT exit 0" is not accepted as done (2026-08-05 further-pass finding)', () => {
+  const dir = mkTmp('gru-verifyprog-notexit0-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| Task | Status | Evidence |',
+      '| --- | --- | --- |',
+      '| T1 | done | verified: npm test → NOT exit 0 (2026-07-25) |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync(NODE, [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, `"NOT exit 0" must not count as verified: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass audit finding (verified by execution): a bare present
+// failure narration "the current build fails" (no "now"/"still"/"currently")
+// never matched CONTRADICTION_RE's old alternatives, so a done row honestly
+// saying its build currently fails was still accepted. The added
+// `current(?:ly)? <noun?> fails?` alternative must block it.
+test('verify-progress.mjs: "the current build fails" is a contradiction, not accepted as done (2026-08-05 further-pass finding)', () => {
+  const dir = mkTmp('gru-verifyprog-curbuild-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| Task | Status | Evidence |',
+      '| --- | --- | --- |',
+      '| T1 | done | verified: npm test → exit 0 (2026-07-25); the current build fails |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync(NODE, [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 1, `a row admitting the current build fails must not count as done: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass audit fix guard (false-BLOCK protection): the
+// negation lookbehind added to CONTRADICTION_RE must not flip a genuinely
+// positive claim into a contradiction. "the suite never fails" / "not
+// currently failing" stay clean while "currently failing" still blocks.
+test('verify-progress.mjs: a positive "the suite never fails" claim is not a contradiction (2026-08-05 guard)', () => {
+  const dir = mkTmp('gru-verifyprog-neverfails-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    [
+      '| Task | Status | Evidence |',
+      '| --- | --- | --- |',
+      '| T1 | done | verified: npm test → exit 0; the suite never fails on CI |',
+    ].join('\n') + '\n'
+  );
+  const r = spawnSync(NODE, [path.join(HERE, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(r.status, 0, `a "never fails" claim must stay clean: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -1934,6 +2016,21 @@ test('quality-gate.mjs: a row that says it is currently failing invalidates its 
   writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Automated tests | pass | passed on old build, now fails with exit 1 |'));
   const r = runScript('quality-gate.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED', 'a self-contradicting row must not count as a pass');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass audit finding (verified by execution): CONTRADICTION_RE
+// ran against the WHOLE raw row, so a legitimately named item "Regression tests"
+// with a clean pass was wrongly BLOCKED (the old `regress(?:ed|ion)` matched
+// the bare noun). The evidence-cell scoping + regression-noun lookahead must
+// keep it green while a real "a regression was spotted" in the EVIDENCE still
+// blocks (covered by the existing verify-progress/traceability regression
+// tests).
+test('quality-gate.mjs: an item legitimately named "Regression tests" is not a contradiction (2026-08-05 further-pass finding)', () => {
+  const dir = mkTmp('gru-qg-regressname-');
+  writeGate(dir, FULL_DOD.replace('| Automated tests | pass | `npm test` -> exit 0 (2026-07-19) |', '| Regression tests | pass | `npm test` -> exit 0 |'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a pass row named "Regression tests" must not be blocked: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -2837,6 +2934,26 @@ test('dashboard.mjs: renders a self-contained, injection-safe HTML page', () => 
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08-05 further-pass fix guard (verified by reading, same value-cell gap
+// the sibling gates closed): a decorated "**Status**" header and a decorated
+// "**done**" value used to make statusIdx === -1 / groupOf() fall to "other",
+// so the board's row CSS class and count pills did not match what a reader
+// sees. De-emphasised both before classifying.
+test('dashboard.mjs: a decorated "**Status**" header and "**done**" value still group correctly (2026-08-05 fix)', () => {
+  const dir = mkTmp('gru-db-emphasis-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), '# My App\nbrief\n');
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'),
+    '| Task | **Status** | Notes |\n| :-- | :-- | :-- |\n| T1 | **done** | verified: ok |\n| T2 | doing | in progress |\n');
+  const r = runScript('dashboard.mjs', dir);
+  assert.equal(r.json.status, 'written', r.stdout);
+  const html = fs.readFileSync(path.join(dir, 'Dev-Memory', 'dashboard.html'), 'utf8');
+  assert.match(html, /row-done/, 'the "**done**" row must be grouped as done, not other');
+  assert.match(html, /row-doing/, 'the "doing" row must still be grouped as doing');
+  assert.match(html, /class="pill done"/, 'a "done" count pill must be rendered');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // 2026-07-26 audit finding 26. `docs.objective.match(/^#\s+(.+)$/m)` looks
 // for the project name in OBJECTIVE.md's first heading. A leading UTF-8
 // byte-order mark sits before the `#`, breaking that match — verified by
@@ -3506,6 +3623,32 @@ test('content-check.mjs: an asset with no rights note is blocked', () => {
   const r = runScript('content-check.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED');
   assert.ok(r.json.problems.some((p) => /rights/i.test(p)));
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass audit finding (verified by execution): the old
+// `text\b`/`ui[- ]?text\b`/`in-app[- ]?text\b` alternatives matched a
+// hyphenated MEDIA TYPE — "text-to-speech audio" starts with "text" and a
+// hyphen is a word boundary — so a TTS AUDIO asset was treated as text-only
+// and silently skipped the transcript requirement. The negation/dash guard in
+// TEXT_ONLY_RE must require a transcript for it.
+test('content-check.mjs: a "text-to-speech" audio asset still needs a transcript (2026-08-05 further-pass finding)', () => {
+  const dir = mkTmp('gru-cc-tts-');
+  writeContent(dir, CONTENT_HEADER + '| voice.mp3 | text-to-speech audio | ElevenLabs | approved | licensed for project use | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'BLOCKED');
+  assert.ok(r.json.problems.some((p) => /alt-text|caption|transcript/i.test(p)), 'a TTS audio asset must require alt-text/transcript');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass fix guard: the same guard must not reject a
+// genuinely text Medium — "ui text" and "text (English)" still count as
+// text-only (no alt needed) even though "text-to-speech" does not.
+test('content-check.mjs: a genuine "ui text" Medium still needs no alt-text (2026-08-05 guard)', () => {
+  const dir = mkTmp('gru-cc-uitext-');
+  writeContent(dir, CONTENT_HEADER + '| copy.md | ui text | written | approved | original | — |\n');
+  const r = runScript('content-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a genuine ui text Medium must stay clean: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -4378,6 +4521,29 @@ test('repo-integrity.mjs INV15: running the generator internally does not pollut
   assert.doesNotThrow(() => JSON.parse(r.stdout), 'stdout must parse as JSON with no leading noise');
 });
 
+// 2026-08-05 further-pass audit finding (verified by execution): checkHostRuleFiles()
+// had only a `finally`, so a throw from initializeUniversalRules() propagated
+// up as an unhandled rejection — a raw Node stack trace on stderr and NO JSON
+// on stdout at all, losing the whole structured report. The throw is now caught
+// and surfaced as one ordinary BLOCKED problem.
+test('repo-integrity.mjs INV15: a generator throw still yields structured BLOCKED JSON, never a raw crash (2026-08-05 further-pass finding)', () => {
+  const dir = mkTmp('gru-repointeg-inv15-throw-');
+  copyRepoTo(dir);
+  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
+  const src = fs.readFileSync(gen, 'utf8');
+  const braceIdx = src.indexOf('{', src.indexOf('function initializeUniversalRules'));
+  fs.writeFileSync(gen, src.slice(0, braceIdx + 1) + ' if (true) { throw new Error("boom from generator"); } ' + src.slice(braceIdx + 1), 'utf8');
+  const r = runRepoIntegrity(dir);
+  assert.doesNotThrow(() => JSON.parse(r.stdout), `stdout must be parseable JSON, got stderr: ${r.stderr}`);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a generator throw must surface as BLOCKED, got: ${r.stdout.slice(0, 200)}`);
+  assert.ok(
+    r.json.problems.some((p) => p.includes('boom from generator')),
+    `the thrown error message must appear in the problems list: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  assert.equal(r.stderr.trim(), '', `stderr must stay empty (no raw stack trace), got: ${r.stderr}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // ---------------------------------------------------------------------------
 // docs-consistency.mjs — 2026-07-26 audit stage 5. A new sibling to
 // repo-integrity.mjs (see its own header comment for why not an extension
@@ -4419,6 +4585,36 @@ test('docs-consistency.mjs: a CRLF-encoded checkout is still clean (2026-08 R2 P
   assert.match(sample, /\r\n/, 'the fixture must genuinely be CRLF-encoded');
   const r = runDocsConsistency(dir);
   assert.equal(r.json && r.json.status, 'clean', `a CRLF checkout must be judged identically to an LF one: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass audit finding (verified by execution): a flat
+// "+1 for the split-away newline" in getHistoricalSectionRanges drifted the
+// line offsets SHORT by one for every CRLF line, so on a CRLF checkout a LIVE
+// wrong count placed just before a "## vX.Y.Z" historical section had its
+// index mis-classified as historical and was skipped — the same fixture BLOCKS
+// on LF and returned clean on CRLF. The offsets are now computed from the raw
+// text's real newline positions; this discriminating fixture must block on
+// BOTH encodings. (The CRLF-clean test above misses it because it places no
+// claim inside the drift zone.)
+test('docs-consistency.mjs: a live wrong count immediately before a historical section is caught on CRLF too (2026-08-05 further-pass finding)', () => {
+  const dir = mkTmp('gru-docsconsist-crlfdrift-');
+  copyRepoTo(dir);
+  toCrlf(dir);
+  const readmePath = path.join(dir, 'README.md');
+  const original = fs.readFileSync(readmePath, 'utf8');
+  const bad = original +
+    '\nBringing the skill count to 9999, a live stale claim on the line before a historical section.\n' +
+    '## v9.9.9 (2026-07-27)\n' +
+    'Back then the skill count was 35, which was accurate then.\n';
+  fs.writeFileSync(readmePath, bad.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'), 'utf8');
+  assert.match(fs.readFileSync(readmePath, 'utf8'), /\r\n/, 'the mutated README must be CRLF-encoded');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a live wrong count must be caught on CRLF, got: ${r.stdout}`);
+  assert.ok(
+    r.json && r.json.problems && r.json.problems.some((p) => /skill count to 9999/.test(p)),
+    `the stale-count problem must be the one reported: ${r.stdout}`,
+  );
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -4909,6 +5105,40 @@ test('licence-scan.mjs: a lockfileVersion 2+ (npm 7+) lockfile is still scanned 
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08-05 further-pass audit finding (verified by execution): mergeNodeFindings()
+// returned the node_modules result whenever the LOCKFILE scan was unchecked,
+// discarding its `checked:false` + "Failed to parse lockfile" note — so a
+// corrupt package-lock.json next to a real node_modules reported CLEAN (the
+// same corrupt lockfile WITHOUT node_modules correctly reported INCOMPLETE).
+// node_modules is an install artefact that is routinely absent or stale, so it
+// can never paper over a lockfile we failed to read: the merged npm result
+// must stay notChecked → INCOMPLETE.
+test('licence-scan.mjs: a corrupt lockfile next to node_modules is INCOMPLETE, not false-clean (2026-08-05 further-pass finding)', () => {
+  const dir = mkTmp('gru-lic-corruptnm-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"x","version":"1.0.0"}');
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), 'this is { not valid json', 'utf8');
+  fs.mkdirSync(path.join(dir, 'node_modules', 'ok-pkg'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'node_modules', 'ok-pkg', 'package.json'), '{"name":"ok-pkg","license":"MIT"}');
+  const r = runScript('licence-scan.mjs', dir);
+  assert.notEqual(r.json.status, 'clean', `a corrupt lockfile must not be reported clean: ${r.stdout}`);
+  assert.ok(r.json.notChecked.some((n) => n.ecosystem === 'npm'), 'npm must appear in notChecked (INCOMPLETE), not be silently skipped');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass guard: a genuinely clean npm tree (valid v2 lockfile
+// + empty node_modules) must STILL be clean after the mergeNodeFindings change.
+test('licence-scan.mjs: a valid v2 lockfile with node_modules present is still clean (2026-08-05 guard)', () => {
+  const dir = mkTmp('gru-lic-validnm-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"x","version":"1.0.0"}');
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), JSON.stringify({
+    name: 'x', version: '1.0.0', lockfileVersion: 3, packages: { '': { name: 'x', version: '1.0.0' } },
+  }));
+  fs.mkdirSync(path.join(dir, 'node_modules'), { recursive: true });
+  const r = runScript('licence-scan.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a valid lockfile + node_modules must stay clean: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('gate.mjs: gh api create-from-template also needs the go-public token (2026-07-21 Round 3 fix)', () => {
   const dir = mkTmp('gru-gate-gen-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
@@ -4948,6 +5178,19 @@ test('traceability-check.mjs: a Verification cell admitting "a regression was sp
   writeReq(dir, REQ_HEADER + '| R1 | Users can log in | 1 | T1 | npm test green, but a regression was spotted in nightly build | met |\n', PROG_HEADER + '| T1 | login | done | verified: ok |\n');
   const r = runScript('traceability-check.mjs', dir);
   assert.equal(r.json.status, 'BLOCKED', `an admitted regression must not count as met: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-05 further-pass audit fix guard (same class as the quality-gate
+// finding): CONTRADICTION_RE used to run against the whole raw row, so a
+// requirement whose NAME contains "regression" ("Fix regression in billing")
+// was wrongly BLOCKED. The verification-cell scoping must keep it clean while
+// the real contradiction in the cell above still blocks.
+test('traceability-check.mjs: a requirement named "Fix regression in billing" is not a contradiction (2026-08-05 guard)', () => {
+  const dir = mkTmp('gru-trace-regressname-');
+  writeReq(dir, REQ_HEADER + '| R1 | Fix regression in billing | 1 | T1 | verified: npm test -> exit 0 | met |\n', PROG_HEADER + '| T1 | login | done | verified: ok |\n');
+  const r = runScript('traceability-check.mjs', dir);
+  assert.equal(r.json.status, 'clean', `a requirement whose NAME contains "regression" must not be blocked: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 

@@ -396,8 +396,29 @@ export function tokenConfirmedWithinTtl(text, expected) {
 // Moved here as the ONE shared pattern all three now use, so this specific
 // three-way drift — the exact failure mode a background review agent was
 // asked to hunt for — cannot recur.
+//
+// 2026-08-05 further-pass audit fix. Three hardening changes, each reproduced
+// by execution before being made:
+//  1. A negative lookbehind for not/never/no makes a contradiction phrase that
+//     is itself NEGATED stop counting ("not currently failing", "the suite
+//     never fails", "no exit code 1" are all positive claims — never blocked).
+//     The guard sits right before the contradiction word, so "the suite never
+//     fails" stays clean while "currently failing" still matches.
+//  2. `current <noun> fails` (adverb/adjective + noun + plain "fails") was
+//     never covered — "currently fails" and "the current build fails" both
+//     slipped through the old `currently broken|failing` alternative. Added
+//     `current(?:ly)? <noun?> fails?` (noun optional, with its own negation
+//     guard so "current test never fails" is not blocked).
+//  3. `regress(?:ed|ion)` matched the bare noun anywhere, so a legitimately
+//     named row or task "Regression tests"/"regression suite" was wrongly
+//     BLOCKED while a real "a regression was spotted" went through the same
+//     path. The noun form now only counts when followed by a failure verb
+//     ("regression was spotted/found/seen/..."); the verb `regressed` still
+//     counts alone. Combined with scoping CONTRADICTION_RE to the evidence/
+//     verification CELL (not the whole row) in quality-gate.mjs and
+//     traceability-check.mjs, a label word can never trip the gate again.
 export const CONTRADICTION_RE =
-  /\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion))\b/i;
+  /(?<!\b(?:not|never|no)[ \t]+)\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|current(?:ly)?[ \t]+(?:[^,;|()]{0,40}?[ \t]+)?(?<!\b(?:not|never|no)[ \t]+)fails?|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion(?=[ \t]+(?:was|is|has|had|got|been|spotted|found|seen|detected|introduced|observed|occurred|appeared))))\b/i;
 
 // ---- shared markdown-table patterns (fixes a six-way drift) ------------------
 // 2026-07-29 maintenance fix (audit finding 4). SEPARATOR_ROW_RE (the `| :-- |

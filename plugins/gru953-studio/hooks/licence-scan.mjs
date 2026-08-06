@@ -194,8 +194,27 @@ function scanNodeFromLockfile(root, lockFilePath) {
 }
 
 function mergeNodeFindings(a, b) {
-  if (!a.checked) return b;
-  if (!b.checked) return a;
+  // 2026-08-05 further-pass audit fix (found by execution): this used to
+  // `return a` whenever the LOCKFILE scan was unchecked, discarding its
+  // `checked: false` + "Failed to parse lockfile" note entirely — so a
+  // corrupt package-lock.json next to a real node_modules reported clean
+  // (reproduced by execution), while the same corrupt lockfile WITHOUT
+  // node_modules correctly reported INCOMPLETE. node_modules is an
+  // install-artefact that is routinely not present/committed and can itself
+  // be stale, so it can never paper over a lockfile we failed to read. Any
+  // unchecked side now keeps the whole npm result honest: still-notChecked
+  // (INCOMPLETE), still carrying the checked side's findings (so a blocked
+  // package is still BLOCKED — the caller checks blocked before notChecked)
+  // and the unchecked side's note surfaced to the person reading the report.
+  if (!a.checked || !b.checked) {
+    const note = [a.note, b.note].filter(Boolean).join('; ');
+    return {
+      ecosystem: 'npm',
+      checked: false,
+      findings: a.checked ? a.findings : b.findings,
+      note,
+    };
+  }
   const merged = new Map();
   for (const f of [...a.findings, ...b.findings]) {
     const existing = merged.get(f.package);

@@ -1,5 +1,62 @@
 # Changelog
 
+## 5.1.3 — 2026-08-06
+
+A further-pass audit of the publish-safety hooks, in the repo's own "reproduce
+by execution before you call it a bug" discipline. Every finding below was
+reproduced against the pre-fix code and confirmed fixed the same way; each fix
+carries a regression test in `hooks.test.mjs` (391 → 404 tests, all green, and
+all six CI gates stay green).
+
+- `verify-progress.mjs`: a done row reading `verified: npm test → NOT exit 0`
+  was accepted clean — VERIFIED_RE's `.*` swallowed the negation, and
+  CONTRADICTION_RE only looks for non-zero exits. The `verified: … → exit 0`
+  form now refuses a `not`/`never` between the arrow and the exit code.
+- `lib.mjs` `CONTRADICTION_RE`: three hardening changes. (1) A bare present
+  failure "the current build fails" (no now/still/currently adverb) never
+  matched, so a done row honestly saying its build currently fails still
+  passed — added `current(?:ly)? <noun?> fails?`. (2) The pattern now ignores
+  a contradiction phrase that is itself negated ("not currently failing",
+  "the suite never fails", "no exit code 1" are positive claims and stay
+  clean). (3) `regress(?:ed|ion)` matched the bare noun anywhere, so a row or
+  task legitimately named "Regression tests" was wrongly BLOCKED; the noun
+  form now only counts when followed by a failure verb ("regression was
+  spotted/found/…").
+- `quality-gate.mjs` and `traceability-check.mjs`: CONTRADICTION_RE ran
+  against the whole raw row, so a label word could trip the gate; both now
+  scope the contradiction check to the evidence / verification cell, where a
+  contradiction claim actually lives.
+- `content-check.mjs`: `TEXT_ONLY_RE`'s `text\b` matched a hyphenated media
+  type — "text-to-speech audio" was treated as text and silently skipped the
+  alt-text/transcript requirement. The pattern now rejects a dash or a spaced
+  "to" right after the text token, so a TTS audio asset correctly needs a
+  transcript.
+- `docs-consistency.mjs`: the historical-section range offsets were computed
+  with a flat "+1 for the split-away newline", drifting one byte short per
+  line on a CRLF checkout — after enough CRLF lines a live wrong count placed
+  just before a `## vX.Y.Z` section was mis-classified as historical and
+  skipped (same fixture BLOCKS on LF, clean on CRLF). Offsets now come from
+  the raw text's real newline positions.
+- `repo-integrity.mjs`: (1) INV10 — a single-sided wrapper like
+  `(Bash|PowerShell|Monitor` (stray "(", no closing ")") still named all three
+  tools after stripping, so a malformed matcher reported the publish-safety
+  hooks covered; unbalanced wrappers now contribute no alternatives and fail
+  closed. (2) INV15 — `checkHostRuleFiles()` had only a `finally`, so a throw
+  from the host-rules generator crashed with a raw stack trace and no JSON at
+  all; it is now caught and surfaced as one ordinary BLOCKED problem.
+- `licence-scan.mjs`: `mergeNodeFindings()` returned the node_modules result
+  whenever the lockfile scan was unchecked, discarding its "Failed to parse
+  lockfile" note — a corrupt package-lock.json next to a real node_modules
+  reported CLEAN while the same corrupt lockfile without node_modules was
+  honestly INCOMPLETE. node_modules (an install artefact, often absent or
+  stale) can no longer paper over a lockfile we failed to read: the merged
+  result stays notChecked → INCOMPLETE.
+- `dashboard.mjs`: a decorated `**Status**` header or `**done**` value made
+  the board group every row into "other" (statusIdx -1 / groupOf fallback) —
+  the same value-cell gap the sibling gates already close. Both are
+  de-emphasised before classifying, so the row CSS class and count pills match
+  what a reader sees.
+
 ## 5.1.2 — 2026-08-01
 
 A branding-consistency and reliability release — no behaviour change to how

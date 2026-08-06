@@ -394,6 +394,18 @@ if (rosterText === null) {
 // this check, exactly the same class of total, silent bypass Round 7 found
 // and fixed for PowerShell. Added the same INV10 coverage check for it.
 function matcherAlternatives(matcher) {
+  // 2026-08-05 further-pass audit fix (found by execution): a single-sided
+  // wrapper like "(Bash|PowerShell|Monitor" (a stray "(", no closing ")")
+  // still named all three tools after the strip below, so INV10 reported the
+  // publish-safety hooks covered when the matcher was a malformed config error
+  // and would never match at runtime. Fail closed: an unbalanced "("/"[" —
+  // i.e. a matcher that is not the documented `|`/`,`-separated exact-string
+  // list with optional wrapping — contributes NO alternatives at all, so it
+  // can never satisfy a coverage claim. Balanced "(Bash|PowerShell)" and
+  // "^(Bash|PowerShell)$" still work exactly as before.
+  const opens = (matcher.match(/[(\[]/g) || []).length;
+  const closes = (matcher.match(/[)\]]/g) || []).length;
+  if (opens !== closes) return [];
   return matcher.split(/[|,]/).map((part) =>
     part
       .trim()
@@ -770,6 +782,18 @@ async function checkHostRuleFiles() {
         );
       }
     }
+  } catch (e) {
+    // 2026-08-05 further-pass audit fix (found by execution): this block had
+    // only a `finally`, so a throw from initializeUniversalRules() (or
+    // anything inside the try) propagated up through `await checkHostRuleFiles()`
+    // as an unhandled rejection — a raw Node stack trace on stderr and NO
+    // JSON on stdout at all, losing the entire structured report this script
+    // exists to produce. The throw is now caught and surfaced as one ordinary
+    // BLOCKED problem like every other integrity failure, so a broken
+    // generator can never silently turn this gate into a raw crash.
+    fail(
+      `INV15: could not run clients/cli/src/universal-init.js's initializeUniversalRules to verify the root AI-host rule files: ${e && e.message ? e.message : String(e)}`,
+    );
   } finally {
     console.log = realConsoleLog;
     fs.rmSync(tmpDir, { recursive: true, force: true });

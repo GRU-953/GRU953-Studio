@@ -97,7 +97,7 @@ function main() {
   // that is the row's FINAL claim counts — a stale claim followed by a
   // later "but now fails" no longer matches.
   const VERIFIED_RE =
-    /verified:.*(→|->).*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
+    /verified:.*(→|->)(?:(?!\b(?:not|never)\b).)*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
   // 2026-07-25: Structured JSON evidence format (machine-parseable)
   // Format: {"taskId":"T3","criterion":"...","command":"...","exitCode":0,"stdout":"...","stderr":"","durationMs":1240,"artifacts":[],"timestamp":"2026-07-25T10:30:00Z","verifier":"tester"}
   // 2026-07-26 audit finding 1 (MAJOR false-clean, found by execution). This

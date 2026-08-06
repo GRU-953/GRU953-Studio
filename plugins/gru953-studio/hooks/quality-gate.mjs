@@ -258,7 +258,14 @@ function main() {
     // Blocking is driven purely by problems pushed here, so a dimension whose
     // matching rows are all clean records nothing and does not block.
     for (const r of matches) {
-      if (CONTRADICTION_RE.test(r.raw)) {
+      // 2026-08-05 further-pass audit fix (found by execution): CONTRADICTION_RE
+      // used to run against the WHOLE raw row, so the word "Regression" in an
+      // item/label cell ("| Regression tests | pass | `npm test` -> exit 0 |")
+      // tripped the `regress(?:ed|ion)` alternative and wrongly BLOCKED a
+      // legitimately green row. A contradiction claim lives in the EVIDENCE
+      // cell, never in the item's name — scope the check to that cell, the
+      // same cell the placeholder/evidence checks below already read.
+      if (CONTRADICTION_RE.test(r.evidence)) {
         problems.push(
           `${dim.label}: a row is marked passing but its own text says it is currently failing/unverified → "${r.raw}"`,
         );

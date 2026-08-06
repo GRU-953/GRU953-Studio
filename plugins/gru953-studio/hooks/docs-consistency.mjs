@@ -145,10 +145,23 @@ function getHistoricalSectionRanges(text) {
   const ranges = [];
   const lines = text.split(/\r?\n/);
   const lineStartOffsets = [];
+  // 2026-08-05 further-pass audit fix (found by execution): this used to add
+  // `line.length + 1` per line, assuming the split-away newline was exactly
+  // one char. On a CRLF checkout `split(/\r?\n/)` removes TWO chars yet
+  // line.length counts neither, so every line drifted the offsets short by
+  // one — after enough CRLF lines a live wrong count placed just before a
+  // "## vX.Y.Z" historical section had its index classified as historical
+  // and was skipped, a false-green (same fixture BLOCKS on LF, clean on
+  // CRLF; reproduced by execution both ways). Compute each line's start from
+  // the raw text's actual newline positions instead, so LF and CRLF are
+  // handled identically and cannot drift.
   let offset = 0;
-  for (const line of lines) {
-    lineStartOffsets.push(offset);
-    offset += line.length + 1; // +1 for the split-away newline
+  lineStartOffsets.push(0);
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\n') {
+      offset = i + 1;
+      lineStartOffsets.push(offset);
+    }
   }
   let openStart = null;
   for (let i = 0; i < lines.length; i++) {

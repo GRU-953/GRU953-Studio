@@ -43,8 +43,17 @@ const APPROVED_RE = /^\s*(approved|yes|pass(ed)?|ok|done|signed[ -]?off|human|fi
 // unless its Medium is explicitly, recognisably TEXT (in English or
 // Bangla) — ambiguous or foreign-language values default to requiring it,
 // never to silently skipping it.
+// 2026-08-05 further-pass audit fix (found by execution): the `text\b` / `ui[-
+// ]?text\b` / `in-app[- ]?text\b` alternatives used a plain word boundary, and
+// a hyphen is also a word boundary — so a Medium of "text-to-speech audio" (or
+// "ui-text-to-speech") matched TEXT_ONLY_RE and silently skipped the
+// alt-text/transcript requirement for a TTS AUDIO asset. A negative lookahead
+// now rejects a dash/hyphen or the spaced "to" right after the text token, so
+// only genuinely text Media count: "text", "plain text", "ui text" still do;
+// "text-to-speech", "text to speech", "ui-text-to-speech" no longer do and
+// correctly fall through to needing alt-text/transcript.
 const TEXT_ONLY_RE =
-  /^(text\b|copy\b|microcopy\b|string\b|label\b|wording\b|ui[- ]?text\b|in-app[- ]?text\b|টেক্সট|লেখা|কপি)/i;
+  /^(text\b(?![ \t]*(?:[-–—]|to\b))|copy\b|microcopy\b|string\b|label\b|wording\b|ui[- ]?text\b(?![ \t]*(?:[-–—]|to\b))|in-app[- ]?text\b(?![ \t]*(?:[-–—]|to\b))|টেক্সট|লেখা|কপি)/i;
 
 // 2026-07-26 audit finding 6 (fail-OPEN). This returned null for BOTH "the file
 // isn't there" and "the file is there but I couldn't read it", and main() treats

@@ -372,11 +372,18 @@ function main() {
       // verification cell was not, so a placeholder disguised in bold, e.g.
       // "**tbd**", still failed PLACEHOLDER_RE as-is and was wrongly
       // accepted as real verification evidence.
+      //
+      // 2026-08-05 further-pass audit fix: CONTRADICTION_RE used to run
+      // against the WHOLE raw row, so a requirement whose NAME contains a
+      // contradiction word ("Fix regression in billing") wrongly BLOCKED a
+      // genuinely met requirement. A contradiction claim lives in the
+      // verification cell, never in the requirement's name — scope the check
+      // to that cell (same class as the quality-gate.mjs evidence-cell fix).
       if (cVerif === -1 || PLACEHOLDER_RE.test(deEmphasise(verif).trim())) {
         problems.push(
           `requirement "${label}" is marked "${status.trim()}" but has no verification evidence — a met requirement needs proof.`,
         );
-      } else if (CONTRADICTION_RE.test(raw)) {
+      } else if (CONTRADICTION_RE.test(verif)) {
         problems.push(
           `requirement "${label}" is marked met but its own row says it is currently failing/unverified → "${raw}"`,
         );
