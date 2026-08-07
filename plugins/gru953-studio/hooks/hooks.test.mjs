@@ -32,6 +32,7 @@ import {
   deEmphasise,
   exceedsAssignmentBound,
   MAX_RESOLVED_ASSIGNMENTS,
+  CONTRADICTION_RE,
 } from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages, resolveExecutable } from './licence-scan.mjs';
 
@@ -7544,5 +7545,100 @@ test('scan.mjs: a PEM private key is still caught by content regardless of its f
   git(['add', '-A'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
   assert.equal(r.decision, 'deny', `a PEM private key must be caught by content even under an innocuous name: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// CONTRADICTION_RE — "regression was FIXED" is a resolution, not a failure.
+// 2026-08-07 audit, found by probing the five project-level gates.
+//
+// The 5.1.3 pass narrowed the bare `regression` noun so it "only counts when
+// followed by a failure verb (regression was spotted/found/…)". The lookahead
+// it shipped also accepted bare auxiliaries — `was|is|has|had|got|been` — and an
+// auxiliary admits ANY continuation, which defeated the narrowing for exactly
+// the phrasings people write when they are being honest. Reproduced: evidence
+// reading "npm test -> exit 0, after an earlier regression was fixed" was
+// BLOCKED, penalising a truthful note about work already done and pushing the
+// user toward vaguer evidence.
+// ---------------------------------------------------------------------------
+test('lib.mjs CONTRADICTION_RE: a regression recorded as FIXED is not a contradiction (2026-08-07 audit)', () => {
+  for (const evidence of [
+    'verified: `npm test` -> exit 0 (2026-07-20), after an earlier regression was fixed',
+    'verified: `npm test` -> exit 0, an earlier regression was resolved',
+    'verified: `npm test` -> exit 0; the regression was closed last week',
+  ]) {
+    assert.equal(
+      CONTRADICTION_RE.test(evidence),
+      false,
+      `a regression recorded as resolved must not read as a contradiction: ${evidence}`,
+    );
+  }
+});
+
+// The must-still-block inverse: narrowing the lookahead must not let a genuine
+// failure claim through. Without this the fix could be "make it never match".
+test('lib.mjs CONTRADICTION_RE: a genuine regression claim is still caught after the narrowing (2026-08-07 audit, inverse)', () => {
+  for (const evidence of [
+    'verified: npm test -> exit 0; a regression was spotted in nightly',
+    'regression was found in the streak counter',
+    'a regression has been introduced by this change',
+    'regression appeared after the refactor',
+    'the build regressed',
+  ]) {
+    assert.equal(
+      CONTRADICTION_RE.test(evidence),
+      true,
+      `a real regression claim must still be caught: ${evidence}`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PLACEHOLDER_RE — `pending` is the one word the evidence check could not see.
+// 2026-08-07 audit.
+//
+// traceability-check.mjs's own header promises "a requirement marked met/done
+// must carry a non-placeholder Verification cell". This repo's golden fixture
+// uses `pending` as the verification value for its not-yet-done requirements —
+// so `pending` is the project's canonical word for "no evidence yet", and it was
+// the one value PLACEHOLDER_RE did not recognise. Reproduced: flipping the
+// fixture's R3 to `met` while leaving its literal `pending` verification in
+// place returned {"status":"clean"}.
+// ---------------------------------------------------------------------------
+test('traceability-check.mjs: a requirement marked met whose verification still reads "pending" is caught (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-trace-pending-');
+  const golden = path.join(HERE, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory');
+  fs.cpSync(golden, path.join(dir, 'Dev-Memory'), { recursive: true });
+  const reqPath = path.join(dir, 'Dev-Memory', 'REQUIREMENTS.md');
+  const before = fs.readFileSync(reqPath, 'utf8');
+  const after = before.replace(
+    '| R3 | Users see their current streak update live | 2 | T3 | pending | todo |',
+    '| R3 | Users see their current streak update live | 2 | T3 | pending | met |',
+  );
+  assert.notEqual(after, before, 'the fixture row must have been found and mutated');
+  fs.writeFileSync(reqPath, after);
+  const r = spawnSync(NODE, [path.join(HERE, 'traceability-check.mjs'), dir], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0, `met + "pending" verification must be BLOCKED: ${r.stdout}`);
+  assert.match(r.stdout, /R3/, `the blocking problem must name the offending requirement: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The inverse that matters most: the unmodified golden fixture uses `pending`
+// on rows that are NOT met, and must stay clean on every gate. Widening the
+// placeholder vocabulary must not start blocking honest in-progress projects.
+test('the golden Dev-Memory fixture stays clean on all five project gates after the placeholder widening (2026-08-07 audit, inverse)', () => {
+  const dir = mkTmp('gru-golden-allgates-');
+  const golden = path.join(HERE, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory');
+  fs.cpSync(golden, path.join(dir, 'Dev-Memory'), { recursive: true });
+  for (const gate of [
+    'verify-progress.mjs',
+    'quality-gate.mjs',
+    'traceability-check.mjs',
+    'memory-integrity.mjs',
+    'content-check.mjs',
+  ]) {
+    const r = spawnSync(NODE, [path.join(HERE, gate), dir], { encoding: 'utf8' });
+    assert.equal(r.status, 0, `${gate} must stay clean on the golden fixture: ${r.stdout}${r.stderr}`);
+  }
   fs.rmSync(dir, RM_OPTS);
 });
