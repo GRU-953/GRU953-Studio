@@ -636,12 +636,36 @@ existing gate — each is additive.
 - **Bounded, adversarial-only matcher cost (disclosed, not closed).**
   `normalizeForPushCheck` (shared by both matchers, run on every command) resolves
   in-command variable assignments in a way that is superlinear in the *number of
-  assignments in a single command* — negligible for real commands (<30 assignments,
-  sub-millisecond) but reaching a fraction of a second at ~2,000 same-command
-  assignments. Such input is machine-generated/adversarial, inside the
-  determined-adversary threat model this document already disclaims. The Round 1
-  ReDoS fix removed the separate input-*length* blow-up; this residual is the
-  assignment-*count* case, disclosed here rather than closed.
+  assignments in a single command*. Such input is machine-generated/adversarial,
+  inside the determined-adversary threat model this document already disclaims.
+  The Round 1 ReDoS fix removed the separate input-*length* blow-up; this residual
+  is the assignment-*count* case, disclosed here rather than closed.
+
+  *Figures corrected 2026-08-07 by measurement.* This entry previously said the
+  cost reached "a fraction of a second at ~2,000 same-command assignments". That
+  understated it by roughly 3x, and gave no sense of how steeply it grows past
+  that point. Measured directly against `isPushCapable`, one fresh Node process
+  per data point:
+
+  | Same-command assignments | Command size | Time |
+  | :-- | :-- | :-- |
+  | a real command (0-30) | < 1 KiB | 0.1-0.6 ms |
+  | 2,000 | 17 KiB | 1.5 s |
+  | 4,000 | 34 KiB | 6.7 s |
+  | 6,000 | 52 KiB | 17.0 s |
+  | 8,000 | 69 KiB | 29.1 s |
+
+  Growth is roughly quadratic. The "negligible for real commands" half of the
+  original claim is confirmed — a genuine command stays well under a
+  millisecond, so no ordinary user ever meets this. What changed is the
+  adversarial half: the knee is nearer, and steeper, than the old figure
+  implied. Absolute timings are hardware-dependent; the shape is not.
+
+  Not claimed here, because it was not established: what Claude Code does with a
+  `command` hook that exceeds its timeout (600 s by default for this hook type).
+  Whether a cancelled hook fails open or closed decides whether this residual is
+  merely a stall or something worse, and that was not verified — so it is left
+  as an open question rather than written up either way.
 - **A stray binary byte no longer hides a co-located ASCII secret (2026-07-21
   Round 11).** `scan.mjs` used to skip a file's *entire* content scan the instant
   it held any NUL byte, and the history scan ran `git log -p` without `--text` (so
