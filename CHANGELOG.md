@@ -83,6 +83,22 @@ Round 8 go-public bypasses were found.
   command is unchanged. Stated precisely: the fail-open behaviour is read from
   the documentation, not reproduced in a live session — the bound is worth having
   either way, since it removes a multi-minute stall regardless.
+- **A skill recommended a retired Claude model for its hardest tier.**
+  `google-antigravity-integration`'s model-routing table named **Claude 3.7
+  Sonnet** for "Complex / Deep Tasks" — a model retired on 2026-02-19, so the
+  single hardest tier pointed at an ID that no longer resolves. Checked against
+  Anthropic's current model documentation rather than from memory. The Claude
+  tiers are now named by family, matching the deliberate version-free convention
+  `model-router` already uses — which is precisely why that skill did not rot
+  the same way.
+  - The Gemini names alongside it (`Gemini 3.6 Flash`, `Gemini Flash High`,
+    `Gemini Ultra`) are **not** claimed to have been wrong: they could not be
+    verified against Google's current documentation during the audit, and
+    swapping an unverifiable name for a guess would repeat the defect. They are
+    generalised to tier names, with the uncertainty recorded in the skill.
+  - `model-router` cited `google-antigravity-integration` as one of the skills
+    that "already apply" its verify-before-relying discipline. It did not carry
+    that disclaimer; it does now.
 - Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
   nothing (see below), so a fresh version is clearer than a re-pointed tag.
 

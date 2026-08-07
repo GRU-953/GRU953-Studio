@@ -28,10 +28,31 @@ This skill governs how the studio coordinator (`project-lead`), memory keeper (`
 
 3. **Gemini & Antigravity Model Routing**:
    - When running on Google Antigravity, model selection maps seamlessly through `model-router`:
-     - **Low / Fast Tasks**: Gemini 3.6 Flash / Gemini 2.5 Flash
-     - **Medium / Standard Tasks**: Gemini 2.5 Pro / Gemini Flash High
-     - **Complex / Deep Tasks**: Gemini 2.5 Pro / Gemini Ultra / Claude 3.7 Sonnet
+     - **Low / Fast Tasks**: the Gemini Flash tier
+     - **Medium / Standard Tasks**: the Gemini Pro tier
+     - **Complex / Deep Tasks**: the Gemini Pro tier, or Claude's Opus tier
+       where a Claude model is available to the session
    - Cost estimates and budget rules apply strictly per `cost-guard`.
+
+   > **Verify current model names before relying on this mapping (2026-08-07
+   > audit).** This table previously named specific versions, and one had gone
+   > stale in a way that mattered: it recommended **Claude 3.7 Sonnet** for
+   > "Complex / Deep Tasks", a model **retired on 2026-02-19** — so the single
+   > hardest tier pointed at a model ID that no longer resolves. Checked against
+   > Anthropic's own current model documentation, not from memory. The Claude
+   > tiers are now named by family rather than version, matching the deliberate
+   > version-free convention `model-router` already uses and which is the reason
+   > that skill did not rot the same way.
+   >
+   > The Gemini names removed here (`Gemini 3.6 Flash`, `Gemini Flash High`,
+   > `Gemini Ultra`) are **not** asserted to have been wrong — they could not be
+   > verified against Google's current documentation during this audit, and
+   > replacing an unverifiable name with a guess would be the same defect again.
+   > They are generalised to tier names instead. Confirm the exact current model
+   > IDs against Google's own documentation before treating any of this as
+   > authoritative — the same currency discipline `model-router` states, and
+   > which this section did not previously carry despite `model-router` citing it
+   > as one of the skills that already did.
 
 4. **Google Antigravity SDK (AGY) Interoperability**:
    - The studio AI developer (`ai-developer`) can build applications using the `google-antigravity` Python SDK (`LocalAgentConfig`, `Conversation`, `MCP` integrations, and `SafetyPolicy`).
@@ -60,7 +81,7 @@ This skill governs how the studio coordinator (`project-lead`), memory keeper (`
             ▼                                 ▼
    Google Antigravity IDE / SDK           Claude Code
  ┌───────────────────────────┐    ┌───────────────────────────┐
- │ • Model: Gemini 3.6/2.5   │    │ • Model: Sonnet/Haiku/Opus│
+ │ • Model: Gemini tiers     │    │ • Model: Sonnet/Haiku/Opus│
  │ • Root: .agents/          │    │ • Root: Dev-Memory/       │
  │ • SDK: google-antigravity │    │ • Tooling: Claude Code    │
  └───────────────────────────┘    └───────────────────────────┘
