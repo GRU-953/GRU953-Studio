@@ -111,6 +111,29 @@ Round 8 go-public bypasses were found.
   `id_dsa`, `id_ecdsa`, `id_ed25519` and `id_ed448` are now covered. The `$`
   anchor is unchanged and load-bearing: `id_ed25519.pub` is a public key and
   stays clear, exactly as `id_rsa.pub` already did — pinned by a test.
+- **A truthful evidence note was blocked as if it were a failure.** 5.1.3
+  narrowed `CONTRADICTION_RE`'s bare `regression` noun so it "only counts when
+  followed by a failure verb". The lookahead it shipped also accepted bare
+  auxiliaries (`was`/`is`/`has`/…), and an auxiliary admits *any* continuation —
+  so the narrowing never applied to the phrasings people actually write.
+  Evidence reading `npm test -> exit 0, after an earlier regression was fixed`
+  was BLOCKED. That penalises honesty and pushes users toward vaguer evidence,
+  which is the opposite of what the gate is for. An auxiliary must now be
+  followed by an actual failure participle; genuine claims
+  ("regression was spotted", "has been introduced") are still caught.
+- **`pending` was the one word the evidence check could not see.**
+  `traceability-check.mjs`'s own header promises that "a requirement marked
+  met/done must carry a non-placeholder Verification cell" — but `pending`, the
+  word this repository's own golden fixture uses for its not-yet-done
+  requirements, was absent from `PLACEHOLDER_RE`. Reproduced against that
+  fixture: flipping R3 to **met** while leaving its literal `pending`
+  verification in place returned `{"status":"clean"}`. `pending` and `tbc` are
+  now recognised. This revises a documented decision rather than contradicting
+  it silently: that note argued the shared pattern and `content-check.mjs`'s
+  wider one should not be *unified* — they still are not — but it never
+  addressed whether `pending` counts as evidence, and "met with verification
+  pending" is self-contradictory by construction. Both additions are whole-cell
+  only, so prose containing the word is unaffected.
 - Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
   nothing (see below), so a fresh version is clearer than a re-pointed tag.
 

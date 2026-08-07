@@ -418,7 +418,7 @@ export function tokenConfirmedWithinTtl(text, expected) {
 //     verification CELL (not the whole row) in quality-gate.mjs and
 //     traceability-check.mjs, a label word can never trip the gate again.
 export const CONTRADICTION_RE =
-  /(?<!\b(?:not|never|no)[ \t]+)\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|current(?:ly)?[ \t]+(?:[^,;|()]{0,40}?[ \t]+)?(?<!\b(?:not|never|no)[ \t]+)fails?|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion(?=[ \t]+(?:was|is|has|had|got|been|spotted|found|seen|detected|introduced|observed|occurred|appeared))))\b/i;
+  /(?<!\b(?:not|never|no)[ \t]+)\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|current(?:ly)?[ \t]+(?:[^,;|()]{0,40}?[ \t]+)?(?<!\b(?:not|never|no)[ \t]+)fails?|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion(?=[ \t]+(?:(?:was|is|are|were|has|had|have|got|been)[ \t]+)*(?:spotted|found|seen|detected|introduced|observed|occurred|appeared|reported|caught))))\b/i;
 
 // ---- shared markdown-table patterns (fixes a six-way drift) ------------------
 // 2026-07-29 maintenance fix (audit finding 4). SEPARATOR_ROW_RE (the `| :-- |
@@ -451,7 +451,25 @@ export const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // (content provenance/rights, not evidence) — forcing the two to be the same
 // pattern would either narrow content-check.mjs's real requirement or widen
 // what these other three files accept.
-export const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.)$/i;
+//
+// 2026-08-07 audit: `pending` and `tbc` added here after finding a real hole,
+// and this note revises the paragraph above rather than contradicting it in
+// silence. That paragraph is about whether the two patterns should be UNIFIED —
+// they should not, and they still are not; content-check.mjs keeps its own
+// wider superset. It does not address the separate question of whether
+// `pending` is evidence, and it is not: a requirement marked **met** whose
+// Verification cell reads exactly `pending` is self-contradictory by
+// construction, and traceability-check.mjs's own header promises that "a
+// requirement marked met/done must carry a non-placeholder Verification cell".
+// Reproduced against this repo's own golden fixture, which uses `pending` as
+// the verification value for its not-yet-done requirements (R3, R4) — flipping
+// R3's status to `met` while leaving that literal `pending` in place returned
+// {"status":"clean"}, so the project's own canonical word for "no evidence
+// yet" was the one word the evidence check could not see.
+// Both additions are whole-cell only (the pattern is anchored `^...$` after
+// trimming and de-emphasis), so prose that merely contains the word is
+// unaffected — only a cell that says nothing else.
+export const PLACEHOLDER_RE = /^(|[-—–]+|tbd|tbc|todo|none|n\/?a|pending|\.\.\.)$/i;
 
 // ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
 // 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
