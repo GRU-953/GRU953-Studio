@@ -7319,3 +7319,62 @@ test('gate.mjs: a JSON-body visibility change is allowed once GO-PUBLIC-APPROVED
   assert.equal(runHook('gate.mjs', cmd, dir).decision, 'allow', 'must be allowed once the go-public token is recorded');
   fs.rmSync(dir, RM_OPTS);
 });
+
+// ---------------------------------------------------------------------------
+// scan.mjs — the small-file gzip path had no decompression cap. 2026-08-07
+// audit, found by execution.
+//
+// The >MAX_SCAN_BYTES branch has passed maxOutputLength: MAX_PACKED_INFLATED_BYTES
+// to gunzipSync since 2026-07-26. Its twin — the branch that handles a gzip file
+// SMALL enough to read whole (under 4 MiB) — passed no cap at all, while its own
+// catch comment already claimed "a compression bomb guard tripped", describing a
+// guard that did not exist. Reproduced: a 1 MiB gzip of 1 GiB of zeros made the
+// hook allocate roughly a gigabyte and stall ~10s on a push it then allowed.
+//
+// Note on the pre-existing bomb test above ('does not hang and does not crash'):
+// it passed against the UNCAPPED code, because a 200 MiB inflate is survivable
+// within its 15s budget — so it never discriminated on the cap it named. The
+// test below is sized and bounded to actually fail without the fix.
+// ---------------------------------------------------------------------------
+test('scan.mjs: the small-file gzip path bounds decompression, so a 1 GiB-inflating bomb is handled promptly (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-scan-bomb-capped-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // Concatenated gzip members: gunzip decodes them as one stream, so a ~256 KiB
+  // file on disk inflates to 1 GiB. Built this way deliberately — allocating a
+  // literal 1 GiB buffer in the test itself would be the very cost being tested.
+  const member = zlib.gzipSync(Buffer.alloc(4 * 1024 * 1024));
+  const bomb = Buffer.concat(Array.from({ length: 256 }, () => member));
+  assert.ok(bomb.length < 4 * 1024 * 1024, 'the fixture must land on the SMALL-file path under test');
+  fs.writeFileSync(path.join(dir, 'bomb.bin'), bomb);
+  git(['add', '-A'], dir);
+  const start = Date.now();
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  const elapsedMs = Date.now() - start;
+  assert.equal(r.code, 0, 'the hook process itself must exit cleanly, not crash');
+  assert.ok(
+    elapsedMs < 5000,
+    `a bounded inflate must return promptly; an uncapped one inflates the full 1 GiB (took ${elapsedMs}ms)`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The must-still-tolerate inverse: the cap must sit far enough above real
+// archives that bounding the bomb does not blind the scanner to a genuine
+// secret inside an ordinary compressed file. 32 MiB of inflated text is well
+// within the 64 MiB ceiling and far beyond anything a bomb needs.
+test('scan.mjs: a secret inside a gzip that inflates to well under the cap is still caught after the bomb fix (2026-08-07 audit, inverse)', () => {
+  const dir = mkTmp('gru-scan-bomb-inverse-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const filler = Buffer.alloc(32 * 1024 * 1024, 0x61); // 32 MiB of 'a' — ordinary text
+  const packed = zlib.gzipSync(
+    Buffer.concat([filler, Buffer.from('\naws_key = AKIAIOSFODNN7EXAMPLE\n')]),
+  );
+  assert.ok(packed.length < 4 * 1024 * 1024, 'the fixture must land on the SMALL-file path under test');
+  fs.writeFileSync(path.join(dir, 'archive.gz'), packed);
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a real secret inside an ordinary compressed archive must still be refused: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});

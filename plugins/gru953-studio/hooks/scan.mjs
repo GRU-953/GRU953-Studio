@@ -1098,16 +1098,34 @@ function main() {
       // DECOMPRESSED stream — which is the only meaningful line number there is
       // for packed content, and is genuinely useful for locating the secret once
       // the file is unpacked.
+      //
+      // 2026-08-07 audit fix (found by execution). This call had NO
+      // maxOutputLength, unlike its twin in the >MAX_SCAN_BYTES branch above,
+      // which has been capped at MAX_PACKED_INFLATED_BYTES since 2026-07-26 —
+      // and the catch below already CLAIMED "a compression bomb guard
+      // tripped", describing a guard that did not exist on this path. So a
+      // gzip file small enough to land here (under 4 MiB) could inflate
+      // without bound. Reproduced: a 1 MiB gzip of 1 GiB of zeros made this
+      // hook allocate roughly a gigabyte and stall for ~10 seconds on a push
+      // it then allowed. It degrades gracefully rather than bypassing the scan
+      // (the inflated bomb is not textish, so it is skipped either way, and
+      // under a memory ceiling gunzipSync throws into the catch below), so
+      // this is a resource-exhaustion and consistency defect rather than a
+      // secret bypass — recorded at that severity, not inflated beyond it.
+      // The cap is the same constant the sibling path uses: for an input under
+      // 4 MiB it permits a 16x expansion, far above what real text archives
+      // reach (gzip on prose is ~3-4x, on logs/JSON ~5-10x) and far below the
+      // 1000x+ a bomb needs.
       if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
         try {
-          const inflated = zlib.gunzipSync(buf);
+          const inflated = zlib.gunzipSync(buf, { maxOutputLength: MAX_PACKED_INFLATED_BYTES });
           if (bufIsTextish(inflated)) {
             scanText(inflated.toString('utf8'), f);
             continue;
           }
         } catch {
-          // Not valid gzip, or a compression bomb guard tripped — fall through
-          // to the ordinary binary handling below.
+          // Not valid gzip, or the compression-bomb guard above tripped — fall
+          // through to the ordinary binary handling below.
         }
       }
       // 2026-07-26 audit finding 5, same architectural cause. SECURITY.md
