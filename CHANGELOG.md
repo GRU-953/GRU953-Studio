@@ -46,6 +46,24 @@ Round 8 go-public bypasses were found.
   - The pre-existing bomb test passed against the uncapped code — a 200 MiB
     inflate is survivable inside its 15s budget — so it never discriminated on
     the cap it named. The new test is sized to fail without the fix.
+- **The VS Code extension's only command could never run for anyone who
+  installed it.** Its `Status` command prefers a `clients/cli/` sibling
+  directory, and `.vscodeignore` guarantees that directory is never inside a
+  packaged `.vsix` — so for every Marketplace install the guard failed and the
+  command did nothing but show an error saying it only works from a repository
+  checkout. The guard was added in July on two premises that have since gone
+  stale, both re-checked directly rather than assumed:
+  `@gru953/studio-cli` **is** published to npm (5.0.1, 5.1.0, 5.1.1, 5.1.2 —
+  confirmed against the registry), and `.github/workflows/publish.yml` **is**
+  the publish step whose absence the comment cited. The command now prefers the
+  local checkout when there genuinely is one (faster, works offline, what a
+  contributor wants) and otherwise falls back to
+  `npx --yes @gru953/studio-cli status` — verified end-to-end by running it
+  against the published package, not assumed to work. `--yes` so npx cannot
+  stall on an interactive install prompt in a terminal the user never typed
+  into. A published extension whose only command never runs is the same class
+  of defect as 5.0.1's finding 16 (a command wired to a package that does not
+  exist), reached from the other direction.
 - Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
   nothing (see below), so a fresh version is clearer than a re-pointed tag.
 
