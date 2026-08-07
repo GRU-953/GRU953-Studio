@@ -661,11 +661,36 @@ existing gate — each is additive.
   adversarial half: the knee is nearer, and steeper, than the old figure
   implied. Absolute timings are hardware-dependent; the shape is not.
 
-  Not claimed here, because it was not established: what Claude Code does with a
-  `command` hook that exceeds its timeout (600 s by default for this hook type).
-  Whether a cancelled hook fails open or closed decides whether this residual is
-  merely a stall or something worse, and that was not verified — so it is left
-  as an open question rather than written up either way.
+  *Answered, and then closed, 2026-08-07.* The entry above left one question
+  open: what Claude Code does with a `command` hook that exceeds its timeout
+  (600 s by default for this hook type). The hooks reference answers it, and the
+  answer is fail-open: "Any other exit code is a non-blocking error for most hook
+  events. The action proceeds" — and a hook cancelled at its timeout exits
+  non-zero. The reference singles out Agent SDK callback hooks as the exception
+  that *blocks* on timeout, "because a callback there can be acting as a policy
+  gate that must not fail open", wording that only makes sense if the ordinary
+  command-hook path does fail open. Stated precisely: this is read from the
+  documentation, not reproduced in a live session.
+
+  That turns the residual from a stall into a potential bypass of **both**
+  push-time hooks at once — extrapolating the curve above, roughly 36,000
+  assignments (~310 KiB of command text) would reach the 600 s default, after
+  which `scan.mjs` and `gate.mjs` are both cancelled as non-blocking errors and
+  the push proceeds unscanned and unauthorised. So it is now **bounded rather
+  than disclosed**: `normalizeForPushCheck` skips variable resolution entirely
+  past `MAX_RESOLVED_ASSIGNMENTS` (500 — over 16x the largest real command this
+  project has seen, which is under 30), and both security callers fail CLOSED on
+  that path. `isPushCapable` answers "push-capable", per its own "prove non-push
+  or treat as push" rule, so the command is routed to the authorisation check
+  rather than allowed; `isGoPublicCommand` answers "going public", so the
+  separate GO-PUBLIC-APPROVED confirmation is still required. A command that
+  pathological is never legitimate, so neither costs a real user anything.
+  Measured after the bound: the 5,000-assignment case drops from ~9 s to
+  effectively free, and every ordinary command is unchanged.
+
+  This is the same reasoning the Round 1 ReDoS fix already recorded — "a
+  pathological input could push the hook past the harness timeout" — applied to
+  the cost this document had disclosed rather than bounded.
 - **A stray binary byte no longer hides a co-located ASCII secret (2026-07-21
   Round 11).** `scan.mjs` used to skip a file's *entire* content scan the instant
   it held any NUL byte, and the history scan ran `git log -p` without `--text` (so

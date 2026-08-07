@@ -30,6 +30,8 @@ import {
   readStdinCore,
   StdinReadFailure,
   deEmphasise,
+  exceedsAssignmentBound,
+  MAX_RESOLVED_ASSIGNMENTS,
 } from './lib.mjs';
 import { detectLicenceFromText, findPubCacheRoot, classifySpdxExpr, classifyNonHostedDartPackages, resolveExecutable } from './licence-scan.mjs';
 
@@ -7376,5 +7378,96 @@ test('scan.mjs: a secret inside a gzip that inflates to well under the cap is st
   git(['add', '-A'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
   assert.equal(r.decision, 'deny', `a real secret inside an ordinary compressed archive must still be refused: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// Bounded assignment resolution. 2026-08-07 audit.
+//
+// SECURITY.md disclosed the superlinear assignment-resolution cost as an
+// accepted, adversarial-only residual and left one question open: what Claude
+// Code does with a `command` hook that exceeds its timeout. The hooks reference
+// answers it — "Any other exit code is a non-blocking error... The action
+// proceeds", and Agent SDK callbacks are singled out as the exception that
+// blocks on timeout "because a callback there can be acting as a policy gate
+// that must not fail open". So the ordinary command-hook path fails OPEN, which
+// turns a stall into a potential bypass of both push-time hooks at once.
+//
+// Measured before the bound, one fresh process per point: 2,000 assignments =
+// 1.5s, 4,000 = 6.7s, 6,000 = 17.0s, 8,000 = 29.1s; ~36,000 would reach the
+// 600s default. After the bound, all of these are effectively free.
+// ---------------------------------------------------------------------------
+test('lib.mjs: the assignment bound keeps a pathological command cheap instead of superlinear (2026-08-07 audit)', () => {
+  const pathological = Array.from({ length: 5000 }, (_, i) => `v${i}=x`).join('; ') + '; git push';
+  const start = Date.now();
+  isPushCapable(pathological);
+  const elapsedMs = Date.now() - start;
+  assert.ok(
+    elapsedMs < 2000,
+    `past the bound the resolution must be skipped, not run; unbounded this took ~9s (took ${elapsedMs}ms)`,
+  );
+});
+
+test('lib.mjs: past the bound the answer is push-capable, not "not a push" — the unprovable case fails CLOSED (2026-08-07 audit)', () => {
+  // The danger of skipping resolution is answering "false" (not a push) on a
+  // command whose $VAR was never resolved. This function's own rule is "prove
+  // non-push or treat as push", so the bounded answer must be true. Deliberately
+  // uses a command with NO literal push token at all — pre-bound it resolved to
+  // a real push; if the bound ever answered from the unresolved text it would
+  // say false, and that is exactly the fail-open this asserts against.
+  const hidden =
+    Array.from({ length: 5000 }, (_, i) => `v${i}=x`).join('; ') + '; p=pu; p+=sh; git $p origin main';
+  assert.equal(isPushCapable(hidden), true, 'an unresolvable command must be treated as push-capable');
+});
+
+test('lib.mjs: the bound does not change the verdict for any ordinary command (2026-08-07 audit, inverse)', () => {
+  // Every real command is orders of magnitude below the bound, so nothing about
+  // day-to-day behaviour may shift. Guards against setting the bound so low it
+  // starts sweeping in legitimate commands.
+  for (const [cmd, expected] of [
+    ['git push origin main', true],
+    ['a=1; b=2; c=3; git push', true],
+    ['p=pu; p+=sh; git $p origin main', true],
+    ['ls -la', false],
+    ['npm test', false],
+    ['git status', false],
+    ['git commit -m "x"', false],
+  ]) {
+    assert.equal(isPushCapable(cmd), expected, `ordinary command must be unaffected by the bound: ${cmd}`);
+  }
+});
+
+test('lib.mjs: exceedsAssignmentBound counts correctly either side of the threshold (2026-08-07 audit)', () => {
+  const under = Array.from({ length: MAX_RESOLVED_ASSIGNMENTS - 1 }, (_, i) => `v${i}=x`).join('; ');
+  const over = Array.from({ length: MAX_RESOLVED_ASSIGNMENTS + 5 }, (_, i) => `v${i}=x`).join('; ');
+  assert.equal(exceedsAssignmentBound(under), false, 'just under the bound must still be resolved normally');
+  assert.equal(exceedsAssignmentBound(over), true, 'past the bound must be reported as exceeding it');
+  assert.equal(exceedsAssignmentBound(''), false, 'empty input must not be reported as exceeding the bound');
+  assert.equal(exceedsAssignmentBound('git push origin main'), false, 'a real command is nowhere near the bound');
+});
+
+test('gate.mjs: a pathological command fails closed at BOTH gates — no push, and no visibility change (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-gate-assignbound-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const prefix = Array.from({ length: 5000 }, (_, i) => `v${i}=x`).join('; ');
+
+  // (a) no token recorded at all -> an ordinary push must be refused
+  const pushCmd = `${prefix}; git push origin main`;
+  const start = Date.now();
+  const noToken = runHook('gate.mjs', pushCmd, dir);
+  const elapsedMs = Date.now() - start;
+  assert.equal(noToken.decision, 'deny', 'a pathological push with no authorisation must be refused');
+  assert.ok(elapsedMs < 15000, `the bound must keep the hook prompt (took ${elapsedMs}ms)`);
+
+  // (b) with ONLY the private-publish token, a visibility-shaped command must
+  //     still be refused: unresolved text cannot prove it is not going public.
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  const goPublic = runHook('gate.mjs', `${prefix}; gh repo edit me/app --visibility=$v0`, dir);
+  assert.equal(
+    goPublic.decision,
+    'deny',
+    'the private-publish token must not authorise an unprovable visibility change',
+  );
   fs.rmSync(dir, RM_OPTS);
 });

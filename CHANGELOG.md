@@ -64,6 +64,25 @@ Round 8 go-public bypasses were found.
   into. A published extension whose only command never runs is the same class
   of defect as 5.0.1's finding 16 (a command wired to a package that does not
   exist), reached from the other direction.
+- **The disclosed matcher cost is now bounded, because the open question behind
+  it turned out to be "fails open".** `SECURITY.md` had disclosed
+  `normalizeForPushCheck`'s superlinear assignment-resolution cost as an
+  accepted, adversarial-only residual, leaving open what Claude Code does with a
+  `command` hook that exceeds its timeout. The hooks reference answers it: "Any
+  other exit code is a non-blocking error… The action proceeds", and a cancelled
+  hook exits non-zero — with Agent SDK callbacks singled out as the exception
+  that blocks, "because a callback there can be acting as a policy gate that must
+  not fail open". So a command crafted to run past the 600-second default
+  (roughly 36,000 assignments, ~310 KiB) would have **both** push-time hooks
+  cancelled and the push would proceed unscanned and unauthorised. Resolution is
+  now skipped past 500 assignments — over 16x the largest real command this
+  project has seen — and both callers fail CLOSED there: `isPushCapable` answers
+  "push-capable" (routing to the authorisation check), `isGoPublicCommand`
+  answers "going public" (still requiring its separate confirmation). The
+  5,000-assignment case drops from ~9 s to effectively free; every ordinary
+  command is unchanged. Stated precisely: the fail-open behaviour is read from
+  the documentation, not reproduced in a live session — the bound is worth having
+  either way, since it removes a multi-minute stall regardless.
 - Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
   nothing (see below), so a fresh version is clearer than a re-pointed tag.
 
