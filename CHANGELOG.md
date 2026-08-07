@@ -99,6 +99,18 @@ Round 8 go-public bypasses were found.
   - `model-router` cited `google-antigravity-integration` as one of the skills
     that "already apply" its verify-before-relying discipline. It did not carry
     that disclaimer; it does now.
+- **The key-file backstop knew only the legacy SSH key name.** `scan.mjs`'s
+  filename rule listed `id_rsa` and missed every modern one — `id_ed25519` has
+  been ssh-keygen's recommended type since OpenSSH 7.8 (2018). Scoped honestly:
+  for an ordinary PEM key this changed nothing, because the content rule catches
+  `-----BEGIN … PRIVATE KEY-----` whatever the file is called (verified against
+  both an OpenSSH ed25519 key and an EC key before the fix). The gap was the case
+  the filename rule exists for — content the regexes cannot see: a DER-encoded
+  (binary) key is never content-scanned, and byte-identical files shipped as
+  **allow** when named `id_ed25519` while being correctly blocked as `id_rsa`.
+  `id_dsa`, `id_ecdsa`, `id_ed25519` and `id_ed448` are now covered. The `$`
+  anchor is unchanged and load-bearing: `id_ed25519.pub` is a public key and
+  stays clear, exactly as `id_rsa.pub` already did — pinned by a test.
 - Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
   nothing (see below), so a fresh version is clearer than a re-pointed tag.
 
