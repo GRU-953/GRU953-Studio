@@ -1,5 +1,39 @@
 # Changelog
 
+## 5.1.4 — 2026-08-07
+
+One CRITICAL fix to the go-public gate, found by execution through the real
+hook interface rather than by reading the code — the same way the Round 5 and
+Round 8 go-public bypasses were found.
+
+- **`gate.mjs`: a `gh api` visibility change sent as a JSON body rode the
+  private-publish token.** Every gh-api pattern in `isGoPublicCommand()`
+  required a field flag (`-f`/`-F`/`--field`/`--raw-field`), but `gh api`
+  equally takes its whole body as JSON on stdin via `--input`, where no field
+  flag ever appears. Reproduced against a project with only PUBLISH-APPROVED
+  recorded and no GO-PUBLIC-APPROVED: both
+  `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'` and
+  the piped `echo '{...}' | gh api ... --input -` form were **allowed**, with
+  no go-public confirmation at all — defeating "private first, then a separate
+  explicit step to go public", which this project treats as settled. The file's
+  own comment block had claimed since 2026-07-21 that it covered exactly this
+  inline-JSON case; no code ever implemented it. Visibility is now matched in
+  JSON form as well as flag form.
+- The residual that pattern cannot close: `--input body.json` reads the body
+  from a file whose contents are not in the command text, so such a write can
+  never be *proven* private. It now fails closed — but only when aimed at a
+  repository root endpoint (`repos/<owner>/<repo>`) or a repo-creation
+  endpoint, the only paths whose body can carry visibility at all. A
+  sub-resource (`.../issues`, `.../dispatches`, `.../releases`) is untouched,
+  so the fix never demands a go-public token for a write that could not change
+  visibility anyway.
+- Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
+  nothing (see below), so a fresh version is clearer than a re-pointed tag.
+
+Test suite: 410 → 414 tests. The three failure-mode tests were confirmed to
+fail against the pre-fix `gate.mjs` and pass after it; the must-still-tolerate
+inverse passes both ways, as a control should.
+
 ## 5.1.3 — 2026-08-06
 
 A further-pass audit of the publish-safety hooks, in the repo's own "reproduce

@@ -67,7 +67,14 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 5.1.3
+### Latest version: 5.1.4
+
+Version 5.1.4 closes a critical gap in the go-public gate: a request that
+asked GitHub to make a repository public by sending a JSON body, rather than
+by a command-line flag, was allowed on the ordinary private-publish
+confirmation alone — no separate go-public confirmation required. Found by
+running the real hook, not by reading it. Going public now always needs its
+own explicit confirmation, whichever form the request takes.
 
 Version 5.1.3 is a maintenance release: nine further-pass fixes to the
 publish-safety checks (each reproduced by running the code before being

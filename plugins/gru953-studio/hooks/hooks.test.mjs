@@ -7229,3 +7229,93 @@ test('docs-consistency.mjs: the audit-register exemption does not blind the chec
   assert.equal(r.json && r.json.status, 'BLOCKED', `a stale live count outside a dated audit register must still be caught: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
+
+// ---------------------------------------------------------------------------
+// gate.mjs — a `gh api` visibility change delivered as a JSON BODY, not as a
+// field flag. 2026-08-07 audit, CRITICAL, found by execution through the real
+// hook interface (the same way the Round 5 and Round 8 go-public fixes were).
+//
+// isGoPublicCommand()'s gh-api patterns all required a FIELD FLAG
+// (-f/-F/--field/--raw-field). But `gh api` equally takes its entire body as
+// JSON on stdin via `--input`, and that JSON sits in the command text where no
+// field flag ever appears. gate.mjs's own comment block has claimed since
+// 2026-07-21 that it covers "an inline JSON body `{"visibility":"public"}`" —
+// it never did. Reproduced against a project with ONLY PUBLISH-APPROVED
+// recorded: both body forms below were ALLOWED, with no go-public
+// confirmation at all, defeating the "private first, then a separate explicit
+// step to go public" guarantee.
+// ---------------------------------------------------------------------------
+test('gate.mjs: a gh api visibility change sent as a JSON body no longer rides the private-publish token (2026-08-07 audit, CRITICAL)', () => {
+  const dir = mkTmp('gru-gate-jsonbody-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  for (const cmd of [
+    `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'`,
+    `echo '{"visibility":"public"}' | gh api -X PATCH repos/me/app --input -`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"visibility": "internal"}'`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"private": false}'`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"private":0}'`,
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a JSON-body visibility change must not bypass the go-public gate: ${cmd}`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The residual the JSON patterns cannot close: `--input body.json` reads the
+// body from a FILE whose contents are not in the command text at all, so the
+// write can never be PROVEN private. Same fail-closed rule the repo-creation
+// default already uses, scoped to endpoints that can actually carry visibility.
+test('gate.mjs: an uninspectable gh api body (--input <file>) aimed at a repo root or repo-creation endpoint fails closed (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-gate-inputfile-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  for (const cmd of [
+    'gh api -X PATCH repos/me/app --input body.json',
+    'gh api --method POST user/repos --input newrepo.json',
+    'gh api --method POST orgs/acme/repos --input newrepo.json',
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a body this gate cannot read cannot prove the write is private: ${cmd}`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Must-still-tolerate inverses. Without these the fix above would be a blunt
+// "deny anything with --input", which would demand a go-public confirmation
+// for writes that cannot change visibility at all — actively harmful, since
+// it would push a user towards granting the one token that matters most for
+// no reason.
+test('gate.mjs: the JSON-body go-public fix does not over-block writes that cannot change visibility (2026-08-07 audit, inverse)', () => {
+  const dir = mkTmp('gru-gate-jsonbody-inverse-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  for (const cmd of [
+    // an explicitly PRIVATE body is proven private, flag form or JSON form
+    `gh api -X PATCH repos/me/app --input - <<< '{"private":true}'`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"private"}'`,
+    'gh api --method POST user/repos -f name=x -f private=true',
+    // a repo SUB-resource cannot carry visibility whatever its body says
+    'gh api --method POST repos/me/app/issues -f title=bug',
+    'gh api -X POST repos/me/app/dispatches --input payload.json -f private=true',
+    // and an ordinary private push is untouched
+    'git push origin main',
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'allow', `the private-publish token must still authorise this: ${cmd}`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The guarantee that matters most, restated against the new body forms: the
+// go-public token — not the private one — is what unlocks them.
+test('gate.mjs: a JSON-body visibility change is allowed once GO-PUBLIC-APPROVED is recorded, proving the new rule gates rather than forbids (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-gate-jsonbody-unlock-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  const cmd = `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'`;
+  assert.equal(runHook('gate.mjs', cmd, dir).decision, 'deny', 'must be denied on the private token alone');
+  spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', cmd, dir).decision, 'allow', 'must be allowed once the go-public token is recorded');
+  fs.rmSync(dir, RM_OPTS);
+});
