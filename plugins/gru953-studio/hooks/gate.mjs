@@ -171,12 +171,53 @@ function isGoPublicCommand(rawC) {
   // and it previously slipped past the go-public gate (a public change authorised on
   // the private-publish token). Mirrors isPushCapable's `[ \t=]` field-flag tolerance.
   const FIELD = `(?:-[fF]|--field|--raw-field)[ \\t=]*['"]?`;
+  // 2026-08-07 audit fix (CRITICAL, found by execution through the real hook
+  // interface, exactly like the Round 5 and Round 8 fixes above). The comment
+  // block above has claimed since 2026-07-21 that this covers "an inline JSON
+  // body `{"visibility":"public"}`" — it never did. Every pattern here
+  // required a gh api FIELD FLAG (-f/-F/--field/--raw-field), but `gh api`
+  // equally takes its whole body as JSON on stdin via `--input`, and the JSON
+  // sits in the command text where a field flag never appears. Reproduced
+  // live against a project with ONLY PUBLISH-APPROVED recorded (no
+  // GO-PUBLIC-APPROVED): both
+  //   gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'
+  //   echo '{"visibility":"public"}' | gh api -X PATCH repos/me/app --input -
+  // were ALLOWED, with no go-public confirmation at all — defeating the
+  // "private first, then a separate explicit step to go public" guarantee
+  // that this project treats as settled, and that the `--visibility=public`
+  // flag form has been correctly gated on since Round 5. Matched as JSON
+  // (`"key" : value`) rather than as a field flag, so the two body forms are
+  // judged the same way the flag form already is.
+  const JSON_BODY_PUBLIC =
+    /"visibility"[ \t]*:[ \t]*['"](public|internal)['"]/i.test(c) ||
+    /"private"[ \t]*:[ \t]*(false|0)\b/i.test(c);
+  const JSON_BODY_PRIVATE =
+    /"visibility"[ \t]*:[ \t]*['"]private['"]/i.test(c) ||
+    /"private"[ \t]*:[ \t]*(true|1)\b/i.test(c);
   const apiExplicitPublic =
     new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?(public|internal)`, 'i').test(c) ||
-    new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(false|0|no)\\b`, 'i').test(c);
+    new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(false|0|no)\\b`, 'i').test(c) ||
+    JSON_BODY_PUBLIC;
   const apiExplicitPrivate =
     new RegExp(`${FIELD}private['"]?[ \\t=:]+['"]?(true|1|yes)\\b`, 'i').test(c) ||
-    new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?private`, 'i').test(c);
+    new RegExp(`${FIELD}visibility['"]?[ \\t=:]+['"]?private`, 'i').test(c) ||
+    JSON_BODY_PRIVATE;
+  // The residual the JSON patterns above cannot close: `gh api ... --input
+  // body.json` reads its body from a FILE, whose contents are not in the
+  // command text and cannot be inspected here at all. A body we cannot read
+  // can never PROVE the write is private, so the same fail-closed rule the
+  // repo-creation default already uses applies — but scoped to writes aimed
+  // at the repository ROOT endpoint (`repos/<owner>/<repo>`, the only repo
+  // path whose PATCH body can carry `visibility`/`private`) or a repo-creation
+  // endpoint. A sub-resource — `repos/o/r/issues`, `.../dispatches`,
+  // `.../releases` — cannot change visibility whatever its body says, so an
+  // uninspectable body sent there is not swept up and is never asked for a
+  // go-public token it has no business needing.
+  const apiUninspectableBody = /--input[ \t=]+['"]?(?!-['"\s]|-$)[^ \t]/i.test(c);
+  const apiRepoRootEndpoint = new RegExp(
+    `\\/?repos\\/[^ \\t/'"]+\\/[^ \\t/'"]+['"]?${LEXICAL_BOUNDARY}`,
+    'i',
+  ).test(c);
   // 2026-07-21 Round 2 fix: GitHub's REST default for repo creation is
   // `private:false` = PUBLIC, so a `gh api` write to a repo-creation endpoint
   // (/user/repos or orgs/<org>/repos) with visibility OMITTED still makes a public
@@ -188,7 +229,11 @@ function isGoPublicCommand(rawC) {
   // orgs/<org>/repos.
   const apiRepoCreate =
     /\/?(user\/repos|orgs\/[^ \t/'"]+\/repos|repos\/[^ \t/'"]+\/[^ \t/'"]+\/generate)\b/i.test(c);
-  const apiVisibility = isGhApi && (apiExplicitPublic || (apiRepoCreate && !apiExplicitPrivate));
+  const apiVisibility =
+    isGhApi &&
+    (apiExplicitPublic ||
+      (apiRepoCreate && !apiExplicitPrivate) ||
+      (apiUninspectableBody && (apiRepoCreate || apiRepoRootEndpoint) && !apiExplicitPrivate));
   return repoVisibility || apiVisibility;
 }
 function goPublicToken(studioRoot) {

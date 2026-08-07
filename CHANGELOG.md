@@ -1,5 +1,58 @@
 # Changelog
 
+## 5.1.4 — 2026-08-07
+
+One CRITICAL fix to the go-public gate, found by execution through the real
+hook interface rather than by reading the code — the same way the Round 5 and
+Round 8 go-public bypasses were found.
+
+- **`gate.mjs`: a `gh api` visibility change sent as a JSON body rode the
+  private-publish token.** Every gh-api pattern in `isGoPublicCommand()`
+  required a field flag (`-f`/`-F`/`--field`/`--raw-field`), but `gh api`
+  equally takes its whole body as JSON on stdin via `--input`, where no field
+  flag ever appears. Reproduced against a project with only PUBLISH-APPROVED
+  recorded and no GO-PUBLIC-APPROVED: both
+  `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'` and
+  the piped `echo '{...}' | gh api ... --input -` form were **allowed**, with
+  no go-public confirmation at all — defeating "private first, then a separate
+  explicit step to go public", which this project treats as settled. The file's
+  own comment block had claimed since 2026-07-21 that it covered exactly this
+  inline-JSON case; no code ever implemented it. Visibility is now matched in
+  JSON form as well as flag form.
+- The residual that pattern cannot close: `--input body.json` reads the body
+  from a file whose contents are not in the command text, so such a write can
+  never be *proven* private. It now fails closed — but only when aimed at a
+  repository root endpoint (`repos/<owner>/<repo>`) or a repo-creation
+  endpoint, the only paths whose body can carry visibility at all. A
+  sub-resource (`.../issues`, `.../dispatches`, `.../releases`) is untouched,
+  so the fix never demands a go-public token for a write that could not change
+  visibility anyway.
+- **`scan.mjs`: the small-file gzip path had no decompression cap.** The
+  `>MAX_SCAN_BYTES` branch has capped `gunzipSync` at 64 MiB since 2026-07-26;
+  its twin — the branch handling a gzip file small enough to read whole — passed
+  no cap at all, while its own `catch` comment already claimed "a compression
+  bomb guard tripped", describing a guard that did not exist. Reproduced: a
+  1 MiB gzip of 1 GiB of zeros made the hook allocate roughly a gigabyte and
+  stall about ten seconds on a push it then allowed. Capped to the same
+  constant the sibling uses: ~0.3s after the fix, down from ~10s.
+  Recorded as a resource-exhaustion and consistency defect, **not** a secret
+  bypass — the scan degraded gracefully rather than letting anything through,
+  and that severity is stated rather than inflated.
+  - Disclosed cost: content inflating beyond 64 MiB from an under-4 MiB archive
+    is no longer decompressed and scanned. For such an input that is a 16x
+    expansion, far above real text archives (gzip on prose is ~3-4x, on
+    logs/JSON ~5-10x) and far below the 1000x+ a bomb needs. A regression test
+    pins a secret inside a 32 MiB-inflating archive as still caught.
+  - The pre-existing bomb test passed against the uncapped code — a 200 MiB
+    inflate is survivable inside its 15s budget — so it never discriminated on
+    the cap it named. The new test is sized to fail without the fix.
+- Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
+  nothing (see below), so a fresh version is clearer than a re-pointed tag.
+
+Test suite: 410 → 416 tests. Each failure-mode test was confirmed to fail
+against the pre-fix code and pass after it; every must-still-tolerate inverse
+passes both ways, as a control should.
+
 ## 5.1.3 — 2026-08-06
 
 A further-pass audit of the publish-safety hooks, in the repo's own "reproduce

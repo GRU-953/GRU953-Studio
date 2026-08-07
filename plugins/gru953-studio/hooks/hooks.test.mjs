@@ -7229,3 +7229,152 @@ test('docs-consistency.mjs: the audit-register exemption does not blind the chec
   assert.equal(r.json && r.json.status, 'BLOCKED', `a stale live count outside a dated audit register must still be caught: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
+
+// ---------------------------------------------------------------------------
+// gate.mjs — a `gh api` visibility change delivered as a JSON BODY, not as a
+// field flag. 2026-08-07 audit, CRITICAL, found by execution through the real
+// hook interface (the same way the Round 5 and Round 8 go-public fixes were).
+//
+// isGoPublicCommand()'s gh-api patterns all required a FIELD FLAG
+// (-f/-F/--field/--raw-field). But `gh api` equally takes its entire body as
+// JSON on stdin via `--input`, and that JSON sits in the command text where no
+// field flag ever appears. gate.mjs's own comment block has claimed since
+// 2026-07-21 that it covers "an inline JSON body `{"visibility":"public"}`" —
+// it never did. Reproduced against a project with ONLY PUBLISH-APPROVED
+// recorded: both body forms below were ALLOWED, with no go-public
+// confirmation at all, defeating the "private first, then a separate explicit
+// step to go public" guarantee.
+// ---------------------------------------------------------------------------
+test('gate.mjs: a gh api visibility change sent as a JSON body no longer rides the private-publish token (2026-08-07 audit, CRITICAL)', () => {
+  const dir = mkTmp('gru-gate-jsonbody-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // ONLY the private token
+  for (const cmd of [
+    `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'`,
+    `echo '{"visibility":"public"}' | gh api -X PATCH repos/me/app --input -`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"visibility": "internal"}'`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"private": false}'`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"private":0}'`,
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a JSON-body visibility change must not bypass the go-public gate: ${cmd}`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The residual the JSON patterns cannot close: `--input body.json` reads the
+// body from a FILE whose contents are not in the command text at all, so the
+// write can never be PROVEN private. Same fail-closed rule the repo-creation
+// default already uses, scoped to endpoints that can actually carry visibility.
+test('gate.mjs: an uninspectable gh api body (--input <file>) aimed at a repo root or repo-creation endpoint fails closed (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-gate-inputfile-gopub-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  for (const cmd of [
+    'gh api -X PATCH repos/me/app --input body.json',
+    'gh api --method POST user/repos --input newrepo.json',
+    'gh api --method POST orgs/acme/repos --input newrepo.json',
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'deny', `a body this gate cannot read cannot prove the write is private: ${cmd}`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Must-still-tolerate inverses. Without these the fix above would be a blunt
+// "deny anything with --input", which would demand a go-public confirmation
+// for writes that cannot change visibility at all — actively harmful, since
+// it would push a user towards granting the one token that matters most for
+// no reason.
+test('gate.mjs: the JSON-body go-public fix does not over-block writes that cannot change visibility (2026-08-07 audit, inverse)', () => {
+  const dir = mkTmp('gru-gate-jsonbody-inverse-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  for (const cmd of [
+    // an explicitly PRIVATE body is proven private, flag form or JSON form
+    `gh api -X PATCH repos/me/app --input - <<< '{"private":true}'`,
+    `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"private"}'`,
+    'gh api --method POST user/repos -f name=x -f private=true',
+    // a repo SUB-resource cannot carry visibility whatever its body says
+    'gh api --method POST repos/me/app/issues -f title=bug',
+    'gh api -X POST repos/me/app/dispatches --input payload.json -f private=true',
+    // and an ordinary private push is untouched
+    'git push origin main',
+  ]) {
+    const r = runHook('gate.mjs', cmd, dir);
+    assert.equal(r.decision, 'allow', `the private-publish token must still authorise this: ${cmd}`);
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The guarantee that matters most, restated against the new body forms: the
+// go-public token — not the private one — is what unlocks them.
+test('gate.mjs: a JSON-body visibility change is allowed once GO-PUBLIC-APPROVED is recorded, proving the new rule gates rather than forbids (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-gate-jsonbody-unlock-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  const cmd = `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'`;
+  assert.equal(runHook('gate.mjs', cmd, dir).decision, 'deny', 'must be denied on the private token alone');
+  spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(runHook('gate.mjs', cmd, dir).decision, 'allow', 'must be allowed once the go-public token is recorded');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// scan.mjs — the small-file gzip path had no decompression cap. 2026-08-07
+// audit, found by execution.
+//
+// The >MAX_SCAN_BYTES branch has passed maxOutputLength: MAX_PACKED_INFLATED_BYTES
+// to gunzipSync since 2026-07-26. Its twin — the branch that handles a gzip file
+// SMALL enough to read whole (under 4 MiB) — passed no cap at all, while its own
+// catch comment already claimed "a compression bomb guard tripped", describing a
+// guard that did not exist. Reproduced: a 1 MiB gzip of 1 GiB of zeros made the
+// hook allocate roughly a gigabyte and stall ~10s on a push it then allowed.
+//
+// Note on the pre-existing bomb test above ('does not hang and does not crash'):
+// it passed against the UNCAPPED code, because a 200 MiB inflate is survivable
+// within its 15s budget — so it never discriminated on the cap it named. The
+// test below is sized and bounded to actually fail without the fix.
+// ---------------------------------------------------------------------------
+test('scan.mjs: the small-file gzip path bounds decompression, so a 1 GiB-inflating bomb is handled promptly (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-scan-bomb-capped-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // Concatenated gzip members: gunzip decodes them as one stream, so a ~256 KiB
+  // file on disk inflates to 1 GiB. Built this way deliberately — allocating a
+  // literal 1 GiB buffer in the test itself would be the very cost being tested.
+  const member = zlib.gzipSync(Buffer.alloc(4 * 1024 * 1024));
+  const bomb = Buffer.concat(Array.from({ length: 256 }, () => member));
+  assert.ok(bomb.length < 4 * 1024 * 1024, 'the fixture must land on the SMALL-file path under test');
+  fs.writeFileSync(path.join(dir, 'bomb.bin'), bomb);
+  git(['add', '-A'], dir);
+  const start = Date.now();
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  const elapsedMs = Date.now() - start;
+  assert.equal(r.code, 0, 'the hook process itself must exit cleanly, not crash');
+  assert.ok(
+    elapsedMs < 5000,
+    `a bounded inflate must return promptly; an uncapped one inflates the full 1 GiB (took ${elapsedMs}ms)`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The must-still-tolerate inverse: the cap must sit far enough above real
+// archives that bounding the bomb does not blind the scanner to a genuine
+// secret inside an ordinary compressed file. 32 MiB of inflated text is well
+// within the 64 MiB ceiling and far beyond anything a bomb needs.
+test('scan.mjs: a secret inside a gzip that inflates to well under the cap is still caught after the bomb fix (2026-08-07 audit, inverse)', () => {
+  const dir = mkTmp('gru-scan-bomb-inverse-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const filler = Buffer.alloc(32 * 1024 * 1024, 0x61); // 32 MiB of 'a' — ordinary text
+  const packed = zlib.gzipSync(
+    Buffer.concat([filler, Buffer.from('\naws_key = AKIAIOSFODNN7EXAMPLE\n')]),
+  );
+  assert.ok(packed.length < 4 * 1024 * 1024, 'the fixture must land on the SMALL-file path under test');
+  fs.writeFileSync(path.join(dir, 'archive.gz'), packed);
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a real secret inside an ordinary compressed archive must still be refused: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
