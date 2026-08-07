@@ -102,6 +102,16 @@ const allMd = allFiles.filter((f) => f.endsWith('.md'));
 const EXEMPT_FILES = new Set(
   ['AUDIT-2026-07.md', 'CHANGELOG.md'].map((f) => path.resolve(repoRoot, f)),
 );
+// 2026-08-07 audit fix. The line above named ONE audit register by its exact
+// filename, so AUDIT-2026-08.md — the same kind of file, written the same
+// way, quoting its own then-current counts as evidence ("the 22 hooks, 35
+// skills and 38 agents") — was never exempt. It reads clean today only
+// because those numbers still happen to match; the day a skill is added,
+// DC1 would BLOCK on a register truthfully recording what was true in
+// August. Any AUDIT-<date>.md at the repo root is a dated findings register
+// by construction, so match the shape rather than adding a new literal
+// filename every time a programme runs.
+const AUDIT_REGISTER_RE = /^AUDIT-\d{4}-\d{2}(-\d{2})?\.md$/;
 // .kilo/plans/ is a pre-existing, committed set of planning notes from a
 // different tool's own earlier (2026-07-25, one day before this audit) and
 // now-superseded review — it proposes a different, partly-wrong set of
@@ -112,8 +122,11 @@ const EXEMPT_FILES = new Set(
 // rather than silently exempted, and left for the repo owner to decide
 // whether to keep or remove; not this stage's decision to make unilaterally.
 function isExempt(f) {
-  if (EXEMPT_FILES.has(path.resolve(f))) return true;
-  if (path.resolve(f).startsWith(path.resolve(repoRoot, '.kilo') + path.sep)) return true;
+  const abs = path.resolve(f);
+  if (EXEMPT_FILES.has(abs)) return true;
+  if (path.dirname(abs) === path.resolve(repoRoot) && AUDIT_REGISTER_RE.test(path.basename(abs)))
+    return true;
+  if (abs.startsWith(path.resolve(repoRoot, '.kilo') + path.sep)) return true;
   return false;
 }
 
@@ -555,6 +568,63 @@ if (indexHtmlText !== null) {
       } catch {
         /* invalid JSON here is DC4's/repo-integrity's concern, not this gate's */
       }
+    }
+  }
+}
+
+// ---- DC9: every stated version agrees with CHANGELOG.md's newest release (2026-08-07 audit fix) --
+// The bug this closes was live and shipped: CHANGELOG.md's newest section
+// said 5.1.3 and a v5.1.3 tag existed, while plugins/gru953-studio/.claude-
+// plugin/plugin.json and .claude-plugin/marketplace.json still said 5.1.1
+// (never bumped by the 5.1.2 release at all) and all three clients/ packages
+// still said 5.1.2. Nothing anywhere noticed: repo-integrity.mjs checks that
+// referenced things EXIST, DC1-DC8 check counts and names, and publish.yml
+// reads the version from package.json rather than from the tag — so the
+// v5.1.3 tag found 5.1.2 already on npm, took its "already published, skip
+// cleanly" path, and reported a green run that published nothing. A version
+// number is exactly the kind of claim this gate exists for: stated in seven
+// places, true in none of them unless something checks.
+//
+// CHANGELOG.md is the ground truth deliberately — it is the file a human
+// actually writes first when cutting a release, and its newest `## X.Y.Z`
+// heading is unambiguous. README.md's "Latest version: X.Y.Z" line is
+// included because it is the version a reader sees before anything else.
+const changelogText = read(path.join(repoRoot, 'CHANGELOG.md'));
+if (changelogText !== null) {
+  const newest = changelogText.match(/^##\s+v?(\d+\.\d+\.\d+)\b/m);
+  if (!newest) {
+    fail(
+      `CHANGELOG.md has no "## X.Y.Z" release heading — cannot verify the version stated in the plugin and client manifests`,
+    );
+  } else {
+    const releaseVersion = newest[1];
+    const jsonVersionSources = [
+      ['plugins/gru953-studio/.claude-plugin/plugin.json', (j) => j.version],
+      ['.claude-plugin/marketplace.json', (j) => j.metadata && j.metadata.version],
+      ['clients/cli/package.json', (j) => j.version],
+      ['clients/antigravity/package.json', (j) => j.version],
+      ['clients/vscode/package.json', (j) => j.version],
+    ];
+    for (const [rel, pick] of jsonVersionSources) {
+      const raw = read(path.join(repoRoot, ...rel.split('/')));
+      if (raw === null) continue; // a missing manifest is repo-integrity's concern, not this gate's
+      let stated;
+      try {
+        stated = pick(JSON.parse(raw));
+      } catch {
+        continue; // invalid JSON is DC4's / CI's concern
+      }
+      if (stated && stated !== releaseVersion) {
+        fail(
+          `${rel} states version "${stated}", but CHANGELOG.md's newest release is ${releaseVersion} — a release that bumps one and not the other publishes nothing (the publish workflow reads the manifest, not the tag)`,
+        );
+      }
+    }
+    const readmeVersionMatch = readmeText.match(/^###\s+Latest version:\s*v?(\d+\.\d+\.\d+)/m);
+    if (readmeVersionMatch && readmeVersionMatch[1] !== releaseVersion) {
+      fail(
+        `README.md says "Latest version: ${readmeVersionMatch[1]}", but CHANGELOG.md's newest release is ${releaseVersion}`,
+      );
     }
   }
 }

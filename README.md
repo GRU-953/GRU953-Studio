@@ -67,7 +67,18 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 5.1.2
+### Latest version: 5.1.3
+
+Version 5.1.3 is a maintenance release: nine further-pass fixes to the
+publish-safety checks (each reproduced by running the code before being
+called a bug, each paired with a regression test), plus a fix to the release
+process itself. The `v5.1.3` tag was originally pushed without any of the
+version numbers in this repository being raised from 5.1.2, so the publish
+workflow — which reads the version from `package.json`, not from the tag —
+saw a version already on npm and skipped every job in silence. All the
+version numbers now agree, the workflow refuses to run at all if a tag and
+its `package.json` disagree, and a repository check enforces the same
+agreement on every commit. Full detail in [CHANGELOG.md](CHANGELOG.md).
 
 Version 5.1.2 gives the VS Code extension an icon for the first time (the
 Soaring Bird mark) and removes an old marketing phrase, "Universal Agentic
