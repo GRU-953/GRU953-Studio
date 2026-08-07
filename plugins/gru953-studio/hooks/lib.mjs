@@ -676,7 +676,65 @@ export function deEmphasise(c) {
 }
 
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
+// ---- bounded assignment resolution (2026-08-07 audit fix) --------------------
+// The scalar-assignment resolution below is superlinear in the NUMBER of
+// assignments in one command: each new assignment is re-resolved against every
+// assignment already known, so cost grows roughly quadratically. Measured on
+// this machine, one fresh process per point: 2,000 assignments = 1.5s, 4,000 =
+// 6.7s, 6,000 = 17.0s, 8,000 = 29.1s. A real command has fewer than 30 and
+// costs 0.1-0.6 ms.
+//
+// SECURITY.md disclosed this as an accepted, adversarial-only cost, and left
+// one question open: what Claude Code does with a `command` hook that exceeds
+// its timeout. That question is now answered from the hooks reference, and the
+// answer is what makes this worth bounding rather than merely disclosing:
+//
+//   - "Any other exit code is a non-blocking error for most hook events. The
+//     action proceeds." A hook cancelled at its timeout exits non-zero.
+//   - The reference singles out Agent SDK callback hooks as the exception that
+//     BLOCKS on timeout, "because a callback there can be acting as a policy
+//     gate that must not fail open" — wording that only makes sense if the
+//     ordinary command-hook path does fail open.
+//
+// So a command crafted to run this resolution past the 600 s default timeout
+// would have BOTH push-time hooks cancelled as non-blocking errors and the push
+// would proceed unscanned and unauthorised. Extrapolating the curve above, that
+// needs on the order of 36,000 assignments (~310 KiB of command text).
+//
+// Stated honestly: the fail-open behaviour is read from the documentation, not
+// reproduced in a live session here. The bound is worth adding either way — if
+// it fails open this closes a real bypass, and if it fails closed it still
+// removes a multi-minute stall on every such command. This is the same reasoning
+// the 2026-07-21 ReDoS fix in isPushCapable already recorded ("a pathological
+// input could push the hook past the harness timeout"), applied to the cost this
+// file had disclosed rather than bounded.
+//
+// The bound is 500 — more than 16x the largest real command this project has
+// ever seen (<30) and far below the count needed to matter. Past it, resolution
+// is skipped entirely and the two security callers fail CLOSED (see
+// isPushCapable below and isGoPublicCommand in gate.mjs): a command this
+// pathological is never legitimate, so treating it as push-capable and as
+// visibility-changing costs a real user nothing.
+export const MAX_RESOLVED_ASSIGNMENTS = 500;
+export function exceedsAssignmentBound(c) {
+  if (!c) return false;
+  // Deliberately a cheap, single linear pass — counting must never itself be
+  // the expensive thing it exists to prevent. Every match consumes at least the
+  // `=`, so this cannot spin on a zero-length match.
+  const re =
+    /(?:^|[;\n]|&&)\s*(?:export|local|readonly|declare|typeset)?\s*[A-Za-z_][A-Za-z0-9_]*\+?=/g;
+  let count = 0;
+  while (re.exec(c) !== null) {
+    if (++count > MAX_RESOLVED_ASSIGNMENTS) return true;
+  }
+  return false;
+}
+
 export function normalizeForPushCheck(c) {
+  // Past the bound, skip resolution altogether and hand back the raw text. Both
+  // security callers check the same bound and fail closed, so returning
+  // unresolved text here can never turn into a permissive answer.
+  if (exceedsAssignmentBound(c)) return c;
   let n = c;
   // 2026-07-12 Round 7 audit fix (CRITICAL, found by execution): bash's
   // array assignment (`arr=(a b)`) and subscript access (`${arr[N]}`, bare
@@ -1647,6 +1705,13 @@ function isConfirmScriptOnly(c) {
 }
 export function isPushCapable(rawC) {
   if (!rawC) return true;
+  // 2026-08-07 audit fix. Past MAX_RESOLVED_ASSIGNMENTS the variable resolution
+  // is skipped (see normalizeForPushCheck), so any `$VAR` in this command is
+  // unresolved text and this matcher cannot prove the command is NOT a push.
+  // This function's own stated rule is "prove non-push or treat as push", so
+  // the answer here is true — which routes the command to gate.mjs's
+  // authorisation check rather than allowing it outright.
+  if (exceedsAssignmentBound(rawC)) return true;
   const c = normalizeForPushCheck(rawC);
   if (isConfirmScriptOnly(c)) return false;
   // 2026-07-11 Round-A adversarial-audit fix: tolerate quotes around the

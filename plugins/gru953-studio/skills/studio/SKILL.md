@@ -33,7 +33,7 @@ Also load and follow these companion skills as standing rules:
   project (never on later projects).
 - `google-antigravity-integration` — dual-harness operation: the protocol for
   executing GRU953-Studio inside Google Antigravity (`agy` CLI, IDE, 2.0 app,
-  Python SDK, Gemini 3.6/3.5 models, and the Antigravity SDK), seamlessly
+  Python SDK, the Gemini model tiers, and the Antigravity SDK), seamlessly
   alongside Claude Code.
 - `universal-platform-integration` — the protocol for running GRU953-Studio on
   every other 2026 AI coding platform (Cursor, Windsurf, Copilot, Devin,

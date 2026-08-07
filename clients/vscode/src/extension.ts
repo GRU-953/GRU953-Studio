@@ -8,16 +8,14 @@ import * as path from 'node:path';
 // real published package is `@gru953/studio-cli` (see clients/cli/package.json),
 // so this ran a package that doesn't exist and did nothing.
 //
-// 2026-07-29 maintenance fix (audit finding 1): `@gru953/studio-cli` has
+// 2026-07-29 maintenance fix (audit finding 1): `@gru953/studio-cli` had
 // never actually been published to npm (confirmed 404 from the registry) and
-// there is no publish step anywhere in .github/workflows/, so `npx
+// there was no publish step anywhere in .github/workflows/, so `npx
 // @gru953/studio-cli status` — the fix that finding 16 above landed — could
 // never have worked either. Replaced with a direct `node` invocation of the
 // CLI's own entry file, located relative to this extension's own installed
 // files the same way clients/antigravity/src/index.js locates
-// plugins/gru953-studio — i.e. this only works when the extension is running
-// from inside a full GRU953-Studio checkout (as it is here), not from a
-// standalone packaged .vsix with no sibling clients/cli/ directory.
+// plugins/gru953-studio.
 //
 // 2026-07-29 second maintenance pass (a follow-up review of the fix directly
 // above — NOT the same numbered list as "audit finding 1" above it, to avoid
@@ -27,10 +25,27 @@ import * as path from 'node:path';
 // clients/cli/ can never be present there, so `cliEntry` below would resolve
 // to a path that doesn't exist and `sendText` would run a command that
 // crashes the integrated terminal with a raw Node "Cannot find module" stack
-// trace — exactly the failure mode this project's own "never show a raw
-// stack trace" rule exists to prevent. Guarded with fs.existsSync() before
-// sending anything to the terminal; a plain-English error explains why
-// instead.
+// trace. Guarded with fs.existsSync() before sending anything to the
+// terminal; a plain-English error explained why instead.
+//
+// 2026-08-07 audit fix. BOTH premises of the two notes above are now stale,
+// and the guard they justified had turned this extension into a no-op for
+// every real user. Verified directly against the npm registry rather than
+// assumed: `@gru953/studio-cli` IS published (5.0.1, 5.1.0, 5.1.1, 5.1.2),
+// and `.github/workflows/publish.yml` IS the publish step — both landed in
+// 5.1.0/5.1.2, after those comments were written. Meanwhile `.vscodeignore`
+// guarantees clients/cli/ is never inside a packaged .vsix, so for anyone who
+// installed this extension from the Marketplace the existsSync() guard always
+// failed, and its single contributed command could do nothing but show an
+// error saying it only works from a repository checkout. A published
+// extension whose only command never runs is the same class of defect as
+// finding 16 (a command wired to a package that does not exist), just
+// reached from the other direction.
+//
+// So: prefer the local checkout when it genuinely is one — that is faster,
+// works offline, and is what a contributor developing this repo wants — and
+// otherwise fall back to `npx` against the now-published package, which is
+// what the original finding-16 fix intended and what now actually works.
 // Finding 17: `start`/`pause`/`resume` printed an encouraging message and
 // then did nothing real — worse, `start` also created a `Dev-Memory` folder
 // directly with `fs.mkdirSync`, entirely bypassing the actual studio
@@ -46,16 +61,21 @@ export function activate(context: vscode.ExtensionContext) {
 
     const statusCommand = vscode.commands.registerCommand('gru953-studio.status', () => {
         const cliEntry = path.join(__dirname, '..', '..', '..', 'clients', 'cli', 'src', 'index.js');
-        if (!fs.existsSync(cliEntry)) {
-            vscode.window.showErrorMessage(
-                'GRU953-Studio: Status needs a full GRU953-Studio checkout — this command only works when the extension is running from inside the repository (e.g. cloned for development), not from a normally-installed, packaged extension.',
-            );
-            return;
-        }
-        vscode.window.showInformationMessage('GRU953-Studio: Fetching status...');
+        const runningFromCheckout = fs.existsSync(cliEntry);
+        // `--yes` so npx never stops at an interactive "install this package?"
+        // prompt: this runs in a terminal the user did not type into, where a
+        // silent wait for a keypress reads exactly like a hang.
+        const command = runningFromCheckout
+            ? `node "${cliEntry}" status`
+            : 'npx --yes @gru953/studio-cli status';
+        vscode.window.showInformationMessage(
+            runningFromCheckout
+                ? 'GRU953-Studio: Fetching status...'
+                : 'GRU953-Studio: Fetching status via npx (first run may take a moment to download the CLI)...',
+        );
         const terminal = vscode.window.activeTerminal || vscode.window.createTerminal('GRU953 Studio');
         terminal.show();
-        terminal.sendText(`node "${cliEntry}" status`);
+        terminal.sendText(command);
     });
 
     context.subscriptions.push(statusCommand);

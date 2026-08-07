@@ -47,6 +47,7 @@ import {
   findStudioRoot,
   isPushCapable,
   normalizeForPushCheck,
+  exceedsAssignmentBound,
   LEXICAL_BOUNDARY,
   tokenConfirmedWithinTtl,
 } from './lib.mjs';
@@ -139,6 +140,15 @@ function publishConfirmed(studioRoot) {
 // LEXICAL_BOUNDARY fix as lib.mjs's isPushCapable — see that file for the
 // full explanation of why `([ \t]|$)` was too narrow a boundary.
 function isGoPublicCommand(rawC) {
+  // 2026-08-07 audit fix, the sibling of the bound added to isPushCapable (see
+  // lib.mjs for the full reasoning and the measured cost curve). Past
+  // MAX_RESOLVED_ASSIGNMENTS the variable resolution is skipped, so a
+  // `--visibility=$v` in this command is unresolved text and this function
+  // cannot prove the command is NOT a visibility change. The guarantee this
+  // gate exists for — going public is always separately confirmed — is only
+  // safe if the unprovable case is treated as go-public. Such a command is
+  // never legitimate, so requiring GO-PUBLIC-APPROVED for it costs nothing real.
+  if (exceedsAssignmentBound(rawC)) return true;
   const c = normalizeForPushCheck(rawC);
   // `gh repo create|edit ... --public` / `--visibility public|internal`
   // 2026-07-21 Round 12 audit fix (HIGH): the standalone `--internal` flag was

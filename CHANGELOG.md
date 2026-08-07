@@ -46,6 +46,59 @@ Round 8 go-public bypasses were found.
   - The pre-existing bomb test passed against the uncapped code — a 200 MiB
     inflate is survivable inside its 15s budget — so it never discriminated on
     the cap it named. The new test is sized to fail without the fix.
+- **The VS Code extension's only command could never run for anyone who
+  installed it.** Its `Status` command prefers a `clients/cli/` sibling
+  directory, and `.vscodeignore` guarantees that directory is never inside a
+  packaged `.vsix` — so for every Marketplace install the guard failed and the
+  command did nothing but show an error saying it only works from a repository
+  checkout. The guard was added in July on two premises that have since gone
+  stale, both re-checked directly rather than assumed:
+  `@gru953/studio-cli` **is** published to npm (5.0.1, 5.1.0, 5.1.1, 5.1.2 —
+  confirmed against the registry), and `.github/workflows/publish.yml` **is**
+  the publish step whose absence the comment cited. The command now prefers the
+  local checkout when there genuinely is one (faster, works offline, what a
+  contributor wants) and otherwise falls back to
+  `npx --yes @gru953/studio-cli status` — verified end-to-end by running it
+  against the published package, not assumed to work. `--yes` so npx cannot
+  stall on an interactive install prompt in a terminal the user never typed
+  into. A published extension whose only command never runs is the same class
+  of defect as 5.0.1's finding 16 (a command wired to a package that does not
+  exist), reached from the other direction.
+- **The disclosed matcher cost is now bounded, because the open question behind
+  it turned out to be "fails open".** `SECURITY.md` had disclosed
+  `normalizeForPushCheck`'s superlinear assignment-resolution cost as an
+  accepted, adversarial-only residual, leaving open what Claude Code does with a
+  `command` hook that exceeds its timeout. The hooks reference answers it: "Any
+  other exit code is a non-blocking error… The action proceeds", and a cancelled
+  hook exits non-zero — with Agent SDK callbacks singled out as the exception
+  that blocks, "because a callback there can be acting as a policy gate that must
+  not fail open". So a command crafted to run past the 600-second default
+  (roughly 36,000 assignments, ~310 KiB) would have **both** push-time hooks
+  cancelled and the push would proceed unscanned and unauthorised. Resolution is
+  now skipped past 500 assignments — over 16x the largest real command this
+  project has seen — and both callers fail CLOSED there: `isPushCapable` answers
+  "push-capable" (routing to the authorisation check), `isGoPublicCommand`
+  answers "going public" (still requiring its separate confirmation). The
+  5,000-assignment case drops from ~9 s to effectively free; every ordinary
+  command is unchanged. Stated precisely: the fail-open behaviour is read from
+  the documentation, not reproduced in a live session — the bound is worth having
+  either way, since it removes a multi-minute stall regardless.
+- **A skill recommended a retired Claude model for its hardest tier.**
+  `google-antigravity-integration`'s model-routing table named **Claude 3.7
+  Sonnet** for "Complex / Deep Tasks" — a model retired on 2026-02-19, so the
+  single hardest tier pointed at an ID that no longer resolves. Checked against
+  Anthropic's current model documentation rather than from memory. The Claude
+  tiers are now named by family, matching the deliberate version-free convention
+  `model-router` already uses — which is precisely why that skill did not rot
+  the same way.
+  - The Gemini names alongside it (`Gemini 3.6 Flash`, `Gemini Flash High`,
+    `Gemini Ultra`) are **not** claimed to have been wrong: they could not be
+    verified against Google's current documentation during the audit, and
+    swapping an unverifiable name for a guess would repeat the defect. They are
+    generalised to tier names, with the uncertainty recorded in the skill.
+  - `model-router` cited `google-antigravity-integration` as one of the skills
+    that "already apply" its verify-before-relying discipline. It did not carry
+    that disclaimer; it does now.
 - Released as 5.1.4 rather than re-using 5.1.3: the `v5.1.3` tag published
   nothing (see below), so a fresh version is clearer than a re-pointed tag.
 
