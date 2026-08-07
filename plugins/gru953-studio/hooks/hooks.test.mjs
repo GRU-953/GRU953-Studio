@@ -7103,3 +7103,129 @@ test('lib.mjs: deEmphasise() still strips each of the four required single-decor
   assert.equal(deEmphasise('"tbd"'), 'tbd');
 });
 
+
+// ---------------------------------------------------------------------------
+// docs-consistency.mjs DC9 — version consistency. 2026-08-07 audit.
+//
+// This closes a bug that had already SHIPPED, not a hypothetical one.
+// CHANGELOG.md's newest section said 5.1.3 and a v5.1.3 tag existed, while
+// plugin.json and marketplace.json still said 5.1.1 (the 5.1.2 release never
+// bumped them at all) and all three clients/ packages still said 5.1.2.
+// publish.yml reads the version from package.json rather than from the tag,
+// so the tag found 5.1.2 already live on npm, took its "already published,
+// skip cleanly" path, and reported a green run that published nothing.
+// Reproduced by execution against the pre-fix repo before being called a bug.
+// ---------------------------------------------------------------------------
+test('docs-consistency.mjs DC9: a manifest left behind by a release bump is caught (the real 2026-08-07 shipped bug)', () => {
+  const dir = mkTmp('gru-docsconsist-version-');
+  copyRepoTo(dir);
+  const pj = path.join(dir, 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json');
+  const j = JSON.parse(fs.readFileSync(pj, 'utf8'));
+  j.version = '5.1.1';
+  fs.writeFileSync(pj, JSON.stringify(j, null, 2) + '\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a manifest disagreeing with CHANGELOG's newest release must be caught, got: ${r.stdout}`);
+  assert.ok(
+    r.json.problems.some((p) => p.includes('plugin.json') && p.includes('5.1.1')),
+    `expected a problem naming the stale manifest, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs DC9: a client package.json left behind by a release bump is caught too, not just the plugin manifest', () => {
+  const dir = mkTmp('gru-docsconsist-versioncli-');
+  copyRepoTo(dir);
+  const pj = path.join(dir, 'clients', 'cli', 'package.json');
+  const j = JSON.parse(fs.readFileSync(pj, 'utf8'));
+  j.version = '5.1.2';
+  fs.writeFileSync(pj, JSON.stringify(j, null, 2) + '\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `every published manifest must be covered, not only the plugin's: ${r.stdout}`);
+  assert.ok(
+    r.json.problems.some((p) => p.includes('clients/cli/package.json')),
+    `expected a problem naming the stale client manifest, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test("docs-consistency.mjs DC9: README's \"Latest version\" line disagreeing with the changelog is caught", () => {
+  const dir = mkTmp('gru-docsconsist-versionreadme-');
+  copyRepoTo(dir);
+  const readmePath = path.join(dir, 'README.md');
+  fs.writeFileSync(
+    readmePath,
+    fs.readFileSync(readmePath, 'utf8').replace(/^### Latest version: .*$/m, '### Latest version: 5.0.9'),
+  );
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a stale README version line must be caught, got: ${r.stdout}`);
+  assert.ok(
+    r.json.problems.some((p) => p.includes('Latest version: 5.0.9')),
+    `expected a problem naming the stale README line, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The must-still-tolerate inverse: bumping every manifest together, the way a
+// real release does, must stay clean — otherwise DC9 would block every release
+// instead of only the inconsistent ones.
+test('docs-consistency.mjs DC9: a consistent bump of the changelog and every manifest stays clean', () => {
+  const dir = mkTmp('gru-docsconsist-versionok-');
+  copyRepoTo(dir);
+  const clPath = path.join(dir, 'CHANGELOG.md');
+  fs.writeFileSync(clPath, '# Changelog\n\n## 9.9.9 — 2026-08-07\n\nA test release.\n\n' + fs.readFileSync(clPath, 'utf8').replace(/^# Changelog\n\n/, ''));
+  for (const rel of [
+    ['plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'],
+    ['clients', 'cli', 'package.json'],
+    ['clients', 'antigravity', 'package.json'],
+    ['clients', 'vscode', 'package.json'],
+  ]) {
+    const p = path.join(dir, ...rel);
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    j.version = '9.9.9';
+    fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+  }
+  const mp = path.join(dir, '.claude-plugin', 'marketplace.json');
+  const mj = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  mj.metadata.version = '9.9.9';
+  fs.writeFileSync(mp, JSON.stringify(mj, null, 2) + '\n');
+  const readmePath = path.join(dir, 'README.md');
+  fs.writeFileSync(
+    readmePath,
+    fs.readFileSync(readmePath, 'utf8').replace(/^### Latest version: .*$/m, '### Latest version: 9.9.9'),
+  );
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a consistent release bump must not be blocked: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// docs-consistency.mjs — dated audit registers are evidence, not live claims.
+// 2026-08-07 audit. EXEMPT_FILES named AUDIT-2026-07.md by its exact filename,
+// so AUDIT-2026-08.md — the same kind of file, quoting its own then-current
+// counts as proof — was never exempt. It read clean only because those numbers
+// still happened to match today's; the day a skill is added, DC1 would BLOCK
+// on a register truthfully recording August's numbers.
+// ---------------------------------------------------------------------------
+test('docs-consistency.mjs: a dated AUDIT-YYYY-MM.md register quoting its own then-current count is not falsely blocked (2026-08-07 audit fix)', () => {
+  const dir = mkTmp('gru-docsconsist-auditexempt-');
+  copyRepoTo(dir);
+  const auditPath = path.join(dir, 'AUDIT-2026-08.md');
+  fs.writeFileSync(
+    auditPath,
+    fs.readFileSync(auditPath, 'utf8') + '\n\nAt the time of this programme the team stood at 34 skills.\n',
+  );
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'clean', `a dated audit register must be treated as evidence, not a live claim: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The inverse: the exemption must be scoped to the repo root's dated audit
+// registers only, so an ordinary file with a stale count is still caught.
+test('docs-consistency.mjs: the audit-register exemption does not blind the check to a stale count in an ordinary file', () => {
+  const dir = mkTmp('gru-docsconsist-auditexempt-inverse-');
+  copyRepoTo(dir);
+  fs.writeFileSync(path.join(dir, 'NOTES-2026-08.md'), 'The team has 34 skills today.\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a stale live count outside a dated audit register must still be caught: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});

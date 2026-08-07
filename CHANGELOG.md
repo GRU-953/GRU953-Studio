@@ -57,6 +57,34 @@ all six CI gates stay green).
   de-emphasised before classifying, so the row CSS class and count pills match
   what a reader sees.
 
+Also in 5.1.3, found by auditing the release itself rather than trusting it
+(the same discipline that found 5.1.1's publisher bug):
+
+- **The 5.1.3 tag published nothing, and said nothing was wrong.** The
+  `v5.1.3` tag was pushed while every version number in the repository still
+  read 5.1.2 — and `.claude-plugin/marketplace.json` and the plugin's own
+  `plugin.json` still read 5.1.1, never bumped by the 5.1.2 release at all.
+  `publish.yml` reads the version from `package.json`, not from the tag, so
+  all three publish jobs saw a version already live, took their "already
+  published — skip cleanly" path (added in 5.1.2 for re-signed tags), and
+  reported a green run. Every version number now reads 5.1.3.
+- `publish.yml` now fails immediately if the tag being published and the
+  package's own version disagree, in each of the three jobs. A tag is a
+  statement of intent; a silent skip is the wrong answer when it turns out
+  to be wrong.
+- `docs-consistency.mjs` gains DC9: every version stated in the plugin
+  manifest, the marketplace manifest, the three client packages, and
+  README's "Latest version" line must agree with `CHANGELOG.md`'s newest
+  release heading. Reproduced against the pre-fix repository (BLOCKED,
+  naming the exact stale manifest) and confirmed clean after the bump.
+- `docs-consistency.mjs`: `AUDIT-2026-08.md` was not exempt from the
+  stale-count check, though `AUDIT-2026-07.md` was — a dated findings
+  register quotes its own then-current counts as evidence, and the newer one
+  read clean only because those numbers still matched. Any root-level
+  `AUDIT-<date>.md` is now exempt by shape rather than by filename.
+
+Test suite: 404 → 410 tests, all green, all six CI gates green.
+
 ## 5.1.2 — 2026-08-01
 
 A branding-consistency and reliability release — no behaviour change to how
