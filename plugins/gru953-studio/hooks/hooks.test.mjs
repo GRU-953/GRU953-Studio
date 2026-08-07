@@ -7471,3 +7471,78 @@ test('gate.mjs: a pathological command fails closed at BOTH gates — no push, a
   );
   fs.rmSync(dir, RM_OPTS);
 });
+
+// ---------------------------------------------------------------------------
+// scan.mjs KEYFILE_RE — modern SSH private-key names. 2026-08-07 audit.
+//
+// The rule listed only `id_rsa`, the LEGACY name, and missed every modern one.
+// `id_ed25519` has been ssh-keygen's recommended type since OpenSSH 7.8 (2018),
+// so the backstop covered the name that is going away and not the one people
+// actually have.
+//
+// Scoped honestly: for a normal PEM key this changed nothing — SECRET_RE's
+// `-----BEGIN [A-Z ]*PRIVATE KEY-----` already caught an OpenSSH ed25519 key and
+// an EC key by CONTENT regardless of filename (verified before the fix). The gap
+// was the case this filename rule exists for: content the regexes cannot see.
+// Reproduced with a DER-encoded (binary) key, which is not textish and so is
+// never content-scanned — byte-identical files were ALLOWED as `id_ed25519` and
+// correctly denied as `id_rsa`.
+// ---------------------------------------------------------------------------
+test('scan.mjs: a binary private key named with a modern SSH key name is caught, not just legacy id_rsa (2026-08-07 audit)', () => {
+  const dir = mkTmp('gru-scan-sshkeys-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  // DER-encoded: deliberately NOT textish, so the content scan cannot see it and
+  // only the filename rule can catch it. This is the whole point of the fixture.
+  const der = Buffer.concat([Buffer.from([0x30, 0x82, 0x04, 0xa4]), crypto.randomBytes(800)]);
+  for (const name of ['id_ed25519', 'id_ecdsa', 'id_dsa', 'id_ed448']) {
+    fs.writeFileSync(path.join(dir, name), der);
+  }
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a binary private key under a modern SSH name must be refused: ${r.stdout}`);
+  // Findings are a JSON string nested inside the response JSON, so the raw
+  // stdout carries escaped quotes — decode before matching rather than
+  // substring-searching the escaped form.
+  const reason = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  for (const name of ['id_ed25519', 'id_ecdsa', 'id_dsa', 'id_ed448']) {
+    assert.ok(
+      reason.includes(`"file":"${name}"`),
+      `${name} must be reported as a key-file finding: ${reason}`,
+    );
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The `$` anchor is load-bearing: a `.pub` file is a PUBLIC key and must stay
+// clear, exactly as `id_rsa.pub` already did. Without this the fix would block
+// every repo that legitimately commits a public key.
+test('scan.mjs: public keys and ordinary files are not swept up by the modern SSH key-name fix (2026-08-07 audit, inverse)', () => {
+  const dir = mkTmp('gru-scan-sshkeys-inverse-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  for (const name of ['id_ed25519.pub', 'id_rsa.pub', 'identity.ts', 'valid_id_notakey', 'README.md']) {
+    fs.writeFileSync(path.join(dir, name), 'ordinary content\n');
+  }
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'allow', `public keys and ordinary files must not be flagged: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Regression guard for the pre-existing behaviour the fix must not disturb: a
+// real PEM key is still caught by CONTENT whatever it is called, which is why
+// the filename gap was narrow rather than severe.
+test('scan.mjs: a PEM private key is still caught by content regardless of its filename (2026-08-07 audit, control)', () => {
+  const dir = mkTmp('gru-scan-pemkey-');
+  initRepo(dir);
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'unremarkable-name.txt'),
+    '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmU=\n-----END OPENSSH PRIVATE KEY-----\n',
+  );
+  git(['add', '-A'], dir);
+  const r = runHook('scan.mjs', 'git push origin main', dir);
+  assert.equal(r.decision, 'deny', `a PEM private key must be caught by content even under an innocuous name: ${r.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});

@@ -634,7 +634,25 @@ function main() {
   // above requires a quoted value, but real .env files conventionally use
   // unquoted `KEY=value`, which matches neither secret regex. So a file
   // named `.ENV` holding ordinary unquoted secrets shipped undetected.
-  const KEYFILE_RE = /(^|\/)(\.env(\..+)?|.+\.env|id_rsa|.+\.pem|.+\.key)$/i;
+  // 2026-08-07 audit fix (found by execution). This listed only `id_rsa` — the
+  // LEGACY SSH key name — and missed every modern one. `id_ed25519` has been
+  // ssh-keygen's recommended type since OpenSSH 7.8 (2018) and is the common
+  // default today, so the backstop covered the name that is going away and not
+  // the one people actually have.
+  //
+  // Scoped honestly: for a normal SSH key this changed nothing, because a real
+  // key is PEM text and SECRET_RE's `-----BEGIN [A-Z ]*PRIVATE KEY-----` already
+  // catches it whatever the file is called (verified — an OpenSSH ed25519 key and
+  // an EC key were both caught as `secret` before this fix). The gap was the case
+  // this filename rule exists for: content the regexes cannot see. Reproduced
+  // with a DER-encoded (binary) private key, which is not textish so it is never
+  // content-scanned — byte-identical files shipped as `allow` when named
+  // `id_ed25519` and were correctly blocked when named `id_rsa`.
+  //
+  // The `$` anchor is load-bearing and deliberately kept: `id_ed25519.pub` is a
+  // PUBLIC key and must stay clear, exactly as `id_rsa.pub` already did.
+  const KEYFILE_RE =
+    /(^|\/)(\.env(\..+)?|.+\.env|id_(rsa|dsa|ecdsa|ed25519|ed448)|.+\.pem|.+\.key)$/i;
   // 2026-07-11 Round 5 audit fix (case-sensitive ON PURPOSE — the `/i` flag
   // was removed): the studio always creates a project's private working
   // memory as `Dev-Memory` (capital D, capital M — see findStudioRoot,
