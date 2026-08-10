@@ -17,7 +17,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// pathToFileURL (2026-08-10): importing a module by absolute path works on
+// POSIX but throws on Windows, where `D:\a\...` looks to Node's ESM loader like
+// a URL with scheme "d:". repo-integrity.mjs's INV15 hit exactly this on a
+// Windows CI leg; the tools/ imports below would have hit it too.
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
@@ -4421,6 +4425,137 @@ test('repo-integrity.mjs INV13: docs-consistency.mjs dropping out of ci.yml is c
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping docs-consistency.mjs from ci.yml must be caught');
   assert.ok(r.json.problems.some((p) => p.includes('ci.yml') && p.includes('docs-consistency.mjs')), `expected a problem naming the dropped wiring, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// tools/lib/zip.mjs and tools/build-release-assets.mjs — 2026-08-10.
+//
+// Placed in THIS suite deliberately rather than a new one under tools/: CI runs
+// hooks.test.mjs on ubuntu, macOS and Windows across two Node versions, and a
+// hand-written ZIP writer is exactly the kind of byte-level code where a
+// platform difference (path separators, line endings, permission bits) is the
+// likely failure. A tools-only suite on one Linux runner would prove much less.
+// ---------------------------------------------------------------------------
+const TOOLS = path.join(REPO_ROOT, 'tools');
+
+/** True when a real `unzip` exists to verify archives against. */
+function hasUnzip() {
+  const r = spawnSync('unzip', ['-v'], { encoding: 'utf8' });
+  return r.status === 0;
+}
+
+test('zip.mjs: produces an archive a real unzip accepts, with content and the executable bit intact', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  const dir = mkTmp('gru-zip-roundtrip-');
+  const zipPath = path.join(dir, 'a.zip');
+  fs.writeFileSync(
+    zipPath,
+    createZip([
+      { name: 'plain.txt', data: 'hello hello hello hello hello hello hello hello' },
+      { name: 'nested/deep/file.json', data: '{"ok":true}' },
+      { name: 'run.sh', data: '#!/bin/sh\necho hi\n', mode: 0o755 },
+    ]),
+  );
+  if (!hasUnzip()) {
+    // Never a silent pass: say what was skipped and why, then still assert what
+    // CAN be checked without the tool.
+    console.log('    (no `unzip` on this machine — verifying structure only, not extraction)');
+    const bytes = fs.readFileSync(zipPath);
+    assert.equal(bytes.readUInt32LE(0), 0x04034b50, 'must begin with a local file header signature');
+    assert.equal(bytes.readUInt32LE(bytes.length - 22), 0x06054b50, 'must end with an end-of-central-directory record');
+    fs.rmSync(dir, RM_OPTS);
+    return;
+  }
+  const t = spawnSync('unzip', ['-tq', zipPath], { encoding: 'utf8' });
+  assert.equal(t.status, 0, `unzip reported the archive as damaged: ${t.stdout}${t.stderr}`);
+  const out = path.join(dir, 'out');
+  assert.equal(spawnSync('unzip', ['-q', zipPath, '-d', out], { encoding: 'utf8' }).status, 0);
+  assert.match(fs.readFileSync(path.join(out, 'plain.txt'), 'utf8'), /^hello hello/);
+  assert.equal(fs.readFileSync(path.join(out, 'nested', 'deep', 'file.json'), 'utf8'), '{"ok":true}');
+  if (process.platform !== 'win32') {
+    // The executable bit only exists on POSIX filesystems. An install script
+    // that unzips without it is a confusing failure for a non-technical user,
+    // which is why zip.mjs bothers to set "version made by = Unix".
+    assert.ok(fs.statSync(path.join(out, 'run.sh')).mode & 0o111, 'run.sh must still be executable after extraction');
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('zip.mjs: the same input twice produces byte-identical archives (so SHA256SUMS means something)', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  const entries = [{ name: 'a.txt', data: 'same content every time' }];
+  assert.deepEqual(createZip(entries), createZip(entries));
+});
+
+test('zip.mjs: refuses a backslash in an entry name (which would unpack as one oddly-named file elsewhere)', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  assert.throws(() => createZip([{ name: 'dir\\file.txt', data: 'x' }]), /forward slashes/);
+  assert.throws(() => createZip([{ name: '', data: 'x' }]), /needs a name/);
+});
+
+test('zip.mjs: stores incompressible data rather than growing it', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  // Random bytes cannot be compressed; a naive always-deflate writer makes them
+  // slightly LARGER, which is why createZip keeps whichever is smaller.
+  const random = crypto.randomBytes(4096);
+  const stored = createZip([{ name: 'r.bin', data: random }]);
+  assert.ok(stored.length < random.length + 200, `expected roughly the original size plus headers, got ${stored.length} for ${random.length} bytes`);
+});
+
+test('build-release-assets: firstSentence does not cut a description off at "e.g." or "i.e."', async () => {
+  const { firstSentence } = await import(pathToFileURL(path.join(TOOLS, 'build-release-assets.mjs')).href);
+  // The real ai-developer description, which the first version of this code
+  // truncated at "(e.g." — found by reading the generated file, not by theory.
+  const real = 'The single owner of any AI/LLM feature (e.g. calling the Claude API, or a local model) the product needs. Then a second sentence.';
+  assert.match(firstSentence(real), /local model\) the product needs\.$/);
+  assert.equal(firstSentence('No full stop here at all'), 'No full stop here at all', 'falls back to the whole text');
+  assert.match(firstSentence('Short one. This is the genuinely long first sentence that should be chosen instead. And more.'), /instead\.$/, 'a too-short candidate is not treated as the sentence end');
+});
+
+test('build-release-assets: builds every installer, each in the layout its own host documents', async () => {
+  const { buildAssets } = await import(pathToFileURL(path.join(TOOLS, 'build-release-assets.mjs')).href);
+  const dir = mkTmp('gru-relassets-');
+  // --skip-vsix: packaging the extension shells out to npx and needs its
+  // dependencies installed, which is the `clients` CI job's business, not this
+  // suite's. Everything else is built and inspected.
+  const { version, written } = buildAssets({ outDir: dir, skipVsix: true, log: () => {} });
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  for (const expected of [
+    `gru953-studio-claude-code-${version}.zip`,
+    `gru953-studio-claude-desktop-${version}.zip`,
+    `gru953-studio-antigravity-${version}.zip`,
+    'install.sh',
+    'install.ps1',
+    'SHA256SUMS.txt',
+  ]) {
+    assert.ok(written.includes(expected), `${expected} must be built`);
+    assert.ok(fs.existsSync(path.join(dir, expected)), `${expected} must exist on disk`);
+  }
+  // Checksums must cover every asset, or the file gives false assurance.
+  const sums = fs.readFileSync(path.join(dir, 'SHA256SUMS.txt'), 'utf8').trim().split('\n');
+  assert.equal(sums.length, written.length - 1, 'one checksum line per asset (excluding the checksum file itself)');
+  for (const line of sums) assert.match(line, /^[0-9a-f]{64} {2}\S+$/, `malformed checksum line: ${line}`);
+
+  if (hasUnzip()) {
+    const list = (z) => spawnSync('unzip', ['-Z1', path.join(dir, z)], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    for (const z of [`gru953-studio-claude-code-${version}.zip`, `gru953-studio-claude-desktop-${version}.zip`]) {
+      const names = list(z);
+      assert.ok(names.includes('gru953-studio/.claude-plugin/plugin.json'), `${z} must carry plugin.json at the package root`);
+      assert.ok(names.includes('INSTALL.txt'), `${z} must carry its own install guide`);
+      assert.ok(names.some((n) => n.startsWith('gru953-studio/agents/')), `${z} must carry the specialists`);
+      assert.ok(!names.some((n) => n.includes('node_modules') || n.endsWith('.DS_Store')), `${z} must not ship build or platform litter`);
+    }
+    const ag = list(`gru953-studio-antigravity-${version}.zip`);
+    assert.ok(ag.includes('gru953-studio/plugin.json'), 'the Antigravity package needs plugin.json at its root, not .claude-plugin/');
+    assert.ok(ag.includes('gru953-studio/rules/gru953-roster.md'), 'the roster must be projected into rules/');
+    assert.ok(ag.some((n) => n.startsWith('gru953-studio/skills/')), 'skills must be present');
+    // The point of the whole Antigravity layout: it has no agents/ or commands/
+    // component, so shipping either would be a directory it silently ignores.
+    assert.ok(!ag.some((n) => /^gru953-studio\/(agents|commands)\//.test(n)), 'the Antigravity package must contain no agents/ or commands/ directory');
+  } else {
+    console.log('    (no `unzip` on this machine — package contents not inspected)');
+  }
   fs.rmSync(dir, RM_OPTS);
 });
 

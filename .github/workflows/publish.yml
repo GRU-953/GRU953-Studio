@@ -220,3 +220,69 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx @vscode/vsce publish --pat "$VSCE_PAT"
+
+  # 2026-08-10, user-requested: "dedicated downloadable GRU953-Studio installers
+  # for Claude Desktop, VS Code, & Antigravity as assets for every release
+  # automatically on GitHub, in addition to the existing publishing channels."
+  #
+  # Deliberately NOT gated behind a GitHub Environment, unlike the three jobs
+  # above. Those three publish to somebody else's registry — npm and the VS Code
+  # Marketplace — where a mistake is public, permanent and outside this
+  # repository's control, so each gets its own human approval. This job only
+  # attaches files to this repository's OWN release for the tag the maintainer
+  # has already deliberately pushed. Adding a fourth approval prompt for that
+  # would train whoever is releasing to click through all four without reading,
+  # which would weaken the three that matter.
+  #
+  # It does, however, refuse to invent a release. If no release exists for the
+  # tag yet, it creates a DRAFT rather than a published one: release notes are
+  # the `publisher` role's job and are written by a human who has to be honest
+  # about what is in them, and CI generating notes from commit subjects would
+  # quietly replace that. A draft holds the assets until that human publishes it.
+  release-assets:
+    name: Build and attach the downloadable installers
+    runs-on: ubuntu-latest
+    permissions:
+      # Job-scoped only, never repository-wide — the same discipline the
+      # id-token permission above follows. This is the single job here that
+      # writes anything back to the repository.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      # Same check the three publish jobs run, for the same reason: a tag that
+      # disagrees with the manifest would otherwise attach assets labelled with a
+      # version nobody released.
+      - name: Tag must match the plugin's version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER=$(node -p "require('./plugins/gru953-studio/.claude-plugin/plugin.json').version")
+          if [ "$TAG" != "$VER" ]; then
+            echo "Tag v$TAG does not match plugin.json version $VER." >&2
+            exit 1
+          fi
+          echo "Tag v$TAG matches plugin.json."
+      - name: Install the VS Code extension's dependencies (needed to package the .vsix)
+        working-directory: clients/vscode
+        run: npm ci
+      - name: Build every release asset
+        run: node tools/build-release-assets.mjs --out dist
+      - name: Show what was built, and prove each archive is readable
+        run: |
+          ls -l dist
+          for z in dist/*.zip; do unzip -tq "$z"; done
+          cat dist/SHA256SUMS.txt
+      - name: Attach the assets to the release (creating a draft if none exists yet)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::No release exists for $TAG yet — creating a DRAFT to hold the assets. A human still writes the notes and publishes it."
+            gh release create "$TAG" --draft --title "$TAG" \
+              --notes "Draft created automatically to hold the downloadable installers. Release notes are written by hand before this is published."
+          fi
+          gh release upload "$TAG" dist/* --clobber
+          echo "Attached $(ls dist | wc -l) assets to $TAG."

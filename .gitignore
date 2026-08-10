@@ -21,3 +21,4 @@ plugins/*.zip
 # extension does the same before packaging.
 /clients/vscode/out/
 *.vsix
+dist/

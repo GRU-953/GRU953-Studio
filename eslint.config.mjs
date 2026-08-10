@@ -44,4 +44,30 @@ export default [
       'no-var': 'warn',
     },
   },
+  // 2026-08-10: tools/ holds the release-packaging scripts, which are dev-only
+  // like the hooks above and equally zero-dependency ESM. They needed their own
+  // entry rather than a widened glob because CI's repo-wide `node --check` sweep
+  // prunes only ./clients — so before this, tools/ was syntax-checked but never
+  // linted, the same gap a 2026-07-29 fix closed for the clients/ bridges.
+  {
+    files: ['tools/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        globalThis: 'readonly',
+        fetch: 'readonly',
+      },
+    },
+    rules: {
+      'no-undef': 'error',
+      'no-unused-vars': 'warn',
+      eqeqeq: ['warn', 'smart'],
+      'no-var': 'warn',
+    },
+  },
 ];
