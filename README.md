@@ -34,7 +34,7 @@ published safely to your own GitHub account, under your name.<br>
 [Features](#features-at-a-glance) ·
 [What it can (and can't) build](#what-it-can-and-cant-build-for-you) ·
 [Quick start](#quick-start-one-time-setup) ·
-[Connecting Ollama & Gemini](#optional-connect-ollama-and-gemini) ·
+[Connecting Ollama, OpenRouter & Gemini](#optional-connect-ollama-openrouter-and-gemini) ·
 [The team](#the-team-behind-it) ·
 [Sample use cases](#sample-use-cases) ·
 [Staying in control](#staying-in-control) ·
@@ -62,7 +62,7 @@ You never write or read a single line of code. You just answer questions, one
 clear pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **36 skills** (the internal playbooks the team follows) · **10 simple
+roles** · **37 skills** (the internal playbooks the team follows) · **11 simple
 commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
 and CI integrity checks) · **zero third-party code
 dependencies**.
@@ -208,15 +208,23 @@ That's it — type `/studio` to begin. The very first time, it runs a short, one
 
 ---
 
-## Optional: connect Ollama and Gemini
+## Optional: connect Ollama, OpenRouter and Gemini
 
-Both are entirely optional, and both always ask before doing anything.
+All three are entirely optional, and all three always ask before doing anything.
 
 - **[Ollama](https://github.com/GRU-953/GRU953-Studio/wiki/Connecting-Ollama)** —
   a free tool that runs AI models directly on your own computer, no cloud needed.
   The studio can use it as a private, free alternative to the cloud for an app it
   builds, or as a free second opinion for its own team. Claude stays the default;
   it always asks before installing anything or downloading a model.
+- **[OpenRouter](https://openrouter.ai/)** — one account that reaches hundreds
+  of AI models made by many different companies, including some that are free to
+  use. The studio can offer it as a backend for an app it builds, and it
+  **only ever picks free models unless you say otherwise** — decided by each
+  model's real price, not by a name that happens to say "free". Run
+  `/studio-models` to see what is free today and choose one. Worth knowing
+  before you turn it on: the words your app sends go to OpenRouter and then on
+  to the company that runs the model you picked.
 - **[Gemini](https://github.com/GRU-953/GRU953-Studio/wiki/Connecting-Gemini)** —
   Google's cloud models, used **only** for generated images, audio and video (all
   written text is always produced by Claude). It is off until you turn it on, uses
@@ -272,6 +280,7 @@ You never have to sit and watch. A few simple commands, typed any time:
 | `/studio-schedule` | Ask it to pick a task back up at a time you choose. |
 | `/studio-dashboard` | Open a one-page visual summary of your project. |
 | `/studio-publish` | Publish privately to your own GitHub (with confirmations). |
+| `/studio-models` | See which AI models are free to use right now, and pick one. |
 | `/studio-update` | Manually check for and apply a studio update right now. |
 
 ---

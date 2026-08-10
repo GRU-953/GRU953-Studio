@@ -4424,6 +4424,183 @@ test('repo-integrity.mjs INV13: docs-consistency.mjs dropping out of ci.yml is c
   fs.rmSync(dir, RM_OPTS);
 });
 
+// ---------------------------------------------------------------------------
+// openrouter-models.mjs — 2026-08-10, added with openrouter-integration.
+//
+// Every test below runs OFFLINE against a fixture, deliberately. A suite that
+// reached OpenRouter's real API would fail on any CI leg without network and
+// would change behaviour whenever OpenRouter changed its catalogue — neither is
+// acceptable in a suite this repo runs on every commit. That is the whole
+// reason fetchModels() takes an injectable fetch.
+//
+// The fixture's shape is not invented: it mirrors the real response read on
+// 2026-08-10, including the specific case that makes this code necessary —
+// free models whose ids do NOT end in ":free" (three of the seventeen real ones,
+// two of them the largest-context free models in the catalogue).
+// ---------------------------------------------------------------------------
+const OR_FIXTURE = {
+  data: [
+    { id: 'google/lyria-3-pro-preview', name: 'Google: Lyria 3 Pro Preview', description: 'A general model.', context_length: 1048576, pricing: { prompt: '0', completion: '0' } },
+    { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'NVIDIA: Nemotron 3 Nano', description: 'Small reasoning model.', context_length: 256000, pricing: { prompt: '0', completion: '0' } },
+    { id: 'openai/gpt-oss-20b:free', name: 'OpenAI: gpt-oss-20b', description: 'Open weights, good at coder tasks.', context_length: 131072, pricing: { prompt: '0', completion: '0' } },
+    { id: 'acme/premium-1', name: 'Acme: Premium 1', description: 'Costs money.', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' } },
+    // Free per token but charges for image output — the exact case a
+    // prompt+completion-only check would wrongly call free.
+    { id: 'acme/free-text-paid-images', name: 'Acme: mixed', description: 'Mixed pricing.', context_length: 128000, pricing: { prompt: '0', completion: '0', image_output: '0.04' } },
+    // A ":free"-suffixed id that is NOT actually free — the inverse mistake,
+    // and the expensive one.
+    { id: 'acme/looks-free:free', name: 'Acme: misleading name', description: 'Name says free, price does not.', context_length: 64000, pricing: { prompt: '0.000001', completion: '0.000002' } },
+    // No pricing information at all: unknown, which must never read as free.
+    { id: 'acme/unknown-price', name: 'Acme: unknown', description: 'No pricing block.', context_length: 32000 },
+  ],
+  total_count: 7,
+};
+
+function fakeFetch(body, { ok = true, status = 200, throws = null, badJson = false } = {}) {
+  return async () => {
+    if (throws) throw new Error(throws);
+    return {
+      ok,
+      status,
+      json: async () => {
+        if (badJson) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    };
+  };
+}
+
+test('openrouter-models: a free model is identified by PRICE, not by a ":free" name (the detail that costs money to get wrong)', async () => {
+  const { isFreeModel } = await import('./openrouter-models.mjs');
+  const byId = Object.fromEntries(OR_FIXTURE.data.map((m) => [m.id, m]));
+  // Free with NO ":free" suffix — a suffix test would miss this one, and in the
+  // real catalogue this is the largest-context free model available.
+  assert.equal(isFreeModel(byId['google/lyria-3-pro-preview']), true);
+  // ":free" in the name but a real price — a suffix test would spend money here.
+  assert.equal(isFreeModel(byId['acme/looks-free:free']), false);
+  assert.equal(isFreeModel(byId['acme/premium-1']), false);
+});
+
+test('openrouter-models: EVERY pricing field is checked, so free-per-token-but-charges-for-images is not called free', async () => {
+  const { isFreeModel } = await import('./openrouter-models.mjs');
+  const mixed = OR_FIXTURE.data.find((m) => m.id === 'acme/free-text-paid-images');
+  assert.equal(isFreeModel(mixed), false, 'a non-zero image_output price must disqualify a model');
+  // Prove the fixture would have passed a naive two-field check, or this test
+  // is not actually testing the thing it claims to test.
+  assert.equal(parseFloat(mixed.pricing.prompt), 0);
+  assert.equal(parseFloat(mixed.pricing.completion), 0);
+});
+
+test('openrouter-models: a model with NO pricing information is treated as not free (unknown must never read as free)', async () => {
+  const { isFreeModel } = await import('./openrouter-models.mjs');
+  assert.equal(isFreeModel(OR_FIXTURE.data.find((m) => m.id === 'acme/unknown-price')), false);
+  assert.equal(isFreeModel({ id: 'x', pricing: {} }), false, 'an empty pricing object is unknown, not free');
+  assert.equal(isFreeModel(null), false);
+  assert.equal(isFreeModel({ id: 'x', pricing: { prompt: 'not-a-number', completion: '0' } }), false);
+});
+
+test('openrouter-models: selection is free-only by default, and --all includes paid models', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  const free = selectModels(OR_FIXTURE.data);
+  assert.deepEqual(
+    free.map((m) => m.id),
+    ['google/lyria-3-pro-preview', 'nvidia/nemotron-3-nano-30b-a3b:free', 'openai/gpt-oss-20b:free'],
+    'only the three genuinely free entries, sorted by context length descending',
+  );
+  assert.equal(selectModels(OR_FIXTURE.data, { all: true }).length, OR_FIXTURE.data.length);
+});
+
+test('openrouter-models: search matches id, name and description, case-insensitively', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'NEMOTRON' }).map((m) => m.id), ['nvidia/nemotron-3-nano-30b-a3b:free'], 'matches the id regardless of case');
+  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'coder' }).map((m) => m.id), ['openai/gpt-oss-20b:free'], 'matches a word only present in the description');
+  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'nothing-matches-this' }), [], 'no match is an empty list, not an error');
+});
+
+test('openrouter-models: the order is stable between runs (an unstable list looks like the catalogue changed)', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  const tied = [
+    { id: 'b/second', context_length: 1000, pricing: { prompt: '0', completion: '0' } },
+    { id: 'a/first', context_length: 1000, pricing: { prompt: '0', completion: '0' } },
+  ];
+  assert.deepEqual(selectModels(tied).map((m) => m.id), ['a/first', 'b/second']);
+  assert.deepEqual(selectModels(tied.slice().reverse()).map((m) => m.id), ['a/first', 'b/second']);
+});
+
+test('openrouter-models: --limit caps the list', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  assert.equal(selectModels(OR_FIXTURE.data, { limit: 2 }).length, 2);
+});
+
+test('openrouter-models: argument parsing handles both "--search x" and "--search=x" forms', async () => {
+  const { parseArgs } = await import('./openrouter-models.mjs');
+  assert.equal(parseArgs(['--search', 'coder']).search, 'coder');
+  assert.equal(parseArgs(['--search=coder']).search, 'coder');
+  assert.equal(parseArgs(['coder']).search, 'coder', 'a bare word is treated as the search term');
+  assert.equal(parseArgs(['--limit', '5']).limit, 5);
+  assert.equal(parseArgs(['--limit=5']).limit, 5);
+  assert.equal(parseArgs(['--all', '--json']).all && parseArgs(['--all', '--json']).json, true);
+});
+
+test('openrouter-models: no network gives a plain-English message, never a raw stack trace', async () => {
+  const { fetchModels } = await import('./openrouter-models.mjs');
+  await assert.rejects(
+    () => fetchModels({ fetchImpl: fakeFetch(null, { throws: 'getaddrinfo ENOTFOUND openrouter.ai' }) }),
+    (e) => {
+      assert.match(e.message, /Could not reach OpenRouter/);
+      assert.match(e.message, /nothing was changed/, 'a non-technical reader needs to know their project is untouched');
+      return true;
+    },
+  );
+});
+
+test('openrouter-models: an HTTP error, unreadable JSON, and an unexpected shape each fail readably', async () => {
+  const { fetchModels } = await import('./openrouter-models.mjs');
+  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({}, { ok: false, status: 503 }) }), /HTTP status 503/);
+  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({}, { badJson: true }) }), /not readable as JSON/);
+  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({ nope: true }) }), /did not have the expected shape/);
+});
+
+test('openrouter-models: a successful fetch returns the catalogue array', async () => {
+  const { fetchModels } = await import('./openrouter-models.mjs');
+  const models = await fetchModels({ fetchImpl: fakeFetch(OR_FIXTURE) });
+  assert.equal(models.length, 7);
+});
+
+test('openrouter-models: an empty free list tells the user what to do rather than reporting an error', async () => {
+  const { formatTable } = await import('./openrouter-models.mjs');
+  const msg = formatTable([], { all: false });
+  assert.match(msg, /No FREE models/);
+  assert.match(msg, /--all/, 'the message must name the way to see paid models');
+  assert.match(msg, /cost money/, 'and must say plainly that those cost money');
+});
+
+test('openrouter-models: the table marks paid models as paid, so cost is never invisible', async () => {
+  const { formatTable, selectModels } = await import('./openrouter-models.mjs');
+  const table = formatTable(selectModels(OR_FIXTURE.data, { all: true }), { all: true });
+  assert.match(table, /acme\/premium-1\s+\S+\s+paid/);
+  assert.match(table, /acme\/looks-free:free\s+\S+\s+paid/, 'a misleading ":free" name must still print as paid');
+});
+
+// 2026-08-10. An OpenRouter key looks like `sk-or-v1-…`. scan.mjs's existing
+// secret pattern (`sk-[A-Za-z0-9-]{20,}`) already covers that shape, so NO new
+// pattern was added for it — but "already covered" is a claim, and an untested
+// claim about a secret scanner is exactly the kind this repo has been burned by
+// before. Proven here by pushing a realistic key through the real hook.
+test('scan.mjs: an OpenRouter API key is blocked from a push by the existing pattern (no new pattern needed)', () => {
+  const dir = mkTmp('gru-scan-openrouter-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(
+    path.join(dir, 'app-config.txt'),
+    'OPENROUTER_API_KEY=sk-or-v1-EXAMPLE-FIXTURE-NOT-A-REAL-KEY-DO-NOT-USE\n', // scan-allow: known test fixture
+  );
+  git(['add', 'app-config.txt'], dir);
+  const r = runHook('scan.mjs', 'git push', dir);
+  assert.equal(r.decision, 'deny', 'an OpenRouter key must never reach a push');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // 2026-08-10, INV16. charter-check.mjs is the newest sibling gate — same
 // mechanical-wiring assertion as INV13 above, against the identical failure
 // mode: a gate still present on disk but named in neither CLAUDE.md nor CI has
