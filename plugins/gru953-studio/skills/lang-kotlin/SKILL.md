@@ -7,7 +7,7 @@ description: The Kotlin ecosystem pack — the exact build, test, lint, format a
 
 The shared toolchain knowledge for Kotlin work (JVM and Android), so the
 `kotlin-developer` agent stays thin. Plain-English rule is as set in the
-`studio` skill.
+`operating-charter` skill.
 
 ## The six standard commands (used as acceptance-proving commands)
 

@@ -6,8 +6,8 @@ description: The TypeScript ecosystem pack — the exact build, test, lint, form
 # TypeScript pack
 
 The shared toolchain knowledge for TypeScript work (web, Node, React Native,
-Electron), so the `typescript-developer` agent stays thin. Plain-English rule is
-as set in the `studio` skill.
+Electron), so the `typescript-developer` agent stays thin. Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## The six standard commands (used as acceptance-proving commands)
 

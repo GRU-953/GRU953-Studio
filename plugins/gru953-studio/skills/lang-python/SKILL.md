@@ -6,7 +6,8 @@ description: The Python ecosystem pack — the exact build, test, lint, format a
 # Python pack
 
 The shared toolchain knowledge for Python work, so the `python-developer` agent
-stays thin. Plain-English rule is as set in the `studio` skill.
+stays thin. Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## The six standard commands (used as acceptance-proving commands)
 

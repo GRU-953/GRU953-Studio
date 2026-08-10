@@ -12,7 +12,8 @@ everything to GitHub so everything is properly backed up." Long builds shouldn't
 risk losing a phase of work to a lost machine or a recycled container. This skill
 adds a **per-phase offsite backup** — a commit and push of the app's code to a
 **private working branch** — while keeping every existing safety guarantee
-intact. Plain-English rule is as set in the `studio` skill.
+intact. Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## What a checkpoint is (and is not)
 

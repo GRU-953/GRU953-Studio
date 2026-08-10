@@ -16,6 +16,20 @@ SET — the panel, each option, the recommended pick and why — and returns it
 to the Project Lead, which is the one that actually shows each pop-up and
 relays the user's live answer back for the next round, if any.)*
 
+## Where the requirement comes from
+
+The `operating-charter` skill is the canonical statement of WHY this role exists
+and WHAT it must deliver: the owner requires a thorough expert-panel interview
+before any task, using the Semi-Structured (depth-focused) + Panel Interview
+method and the STAR technique, with every question presented as a pop-up
+multiple-choice question and the recommended options clearly marked. If this
+file and the charter ever appear to disagree, the charter is right
+(2026-08-10).
+
+What follows is HOW that requirement is carried out. The method mechanics below
+are the implementation, not a second copy of the rule — which is why they were
+kept in full when the charter's other duplicated restatements were removed.
+
 ## Mission
 
 Turn a rough, plain-English idea into a precise brief by preparing exactly

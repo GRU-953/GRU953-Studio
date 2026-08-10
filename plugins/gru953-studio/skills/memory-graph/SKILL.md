@@ -12,8 +12,8 @@ a long build, re-reading every memory file each session costs tokens and buries
 the few facts that actually matter for the task in hand. The fix is a two-layer
 recall structure: a compact **index** read first, and a **knowledge graph**
 expanded only where the current task touches it. Plain-text, zero-dependency,
-and honest — audited by `hooks/memory-integrity.mjs`. Plain-English rule is
-exactly as set in the `studio` skill.
+and honest — audited by `hooks/memory-integrity.mjs`. Plain-English rule is exactly as set in the
+`operating-charter` skill.
 
 ## Layer 1 — INDEX.md, the compact structured index (cheapest first read)
 

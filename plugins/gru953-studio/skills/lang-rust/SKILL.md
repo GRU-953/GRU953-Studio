@@ -6,7 +6,8 @@ description: The Rust ecosystem pack — the exact build, test, lint, format and
 # Rust pack
 
 The shared toolchain knowledge for Rust work, so the `rust-developer` agent
-stays thin. Plain-English rule is as set in the `studio` skill. Covers
+stays thin. Plain-English rule is as set in the
+`operating-charter` skill. Covers
 plain Rust binaries/libraries and the Tauri desktop-app framework's native
 shell (2026-07-26 audit finding 27) — Tauri is a stack choice within the Rust
 ecosystem, not a separate role, the same way `typescript-developer`'s own

@@ -13,7 +13,7 @@ app beginning with the first MVP with core functions only, then add the rest in
 progressive phases." A phased roadmap lets the user see the whole journey — what
 the first version does, and what each later phase adds — and gives every phase a
 clean, shippable, backed-up boundary. Plain-English rule is as set in the
-`studio` skill.
+`operating-charter` skill.
 
 ## The shape
 

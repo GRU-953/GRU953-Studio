@@ -14,7 +14,7 @@ the right **model and effort per task**, not just per role: cheap models for
 mechanical work, the expensive ones only where the reasoning is genuinely hard
 or a mistake is costly to undo. It is the cheapest-first principle
 (`cost-guard`) made granular. Plain-English rule is exactly as set in the
-`studio` skill.
+`operating-charter` skill.
 
 ## The choices
 

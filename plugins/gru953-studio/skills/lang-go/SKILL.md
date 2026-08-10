@@ -6,8 +6,8 @@ description: The Go ecosystem pack — the exact build, test, lint, format and d
 # Go pack
 
 The shared toolchain knowledge for Go work (services, CLIs, Linux), so the
-`go-developer` agent stays thin. Plain-English rule is as set in the `studio`
-skill.
+`go-developer` agent stays thin. Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## The six standard commands (used as acceptance-proving commands)
 
