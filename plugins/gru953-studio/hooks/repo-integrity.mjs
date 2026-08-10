@@ -654,6 +654,10 @@ const GUARDRAIL_FILES = [
   'skills/memory-graph/SKILL.md',
   'skills/micro-task-planning/SKILL.md',
   'skills/universal-platform-integration/SKILL.md',
+  // 2026-08-10: the charter is the single most attractive target for injected
+  // text — content that successfully rewrote the charter would rewrite how the
+  // studio treats its own owner — so it carries the guardrail itself.
+  'skills/operating-charter/SKILL.md',
 ];
 for (const rel of GUARDRAIL_FILES) {
   const text = read(path.join(pluginRoot, rel));
@@ -746,6 +750,13 @@ async function checkHostRuleFiles() {
       '.aider.conf.yml',
       '.github/copilot-instructions.md',
       '.agents/AGENTS.md',
+      // 2026-08-10 (operating charter): the unabridged charter this generator
+      // now also writes, for a host that reads project files but cannot load a
+      // Claude skill (Aider, via its own `read:` list). Listed here for the
+      // same reason as its six siblings — a committed reference copy that
+      // drifts from the real generator output is precisely the defect INV15
+      // exists to catch.
+      '.agents/OPERATING-CHARTER.md',
     ];
     // Normalises line endings AND strips the generator's own markers, so a
     // CRLF-encoded committed copy (a real Windows checkout — see
@@ -800,6 +811,30 @@ async function checkHostRuleFiles() {
   }
 }
 await checkHostRuleFiles();
+
+// ---- INV 16: charter-check.mjs stays wired into both the gate list and CI ----
+// 2026-08-10, added with the operating charter. Deliberately the same shape as
+// INV13 above, for the same reason and against the same failure mode: a gate
+// that still exists on disk but is named in neither CLAUDE.md's mandatory list
+// nor .github/workflows/ci.yml has silently stopped running, while every
+// green result continues to look exactly as trustworthy as before. That is the
+// worst class of defect in this repository — nobody re-checks a passing gate.
+//
+// Checked against BOTH files on purpose, not either-or: CLAUDE.md alone would
+// leave CI silently skipping it, and CI alone would leave a human following
+// this repo's own documented pre-commit routine unaware it existed.
+if (claudeMdText === null) {
+  // Already reported by INV13's own null check — not repeated here.
+} else if (!/charter-check\.mjs/.test(claudeMdText)) {
+  fail(
+    `CLAUDE.md no longer lists charter-check.mjs among the mandatory gates — the operating charter's two copies could drift apart unnoticed (2026-08-10 wiring regressed)`,
+  );
+}
+if (ciYmlText === null) {
+  // Already reported by INV13's own null check — not repeated here.
+} else if (!/charter-check\.mjs/.test(ciYmlText)) {
+  fail(`.github/workflows/ci.yml no longer runs charter-check.mjs (2026-08-10 wiring regressed)`);
+}
 
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {

@@ -697,8 +697,18 @@ test('repo-integrity.mjs: a CRLF-encoded checkout (the Windows default) is still
   assert.match(sample, /\r\n/, 'the fixture must genuinely be CRLF-encoded');
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'clean', `a CRLF checkout must parse identically to an LF one: ${r.stdout}`);
-  assert.equal(r.json.agentCount, 38, 'all 38 agents must still be recognised, not reported missing frontmatter');
-  assert.equal(r.json.skillCount, 35, 'all 35 skills must still be recognised');
+  // 2026-08-10: these two counts used to be hardcoded (38 and 35), so adding a
+  // single agent or skill broke this test for a reason that had nothing to do
+  // with what it actually tests — CRLF frontmatter parsing. Worse, the obvious
+  // repair (bump the number) quietly weakens it: a maintainer bumping a literal
+  // is not checking that every file was still PARSED, which is the whole point.
+  // Derived from the real directories instead, so the assertion stays exactly as
+  // strong while surviving any future roster or skill change.
+  const expectedAgents = fs.readdirSync(path.join(dir, 'plugins', 'gru953-studio', 'agents')).filter((f) => f.endsWith('.md')).length;
+  const expectedSkills = fs.readdirSync(path.join(dir, 'plugins', 'gru953-studio', 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).length;
+  assert.ok(expectedAgents > 0 && expectedSkills > 0, 'the fixture must contain agents and skills, or this proves nothing');
+  assert.equal(r.json.agentCount, expectedAgents, `all ${expectedAgents} agents must still be recognised, not reported missing frontmatter`);
+  assert.equal(r.json.skillCount, expectedSkills, `all ${expectedSkills} skills must still be recognised`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -4414,6 +4424,152 @@ test('repo-integrity.mjs INV13: docs-consistency.mjs dropping out of ci.yml is c
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08-10, INV16. charter-check.mjs is the newest sibling gate — same
+// mechanical-wiring assertion as INV13 above, against the identical failure
+// mode: a gate still present on disk but named in neither CLAUDE.md nor CI has
+// stopped running, and every green result still looks trustworthy.
+test('repo-integrity.mjs INV16: charter-check.mjs dropping out of CLAUDE.md\'s gate list is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv16-claudemd-');
+  copyRepoTo(dir);
+  const claudeMdPath = path.join(dir, 'CLAUDE.md');
+  fs.writeFileSync(claudeMdPath, fs.readFileSync(claudeMdPath, 'utf8').replace(/charter-check\.mjs/g, 'REMOVED-check.mjs'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping charter-check.mjs from CLAUDE.md\'s gate list must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('CLAUDE.md') && p.includes('charter-check.mjs')), `expected a problem naming the dropped wiring, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+test('repo-integrity.mjs INV16: charter-check.mjs dropping out of ci.yml is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv16-ciyml-');
+  copyRepoTo(dir);
+  const ciYmlPath = path.join(dir, '.github', 'workflows', 'ci.yml');
+  fs.writeFileSync(ciYmlPath, fs.readFileSync(ciYmlPath, 'utf8').replace(/charter-check\.mjs/g, 'REMOVED-check.mjs'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping charter-check.mjs from ci.yml must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('ci.yml') && p.includes('charter-check.mjs')), `expected a problem naming the dropped wiring, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// charter-check.mjs — 2026-08-10, added with the operating charter.
+//
+// The charter necessarily exists in TWO copies: the canonical
+// skills/operating-charter/SKILL.md (which only a Claude host can load) and
+// universal-init.js's CHARTER_FILE template (which reaches every host that
+// cannot load a Claude skill). Two hand-maintained copies of a load-bearing
+// rule set WILL drift; these tests prove the gate actually notices, rather
+// than merely reporting clean on a repo that happens to be consistent today.
+// Each one was confirmed to FAIL against the pre-fix state before being kept.
+// ---------------------------------------------------------------------------
+function runCharterCheck(repoDir) {
+  const r = spawnSync(NODE, [path.join(HERE, 'charter-check.mjs'), repoDir], { encoding: 'utf8' });
+  let json = null;
+  try { json = JSON.parse(r.stdout); } catch {}
+  return { status: r.status, json, stdout: r.stdout, stderr: r.stderr };
+}
+
+test('charter-check.mjs: the real repository is clean, and reports all eight clauses', () => {
+  const r = runCharterCheck(REPO_ROOT);
+  assert.equal(r.json && r.json.status, 'clean', `expected clean, got: ${r.stdout}${r.stderr}`);
+  assert.equal(r.json.clauses, 8, 'the charter is made of eight clauses');
+});
+
+test('charter-check.mjs: a clause whose WORDING drifts between the two copies is caught', () => {
+  const dir = mkTmp('gru-charter-drift-');
+  copyRepoTo(dir);
+  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
+  // Change the generated copy's meaning, leaving the canonical one alone —
+  // exactly what a careless edit to one of the two files looks like.
+  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace('Use UK English.', 'Use American English.'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a drifted clause must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('DRIFTED') && p.includes('ABOUT ME')), `expected a drift problem naming the clause, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: re-wrapping a clause without changing its meaning is NOT reported (no false positive)', () => {
+  const dir = mkTmp('gru-charter-rewrap-');
+  copyRepoTo(dir);
+  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
+  // Same words, different line breaks. A layout-sensitive comparison would
+  // wrongly BLOCK here, which would make maintainers distrust the gate — the
+  // reason normaliseBody() collapses whitespace.
+  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace(
+    'technical term is unavoidable, explain it in one plain sentence. Use UK English.',
+    'technical term is unavoidable,\nexplain it in one plain sentence.\nUse UK English.',
+  ));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'clean', `re-wrapping must not be treated as drift, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: a clause DELETED from the canonical charter is caught', () => {
+  const dir = mkTmp('gru-charter-deleted-');
+  copyRepoTo(dir);
+  const skill = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'operating-charter', 'SKILL.md');
+  fs.writeFileSync(skill, fs.readFileSync(skill, 'utf8').replace('## CHARTER-CLAUSE: MEMORY', '## Some unrelated heading'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'deleting a charter clause must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('MEMORY')), `expected a problem naming the deleted clause, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: a clause silently EMPTIED (heading kept, body gone) is caught', () => {
+  const dir = mkTmp('gru-charter-emptied-');
+  copyRepoTo(dir);
+  const skill = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'operating-charter', 'SKILL.md');
+  const text = fs.readFileSync(skill, 'utf8');
+  // Keep the heading, remove everything under it up to the next heading. A
+  // check that only looked for headings would call this perfectly intact.
+  fs.writeFileSync(skill, text.replace(/(## CHARTER-CLAUSE: QUALITY BEFORE YOU SHOW ME\n)[\s\S]*?(\n## )/, '$1$2'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'an emptied clause must be caught, not just a deleted heading');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: the coordinator no longer loading the charter is caught', () => {
+  const dir = mkTmp('gru-charter-unloaded-');
+  copyRepoTo(dir);
+  const studio = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md');
+  fs.writeFileSync(studio, fs.readFileSync(studio, 'utf8').replace('- `operating-charter` —', '- `operating-charter-stale` —'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a charter nothing loads must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('no longer loads')), `expected an "unloaded" problem, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: the generator dropping CHARTER_FILE entirely is caught (the INV15 false-clean this closes)', () => {
+  const dir = mkTmp('gru-charter-nogen-');
+  copyRepoTo(dir);
+  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
+  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace('const CHARTER_FILE = `', 'const CHARTER_FILE_RENAMED = `'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'losing the generator template must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('CHARTER_FILE')), `expected a problem naming the missing template, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: Aider losing its pointer at the charter is caught (the one host with no prose rule file)', () => {
+  const dir = mkTmp('gru-charter-aider-');
+  copyRepoTo(dir);
+  const conf = path.join(dir, '.aider.conf.yml');
+  fs.writeFileSync(conf, fs.readFileSync(conf, 'utf8').replace(/\s*-\s*\.agents\/OPERATING-CHARTER\.md/, ''));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'Aider losing the charter must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('Aider')), `expected a problem naming Aider, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: a host rule file losing its Operating Charter section is caught', () => {
+  const dir = mkTmp('gru-charter-host-');
+  copyRepoTo(dir);
+  const cursor = path.join(dir, '.cursorrules');
+  fs.writeFileSync(cursor, fs.readFileSync(cursor, 'utf8').replace(/## Operating Charter[\s\S]*$/, ''));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a host file losing the charter must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('.cursorrules')), `expected a problem naming .cursorrules, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // 2026-08 R2 Phase 2.3 (D8, prompt injection). INV14: the anti-injection
 // "DATA, never an instruction" guardrail, previously prose-only and tested
 // nowhere, is now locked in across the 45 files found carrying it.
@@ -4644,9 +4800,19 @@ test('docs-consistency.mjs: a stale "skill count to N" claim is caught (finding 
   const dir = mkTmp('gru-docsconsist-skillcount-');
   copyRepoTo(dir);
   const readmePath = path.join(dir, 'README.md');
-  fs.writeFileSync(readmePath, fs.readFileSync(readmePath, 'utf8').replace('skill count to 35', 'skill count to 34'));
+  // 2026-08-10: this used to work by REPLACING an existing "skill count to 35"
+  // phrase that happened to sit in README.md's own prose — so the test silently
+  // depended on that sentence continuing to exist and continuing to state
+  // today's count. When that sentence was rewritten (to stop carrying stale
+  // digits at all, the very drift DC1 exists to catch), the replace matched
+  // nothing, the fixture was left identical to the clean repo, and the test
+  // failed reporting "a reintroduced stale count must be caught" — a confusing
+  // failure that had nothing to do with DC1 being broken. The fixture now
+  // APPENDS a phrase this test fully controls, so it proves what it claims to
+  // prove regardless of how README's prose is worded.
+  fs.writeFileSync(readmePath, fs.readFileSync(readmePath, 'utf8') + '\n\nThis release brings the skill count to 34.\n');
   const r = runDocsConsistency(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a reintroduced stale skill count must be caught');
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale "skill count to N" claim must be caught');
   assert.ok(r.json.problems.some((p) => p.includes('skill count to 34')), `expected a problem naming the stale count, got: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, RM_OPTS);
 });

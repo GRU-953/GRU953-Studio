@@ -22,6 +22,7 @@ node plugins/gru953-studio/hooks/repo-integrity.mjs .
 node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 node plugins/gru953-studio/hooks/licence-scan.mjs .
 node plugins/gru953-studio/hooks/docs-consistency.mjs .
+node plugins/gru953-studio/hooks/charter-check.mjs .
 ```
 
 `repo-integrity.mjs` is the guard that stops a file referencing a skill,
@@ -32,9 +33,15 @@ with the named gap it fills. `docs-consistency.mjs` (added 2026-07-26 audit
 stage 5) is the sibling check that catches a STALE claim rather than a
 missing reference — a count repeated in two places that disagree, a
 companion skill or marketplace tag listed twice, a specialist named in
-prose that exists nowhere on the real roster.
+prose that exists nowhere on the real roster. `charter-check.mjs` (added
+2026-08-10 with the operating charter) is the third sibling in that family:
+the owner's standing working rules necessarily exist in TWO copies — the
+canonical `skills/operating-charter/SKILL.md` for Claude hosts, and
+`universal-init.js`'s `CHARTER_FILE` template for every host that cannot load
+a Claude skill — and this gate compares them clause by clause so the two can
+never quietly say different things.
 
-The six gates above are the ones CI itself runs and are mandatory on every
+The seven gates above are the ones CI itself runs and are mandatory on every
 commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries five
 project-level gates (no-ops on this repo, since it has no `Dev-Memory/` of its
 own) that a project built *by* the plugin must pass before a phase checkpoint

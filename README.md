@@ -62,7 +62,7 @@ You never write or read a single line of code. You just answer questions, one
 clear pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **35 skills** (the internal playbooks the team follows) · **10 simple
+roles** · **36 skills** (the internal playbooks the team follows) · **10 simple
 commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
 and CI integrity checks) · **zero third-party code
 dependencies**.
@@ -128,7 +128,7 @@ you want, and every language specialist's toolkit names the real command
 that produces a finished, installable app. See
 [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
 
-Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.). Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). (2026-07-27 fix: this line used to say v4.5.0 brought "the skill count to 35" — the real count at that point was 34; the current, correct count is stated once, above, as "35 skills.")
+Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.). Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). (2026-08-10 fix: this line used to quote two historical skill-count figures while explaining a 2026-07-27 correction to them. Both digits are dropped here rather than restated a third time — the live count is stated in exactly one place, the "In numbers" line above, so a sentence narrating an old mistake can never again be read as a claim about today. The original correction stands and is recorded in [CHANGELOG.md](CHANGELOG.md).)
 
 ---
 

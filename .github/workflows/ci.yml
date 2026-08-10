@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
   pull_request:
-    branches: [main]
+    branches: [main, development]
 
 jobs:
   # One-off checks that don't depend on OS or Node version: JSON validity,
@@ -122,6 +122,8 @@ jobs:
         run: node plugins/gru953-studio/hooks/licence-scan.mjs .
       - name: Documentation-consistency check
         run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
+      - name: Operating-charter consistency check
+        run: node plugins/gru953-studio/hooks/charter-check.mjs .
 
   # 2026-08 audit round 2, Phase 2.2 (D3). Complements hooks.test.mjs's own
   # in-process toCrlf() simulation with a real, end-to-end proof: an actual
@@ -199,6 +201,8 @@ jobs:
         run: node plugins/gru953-studio/hooks/licence-scan.mjs .
       - name: Documentation-consistency check
         run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
+      - name: Operating-charter consistency check
+        run: node plugins/gru953-studio/hooks/charter-check.mjs .
 
   # 2026-07-26 audit stage 6. Separate from `hooks` on purpose: `npm ci` here
   # must never put node_modules into the hooks job's own workspace, and these
