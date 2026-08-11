@@ -4240,7 +4240,7 @@ test('session-start.mjs: CI=false no longer falsely triggers the ephemeral note;
 // --- subagent-statusline.mjs (2026-07-21: previously ZERO test coverage) -----
 function runStatusline(input) {
   const r = spawnSync(NODE, [path.join(HERE, 'subagent-statusline.mjs')], { input: JSON.stringify(input), encoding: 'utf8' });
-  const lines = r.stdout.trim() ? r.stdout.trim().split('\n').map((l) => JSON.parse(l)) : [];
+  const lines = r.stdout.trim() ? r.stdout.trim().split(/\r?\n/).map((l) => JSON.parse(l)) : [];
   return { code: r.status, stdout: r.stdout, lines };
 }
 
@@ -4538,7 +4538,14 @@ test('build-release-assets: builds every installer, each in the layout its own h
   for (const line of sums) assert.match(line, /^[0-9a-f]{64} {2}\S+$/, `malformed checksum line: ${line}`);
 
   if (hasUnzip()) {
-    const list = (z) => spawnSync('unzip', ['-Z1', path.join(dir, z)], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    // \r?\n and trim, for the same reason the sibling test in clients/cli needed it:
+    // an archive lister on Windows emits \r\n, and a trailing carriage return breaks
+    // every exact-match lookup on a path that is actually there.
+    const list = (z) =>
+      spawnSync('unzip', ['-Z1', path.join(dir, z)], { encoding: 'utf8' })
+        .stdout.split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
     // The Windows portable package is the one winget installs, and it is the one
     // package that MUST contain something runnable. Asserted because the opposite
     // was shipped once: the first winget manifest declared a `gru953-studio`
