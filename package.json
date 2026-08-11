@@ -8,7 +8,7 @@
     "build:assets": "node tools/build-release-assets.mjs"
   },
   "devDependencies": {
-    "eslint": "^10.8.0",
+    "eslint": "^10.8.1",
     "prettier": "^3.9.6"
   }
 }
