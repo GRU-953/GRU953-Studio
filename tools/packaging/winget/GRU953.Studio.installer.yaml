@@ -44,20 +44,41 @@
 # raw schema. Structure matched to the proven-accepted shape rather than to what the
 # schema merely allows — comparing against a manifest winget has actually accepted is
 # better evidence than reading the specification alone.
+# 2026-08-11, fourth correction — this one from evidence rather than from the spec.
+# Architecture was `neutral`, which IS in the schema enum, so every schema check
+# passed. But not one accepted package in winget-pkgs uses it for a zip or portable
+# installer: recently-merged manifests all declare x64/x86/arm64. That makes sense —
+# winget has to decide whether an installer APPLIES to the machine in front of it,
+# and `neutral` gives it nothing to match on. `neutral` is really for architecture-
+# neutral MSIX.
+#
+# The package genuinely is architecture-agnostic (a .cmd launcher plus JavaScript), so
+# the honest way to say that here is to list the architectures Windows actually runs
+# on, both pointing at the same archive, rather than to claim a neutrality winget
+# cannot act on.
 PackageIdentifier: GRU953.Studio
 PackageVersion: 6.0.1
 InstallerType: zip
 NestedInstallerType: portable
 Installers:
-  - Architecture: neutral
+  - Architecture: x64
     NestedInstallerFiles:
       - RelativeFilePath: gru953-studio.cmd
         PortableCommandAlias: gru953-studio
     # The launcher loads the CLI from src/ beside itself via %~dp0, so it only works
-    # from the folder it was extracted into. With the default, a .cmd invoked through
+    # from the folder it was extracted into. Without this, a .cmd invoked through
     # winget's alias resolves %~dp0 to the alias's directory, where src/ does not
-    # exist — it would install cleanly and then fail to run. Adding the install
-    # location to PATH instead is correct for a script with sibling files.
+    # exist — it would install cleanly and then fail to run.
+    ArchiveBinariesDependOnPath: true
+    InstallerUrl: https://github.com/GRU-953/GRU953-Studio/releases/download/v6.0.1/gru953-studio-windows-portable-6.0.1.zip
+    InstallerSha256: 5E9EA972E08EB7F831CE6DE6F7FAA34F58178BAE8A17363B873CDAF14BFDFDA7
+    Dependencies:
+      PackageDependencies:
+        - PackageIdentifier: OpenJS.NodeJS
+  - Architecture: arm64
+    NestedInstallerFiles:
+      - RelativeFilePath: gru953-studio.cmd
+        PortableCommandAlias: gru953-studio
     ArchiveBinariesDependOnPath: true
     InstallerUrl: https://github.com/GRU-953/GRU953-Studio/releases/download/v6.0.1/gru953-studio-windows-portable-6.0.1.zip
     InstallerSha256: 5E9EA972E08EB7F831CE6DE6F7FAA34F58178BAE8A17363B873CDAF14BFDFDA7
