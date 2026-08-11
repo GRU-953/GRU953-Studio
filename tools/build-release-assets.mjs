@@ -180,6 +180,46 @@ worked around.
 `;
 }
 
+// The Windows portable package (2026-08-11, added when the winget manifests were
+// actually submitted rather than merely drafted).
+//
+// This exists because of a real mistake caught before it reached anyone: the first
+// winget manifest declared a `gru953-studio` command and pointed at the Claude Code
+// plugin package — 128 markdown files with no executable in them. winget would have
+// rejected it, and submitting it would have wasted Microsoft's reviewers' time on a
+// package that could never work.
+//
+// winget's portable installer type puts a file on the PATH; it does not run an
+// installer. The CLI is a Node script, so what goes on the PATH has to be a shim
+// that finds Node and hands off to it. Node itself is declared as a winget package
+// dependency (OpenJS.NodeJS) rather than bundled, which is both smaller and honest —
+// bundling a second Node runtime for a machine that probably has one is the wrong
+// trade.
+const WINDOWS_SHIM = `@echo off
+REM GRU953-Studio launcher for Windows.
+REM
+REM winget's "portable" installer type puts this file on your PATH. It finds Node.js
+REM and runs the studio's command-line helper with whatever arguments you gave.
+REM
+REM Node.js is declared as a dependency of this winget package, so winget installs it
+REM for you. If you somehow have this file without Node, the message below tells you
+REM exactly what to do rather than failing with something cryptic.
+where /q node
+if errorlevel 1 (
+  echo GRU953-Studio needs Node.js, which does not appear to be installed.
+  echo.
+  echo To install it:
+  echo   1. Open https://nodejs.org in your web browser.
+  echo   2. Download the version marked "LTS".
+  echo   3. Open the downloaded file and follow its instructions.
+  echo   4. Close this window, open a new one, and try again.
+  echo.
+  echo Or, if you have winget:  winget install OpenJS.NodeJS
+  exit /b 1
+)
+node "%~dp0src\\index.js" %*
+`;
+
 const INSTALL_CLAUDE_CODE = (version) => `GRU953-Studio ${version} — installing in Claude Code
 ======================================================
 
@@ -246,6 +286,46 @@ and WAY 1 above is the documented route that always works.
 
 Plugins are supported in Claude Desktop's Cowork and Code surfaces. They are not
 used in plain Chat.
+`;
+
+const INSTALL_WINDOWS_PORTABLE = (
+  version,
+) => `GRU953-Studio ${version} — the Windows command (portable)
+=============================================================
+
+Most people should not need this file. Two easier routes exist:
+
+  winget install GRU953.Studio          (once the winget submission is accepted)
+  npm install -g @gru953/studio-cli     (works today, if you have Node.js)
+
+This package is what winget installs behind the scenes, and it is here for anyone
+who would rather have the plain files.
+
+WHAT YOU NEED FIRST
+-------------------
+Node.js. GRU953-Studio is written to run on it.
+ 1. Open https://nodejs.org in your web browser.
+ 2. Download the version marked "LTS".
+ 3. Open the downloaded file and follow its instructions.
+
+TO USE IT
+---------
+ 1. Unzip this file to a folder you will keep, for example:
+      C:\\Program Files\\GRU953-Studio
+ 2. Open that folder and check you can see "gru953-studio.cmd".
+ 3. Open PowerShell and run it by its full path, for example:
+      & "C:\\Program Files\\GRU953-Studio\\gru953-studio.cmd" doctor
+ 4. To type just "gru953-studio" from anywhere, add that folder to your PATH:
+      setx PATH "%PATH%;C:\\Program Files\\GRU953-Studio"
+    Then close and reopen PowerShell.
+
+WHAT TO RUN
+-----------
+  gru953-studio doctor     Checks everything is in place, and says what is not.
+  gru953-studio install    Sets the studio up in every AI tool on this computer.
+  gru953-studio help       Lists everything it can do.
+
+Everything here is plain text you can read. Nothing runs during installation.
 `;
 
 const INSTALL_ANTIGRAVITY = (
@@ -355,6 +435,24 @@ export function buildAssets({ outDir, skipVsix = false, log = console.log } = {}
   fs.writeFileSync(path.join(outDir, agName), createZip(agEntries));
   written.push(agName);
   log(`built ${agName} (${agEntries.length} files, Antigravity plugin.json + skills/ + rules/)`);
+
+  // --- The Windows portable package winget installs. Deliberately built from
+  // --- clients/cli only: it is the COMMAND, not the studio's skills and agents,
+  // --- which the plugin packages above carry.
+  const cliFiles = collectFiles(path.join(REPO_ROOT, 'clients', 'cli', 'src'));
+  if (!cliFiles.some((f) => f.name === 'index.js')) {
+    throw new Error('the Windows portable package would contain no CLI entry point');
+  }
+  const winEntries = [
+    { name: 'gru953-studio.cmd', data: WINDOWS_SHIM.replace(/\n/g, '\r\n') },
+    ...cliFiles.map((f) => ({ ...f, name: `src/${f.name}` })),
+    { name: 'LICENSE', data: fs.readFileSync(path.join(REPO_ROOT, 'clients', 'cli', 'LICENSE')) },
+    { name: 'INSTALL.txt', data: INSTALL_WINDOWS_PORTABLE(version).replace(/\n/g, '\r\n') },
+  ];
+  const winName = `gru953-studio-windows-portable-${version}.zip`;
+  fs.writeFileSync(path.join(outDir, winName), createZip(winEntries));
+  written.push(winName);
+  log(`built ${winName} (${winEntries.length} files, a .cmd shim + the CLI)`);
 
   // --- The one-command installer scripts, shipped alongside so a release page
   // --- is self-sufficient rather than sending people elsewhere for them.

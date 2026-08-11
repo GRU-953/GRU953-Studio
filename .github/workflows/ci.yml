@@ -312,6 +312,19 @@ jobs:
             echo "Antigravity package must not contain agents/ or commands/" >&2; exit 1
           fi
           test -f "dist/gru953-studio-$VER.vsix" || { echo "the .vsix was not built" >&2; exit 1; }
+          # The Windows portable package is what winget installs. Unlike the plugin
+          # packages it MUST contain something runnable — the first winget manifest
+          # pointed at a plugin zip full of markdown and would have been rejected,
+          # so this asserts the difference rather than trusting it.
+          WP="dist/gru953-studio-windows-portable-$VER.zip"
+          test -f "$WP" || { echo "the Windows portable package was not built" >&2; exit 1; }
+          unzip -Z1 "$WP" | grep -qx 'gru953-studio.cmd' || { echo "$WP has no gru953-studio.cmd shim at its root" >&2; exit 1; }
+          unzip -Z1 "$WP" | grep -qx 'src/index.js' || { echo "$WP does not contain the CLI" >&2; exit 1; }
+          rm -rf /tmp/wp && unzip -qo "$WP" -d /tmp/wp
+          # A .cmd with Unix line endings misbehaves on Windows, so check the bytes.
+          grep -q $'\r' /tmp/wp/gru953-studio.cmd || { echo "the shim must have CRLF line endings" >&2; exit 1; }
+          grep -q 'src.index.js' /tmp/wp/gru953-studio.cmd || { echo "the shim does not invoke the CLI" >&2; exit 1; }
+          node /tmp/wp/src/index.js help | grep -q 'gru953-studio install' || { echo "the packaged CLI does not run" >&2; exit 1; }
           # Checksums must cover every asset, or the file gives false assurance.
           ASSETS=$(ls dist | grep -v '^SHA256SUMS.txt$' | wc -l | tr -d ' ')
           SUMS=$(wc -l < dist/SHA256SUMS.txt | tr -d ' ')

@@ -3,7 +3,7 @@
 # reject on their own timetable, so nothing in the user documentation claims
 # "winget install" works until one has actually been accepted.
 PackageIdentifier: GRU953.Studio
-PackageVersion: 5.1.4
+PackageVersion: 0.0.0-SET-AT-RELEASE-TIME
 DefaultLocale: en-GB
 ManifestType: version
 ManifestVersion: 1.6.0
