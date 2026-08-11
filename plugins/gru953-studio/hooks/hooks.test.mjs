@@ -4779,7 +4779,16 @@ test('openrouter-models: the table marks paid models as paid, so cost is never i
 // secret pattern (`sk-[A-Za-z0-9-]{20,}`) already covers that shape, so NO new
 // pattern was added for it — but "already covered" is a claim, and an untested
 // claim about a secret scanner is exactly the kind this repo has been burned by
-// before. Proven here by pushing a realistic key through the real hook.
+// before. Proven here by pushing a key through the real hook.
+//
+// The fixture below is deliberately NOT hex-shaped, and that is not cosmetic.
+// The first version of this test used a realistic 64-hex-character key, and
+// GitHub's own push protection blocked the push — correctly, since it could not
+// tell a fixture from a live credential. A `// scan-allow` comment does not help:
+// that convention is this repo's own, and GitHub's scanner has never heard of it.
+// So the fixture keeps the `sk-` prefix and the length that scan.mjs's pattern
+// requires, while spelling out in the value itself that it is not a key. Both
+// scanners are then satisfied for the right reason rather than by an exception.
 test('scan.mjs: an OpenRouter API key is blocked from a push by the existing pattern (no new pattern needed)', () => {
   const dir = mkTmp('gru-scan-openrouter-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
