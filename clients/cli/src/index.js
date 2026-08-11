@@ -26,18 +26,36 @@ const pathSetup = require('./path-setup');
 const autoupdate = require('./autoupdate');
 
 /**
- * The plugin directory to install FROM.
+ * The plugin directory to install FROM — the studio itself, not this command.
  *
- * When run from a git checkout this is plugins/gru953-studio, four levels up.
- * When installed from npm it is not present at all — the published package ships
- * `src` and LICENSE only — so this returns null and the caller says so plainly
- * rather than installing an empty directory. That is the honest behaviour: a
- * previous version of the Antigravity bridge reported success over an empty
- * folder, and this is the same trap.
+ * Two places it can legitimately be, checked in this order:
+ *
+ *   1. `../plugin`, inside this package. That is where scripts/bundle-plugin.mjs
+ *      copies it at pack time so the published package carries the studio. Checked
+ *      FIRST because a published install is the common case for real users.
+ *   2. `../../../plugins/gru953-studio`, i.e. the repository checkout this file
+ *      lives in during development.
+ *
+ * Returns null when neither exists, and every caller then says so plainly rather
+ * than installing an empty directory — the same trap a previous version of the
+ * Antigravity bridge fell into, reporting success over an empty folder.
+ *
+ * 2026-08-11: the bundled location is new. Before it, an npm or Homebrew install
+ * had no studio to install at all, so `install` and `models` could not do their
+ * jobs — while the README, the Homebrew caveats and the wiki all said they could.
+ * Found by running the real Homebrew-installed command instead of the checkout;
+ * every test passed beforehand because every test ran from a checkout, where the
+ * plugin is always a few directories up.
  */
 function findPluginSource() {
-    const candidate = path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio');
-    return fs.existsSync(path.join(candidate, '.claude-plugin', 'plugin.json')) ? candidate : null;
+    const candidates = [
+        path.join(__dirname, '..', 'plugin'),
+        path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio'),
+    ];
+    for (const c of candidates) {
+        if (fs.existsSync(path.join(c, '.claude-plugin', 'plugin.json'))) return c;
+    }
+    return null;
 }
 
 /** A downloaded .vsix sitting next to the checkout's dist/, if one was built. */
@@ -123,17 +141,28 @@ function cmdInstall(argv) {
     }
 
     if (!pluginSourceDir) {
-        heading('One thing is missing');
-        console.log('  This command was installed from npm, which does not include the studio itself');
-        console.log('  (the skills and specialist roles) — only this installer.');
+        // 2026-08-11: this used to say "installed from npm, which does not include
+        // the studio itself" and stop there — true at the time, and the defect
+        // 6.0.2 fixed by bundling the studio into the published package. Reaching
+        // this branch now means something genuinely unexpected, so it says so
+        // rather than blaming a normal install.
+        heading('Something is wrong with this installation');
+        console.log('  The GRU953-Studio command is here, but the studio itself (the skills and');
+        console.log('  specialist roles) is not, and it should be. This is not a normal state.');
         console.log('');
-        console.log('  For Claude Code, the studio installs itself. Type these two lines into it:');
+        console.log('  The most likely cause is a part-finished install. Try reinstalling:');
+        console.log('      npm install -g @gru953/studio-cli@latest');
+        console.log('  or, if you used Homebrew:');
+        console.log('      brew reinstall gru953-studio');
+        console.log('');
+        console.log('  You can also install the studio directly in Claude Code, which needs');
+        console.log('  nothing from this command:');
         console.log('      /plugin marketplace add GRU-953/GRU953-Studio');
         console.log('      /plugin install gru953-studio@gru953-studio');
         console.log('');
-        console.log('  For the other tools, download the matching installer from');
-        console.log('      https://github.com/GRU-953/GRU953-Studio/releases');
-        console.log('  and follow the INSTALL.txt inside it. Each one has step-by-step instructions.');
+        console.log('  If reinstalling does not fix it, please report it at');
+        console.log('      https://github.com/GRU-953/GRU953-Studio/issues');
+        process.exitCode = 1;
         return;
     }
 
@@ -256,8 +285,10 @@ function cmdAutoupdate(argv) {
 async function cmdModels(argv) {
     const pluginSourceDir = findPluginSource();
     if (!pluginSourceDir) {
-        console.error('This needs the full GRU953-Studio checkout, which an npm install does not include.');
-        console.error('Inside Claude Code, run /studio-models instead — it does the same thing.');
+        console.error('The studio itself is missing from this installation, which is not a normal state.');
+        console.error('Try reinstalling: npm install -g @gru953/studio-cli@latest');
+        console.error('(or "brew reinstall gru953-studio" if you used Homebrew).');
+        console.error('Inside Claude Code, /studio-models does the same thing without this command.');
         process.exitCode = 1;
         return;
     }
@@ -273,8 +304,10 @@ async function cmdModels(argv) {
 function cmdUpdate() {
     const pluginSourceDir = findPluginSource();
     if (!pluginSourceDir) {
-        console.log('This copy was installed from npm. To get the newest version, run:');
-        console.log('    npm install -g @gru953/studio-cli@latest');
+        console.log('This copy was installed as a package rather than as a git checkout, so it');
+        console.log('updates through whichever tool installed it:');
+        console.log('    npm:      npm install -g @gru953/studio-cli@latest');
+        console.log('    Homebrew: brew update && brew upgrade gru953-studio');
         console.log('In Claude Code, the studio updates itself — type /studio-update.');
         return;
     }
@@ -333,9 +366,30 @@ Nothing here changes your computer without telling you what it did.
 For the full plain-English guide: https://github.com/GRU-953/GRU953-Studio/wiki`);
 }
 
+/** Read from the package's own manifest rather than hardcoded, so it cannot drift. */
+function ownVersion() {
+    try {
+        return require('../package.json').version;
+    } catch {
+        return 'unknown';
+    }
+}
+
 async function main() {
     const [, , command, ...rest] = process.argv;
     switch (command) {
+        // 2026-08-11: `--version` and `-v` used to fall through to the help text with
+        // "Unknown command: --version". They are close to universal convention, so a
+        // user typing one has done nothing wrong and should not be told otherwise.
+        case '--version':
+        case '-v':
+        case 'version':
+            console.log(ownVersion());
+            break;
+        case '--help':
+        case '-h':
+            cmdHelp();
+            break;
         case 'install':
             cmdInstall(rest);
             break;

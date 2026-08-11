@@ -1,5 +1,43 @@
 # Changelog
 
+## 6.0.2 — 2026-08-11
+
+A real bug fix. If you installed the `gru953-studio` command from npm or Homebrew,
+**it could not actually install the studio** — please update.
+
+### `gru953-studio install` now works from every route
+
+The command is meant to find every AI coding tool on your computer and set the studio
+up in each one. From a copy of the source code it did. From npm — or Homebrew, which
+installs the npm package — it could not, because the published package contained the
+command and nothing else. The studio's skills and specialist roles simply were not in
+it. The command said so and pointed you elsewhere, which at least was honest, but the
+README, the Homebrew notes and the wiki all promised it would work.
+
+The studio is now published inside the package, so `install` and `models` work
+however you got the command. The download is about 460KB.
+
+**How this got missed, since it is the more useful part.** Every automated test
+passed. Every automated test ran from a copy of the source code, where the studio sits
+a few folders up and is always present — so nothing ever exercised the arrangement a
+real user actually gets. It was found by running the Homebrew-installed command
+instead of the source copy. There are now tests that check what `npm pack` actually
+produces, rather than what the source layout implies.
+
+### Smaller fixes
+
+- `gru953-studio --version` (and `-v`) print the version instead of "Unknown
+  command". `--help` and `-h` work too. These are near-universal conventions and
+  typing one is not a mistake.
+- Messages that said an npm install "does not include the studio" were true before
+  this release and would now be actively misleading. If the studio is ever genuinely
+  missing, the command now says something has gone wrong with the installation and
+  how to repair it, rather than blaming a normal install.
+- `npm test` in the command's own package ran the STUDIO's test suite too once the
+  studio was bundled in, producing a hundred spurious failures. Test discovery is now
+  scoped to the package's own tests.
+- The pack-time bundler was not covered by linting. It is now.
+
 ## 6.0.1 — 2026-08-11
 
 A packaging release. Nothing about how GRU953-Studio works has changed, and there

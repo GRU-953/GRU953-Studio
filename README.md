@@ -67,7 +67,15 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 6.0.1
+### Latest version: 6.0.2
+
+Version 6.0.2 fixes a real bug: if you installed the `gru953-studio` command from
+npm or Homebrew, it could not actually install the studio — the published package
+contained the command but not the studio's skills and roles. It does now, so
+`gru953-studio install` works however you got the command. `--version` also works,
+which it did not before. Full detail in [CHANGELOG.md](CHANGELOG.md).
+
+### Version 6.0.1
 
 Version 6.0.1 is a packaging release — nothing about how the studio works has
 changed. It adds a Windows download that `winget` will install, and the Homebrew
