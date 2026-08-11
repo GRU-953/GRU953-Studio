@@ -1,11 +1,13 @@
 {
   "name": "@gru953/studio-cli",
-  "version": "6.0.1",
+  "version": "6.0.2",
   "description": "The GRU953-Studio command-line bridge for running the studio protocol outside Claude Code.",
   "main": "src/index.js",
   "scripts": {
-    "test": "node --test",
-    "lint": "eslint src test"
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "lint": "eslint src test scripts",
+    "prepack": "node scripts/bundle-plugin.mjs",
+    "bundle": "node scripts/bundle-plugin.mjs"
   },
   "keywords": [],
   "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
@@ -21,6 +23,7 @@
   },
   "files": [
     "src",
+    "plugin",
     "LICENSE"
   ],
   "devDependencies": {

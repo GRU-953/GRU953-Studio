@@ -22,3 +22,8 @@ plugins/*.zip
 /clients/vscode/out/
 *.vsix
 dist/
+
+# Build output: the studio is copied in here at pack time by
+# clients/cli/scripts/bundle-plugin.mjs so it can be published alongside the
+# command. Never committed — plugins/gru953-studio is the source of truth.
+clients/cli/plugin/

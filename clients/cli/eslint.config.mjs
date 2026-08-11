@@ -44,4 +44,19 @@ export default [
       },
     },
   },
+  // 2026-08-11: scripts/ holds the pack-time bundler, which is ESM rather than the
+  // CommonJS used in src/. It went unlinted until the lint script was widened to
+  // cover it, at which point `console` was reported undefined — the same gap a
+  // 2026-07-29 fix closed for the clients/ packages as a whole.
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+      },
+    },
+  },
 ];
