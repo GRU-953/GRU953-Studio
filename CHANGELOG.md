@@ -1,5 +1,120 @@
 # Changelog
 
+## 6.0.0 — 2026-08-11
+
+Seven owner-requested additions, and one honest answer to an eighth question
+nobody had asked out loud.
+
+**Why 6.0.0 rather than 5.2.0.** Most of this is additive, which would argue for
+a minor version. Two things are not. The Google Antigravity install location
+moves — the old bridge wrote to `.agents/skills/`, which Antigravity does not
+scan, so anyone who ran it has files in a place now abandoned and must run the
+installer again. And the two-branch rule changes what Publish *does* for every
+project: it now creates a `development` branch alongside `main`. Those are changes
+to documented behaviour people may depend on, not just new capability, so the
+major number moves.
+
+### OpenRouter support, free models only by default
+
+- New `openrouter-integration` skill: OpenRouter as an AI backend for apps the
+  studio builds, a sibling of the existing Ollama and Gemini integrations — opt-in,
+  the user's own key, confirm-before-spend, graceful degradation.
+- New `hooks/openrouter-models.mjs` and `/studio-models` for searching the live
+  catalogue and choosing a model. Every fact was verified on 2026-08-10 by calling
+  the real API: the models endpoint needs no authentication, the catalogue held
+  399 models, and 17 of them were genuinely free.
+- **Free models are identified by PRICE, never by name.** 14 of the 17 free models
+  had ids ending `:free` — three did not, and two of those were the
+  largest-context free models available, so the obvious shortcut misses exactly
+  the ones a user would most want. The reverse error is the expensive one: a
+  `:free` name outliving its free price would spend real money while being
+  reported as free. Every pricing field is checked, not just per-token cost, so a
+  model that starts charging for images drops out of the free list rather than
+  quietly staying in it. A model with no pricing information is treated as NOT
+  free: unknown must never reach a non-technical user as "free".
+- No new secret pattern was needed — `scan.mjs` already blocks an OpenRouter
+  `sk-or-v1-` key. That was a claim until now; it is a test.
+
+### The operating charter
+
+- New `operating-charter` skill: the owner's standing instructions on how the
+  studio works with a person — plain UK English, the expert-panel pop-up
+  interview, reconciled specialist perspectives, no silent scope change, YAGNI,
+  verified-and-dated facts, memory across sessions, and the order of priority when
+  two instructions conflict. Stated canonically in one place; nineteen files that
+  had been restating the same rule in slightly different words now point at it.
+- It binds on every platform, not just Claude Code: the seven AI-host rule files
+  carry a summary and `.agents/OPERATING-CHARTER.md` carries the full text, which
+  is how it reaches Aider — the one supported host that reads no prose rule file.
+- New seventh mandatory gate, `hooks/charter-check.mjs`, comparing the charter's
+  two necessary copies clause by clause. Verified against real mutations: a
+  reworded clause, a deleted clause, a clause emptied under its own heading, and a
+  charter nothing loads are each caught, while re-wrapping a clause is not.
+
+### Downloadable installers on every release
+
+- Every release now attaches a Claude Code package, a Claude Desktop package, an
+  Antigravity package, a VS Code `.vsix`, both one-line installer scripts, and a
+  `SHA256SUMS.txt`. Each package carries an `INSTALL.txt` written for that app's
+  own documented route.
+- What each host accepts was checked against its own documentation first. Claude
+  Desktop takes the Claude Code plugin format; Antigravity takes a different
+  layout entirely and has **no** place for separate specialist agents, so the 38
+  roles are projected into a generated rules file it follows itself. That
+  limitation is written into the shipped package rather than hidden.
+- Which exposed that the existing Antigravity bridge never worked: it wrote to a
+  location Antigravity does not scan, with no `plugin.json` anywhere, and linked
+  one skill of the whole set before printing "initialized successfully". Rewritten,
+  and covered by tests.
+- Packaging is a hand-written ZIP writer with fixed timestamps, so the same source
+  always produces byte-identical archives — without which a published checksum
+  proves nothing.
+
+### One installer for macOS, Windows and Linux
+
+- `gru953-studio install` finds every supported tool on the machine and sets the
+  studio up in each, with `doctor`, `uninstall`, `update`, `autoupdate` and
+  `models` alongside. One-line bootstrap scripts for each platform, plus a
+  Homebrew formula and winget manifests.
+- Three deliberate restraints: Claude Desktop is skipped by default because
+  Anthropic documents installing through the app rather than by copying files; the
+  shell profile is never edited automatically, only advised on; and no system
+  software is ever installed — a missing dependency produces numbered steps.
+- Daily updates work as before by default (a check on first use each day). The
+  scheduled job is a separate, explicit opt-in using each platform's own
+  scheduler.
+
+### `main` and `development`, everywhere
+
+- `main` holds only the final, tested, released version. `development` holds
+  everything else. Publish creates both branches; per-phase checkpoints go to
+  `development`; `maintenance-agent` — the role most likely to commit onto a
+  released branch by accident — is told explicitly not to.
+- This needed no change to the push gates, which was checked rather than assumed:
+  authorisation is by recorded confirmation token, not by branch name.
+
+### Testing
+
+- Two new CI jobs. `packaging` builds and structurally verifies every release
+  asset on every pull request, and proves the build is reproducible. `installer`
+  runs install and uninstall end to end against a throwaway home directory on all
+  three operating systems, then asserts the checkout is undamaged — a linked
+  install points at the studio's own source, so an uninstall that followed the
+  link would delete it.
+- `docs/INSTALL-VERIFY.md` covers what no automated test can: whether the three
+  apps actually load what was installed.
+
+### The question nobody asked out loud
+
+Can GRU953-Studio's own 38 specialists run on OpenRouter models? **No**, and it is
+a fact about the host rather than a gap here. Claude Code's own documentation
+states Anthropic "doesn't support routing Claude Code to non-Claude models through
+any gateway", that `ANTHROPIC_BASE_URL` "changes where requests are sent, not which
+model answers them", and that the model setting accepts only Anthropic model names
+or named cloud-provider deployments. Recorded with its sources in the OpenRouter
+skill, because the alternative is the fictional multi-provider routing claim this
+project already had to retract once.
+
 ## 5.1.4 — 2026-08-07
 
 One CRITICAL fix to the go-public gate, found by execution through the real
