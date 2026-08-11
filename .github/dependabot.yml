@@ -2,6 +2,11 @@ version: 2
 updates:
   # Root repo-tooling manifest (ESLint, Prettier — dev-only, never shipped).
   - package-ecosystem: 'npm'
+    # 2026-08-11: main carries released versions only, so dependency updates
+    # must land on development like every other change. Without this Dependabot
+    # opens them against the default branch — four such PRs existed before this
+    # was noticed, each proposing to commit straight onto a released main.
+    target-branch: 'development'
     directory: '/'
     schedule:
       interval: 'weekly'
@@ -10,14 +15,29 @@ updates:
   # independent npm packages, not part of the plugin's zero-dependency
   # runtime (see CONTRIBUTING.md's "A note on dependencies").
   - package-ecosystem: 'npm'
+    # 2026-08-11: main carries released versions only, so dependency updates
+    # must land on development like every other change. Without this Dependabot
+    # opens them against the default branch — four such PRs existed before this
+    # was noticed, each proposing to commit straight onto a released main.
+    target-branch: 'development'
     directory: '/clients/cli'
     schedule:
       interval: 'weekly'
   - package-ecosystem: 'npm'
+    # 2026-08-11: main carries released versions only, so dependency updates
+    # must land on development like every other change. Without this Dependabot
+    # opens them against the default branch — four such PRs existed before this
+    # was noticed, each proposing to commit straight onto a released main.
+    target-branch: 'development'
     directory: '/clients/antigravity'
     schedule:
       interval: 'weekly'
   - package-ecosystem: 'npm'
+    # 2026-08-11: main carries released versions only, so dependency updates
+    # must land on development like every other change. Without this Dependabot
+    # opens them against the default branch — four such PRs existed before this
+    # was noticed, each proposing to commit straight onto a released main.
+    target-branch: 'development'
     directory: '/clients/vscode'
     schedule:
       interval: 'weekly'
@@ -26,6 +46,11 @@ updates:
   # itself as much as to hand-written workflows — keep the pinned actions in
   # ci.yml and codeql.yml current.
   - package-ecosystem: 'github-actions'
+    # 2026-08-11: main carries released versions only, so dependency updates
+    # must land on development like every other change. Without this Dependabot
+    # opens them against the default branch — four such PRs existed before this
+    # was noticed, each proposing to commit straight onto a released main.
+    target-branch: 'development'
     directory: '/'
     schedule:
       interval: 'weekly'

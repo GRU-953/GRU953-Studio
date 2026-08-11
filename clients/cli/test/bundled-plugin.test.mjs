@@ -100,7 +100,13 @@ test('npm pack produces a tarball containing the whole studio, not just the comm
 
   const list = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' });
   assert.equal(list.status, 0, 'tar must be able to read the tarball');
-  const names = list.stdout.split('\n').filter(Boolean);
+  // split on \r?\n and trim: `tar` on Windows emits \r\n, which leaves a trailing
+  // carriage return on every entry and makes exact-match lookups below fail on paths
+  // that are genuinely present. That is exactly what happened — the Windows CI leg
+  // reported "must contain package/plugin/.claude-plugin/plugin.json" while also
+  // reporting 127 entries under package/plugin/. Two lines above, npm's own output was
+  // already being split this way; this one was missed.
+  const names = list.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   // The five things whose absence broke `install` and `models`.
   for (const required of [
