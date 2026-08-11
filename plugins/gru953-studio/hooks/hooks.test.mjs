@@ -721,10 +721,21 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   copyRepoTo(dir);
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
+  const before = readme;
   readme = readme.replace(
     '38 specialist roles in total',
     'We once evaluated 38 specialist roles for a sibling product; 99 specialist roles in total'
   );
+  // 2026-08-12: assert the fixture actually changed. This test and its sibling
+  // below both build their fixture by REPLACING a literal phrase from README's
+  // prose, so a harmless rewording of that sentence makes the replace match
+  // nothing and leaves the fixture identical to the clean repo. Here that shows
+  // up as a confusing failure; in the sibling, which asserts `clean`, it shows
+  // up as a test that PASSES while proving nothing — a false-clean. The DC1
+  // test further down this file was already bitten by exactly this and fixed by
+  // appending a phrase it fully controls; these two still need the literal
+  // phrase, so they assert the mutation landed instead.
+  assert.notEqual(readme, before, 'fixture did not mutate — README no longer contains "38 specialist roles in total"');
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a conflicting later role-count mention must not be masked by an earlier correct one');
@@ -737,10 +748,15 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   copyRepoTo(dir);
   const readmePath = path.join(dir, 'README.md');
   let readme = fs.readFileSync(readmePath, 'utf8');
+  const before = readme;
   readme = readme.replace(
     '38 specialist roles in total',
     '(the studio grew from 16 roles in early versions) 38 specialist roles in total'
   );
+  // Without this the decoy is never inserted and the test passes on an unmodified
+  // README — asserting `clean` about a fixture containing nothing to be clean
+  // about. See the fuller note on the sibling test above.
+  assert.notEqual(readme, before, 'fixture did not mutate — README no longer contains "38 specialist roles in total"');
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'clean', `an unrelated "16 roles" history mention (no "specialist") must not trip this check: ${r.stdout}`);

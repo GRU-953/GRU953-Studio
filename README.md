@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/gru953-logo-colour.svg" alt="GRU953 logo" width="150">
+  <img src="docs/brand/gru953-logo-colour.svg" alt="GRU953 logo" width="132">
 </p>
 
 <h1 align="center">GRU953-Studio</h1>
@@ -8,12 +8,12 @@
 <span lang="bn">সহজ প্রযুক্তি। সবার জন্য।</span></p>
 
 <p align="center">
-  <a href="https://gru-953.github.io/GRU953-Studio/"><img alt="Website" src="https://img.shields.io/badge/website-gru--953.github.io-3257A0"></a>
-  <a href="https://github.com/GRU-953/GRU953-Studio/wiki"><img alt="Guide" src="https://img.shields.io/badge/guide-the%20wiki-3257A0"></a>
-  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-PolyForm%20Noncommercial%201.0.0-B28400"></a>
-  <a href="https://github.com/GRU-953/GRU953-Studio/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/GRU-953/GRU953-Studio?color=00AE99&label=release"></a>
-  <a href="https://github.com/GRU-953/homebrew-tap"><img alt="Homebrew tap" src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FGRU-953%2Fhomebrew-tap%2Fmain%2FFormula%2Fgru953-studio.rb&search=studio-cli-%28%5B0-9.%5D%2B%29.tgz&replace=v%241&label=homebrew&color=00AE99"></a>
-  <a href="CODE_OF_CONDUCT.md"><img alt="Contributor Covenant" src="https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant%202.1-6DBE4C"></a>
+  <a href="https://gru-953.github.io/GRU953-Studio/"><img alt="Website" src="https://img.shields.io/badge/website-gru--953.github.io-416CBD"></a>
+  <a href="https://github.com/GRU-953/GRU953-Studio/wiki"><img alt="Guide" src="https://img.shields.io/badge/guide-the%20wiki-2E4F8E"></a>
+  <a href="https://github.com/GRU-953/GRU953-Studio/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/GRU-953/GRU953-Studio?color=157E47&label=release"></a>
+  <a href="https://github.com/GRU-953/homebrew-tap"><img alt="Homebrew tap" src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FGRU-953%2Fhomebrew-tap%2Fmain%2FFormula%2Fgru953-studio.rb&search=studio-cli-%28%5B0-9.%5D%2B%29.tgz&replace=v%241&label=homebrew&color=00769E"></a>
+  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-PolyForm%20Noncommercial%201.0.0-6F4900"></a>
+  <a href="CODE_OF_CONDUCT.md"><img alt="Contributor Covenant" src="https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant%202.1-873831"></a>
 </p>
 
 <p align="center">
@@ -27,22 +27,6 @@ published safely to your own GitHub account, under your name.<br>
 📖 <a href="https://github.com/GRU-953/GRU953-Studio/wiki"><strong>Read the full plain-English guide on the wiki →</strong></a>
 </p>
 
----
-
-## Contents
-
-[What is GRU953-Studio?](#what-is-gru953-studio) ·
-[Features](#features-at-a-glance) ·
-[What it can (and can't) build](#what-it-can-and-cant-build-for-you) ·
-[Quick start](#quick-start-one-time-setup) ·
-[Connecting Ollama, OpenRouter & Gemini](#optional-connect-ollama-openrouter-and-gemini) ·
-[The team](#the-team-behind-it) ·
-[Sample use cases](#sample-use-cases) ·
-[Staying in control](#staying-in-control) ·
-[Safety](#safety-and-honesty) ·
-[Licence](#licence--trademark-in-plain-terms) ·
-[Community](#community--governance)
-
 > **New to all this?** That's exactly who this is for. If you can describe your
 > idea to a friend, you can use GRU953-Studio. The
 > [wiki guide](https://github.com/GRU-953/GRU953-Studio/wiki) walks you through
@@ -52,147 +36,30 @@ published safely to your own GitHub account, under your name.<br>
 
 ## What is GRU953-Studio?
 
-You can talk to GRU953-Studio in plain English inside **Claude Code**, **Google Antigravity** (SDK & IDE), or project it into any major 2026 AI agentic platform (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI). You tell it what
-you want — "a habit tracker for my phone", "a page that lists my recipes" — it
-asks a few multiple-choice questions to understand exactly what you mean, and then
-a team of behind-the-scenes AI specialists **designs it, shows you a clickable
-mock-up first, writes it, fills it with real content, tests it, and — only when
-you say the word — publishes it** to your own GitHub account.
+You talk to GRU953-Studio in plain English inside **Claude Code**, **Claude
+Desktop** or **Google Antigravity** — and you can project it into any major 2026
+AI coding platform (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands,
+Cline, Augment Code, Tabnine, JetBrains AI).
 
-You never write or read a single line of code. You just answer questions, one
-clear pop-up at a time, each with a recommended answer already marked.
+You tell it what you want — "a habit tracker for my phone", "a page that lists my
+recipes". It asks a few multiple-choice questions to understand exactly what you
+mean. Then a team of behind-the-scenes AI specialists **designs it, shows you a
+clickable mock-up first, writes it, fills it with real content, tests it, and —
+only when you say the word — publishes it** to your own GitHub account.
+
+You never write or read a single line of code. You answer questions, one clear
+pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
 roles** · **37 skills** (the internal playbooks the team follows) · **11 simple
-commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
-and CI integrity checks) · **zero third-party code
-dependencies**.
+commands** · **two automatic push-time safety hooks** (plus a suite of
+pre-publish and CI integrity checks) · **zero third-party code dependencies**.
 
 ### Latest version: 6.0.3
 
-Version 6.0.3 fixes two packaging problems found by testing the published downloads
-rather than the source: the **Windows download** carried the command but not the studio,
-so `gru953-studio install` could not work from it; and whether the npm package contained
-the studio depended on which npm version built it. Both fixed and now covered by tests.
-Full detail in [CHANGELOG.md](CHANGELOG.md).
-
-### Version 6.0.2
-
-Version 6.0.2 fixes a real bug: if you installed the `gru953-studio` command from
-npm or Homebrew, it could not actually install the studio — the published package
-contained the command but not the studio's skills and roles. It does now, so
-`gru953-studio install` works however you got the command. `--version` also works,
-which it did not before. Full detail in [CHANGELOG.md](CHANGELOG.md).
-
-### Version 6.0.1
-
-Version 6.0.1 is a packaging release — nothing about how the studio works has
-changed. It adds a Windows download that `winget` will install, and the Homebrew
-tap is now live: `brew install GRU-953/tap/gru953-studio`. Full detail in
-[CHANGELOG.md](CHANGELOG.md).
-
-### Version 6.0.0
-
-Version 6.0.0 adds seven things the owner asked for, and answers one question
-honestly rather than pretending.
-
-**You can now use free AI models through [OpenRouter](https://openrouter.ai)** —
-one account that reaches hundreds of models from many companies. Type
-`/studio-models` to see what is free today and pick one. It only ever chooses
-free models unless you say otherwise, and it decides that by each model's real
-price, not by a name that happens to say "free" — which matters, because three of
-the free models available on the day this was built do not have "free" in their
-name at all, and two of those are the most capable ones.
-
-**One command now installs everything, on any computer.** `gru953-studio install`
-finds Claude Code, Claude Desktop, Google Antigravity, VS Code, Cursor and
-Windsurf on your machine and sets the studio up in each one it finds. There is a
-single line to paste for macOS, Linux and Windows — see
-[Quick start](#quick-start-one-time-setup).
-
-**Every release now has downloadable installers** for Claude Code, Claude
-Desktop, Antigravity and VS Code, on
-[the releases page](https://github.com/GRU-953/GRU953-Studio/releases), each with
-step-by-step instructions inside.
-
-**The studio now follows a written charter** — how it talks to you, how it
-interviews you before starting, and its promise never to change your project's
-goal without asking. Those rules were scattered across a dozen internal files
-saying slightly different things; they are now stated once, and a new automatic
-check stops them drifting apart again.
-
-**Two things changed that you may notice.** Google Antigravity is installed in a
-different place now — the old location was one Antigravity never actually reads,
-so if you set it up before, run `gru953-studio install` again. And every project
-now gets two branches: `main` for the finished, tested version, and `development`
-for work in progress.
-
-**And the honest answer:** GRU953-Studio's own team of specialists cannot run on
-OpenRouter's models. That is not a limitation of this tool — Claude Code itself
-does not support running on models other than Claude, which its own documentation
-states plainly. OpenRouter is for the apps the studio builds for you. Full detail
-in [CHANGELOG.md](CHANGELOG.md).
-
-Version 5.1.4 closed a critical gap in the go-public gate: a request that
-asked GitHub to make a repository public by sending a JSON body, rather than
-by a command-line flag, was allowed on the ordinary private-publish
-confirmation alone — no separate go-public confirmation required. Found by
-running the real hook, not by reading it. Going public now always needs its
-own explicit confirmation, whichever form the request takes.
-
-Version 5.1.3 is a maintenance release: nine further-pass fixes to the
-publish-safety checks (each reproduced by running the code before being
-called a bug, each paired with a regression test), plus a fix to the release
-process itself. The `v5.1.3` tag was originally pushed without any of the
-version numbers in this repository being raised from 5.1.2, so the publish
-workflow — which reads the version from `package.json`, not from the tag —
-saw a version already on npm and skipped every job in silence. All the
-version numbers now agree, the workflow refuses to run at all if a tag and
-its `package.json` disagree, and a repository check enforces the same
-agreement on every commit. Full detail in [CHANGELOG.md](CHANGELOG.md).
-
-Version 5.1.2 gives the VS Code extension an icon for the first time (the
-Soaring Bird mark) and removes an old marketing phrase, "Universal Agentic
-Studio", that had crept into the product's own displayed name in several
-places — the extension's Marketplace listing, its command title, and every
-console message the CLI, the Google Antigravity bridge and the update
-checker print. Every one of those now says "GRU953-Studio" instead. Also
-fixes the publish pipeline itself: re-pushing a tag (as re-signing a release
-does) used to make it fail loudly trying to republish an already-live
-version; it now skips cleanly instead.
-
-Version 5.1.0 is the first release built from a genuine, end-to-end functional
-test: the studio was watched building two real projects from scratch — an
-interview, a mock-up gate tested both ways, parallel builders in separate
-working copies, and a cold-restart resume test — the first time any of that
-had actually been observed rather than assumed. That test found real defects,
-including two that briefly weakened this project's own push-safety checks
-while fixing something else; all are closed, each with a regression test
-proven to fail if its own fix is reverted. The two npm packages
-(`@gru953/studio-cli`, `@gru953/studio-antigravity`) are now genuinely
-published and installable — previously they never were, despite this file
-advertising them. Node 20 (past its own end of life) was dropped from
-testing; the default moved to Node 24. Full detail in
-[CHANGELOG.md](CHANGELOG.md).
-
-Version 5.0.1 is a small bug-fix release on top of 5.0.0 — no roster, Tier,
-or workflow changes. It fixes a VS Code extension command that pointed at
-an npm package that was never actually published, and closes a handful of
-gaps in how five of the studio's own safety checks read **bold** text in
-markdown tables.
-
-Version 5.0.0 is a major hardening release: the result of an eight-stage,
-exhaustive audit of the whole repository (the full findings register is
-committed as [AUDIT-2026-07.md](AUDIT-2026-07.md)). Every safety and quality
-check now genuinely does what it claims — including the dependency-licence
-scanner, which previously checked only the top-level folder and would have
-missed a real dependency sitting one folder down. The platform-support
-promise from 4.5.0 is now real too: the studio actually asks which platform
-you want, and every language specialist's toolkit names the real command
-that produces a finished, installable app. See
-[CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
-
-Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.). Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). (2026-08-10 fix: this line used to quote two historical skill-count figures while explaining a 2026-07-27 correction to them. Both digits are dropped here rather than restated a third time — the live count is stated in exactly one place, the "In numbers" line above, so a sentence narrating an old mistake can never again be read as a claim about today. The original correction stands and is recorded in [CHANGELOG.md](CHANGELOG.md).)
+Everything the studio does is listed in plain English in
+[CHANGELOG.md](CHANGELOG.md), newest first — including what each release fixed
+and how it was proved.
 
 ---
 
@@ -239,7 +106,7 @@ it, testing it, and publishing it.
 
 **Not for:** very large, complex systems (a full banking platform, a social
 network for millions of people). GRU953-Studio deliberately builds the smallest
-version that actually works — then you can grow it later, in stages. It will tell
+version that actually works — then you can grow it later, in stages. It tells
 you honestly, in plain English, if something is bigger than it should take on.
 
 ---
@@ -247,10 +114,10 @@ you honestly, in plain English, if something is bigger than it should take on.
 ## Quick start (one-time setup)
 
 **1. Get Claude Code.** GRU953-Studio is an add-on for
-[Claude Code](https://claude.com/claude-code). It is **not** the separate Claude
-Desktop chat app. It works in the Claude Code desktop app (macOS, Windows, Linux),
-in a web browser on [Claude Code on the web](https://claude.com/claude-code), and
-inside the VS Code and JetBrains editor extensions. Install and sign in first.
+[Claude Code](https://claude.com/claude-code). It works in the Claude Code
+desktop app (macOS, Windows, Linux), in a web browser on
+[Claude Code on the web](https://claude.com/claude-code), and inside the VS Code
+and JetBrains editor extensions. Install and sign in first.
 
 **2. Add GRU953-Studio.** Type these two lines into Claude Code, one at a time:
 
@@ -259,8 +126,13 @@ inside the VS Code and JetBrains editor extensions. Install and sign in first.
 /plugin install gru953-studio@gru953-studio
 ```
 
-**On a Mac or Linux with [Homebrew](https://brew.sh)?** One line, and it installs
-Node.js for you too:
+That's it — type `/studio` to begin. The very first time, it runs a short, one-off
+"getting to know you" setup; it never asks again.
+
+### Other ways to install it
+
+**On a Mac or Linux with [Homebrew](https://brew.sh)** — one line, and it
+installs Node.js for you too:
 
 ```
 brew install GRU-953/tap/gru953-studio
@@ -271,8 +143,8 @@ Then run `gru953-studio install` to set the studio up in every AI tool it finds.
 that.)
 
 **Or let one command do all of it.** If you would rather not type anything into
-Claude Code, paste this into your terminal instead and it will find every AI tool
-on your computer and set them all up:
+Claude Code, paste this into your terminal instead and it finds every AI tool on
+your computer and sets them all up:
 
 ```
 # macOS and Linux
@@ -286,18 +158,18 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
 
 Piping a script from the internet into your shell is a real risk, whoever
 publishes it — [SECURITY.md](SECURITY.md) explains how to download and read it
-first instead, which gets the same result. Prefer downloads? Every release has a
-ready-made installer for each app on
-[the releases page](https://github.com/GRU-953/GRU953-Studio/releases).
+first instead, which gets the same result.
 
-**3. Two free tools it relies on.** [Node.js](https://nodejs.org) (powers the
+**Prefer a download?** Every release has a ready-made installer for Claude Code,
+Claude Desktop, Antigravity and VS Code on
+[the releases page](https://github.com/GRU-953/GRU953-Studio/releases), each with
+step-by-step instructions inside.
+
+**Two free tools it relies on.** [Node.js](https://nodejs.org) (powers the
 built-in safety checks — install once) and, only when you publish, the
 [GitHub CLI](https://cli.github.com) (`gh auth login` once). If either is missing
 when it's needed, the studio stops and tells you exactly what to do — it never
 fails silently.
-
-That's it — type `/studio` to begin. The very first time, it runs a short, one-off
-"getting to know you" setup; it never asks again.
 
 → Step-by-step for every platform, updating and removing: **[Installing GRU953-Studio](https://github.com/GRU-953/GRU953-Studio/wiki/Installation)**.
 
@@ -324,6 +196,10 @@ All three are entirely optional, and all three always ask before doing anything.
   Google's cloud models, used **only** for generated images, audio and video (all
   written text is always produced by Claude). It is off until you turn it on, uses
   your own Google key, and shows a cost estimate and asks before every generation.
+
+GRU953-Studio's own team of specialists always runs on Claude. Claude Code does
+not support running on other companies' models, so these three are for the apps
+the studio builds for you, not for the studio itself.
 
 ---
 
@@ -390,7 +266,7 @@ their honestly-disclosed limits are written up in full in
 [SECURITY.md](SECURITY.md), with nothing glossed over.
 
 **What has actually been tested, and what has not.** Every automatic check runs
-on macOS, Windows and Linux before anything ships: the installer is run end to
+on macOS, Windows and Linux before anything ships: the installer runs end to
 end into a throwaway folder on all three, every downloadable package is opened
 and inspected, and the packaging is proved to produce identical files from
 identical source. What no automatic test can do is open Claude Desktop, VS Code
