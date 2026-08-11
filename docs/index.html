@@ -5,11 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GRU953-Studio — describe it, approve it, it's built</title>
 <meta name="description" content="GRU953-Studio turns a plain-English idea into a real, working, tested app — with its own content, in your own language — published to your own GitHub. No coding needed. Free for personal use.">
+<meta name="theme-color" content="#f7fafe" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101318" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="GRU953-Studio">
 <meta property="og:description" content="Describe an app in plain words. A team of AI specialists designs it, shows you a mock-up, builds it, and publishes it to your own GitHub — only when you say so.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://gru-953.github.io/GRU953-Studio/">
+<meta property="og:image" content="https://gru-953.github.io/GRU953-Studio/brand/gru953-logo-colour.png">
+<meta name="twitter:card" content="summary">
 <link rel="icon" href="brand/gru953-logo-colour.svg">
+<!-- The two brand fonts are self-hosted, so this page makes no external
+     requests of any kind. Preloaded because they carry every heading. -->
+<link rel="preload" href="assets/fonts/noto-sans.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -18,7 +25,7 @@
 <header class="site-header">
   <div class="wrap bar">
     <a class="brand" href="index.html">
-      <img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">
+      <img src="brand/gru953-logo-colour.svg" alt="" width="28" height="28">
       GRU953-Studio
     </a>
     <nav class="site-nav" aria-label="Primary">
@@ -36,31 +43,36 @@
   <section class="hero">
     <div class="spectrum-band" aria-hidden="true"></div>
     <div class="wrap hero-inner">
-      <span class="eyebrow"><span class="dot"></span>A plugin for Claude Code & Google Antigravity · free for personal use</span>
-      <h1>Describe it in plain words.<br>Approve the mock-up.<br>It's built, filled with real content, and shipped.</h1>
-      <p class="lede">GRU953-Studio is a team of AI specialists you talk to like a person — no
-        coding, no jargon. It designs your app, shows you a clickable mock-up first, writes its
-        real text in Bangla and English, builds it natively for whichever platform you use, and
-        publishes it to your own GitHub — only when you say so.</p>
+      <p class="eyebrow"><span class="dot" aria-hidden="true"></span>Free for personal use</p>
+      <h1>Describe it in plain words. Approve the mock-up. It's built, filled with real content, and shipped.</h1>
+      <p class="lede">GRU953-Studio is a team of AI specialists inside Claude Code, Claude Desktop
+        and Google Antigravity — you talk to them like a person, with no coding and no jargon. They
+        design your app, show you a clickable mock-up first, write its real text in Bangla and
+        English, build it natively for whichever platform you use, and publish it to your own
+        GitHub — only when you say so.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="https://github.com/GRU-953/GRU953-Studio/wiki/Installation">Get started</a>
         <a class="btn btn-ghost" href="https://github.com/GRU-953/GRU953-Studio/wiki/Sample-Use-Cases">See what people build</a>
       </div>
+
       <div class="hero-install">
         <p>Install inside Claude Code</p>
         <pre class="mono"><code>/plugin marketplace add GRU-953/GRU953-Studio
 /plugin install gru953-studio@gru953-studio</code></pre>
+        <p>On a Mac or Linux with Homebrew</p>
+        <pre class="mono"><code>brew install GRU-953/tap/gru953-studio</code></pre>
         <p>Or set up every AI tool on your computer at once</p>
         <pre class="mono"><code># macOS and Linux
 curl -fsSL https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installers/install.sh | sh
 
 # Windows, in PowerShell
 irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installers/install.ps1 | iex</code></pre>
-        <p class="mono" style="opacity:.75">Running a script from the internet is a real
-        risk. <a href="https://github.com/GRU-953/GRU953-Studio/blob/main/SECURITY.md">SECURITY.md</a>
-        shows how to read it first, or download a ready-made installer for your app from
+        <p class="note">Running a script from the internet is a real risk, whoever publishes it.
+        <a href="https://github.com/GRU-953/GRU953-Studio/blob/main/SECURITY.md">SECURITY.md</a>
+        shows how to read it first — or download a ready-made installer for your app from
         <a href="https://github.com/GRU-953/GRU953-Studio/releases">the releases page</a>.</p>
       </div>
+
       <p class="tagline-bn" lang="bn">সহজ প্রযুক্তি। সবার জন্য।</p>
     </div>
   </section>
@@ -70,7 +82,7 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
   <section id="features">
     <div class="wrap">
       <div class="section-head">
-        <span class="eyebrow">What you get</span>
+        <p class="eyebrow">What you get</p>
         <h2>One coordinator. A whole studio behind them.</h2>
         <p>You only ever talk to the Project Lead. Everything below happens quietly, only when
           your particular project actually needs it.</p>
@@ -94,8 +106,15 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
         <div class="feature-card">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="13" height="9" rx="1.4"/><path d="M6.5 20h6M9.5 13v7"/><rect x="17.5" y="7" width="4.5" height="10" rx="1"/></svg>
           <h3>Every platform, one team</h3>
-          <p>Android, iPhone/iPad, Mac, Windows and Linux — with a dedicated specialist for each
-            of 10 languages, so the right expert builds the right platform.</p>
+          <p>Android, iPhone and iPad, Mac, Windows and Linux — with a dedicated specialist for
+            each of 10 programming languages, so the right expert builds the right platform.</p>
+        </div>
+
+        <div class="feature-card">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h13"/><circle cx="19" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>
+          <h3>Free AI models, chosen by price</h3>
+          <p>Your app can use free models through OpenRouter, picked by what they actually cost
+            rather than by a name that says "free" — and never a paid one without your yes.</p>
         </div>
 
         <div class="feature-card">
@@ -120,13 +139,6 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
         </div>
 
         <div class="feature-card">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h13"/><circle cx="19" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>
-          <h3>Grows in safe stages</h3>
-          <p>The smallest useful version first, then improvements in order — with a private
-            backup of your work after every stage, so nothing is ever lost.</p>
-        </div>
-
-        <div class="feature-card">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
           <h3>Safety built in</h3>
           <p>Automatic checks for leaked passwords, known weaknesses and licence problems —
@@ -137,21 +149,21 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
     </div>
   </section>
 
-  <section style="background:var(--paper-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
+  <section class="band">
     <div class="wrap">
       <div class="section-head">
-        <span class="eyebrow">How it works</span>
+        <p class="eyebrow">How it works</p>
         <h2>Eight steps. All of them plain English.</h2>
       </div>
       <div class="steps">
-        <div class="step"><span class="num"></span><div><h3>Tell it your idea</h3><p>Type it between square brackets, or just type <code>/studio</code>.</p></div></div>
-        <div class="step"><span class="num"></span><div><h3>Answer a short interview</h3><p>Only as many pop-up questions as it genuinely needs, each with a recommended answer marked.</p></div></div>
-        <div class="step"><span class="num"></span><div><h3>It sizes the job</h3><p>Tiny, Standard, or Complex — in plain words, with a reason. You can raise or lower it any time.</p></div></div>
-        <div class="step"><span class="num"></span><div><h3>You see it before it's built</h3><p>A clickable mock-up and a phased plan — nothing real is built until you approve both.</p></div></div>
-        <div class="step"><span class="num"></span><div><h3>It writes the real content</h3><p>Bangla and English text; generated media only with your yes and a shown cost.</p></div></div>
-        <div class="step"><span class="num"></span><div><h3>It builds, checks, and tests</h3><p>In stages, with a private backup after each one. Stuck points are explained plainly.</p></div></div>
-        <div class="step"><span class="num"></span><div><h3>It publishes — only when you say so</h3><p>Private by default, to your own GitHub account. Public is a separate, later step.</p></div></div>
-        <div class="step"><span class="num"></span><div><h3>It remembers everything</h3><p>Pause any time. Come back whenever. It picks up exactly where it stopped.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>Tell it your idea</h3><p>Type it between square brackets, or just type <code>/studio</code>.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>Answer a short interview</h3><p>Only as many pop-up questions as it genuinely needs, each with a recommended answer marked.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>It sizes the job</h3><p>Tiny, Standard, or Complex — in plain words, with a reason. You can raise or lower it any time.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>You see it before it's built</h3><p>A clickable mock-up and a phased plan — nothing real is built until you approve both.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>It writes the real content</h3><p>Bangla and English text; generated media only with your yes and a shown cost.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>It builds, checks, and tests</h3><p>In stages, with a private backup after each one. Stuck points are explained plainly.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>It publishes — only when you say so</h3><p>Private by default, to your own GitHub account. Public is a separate, later step.</p></div></div>
+        <div class="step"><span class="num" aria-hidden="true"></span><div><h3>It remembers everything</h3><p>Pause any time. Come back whenever. It picks up exactly where it stopped.</p></div></div>
       </div>
     </div>
   </section>
@@ -159,7 +171,7 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
   <section>
     <div class="wrap">
       <div class="section-head">
-        <span class="eyebrow">Built openly</span>
+        <p class="eyebrow">Built openly</p>
         <h2>Nothing about how this works is hidden.</h2>
       </div>
       <div class="card-grid">
@@ -174,8 +186,9 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
   <section class="tight center">
     <div class="wrap">
       <h2>Ready to describe your idea?</h2>
-      <p class="lede center" style="margin:0 auto 24px;">Install it inside Claude Code, then just start typing. The full plain-English guide lives on the wiki.</p>
-      <div class="hero-cta center" style="justify-content:center;">
+      <p class="lede">Install it inside Claude Code, then just start typing. The full plain-English
+        guide lives on the wiki.</p>
+      <div class="hero-cta" style="justify-content:center">
         <a class="btn btn-primary" href="https://github.com/GRU-953/GRU953-Studio/wiki">Read the full guide</a>
         <a class="btn btn-ghost" href="https://github.com/GRU-953/GRU953-Studio">View on GitHub</a>
       </div>
@@ -186,7 +199,7 @@ irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installer
 <footer class="site-footer">
   <div class="wrap">
     <div class="foot-grid">
-      <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="GRU953 logo">GRU953-Studio</a>
+      <a class="brand" href="index.html"><img src="brand/gru953-logo-colour.svg" alt="" width="28" height="28">GRU953-Studio</a>
       <nav aria-label="Footer">
         <a href="https://github.com/GRU-953/GRU953-Studio/wiki">Guide</a>
         <a href="https://github.com/GRU-953/GRU953-Studio/wiki/Installation">Install</a>
