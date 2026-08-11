@@ -10,8 +10,15 @@
 #
 # What is correct instead:
 #   * InstallerType: zip with NestedInstallerType: portable, so winget places one
-#     named file on the PATH (schema 1.6.0 confirms both fields, and that
+#     named file on the PATH (schema 1.12.0 confirms both fields, and that
 #     PortableCommandAlias is only valid for a portable nested type).
+#
+# 2026-08-11, second correction, from Microsoft's own validation rather than from
+# reading: these were first written against schema 1.6.0. The CURRENT specification
+# is 1.12.0, and the old schema URLs still resolve — so validating against 1.6.0
+# passed while the submission failed. Checking a manifest against a version of the
+# spec nobody uses any more is not validation. Diffing 1.6.0 against 1.12.0 then
+# surfaced ArchiveBinariesDependOnPath, which this package actually needs.
 #   * The archive is gru953-studio-windows-portable-<version>.zip, which contains a
 #     .cmd shim plus the CLI — built by tools/build-release-assets.mjs.
 #   * Node.js is declared as a PackageDependency rather than bundled. The CLI is a
@@ -37,6 +44,13 @@ NestedInstallerType: portable
 NestedInstallerFiles:
   - RelativeFilePath: gru953-studio.cmd
     PortableCommandAlias: gru953-studio
+# The launcher loads the CLI from src/ beside itself via %~dp0, so it only works
+# from the folder it was extracted into. With the default (false) winget puts an
+# alias in its own links directory, and a .cmd invoked through that resolves %~dp0
+# to the alias's location, where src/ does not exist. Adding the install location
+# to PATH instead is what makes a script with sibling files work. Field added in
+# manifest schema 1.12.0.
+ArchiveBinariesDependOnPath: true
 Dependencies:
   PackageDependencies:
     - PackageIdentifier: OpenJS.NodeJS
@@ -45,4 +59,4 @@ Installers:
     InstallerUrl: https://github.com/GRU-953/GRU953-Studio/releases/download/v6.0.1/gru953-studio-windows-portable-6.0.1.zip
     InstallerSha256: 5E9EA972E08EB7F831CE6DE6F7FAA34F58178BAE8A17363B873CDAF14BFDFDA7
 ManifestType: installer
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0
