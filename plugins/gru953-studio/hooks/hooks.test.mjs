@@ -4539,6 +4539,15 @@ test('build-release-assets: builds every installer, each in the layout its own h
 
   if (hasUnzip()) {
     const list = (z) => spawnSync('unzip', ['-Z1', path.join(dir, z)], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    // The Windows portable package is the one winget installs, and it is the one
+    // package that MUST contain something runnable. Asserted because the opposite
+    // was shipped once: the first winget manifest declared a `gru953-studio`
+    // command while pointing at the plugin archive, which holds 128 markdown files
+    // and no executable at all.
+    const wp = list(`gru953-studio-windows-portable-${version}.zip`);
+    assert.ok(wp.includes('gru953-studio.cmd'), 'the Windows package needs its shim at the archive root, where PortableCommandAlias expects it');
+    assert.ok(wp.includes('src/index.js'), 'the Windows package must contain the CLI itself');
+    assert.ok(!wp.some((n) => n.endsWith('.md')), 'the Windows package is the command, not the plugin — no markdown belongs in it');
     for (const z of [`gru953-studio-claude-code-${version}.zip`, `gru953-studio-claude-desktop-${version}.zip`]) {
       const names = list(z);
       assert.ok(names.includes('gru953-studio/.claude-plugin/plugin.json'), `${z} must carry plugin.json at the package root`);

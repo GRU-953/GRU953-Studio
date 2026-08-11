@@ -67,7 +67,14 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 6.0.0
+### Latest version: 6.0.1
+
+Version 6.0.1 is a packaging release — nothing about how the studio works has
+changed. It adds a Windows download that `winget` will install, and the Homebrew
+tap is now live: `brew install GRU-953/tap/gru953-studio`. Full detail in
+[CHANGELOG.md](CHANGELOG.md).
+
+### Version 6.0.0
 
 Version 6.0.0 adds seven things the owner asked for, and answers one question
 honestly rather than pretending.
@@ -234,6 +241,17 @@ inside the VS Code and JetBrains editor extensions. Install and sign in first.
 /plugin marketplace add GRU-953/GRU953-Studio
 /plugin install gru953-studio@gru953-studio
 ```
+
+**On a Mac or Linux with [Homebrew](https://brew.sh)?** One line, and it installs
+Node.js for you too:
+
+```
+brew install GRU-953/tap/gru953-studio
+```
+
+Then run `gru953-studio install` to set the studio up in every AI tool it finds.
+(Homebrew may ask you to trust the tap first; `brew trust GRU-953/tap` answers
+that.)
 
 **Or let one command do all of it.** If you would rather not type anything into
 Claude Code, paste this into your terminal instead and it will find every AI tool

@@ -1,19 +1,48 @@
-# A portable package rather than an .msi, deliberately: building a signed Windows
-# installer needs a code-signing certificate with an annual cost, which is not
-# justified for a command npm installs in one line. winget does support portable
-# packages, but reviewers scrutinise them more closely — that may be why a
-# submission is declined, and that would be a fair outcome, not a defect.
+# winget installer manifest. NOT YET SUBMITTED — see ../README.md for why.
+#
+# 2026-08-11 rewrite, after a real mistake was caught before it reached anyone.
+# The first version of this file declared a `gru953-studio` command and pointed at
+# gru953-studio-claude-code-<version>.zip. That archive holds 128 markdown files
+# and no executable of any kind — it is the plugin, not the command. winget would
+# have rejected it, and submitting it would have wasted Microsoft's reviewers' time
+# on a package that could never have worked. Verified by downloading the published
+# archive and looking inside, not by reading the build script.
+#
+# What is correct instead:
+#   * InstallerType: zip with NestedInstallerType: portable, so winget places one
+#     named file on the PATH (schema 1.6.0 confirms both fields, and that
+#     PortableCommandAlias is only valid for a portable nested type).
+#   * The archive is gru953-studio-windows-portable-<version>.zip, which contains a
+#     .cmd shim plus the CLI — built by tools/build-release-assets.mjs.
+#   * Node.js is declared as a PackageDependency rather than bundled. The CLI is a
+#     Node script, and winget's portable type installs no runtime; bundling a second
+#     Node for a machine that probably already has one is the wrong trade.
+#     OpenJS.NodeJS was confirmed to exist in winget-pkgs before being depended on.
+#
+# TWO VALUES MUST BE SET AT RELEASE TIME, and the manifest is invalid until they are:
+#   1. PackageVersion and the version inside InstallerUrl — the release that actually
+#      carries the archive.
+#   2. InstallerSha256 — winget verifies the exact bytes it downloads:
+#        shasum -a 256 dist/gru953-studio-windows-portable-<version>.zip
+#      The same value is published in that release's SHA256SUMS.txt.
+#
+# Why they cannot be filled in yet: this repository publishes IMMUTABLE releases, so
+# assets cannot be added to v6.0.0 after the fact (confirmed: GitHub returns HTTP 422,
+# "Cannot upload assets to an immutable release"). The archive therefore ships with the
+# next release, and these two lines are set then.
 PackageIdentifier: GRU953.Studio
-PackageVersion: 5.1.4
-InstallerType: portable
-Commands:
-  - gru953-studio
+PackageVersion: 0.0.0-SET-AT-RELEASE-TIME
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: gru953-studio.cmd
+    PortableCommandAlias: gru953-studio
+Dependencies:
+  PackageDependencies:
+    - PackageIdentifier: OpenJS.NodeJS
 Installers:
   - Architecture: neutral
-    InstallerUrl: https://github.com/GRU-953/GRU953-Studio/releases/download/v5.1.4/gru953-studio-claude-code-5.1.4.zip
-    # winget needs the checksum of the exact file it downloads, so this can only
-    # be filled in once the release asset exists. The real value is published in
-    # SHA256SUMS.txt with every release.
-    InstallerSha256: REPLACE_WITH_THE_RELEASE_ASSET_SHA256
+    InstallerUrl: https://github.com/GRU-953/GRU953-Studio/releases/download/vSET-AT-RELEASE-TIME/gru953-studio-windows-portable-SET-AT-RELEASE-TIME.zip
+    InstallerSha256: SET_AT_RELEASE_TIME_SEE_HEADER
 ManifestType: installer
 ManifestVersion: 1.6.0
