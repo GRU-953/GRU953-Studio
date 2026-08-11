@@ -4899,7 +4899,20 @@ test('charter-check.mjs: a clause silently EMPTIED (heading kept, body gone) is 
   const text = fs.readFileSync(skill, 'utf8');
   // Keep the heading, remove everything under it up to the next heading. A
   // check that only looked for headings would call this perfectly intact.
-  fs.writeFileSync(skill, text.replace(/(## CHARTER-CLAUSE: QUALITY BEFORE YOU SHOW ME\n)[\s\S]*?(\n## )/, '$1$2'));
+  //
+  // 2026-08-11, caught by the hooks-crlf CI leg on the first push: this regex
+  // used literal `\n`, which matches nothing in a CRLF-encoded checkout. The
+  // replace then did nothing, the charter was left intact, charter-check
+  // correctly reported clean — and this test failed claiming the gate had missed
+  // an emptied clause. The gate was fine; the FIXTURE was LF-only. Exactly the
+  // bug class this repo has fixed several times over in its own hooks, reproduced
+  // here in a test rather than in shipped code.
+  const emptied = text.replace(
+    /(## CHARTER-CLAUSE: QUALITY BEFORE YOU SHOW ME\r?\n)[\s\S]*?(\r?\n## )/,
+    '$1$2',
+  );
+  assert.notEqual(emptied, text, 'the fixture must genuinely empty a clause, or this test proves nothing');
+  fs.writeFileSync(skill, emptied);
   const r = runCharterCheck(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'an emptied clause must be caught, not just a deleted heading');
   fs.rmSync(dir, RM_OPTS);

@@ -93,11 +93,19 @@ test('finds Antigravity at the location its own documentation names', () => {
 });
 
 test('finds a VS Code-family editor by its command on the PATH', () => {
+    // 2026-08-11, caught by the windows-latest CI leg: this used hardcoded POSIX
+    // strings for both the PATH entries and the expected file. detect.js builds
+    // candidate paths with path.join, which uses the HOST's separator — so on a
+    // Windows runner it looked for "\usr\local\bin\cursor" and the fixture
+    // offered "/usr/local/bin/cursor". The code was right (in real use the host
+    // platform IS the target platform); the fixture was wrong. Built with path.join
+    // so the fixture speaks the same dialect as the code under test.
+    const binDir = path.join(path.sep, 'usr', 'local', 'bin');
     const r = detectHosts({
         platform: 'linux',
-        homeDir: '/home/sam',
-        env: { PATH: '/usr/bin:/usr/local/bin' },
-        exists: existsOnly(['/usr/local/bin/cursor']),
+        homeDir: path.join(path.sep, 'home', 'sam'),
+        env: { PATH: [path.join(path.sep, 'usr', 'bin'), binDir].join(':') },
+        exists: existsOnly([path.join(binDir, 'cursor')]),
     });
     const cursor = r.found.find((h) => h.id === 'cursor');
     assert.ok(cursor, 'Cursor must be found by its command');
@@ -127,9 +135,19 @@ test('whichSync honours PATHEXT on Windows — a bare name never matches there',
 });
 
 test('whichSync splits the PATH with the right separator per platform', () => {
+    // Same lesson as the test above: the expected value has to be built the way
+    // path.join builds it, or this passes on POSIX and fails on Windows for a
+    // reason that has nothing to do with separator SPLITTING, which is what it
+    // actually tests.
+    const a = path.join(path.sep, 'a');
+    const b = path.join(path.sep, 'b');
     assert.equal(
-        whichSync('gh', { platform: 'linux', env: { PATH: '/a:/b' }, exists: existsOnly(['/b/gh']) }),
-        '/b/gh',
+        whichSync('gh', {
+            platform: 'linux',
+            env: { PATH: [a, b].join(':') },
+            exists: existsOnly([path.join(b, 'gh')]),
+        }),
+        path.join(b, 'gh'),
     );
     // A colon-split on Windows would break every path containing a drive letter.
     assert.equal(

@@ -62,11 +62,32 @@ jobs:
           else
             BASE="${{ github.event.before }}"
             if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-              RANGE="HEAD"
+              # 2026-08-11 fix, found the first time a NEW branch was ever pushed
+              # to this repository. Pushing a new branch reports an all-zero
+              # "before" SHA, because there is no previous tip — and RANGE="HEAD"
+              # then means "every commit that has ever existed", 146 of them, 15
+              # of which predate this check being introduced and carry no
+              # sign-off. So this step could NEVER pass on a new branch, and
+              # nobody had noticed because until now every push went to main.
+              #
+              # The intent is "every commit this push ADDS", so compare against
+              # the default branch instead. Falls back to HEAD only when there is
+              # genuinely nothing to compare with (the very first push to an empty
+              # repository), where checking everything is correct because
+              # everything IS new.
+              git fetch --no-tags --depth=200 origin "${{ github.event.repository.default_branch }}" 2>/dev/null || true
+              DEFAULT_REF="origin/${{ github.event.repository.default_branch }}"
+              if git rev-parse --verify --quiet "$DEFAULT_REF" >/dev/null; then
+                MERGE_BASE=$(git merge-base "$DEFAULT_REF" HEAD 2>/dev/null || true)
+                if [ -n "$MERGE_BASE" ]; then RANGE="$MERGE_BASE..HEAD"; else RANGE="HEAD"; fi
+              else
+                RANGE="HEAD"
+              fi
             else
               RANGE="$BASE..HEAD"
             fi
           fi
+          echo "Checking commits in range: $RANGE"
           MISSING=$(git log --no-merges --format='%H' $RANGE | while read -r sha; do
             git log -1 --format='%B' "$sha" | grep -q '^Signed-off-by:' || echo "$sha"
           done)
