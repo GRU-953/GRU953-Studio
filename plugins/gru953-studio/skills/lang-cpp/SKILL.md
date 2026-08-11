@@ -6,7 +6,8 @@ description: The C++ ecosystem pack — the exact build, test, lint, format and 
 # C++ pack
 
 The shared toolchain knowledge for C++ work, so the `cpp-developer` agent stays
-thin. Plain-English rule is as set in the `studio` skill.
+thin. Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## The six standard commands (used as acceptance-proving commands)
 

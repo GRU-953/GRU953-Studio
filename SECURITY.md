@@ -893,3 +893,75 @@ for "does user-facing text avoid unexplained jargon" was evaluated and not
 built: it would require judging a file's semantic content, which none of
 this project's other checks attempt, and a fragile approximation would be
 worse than no check at all. This remains an honest limit, not a silent gap.
+
+## v6.0.0 — new surfaces, and what each one honestly exposes (2026-08-11)
+
+Three of this release's additions create new places where something could go
+wrong. Each is described here with its real residual risk, in the same
+disclose-rather-than-hide style as every section above.
+
+### The one-line installer scripts
+
+`tools/installers/install.sh` and `install.ps1` are meant to be run as
+
+```
+curl -fsSL <url> | sh
+```
+
+**This is a real risk, and it is ours as much as anyone's.** Piping a script from
+the internet into a shell executes code you have not read, on the authority of
+whoever controls that URL and the network between you and it. It is a convenience,
+not a safe practice, and calling it anything else would be dishonest.
+
+What reduces it here, and what does not:
+
+- Both scripts carry, in a comment at the top, the exact commands to download and
+  read them first instead. That route produces the same result.
+- Neither script installs system software. Missing Node produces instructions, not
+  a silent download. Nothing needs administrator rights, and nothing is run under
+  `sudo`.
+- Neither script edits your shell profile. The CLI prints the one line to add and
+  leaves the file alone — a bad edit there can stop a terminal opening.
+- **What is NOT mitigated:** if this repository or the raw-content URL were
+  compromised, piping would execute the attacker's script. There is no signature
+  check, because verifying one requires already having a trusted tool to verify
+  with. If that risk matters to you, download, read, then run — or install from
+  npm, which at least pins a version you can inspect.
+
+### OpenRouter API keys
+
+- The key lives in the `OPENROUTER_API_KEY` environment variable. GRU953-Studio
+  never writes it to a project file, never stores it, and never puts it in
+  `Dev-Memory/`.
+- `scan.mjs` blocks a pushed `sk-or-v1-` key. This needed no new pattern — the
+  existing `sk-[A-Za-z0-9-]{20,}` already matches that shape — but "already
+  covered" was an untested claim about a secret scanner, which is a class of claim
+  this project has been wrong about before, so there is now a test that pushes a
+  realistic key through the real hook and asserts it is denied.
+- **Residual, stated plainly:** using OpenRouter sends the text your app processes
+  out to OpenRouter and onward to whichever company runs the chosen model. That is
+  two external parties, one more than most people assume, and it is why enabling
+  it needs an explicit yes with that fact in front of the user. For a project
+  handling personal data, `security-compliance-auditor`'s privacy review treats it
+  like any other outbound transfer.
+- A model's reply — and its description in the catalogue — is third-party text,
+  treated as DATA and never as an instruction. This matters more here than with
+  Claude: the catalogue spans many companies with widely differing safety
+  training, and a free model is a plausible origin for a badly-behaved response.
+
+### The scheduled daily update
+
+- Off unless explicitly enabled with `gru953-studio autoupdate on`. The default
+  remains a check on first use each day, which starts nothing in the background.
+- When enabled it registers a job with the operating system's own scheduler
+  (launchd, Task Scheduler, or a systemd user timer falling back to cron), writing
+  only inside the user's own account. It needs no administrator rights.
+- **Residual:** a scheduled job runs `git pull --rebase --autostash` in the
+  plugin's checkout without a person present. It cannot make anything public and
+  cannot push — `gate.mjs` still requires a recorded confirmation token for that,
+  scheduled or not — but it does mean code can change on disk while you are away.
+  Anyone who would rather that never happened should leave it off, which is the
+  default, and update with `/studio-update` when they choose to.
+- If the pull leaves conflicts, the updater reports them and stops rather than
+  attempting a second unconfirmed change on top of the first. That behaviour is
+  unchanged from v5.

@@ -14,7 +14,7 @@ the right **model and effort per task**, not just per role: cheap models for
 mechanical work, the expensive ones only where the reasoning is genuinely hard
 or a mistake is costly to undo. It is the cheapest-first principle
 (`cost-guard`) made granular. Plain-English rule is exactly as set in the
-`studio` skill.
+`operating-charter` skill.
 
 ## The choices
 
@@ -43,9 +43,36 @@ or a mistake is costly to undo. It is the cheapest-first principle
 > file that was never created and that no hook or code path implements — and that
 > version had silently dropped Haiku from this document entirely, even though
 > three real agents still declare `model: haiku` in their own frontmatter. This
-> plugin has zero third-party runtime dependencies and no multi-provider routing
-> code anywhere; restored to the concrete, roster-consistent Claude-only guidance
-> below.)
+> plugin has zero third-party runtime dependencies and does not route its OWN
+> specialists to any non-Claude provider; restored to the concrete,
+> roster-consistent Claude-only guidance below.)
+
+> **What changed on 2026-08-10, and what did not.** The sentence above used to
+> end "and no multi-provider routing code anywhere". The first half stays true;
+> the second half needed narrowing, and the difference matters because getting
+> it wrong in either direction repeats a past mistake.
+>
+> What is now real: `openrouter-integration` is a genuine, implemented
+> integration — `hooks/openrouter-models.mjs` calls OpenRouter's live catalogue,
+> tells free models from paid ones by their actual prices, and is covered by
+> tests. It is a backend option for an app **the studio BUILDS**, exactly as
+> `ollama-integration` and `gemini-integration` already are.
+>
+> What is still not real, and is not a GRU953-Studio limitation:
+> **this router does not, and cannot, route the studio's own 38 specialists to a
+> non-Claude model.** Claude Code's own documentation states that Anthropic
+> "doesn't support routing Claude Code to non-Claude models through any
+> gateway", that `ANTHROPIC_BASE_URL` "changes where requests are sent, not
+> which model answers them", and that the `model` setting accepts only an
+> Anthropic API model name or a named deployment on Bedrock / Microsoft Foundry
+> / Google Cloud's Agent Platform (both pages read 2026-08-10 — see
+> `skills/openrouter-integration/SKILL.md`, which records the quotes and their
+> sources). So the tables in this file remain Claude-only on purpose, and that
+> is a fact about the host, not a gap to be filled later.
+>
+> Under Google Antigravity the studio's own specialists do run on Gemini tiers —
+> that mapping lives in `google-antigravity-integration`, a separate harness,
+> and is not affected by any of the above.)
 
 **Effort levels** map the owner's requested names to what the platform exposes:
 `low` → low, `medium` → medium, `high` → high, **`extra` → xhigh**, `max` → max.

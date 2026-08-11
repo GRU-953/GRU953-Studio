@@ -1,6 +1,6 @@
 {
   "name": "@gru953/studio-cli",
-  "version": "5.1.4",
+  "version": "6.0.0",
   "description": "The GRU953-Studio command-line bridge for running the studio protocol outside Claude Code.",
   "main": "src/index.js",
   "scripts": {

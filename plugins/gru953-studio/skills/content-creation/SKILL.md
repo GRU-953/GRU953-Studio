@@ -11,7 +11,8 @@ A built app shell is not a finished app — it needs real content: copy, images,
 audio, video. User-requested 2026-07-19: after the prototype is approved, add a
 specialist content team that generates the app's content from the software
 specification and the approved warframe. This skill is the Content stage that
-does it. Plain-English rule is as set in the `studio` skill.
+does it. Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## Where it sits in the lifecycle
 

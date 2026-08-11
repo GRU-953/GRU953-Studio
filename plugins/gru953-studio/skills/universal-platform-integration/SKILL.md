@@ -1,6 +1,6 @@
 ---
 name: universal-platform-integration
-description: The Universal Agentic Protocol for running GRU953-Studio across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q) — mapping the 38 roles, 35 skills, and memory system to IDEs, CLI agents, and cloud swarms. Google Antigravity is covered by its own dedicated `google-antigravity-integration` skill, not this one.
+description: The Universal Agentic Protocol for running GRU953-Studio across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q) — mapping the full specialist roster, the whole skill set, and the memory system to IDEs, CLI agents, and cloud swarms. Google Antigravity is covered by its own dedicated `google-antigravity-integration` skill, not this one.
 ---
 
 # Universal Platform Integration

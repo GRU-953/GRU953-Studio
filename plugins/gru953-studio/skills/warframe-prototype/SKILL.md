@@ -12,8 +12,8 @@ a clickable mock of the app — and the plan to build it — in front of the use
 *before* a line of real code is written, so the shape, flow and scope are agreed
 when they are still cheap to change. User-directed (2026-07-19): "before
 developing any app, build a self-contained HTML warframe first, confirm the
-build plan, and only then proceed." Plain-English rule is as set in the `studio`
-skill.
+build plan, and only then proceed." Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## Where it sits in the lifecycle
 

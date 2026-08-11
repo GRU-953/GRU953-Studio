@@ -13,7 +13,8 @@ moment — without anything being lost. The pieces already exist (`PROGRESS.md`
 is the task table, `/studio-status` reports it); this skill turns them into a
 controllable command centre with a small, durable **state machine** and a
 live board. Everything is plain text, so control survives a closed laptop or a
-new session. Plain-English rule is exactly as set in the `studio` skill.
+new session. Plain-English rule is exactly as set in the
+`operating-charter` skill.
 
 ## The task state machine (PROGRESS.md Status column)
 

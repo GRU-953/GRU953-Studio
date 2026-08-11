@@ -7,7 +7,7 @@ description: The Dart & Flutter ecosystem pack — the exact build, test, analys
 
 The shared toolchain knowledge for Dart/Flutter work, so the
 `flutter-dart-developer` agent stays thin. Plain-English rule is as set in the
-`studio` skill. This is the studio's default mobile stack (see `architect`).
+`operating-charter` skill. This is the studio's default mobile stack (see `architect`).
 
 ## The six standard commands (used as acceptance-proving commands)
 

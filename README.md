@@ -34,7 +34,7 @@ published safely to your own GitHub account, under your name.<br>
 [Features](#features-at-a-glance) ·
 [What it can (and can't) build](#what-it-can-and-cant-build-for-you) ·
 [Quick start](#quick-start-one-time-setup) ·
-[Connecting Ollama & Gemini](#optional-connect-ollama-and-gemini) ·
+[Connecting Ollama, OpenRouter & Gemini](#optional-connect-ollama-openrouter-and-gemini) ·
 [The team](#the-team-behind-it) ·
 [Sample use cases](#sample-use-cases) ·
 [Staying in control](#staying-in-control) ·
@@ -62,14 +62,54 @@ You never write or read a single line of code. You just answer questions, one
 clear pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **35 skills** (the internal playbooks the team follows) · **10 simple
+roles** · **37 skills** (the internal playbooks the team follows) · **11 simple
 commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publish
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 5.1.4
+### Latest version: 6.0.0
 
-Version 5.1.4 closes a critical gap in the go-public gate: a request that
+Version 6.0.0 adds seven things the owner asked for, and answers one question
+honestly rather than pretending.
+
+**You can now use free AI models through [OpenRouter](https://openrouter.ai)** —
+one account that reaches hundreds of models from many companies. Type
+`/studio-models` to see what is free today and pick one. It only ever chooses
+free models unless you say otherwise, and it decides that by each model's real
+price, not by a name that happens to say "free" — which matters, because three of
+the free models available on the day this was built do not have "free" in their
+name at all, and two of those are the most capable ones.
+
+**One command now installs everything, on any computer.** `gru953-studio install`
+finds Claude Code, Claude Desktop, Google Antigravity, VS Code, Cursor and
+Windsurf on your machine and sets the studio up in each one it finds. There is a
+single line to paste for macOS, Linux and Windows — see
+[Quick start](#quick-start-one-time-setup).
+
+**Every release now has downloadable installers** for Claude Code, Claude
+Desktop, Antigravity and VS Code, on
+[the releases page](https://github.com/GRU-953/GRU953-Studio/releases), each with
+step-by-step instructions inside.
+
+**The studio now follows a written charter** — how it talks to you, how it
+interviews you before starting, and its promise never to change your project's
+goal without asking. Those rules were scattered across a dozen internal files
+saying slightly different things; they are now stated once, and a new automatic
+check stops them drifting apart again.
+
+**Two things changed that you may notice.** Google Antigravity is installed in a
+different place now — the old location was one Antigravity never actually reads,
+so if you set it up before, run `gru953-studio install` again. And every project
+now gets two branches: `main` for the finished, tested version, and `development`
+for work in progress.
+
+**And the honest answer:** GRU953-Studio's own team of specialists cannot run on
+OpenRouter's models. That is not a limitation of this tool — Claude Code itself
+does not support running on models other than Claude, which its own documentation
+states plainly. OpenRouter is for the apps the studio builds for you. Full detail
+in [CHANGELOG.md](CHANGELOG.md).
+
+Version 5.1.4 closed a critical gap in the go-public gate: a request that
 asked GitHub to make a repository public by sending a JSON body, rather than
 by a command-line flag, was allowed on the ordinary private-publish
 confirmation alone — no separate go-public confirmation required. Found by
@@ -128,7 +168,7 @@ you want, and every language specialist's toolkit names the real command
 that produces a finished, installable app. See
 [CHANGELOG.md](CHANGELOG.md) for the full plain-English history.
 
-Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.). Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). (2026-07-27 fix: this line used to say v4.5.0 brought "the skill count to 35" — the real count at that point was 34; the current, correct count is stated once, above, as "35 skills.")
+Version 4.5.0 introduced the **Universal Agentic Protocol** (`universal-platform-integration` skill), expanding GRU953-Studio from a Claude Code plugin to a universally deployable agentic studio supporting all major platforms (Cursor, Windsurf, Devin, Aider, OpenHands, Replit, etc.). Version 4.4.0 added native support for **Google Antigravity** (SDK and Gemini Antigravity IDE). (2026-08-10 fix: this line used to quote two historical skill-count figures while explaining a 2026-07-27 correction to them. Both digits are dropped here rather than restated a third time — the live count is stated in exactly one place, the "In numbers" line above, so a sentence narrating an old mistake can never again be read as a claim about today. The original correction stands and is recorded in [CHANGELOG.md](CHANGELOG.md).)
 
 ---
 
@@ -195,6 +235,26 @@ inside the VS Code and JetBrains editor extensions. Install and sign in first.
 /plugin install gru953-studio@gru953-studio
 ```
 
+**Or let one command do all of it.** If you would rather not type anything into
+Claude Code, paste this into your terminal instead and it will find every AI tool
+on your computer and set them all up:
+
+```
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installers/install.sh | sh
+```
+
+```
+# Windows (in PowerShell)
+irm https://raw.githubusercontent.com/GRU-953/GRU953-Studio/main/tools/installers/install.ps1 | iex
+```
+
+Piping a script from the internet into your shell is a real risk, whoever
+publishes it — [SECURITY.md](SECURITY.md) explains how to download and read it
+first instead, which gets the same result. Prefer downloads? Every release has a
+ready-made installer for each app on
+[the releases page](https://github.com/GRU-953/GRU953-Studio/releases).
+
 **3. Two free tools it relies on.** [Node.js](https://nodejs.org) (powers the
 built-in safety checks — install once) and, only when you publish, the
 [GitHub CLI](https://cli.github.com) (`gh auth login` once). If either is missing
@@ -208,15 +268,23 @@ That's it — type `/studio` to begin. The very first time, it runs a short, one
 
 ---
 
-## Optional: connect Ollama and Gemini
+## Optional: connect Ollama, OpenRouter and Gemini
 
-Both are entirely optional, and both always ask before doing anything.
+All three are entirely optional, and all three always ask before doing anything.
 
 - **[Ollama](https://github.com/GRU-953/GRU953-Studio/wiki/Connecting-Ollama)** —
   a free tool that runs AI models directly on your own computer, no cloud needed.
   The studio can use it as a private, free alternative to the cloud for an app it
   builds, or as a free second opinion for its own team. Claude stays the default;
   it always asks before installing anything or downloading a model.
+- **[OpenRouter](https://openrouter.ai/)** — one account that reaches hundreds
+  of AI models made by many different companies, including some that are free to
+  use. The studio can offer it as a backend for an app it builds, and it
+  **only ever picks free models unless you say otherwise** — decided by each
+  model's real price, not by a name that happens to say "free". Run
+  `/studio-models` to see what is free today and choose one. Worth knowing
+  before you turn it on: the words your app sends go to OpenRouter and then on
+  to the company that runs the model you picked.
 - **[Gemini](https://github.com/GRU-953/GRU953-Studio/wiki/Connecting-Gemini)** —
   Google's cloud models, used **only** for generated images, audio and video (all
   written text is always produced by Claude). It is off until you turn it on, uses
@@ -272,6 +340,7 @@ You never have to sit and watch. A few simple commands, typed any time:
 | `/studio-schedule` | Ask it to pick a task back up at a time you choose. |
 | `/studio-dashboard` | Open a one-page visual summary of your project. |
 | `/studio-publish` | Publish privately to your own GitHub (with confirmations). |
+| `/studio-models` | See which AI models are free to use right now, and pick one. |
 | `/studio-update` | Manually check for and apply a studio update right now. |
 
 ---
@@ -284,6 +353,15 @@ against honest mistakes, not deliberate sabotage, and we say so plainly rather
 than overclaiming. There is no "100% secure" here — the exact protections and
 their honestly-disclosed limits are written up in full in
 [SECURITY.md](SECURITY.md), with nothing glossed over.
+
+**What has actually been tested, and what has not.** Every automatic check runs
+on macOS, Windows and Linux before anything ships: the installer is run end to
+end into a throwaway folder on all three, every downloadable package is opened
+and inspected, and the packaging is proved to produce identical files from
+identical source. What no automatic test can do is open Claude Desktop, VS Code
+or Antigravity and confirm they load what was installed — so
+[docs/INSTALL-VERIFY.md](docs/INSTALL-VERIFY.md) is a ten-minute set of steps you
+can follow yourself, and it says plainly which parts still need a person.
 
 GRU953-Studio is an **independent, unofficial** plugin. It is not made or endorsed
 by Anthropic (the makers of Claude) or Google (the makers of Gemini).

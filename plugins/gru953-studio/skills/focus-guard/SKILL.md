@@ -15,8 +15,8 @@ agreed. Code quality is only half of a gold-standard result; the other half is
 **staying on the agreed target across time**. This skill is that half.
 
 It adds nothing the user has to manage: it is a small always-current anchor
-file and a short ritual the team already has the pieces for. Plain-English rule
-is exactly as set in the `studio` skill — nothing here restates it.
+file and a short ritual the team already has the pieces for. Plain-English rule is exactly as set in the
+`operating-charter` skill — nothing here restates it.
 
 ## FOCUS.md — the one-glance anchor (cheapest possible first read)
 

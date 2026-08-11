@@ -17,7 +17,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// pathToFileURL (2026-08-10): importing a module by absolute path works on
+// POSIX but throws on Windows, where `D:\a\...` looks to Node's ESM loader like
+// a URL with scheme "d:". repo-integrity.mjs's INV15 hit exactly this on a
+// Windows CI leg; the tools/ imports below would have hit it too.
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
@@ -697,8 +701,18 @@ test('repo-integrity.mjs: a CRLF-encoded checkout (the Windows default) is still
   assert.match(sample, /\r\n/, 'the fixture must genuinely be CRLF-encoded');
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'clean', `a CRLF checkout must parse identically to an LF one: ${r.stdout}`);
-  assert.equal(r.json.agentCount, 38, 'all 38 agents must still be recognised, not reported missing frontmatter');
-  assert.equal(r.json.skillCount, 35, 'all 35 skills must still be recognised');
+  // 2026-08-10: these two counts used to be hardcoded (38 and 35), so adding a
+  // single agent or skill broke this test for a reason that had nothing to do
+  // with what it actually tests — CRLF frontmatter parsing. Worse, the obvious
+  // repair (bump the number) quietly weakens it: a maintainer bumping a literal
+  // is not checking that every file was still PARSED, which is the whole point.
+  // Derived from the real directories instead, so the assertion stays exactly as
+  // strong while surviving any future roster or skill change.
+  const expectedAgents = fs.readdirSync(path.join(dir, 'plugins', 'gru953-studio', 'agents')).filter((f) => f.endsWith('.md')).length;
+  const expectedSkills = fs.readdirSync(path.join(dir, 'plugins', 'gru953-studio', 'skills'), { withFileTypes: true }).filter((d) => d.isDirectory()).length;
+  assert.ok(expectedAgents > 0 && expectedSkills > 0, 'the fixture must contain agents and skills, or this proves nothing');
+  assert.equal(r.json.agentCount, expectedAgents, `all ${expectedAgents} agents must still be recognised, not reported missing frontmatter`);
+  assert.equal(r.json.skillCount, expectedSkills, `all ${expectedSkills} skills must still be recognised`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -4414,6 +4428,540 @@ test('repo-integrity.mjs INV13: docs-consistency.mjs dropping out of ci.yml is c
   fs.rmSync(dir, RM_OPTS);
 });
 
+// ---------------------------------------------------------------------------
+// tools/lib/zip.mjs and tools/build-release-assets.mjs — 2026-08-10.
+//
+// Placed in THIS suite deliberately rather than a new one under tools/: CI runs
+// hooks.test.mjs on ubuntu, macOS and Windows across two Node versions, and a
+// hand-written ZIP writer is exactly the kind of byte-level code where a
+// platform difference (path separators, line endings, permission bits) is the
+// likely failure. A tools-only suite on one Linux runner would prove much less.
+// ---------------------------------------------------------------------------
+const TOOLS = path.join(REPO_ROOT, 'tools');
+
+/** True when a real `unzip` exists to verify archives against. */
+function hasUnzip() {
+  const r = spawnSync('unzip', ['-v'], { encoding: 'utf8' });
+  return r.status === 0;
+}
+
+test('zip.mjs: produces an archive a real unzip accepts, with content and the executable bit intact', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  const dir = mkTmp('gru-zip-roundtrip-');
+  const zipPath = path.join(dir, 'a.zip');
+  fs.writeFileSync(
+    zipPath,
+    createZip([
+      { name: 'plain.txt', data: 'hello hello hello hello hello hello hello hello' },
+      { name: 'nested/deep/file.json', data: '{"ok":true}' },
+      { name: 'run.sh', data: '#!/bin/sh\necho hi\n', mode: 0o755 },
+    ]),
+  );
+  if (!hasUnzip()) {
+    // Never a silent pass: say what was skipped and why, then still assert what
+    // CAN be checked without the tool.
+    console.log('    (no `unzip` on this machine — verifying structure only, not extraction)');
+    const bytes = fs.readFileSync(zipPath);
+    assert.equal(bytes.readUInt32LE(0), 0x04034b50, 'must begin with a local file header signature');
+    assert.equal(bytes.readUInt32LE(bytes.length - 22), 0x06054b50, 'must end with an end-of-central-directory record');
+    fs.rmSync(dir, RM_OPTS);
+    return;
+  }
+  const t = spawnSync('unzip', ['-tq', zipPath], { encoding: 'utf8' });
+  assert.equal(t.status, 0, `unzip reported the archive as damaged: ${t.stdout}${t.stderr}`);
+  const out = path.join(dir, 'out');
+  assert.equal(spawnSync('unzip', ['-q', zipPath, '-d', out], { encoding: 'utf8' }).status, 0);
+  assert.match(fs.readFileSync(path.join(out, 'plain.txt'), 'utf8'), /^hello hello/);
+  assert.equal(fs.readFileSync(path.join(out, 'nested', 'deep', 'file.json'), 'utf8'), '{"ok":true}');
+  if (process.platform !== 'win32') {
+    // The executable bit only exists on POSIX filesystems. An install script
+    // that unzips without it is a confusing failure for a non-technical user,
+    // which is why zip.mjs bothers to set "version made by = Unix".
+    assert.ok(fs.statSync(path.join(out, 'run.sh')).mode & 0o111, 'run.sh must still be executable after extraction');
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('zip.mjs: the same input twice produces byte-identical archives (so SHA256SUMS means something)', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  const entries = [{ name: 'a.txt', data: 'same content every time' }];
+  assert.deepEqual(createZip(entries), createZip(entries));
+});
+
+test('zip.mjs: refuses a backslash in an entry name (which would unpack as one oddly-named file elsewhere)', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  assert.throws(() => createZip([{ name: 'dir\\file.txt', data: 'x' }]), /forward slashes/);
+  assert.throws(() => createZip([{ name: '', data: 'x' }]), /needs a name/);
+});
+
+test('zip.mjs: stores incompressible data rather than growing it', async () => {
+  const { createZip } = await import(pathToFileURL(path.join(TOOLS, 'lib', 'zip.mjs')).href);
+  // Random bytes cannot be compressed; a naive always-deflate writer makes them
+  // slightly LARGER, which is why createZip keeps whichever is smaller.
+  const random = crypto.randomBytes(4096);
+  const stored = createZip([{ name: 'r.bin', data: random }]);
+  assert.ok(stored.length < random.length + 200, `expected roughly the original size plus headers, got ${stored.length} for ${random.length} bytes`);
+});
+
+test('build-release-assets: firstSentence does not cut a description off at "e.g." or "i.e."', async () => {
+  const { firstSentence } = await import(pathToFileURL(path.join(TOOLS, 'build-release-assets.mjs')).href);
+  // The real ai-developer description, which the first version of this code
+  // truncated at "(e.g." — found by reading the generated file, not by theory.
+  const real = 'The single owner of any AI/LLM feature (e.g. calling the Claude API, or a local model) the product needs. Then a second sentence.';
+  assert.match(firstSentence(real), /local model\) the product needs\.$/);
+  assert.equal(firstSentence('No full stop here at all'), 'No full stop here at all', 'falls back to the whole text');
+  assert.match(firstSentence('Short one. This is the genuinely long first sentence that should be chosen instead. And more.'), /instead\.$/, 'a too-short candidate is not treated as the sentence end');
+});
+
+test('build-release-assets: builds every installer, each in the layout its own host documents', async () => {
+  const { buildAssets } = await import(pathToFileURL(path.join(TOOLS, 'build-release-assets.mjs')).href);
+  const dir = mkTmp('gru-relassets-');
+  // --skip-vsix: packaging the extension shells out to npx and needs its
+  // dependencies installed, which is the `clients` CI job's business, not this
+  // suite's. Everything else is built and inspected.
+  const { version, written } = buildAssets({ outDir: dir, skipVsix: true, log: () => {} });
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  for (const expected of [
+    `gru953-studio-claude-code-${version}.zip`,
+    `gru953-studio-claude-desktop-${version}.zip`,
+    `gru953-studio-antigravity-${version}.zip`,
+    'install.sh',
+    'install.ps1',
+    'SHA256SUMS.txt',
+  ]) {
+    assert.ok(written.includes(expected), `${expected} must be built`);
+    assert.ok(fs.existsSync(path.join(dir, expected)), `${expected} must exist on disk`);
+  }
+  // Checksums must cover every asset, or the file gives false assurance.
+  const sums = fs.readFileSync(path.join(dir, 'SHA256SUMS.txt'), 'utf8').trim().split('\n');
+  assert.equal(sums.length, written.length - 1, 'one checksum line per asset (excluding the checksum file itself)');
+  for (const line of sums) assert.match(line, /^[0-9a-f]{64} {2}\S+$/, `malformed checksum line: ${line}`);
+
+  if (hasUnzip()) {
+    const list = (z) => spawnSync('unzip', ['-Z1', path.join(dir, z)], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+    for (const z of [`gru953-studio-claude-code-${version}.zip`, `gru953-studio-claude-desktop-${version}.zip`]) {
+      const names = list(z);
+      assert.ok(names.includes('gru953-studio/.claude-plugin/plugin.json'), `${z} must carry plugin.json at the package root`);
+      assert.ok(names.includes('INSTALL.txt'), `${z} must carry its own install guide`);
+      assert.ok(names.some((n) => n.startsWith('gru953-studio/agents/')), `${z} must carry the specialists`);
+      assert.ok(!names.some((n) => n.includes('node_modules') || n.endsWith('.DS_Store')), `${z} must not ship build or platform litter`);
+    }
+    const ag = list(`gru953-studio-antigravity-${version}.zip`);
+    assert.ok(ag.includes('gru953-studio/plugin.json'), 'the Antigravity package needs plugin.json at its root, not .claude-plugin/');
+    assert.ok(ag.includes('gru953-studio/rules/gru953-roster.md'), 'the roster must be projected into rules/');
+    assert.ok(ag.some((n) => n.startsWith('gru953-studio/skills/')), 'skills must be present');
+    // The point of the whole Antigravity layout: it has no agents/ or commands/
+    // component, so shipping either would be a directory it silently ignores.
+    assert.ok(!ag.some((n) => /^gru953-studio\/(agents|commands)\//.test(n)), 'the Antigravity package must contain no agents/ or commands/ directory');
+  } else {
+    console.log('    (no `unzip` on this machine — package contents not inspected)');
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-10. The Antigravity plugin layout is implemented TWICE — in
+// clients/cli/src/install-targets.js (the universal installer) and in
+// clients/antigravity/src/install.js (the standalone bridge). That duplication is
+// deliberate and explained in both files: they are separate published npm
+// packages, so a relative require across them works in a git checkout and breaks
+// the moment either is installed from npm, and coupling their versions for forty
+// lines of code is the worse trade.
+//
+// But duplicated load-bearing logic drifts. This test is the guard: both
+// implementations must produce the same directory structure. If it fails, the two
+// have diverged and one of them is now wrong — which is exactly the situation
+// nothing would otherwise notice.
+test('the two Antigravity installers produce the same layout (guarding a deliberate duplication)', async () => {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const cli = req(path.join(REPO_ROOT, 'clients', 'cli', 'src', 'install-targets.js'));
+  const bridge = req(path.join(REPO_ROOT, 'clients', 'antigravity', 'src', 'install.js'));
+
+  const pluginSourceDir = path.join(REPO_ROOT, 'plugins', 'gru953-studio');
+  const homeA = mkTmp('gru-agparity-cli-');
+  const homeB = mkTmp('gru-agparity-bridge-');
+
+  const targetA = path.join(homeA, '.gemini', 'config', 'plugins', 'gru953-studio');
+  const rA = cli.installAntigravity(
+    { installDir: targetA, kind: 'antigravity', name: 'Google Antigravity' },
+    { pluginSourceDir },
+  );
+  const rB = bridge.installForAntigravity({ pluginSourceDir, homeDir: homeB });
+  assert.equal(rA.ok, true, `the CLI installer failed: ${rA.message}`);
+  assert.equal(rB.ok, true, `the bridge installer failed: ${(rB.errors || []).join('; ')}`);
+
+  // Compare the shape, not the file contents: `skills` is a symlink in both, and
+  // following it would just compare the same source directory with itself.
+  const shapeOf = (root) =>
+    fs
+      .readdirSync(root, { withFileTypes: true })
+      .map((d) => `${d.name}${d.isDirectory() || d.isSymbolicLink() ? '/' : ''}`)
+      .sort();
+  assert.deepEqual(shapeOf(targetA), shapeOf(rB.target), 'the two installers must lay out the same top-level entries');
+  assert.deepEqual(
+    fs.readdirSync(path.join(targetA, 'rules')).sort(),
+    fs.readdirSync(path.join(rB.target, 'rules')).sort(),
+    'the two installers must write the same rules files',
+  );
+  // The roster projection is the piece most likely to drift, since each has its
+  // own copy of the generator. Compare the role names both produced.
+  const rolesIn = (p) => [...fs.readFileSync(p, 'utf8').matchAll(/^\| `([a-z0-9-]+)` \|/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    rolesIn(path.join(targetA, 'rules', 'gru953-roster.md')),
+    rolesIn(path.join(rB.target, 'rules', 'gru953-roster.md')),
+    'both roster projections must name the same specialists, in the same order',
+  );
+  assert.ok(rolesIn(path.join(targetA, 'rules', 'gru953-roster.md')).length > 0, 'and must actually contain roles');
+
+  fs.rmSync(homeA, RM_OPTS);
+  fs.rmSync(homeB, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// openrouter-models.mjs — 2026-08-10, added with openrouter-integration.
+//
+// Every test below runs OFFLINE against a fixture, deliberately. A suite that
+// reached OpenRouter's real API would fail on any CI leg without network and
+// would change behaviour whenever OpenRouter changed its catalogue — neither is
+// acceptable in a suite this repo runs on every commit. That is the whole
+// reason fetchModels() takes an injectable fetch.
+//
+// The fixture's shape is not invented: it mirrors the real response read on
+// 2026-08-10, including the specific case that makes this code necessary —
+// free models whose ids do NOT end in ":free" (three of the seventeen real ones,
+// two of them the largest-context free models in the catalogue).
+// ---------------------------------------------------------------------------
+const OR_FIXTURE = {
+  data: [
+    { id: 'google/lyria-3-pro-preview', name: 'Google: Lyria 3 Pro Preview', description: 'A general model.', context_length: 1048576, pricing: { prompt: '0', completion: '0' } },
+    { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'NVIDIA: Nemotron 3 Nano', description: 'Small reasoning model.', context_length: 256000, pricing: { prompt: '0', completion: '0' } },
+    { id: 'openai/gpt-oss-20b:free', name: 'OpenAI: gpt-oss-20b', description: 'Open weights, good at coder tasks.', context_length: 131072, pricing: { prompt: '0', completion: '0' } },
+    { id: 'acme/premium-1', name: 'Acme: Premium 1', description: 'Costs money.', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' } },
+    // Free per token but charges for image output — the exact case a
+    // prompt+completion-only check would wrongly call free.
+    { id: 'acme/free-text-paid-images', name: 'Acme: mixed', description: 'Mixed pricing.', context_length: 128000, pricing: { prompt: '0', completion: '0', image_output: '0.04' } },
+    // A ":free"-suffixed id that is NOT actually free — the inverse mistake,
+    // and the expensive one.
+    { id: 'acme/looks-free:free', name: 'Acme: misleading name', description: 'Name says free, price does not.', context_length: 64000, pricing: { prompt: '0.000001', completion: '0.000002' } },
+    // No pricing information at all: unknown, which must never read as free.
+    { id: 'acme/unknown-price', name: 'Acme: unknown', description: 'No pricing block.', context_length: 32000 },
+  ],
+  total_count: 7,
+};
+
+function fakeFetch(body, { ok = true, status = 200, throws = null, badJson = false } = {}) {
+  return async () => {
+    if (throws) throw new Error(throws);
+    return {
+      ok,
+      status,
+      json: async () => {
+        if (badJson) throw new Error('Unexpected token < in JSON');
+        return body;
+      },
+    };
+  };
+}
+
+test('openrouter-models: a free model is identified by PRICE, not by a ":free" name (the detail that costs money to get wrong)', async () => {
+  const { isFreeModel } = await import('./openrouter-models.mjs');
+  const byId = Object.fromEntries(OR_FIXTURE.data.map((m) => [m.id, m]));
+  // Free with NO ":free" suffix — a suffix test would miss this one, and in the
+  // real catalogue this is the largest-context free model available.
+  assert.equal(isFreeModel(byId['google/lyria-3-pro-preview']), true);
+  // ":free" in the name but a real price — a suffix test would spend money here.
+  assert.equal(isFreeModel(byId['acme/looks-free:free']), false);
+  assert.equal(isFreeModel(byId['acme/premium-1']), false);
+});
+
+test('openrouter-models: EVERY pricing field is checked, so free-per-token-but-charges-for-images is not called free', async () => {
+  const { isFreeModel } = await import('./openrouter-models.mjs');
+  const mixed = OR_FIXTURE.data.find((m) => m.id === 'acme/free-text-paid-images');
+  assert.equal(isFreeModel(mixed), false, 'a non-zero image_output price must disqualify a model');
+  // Prove the fixture would have passed a naive two-field check, or this test
+  // is not actually testing the thing it claims to test.
+  assert.equal(parseFloat(mixed.pricing.prompt), 0);
+  assert.equal(parseFloat(mixed.pricing.completion), 0);
+});
+
+test('openrouter-models: a model with NO pricing information is treated as not free (unknown must never read as free)', async () => {
+  const { isFreeModel } = await import('./openrouter-models.mjs');
+  assert.equal(isFreeModel(OR_FIXTURE.data.find((m) => m.id === 'acme/unknown-price')), false);
+  assert.equal(isFreeModel({ id: 'x', pricing: {} }), false, 'an empty pricing object is unknown, not free');
+  assert.equal(isFreeModel(null), false);
+  assert.equal(isFreeModel({ id: 'x', pricing: { prompt: 'not-a-number', completion: '0' } }), false);
+});
+
+test('openrouter-models: selection is free-only by default, and --all includes paid models', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  const free = selectModels(OR_FIXTURE.data);
+  assert.deepEqual(
+    free.map((m) => m.id),
+    ['google/lyria-3-pro-preview', 'nvidia/nemotron-3-nano-30b-a3b:free', 'openai/gpt-oss-20b:free'],
+    'only the three genuinely free entries, sorted by context length descending',
+  );
+  assert.equal(selectModels(OR_FIXTURE.data, { all: true }).length, OR_FIXTURE.data.length);
+});
+
+test('openrouter-models: search matches id, name and description, case-insensitively', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'NEMOTRON' }).map((m) => m.id), ['nvidia/nemotron-3-nano-30b-a3b:free'], 'matches the id regardless of case');
+  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'coder' }).map((m) => m.id), ['openai/gpt-oss-20b:free'], 'matches a word only present in the description');
+  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'nothing-matches-this' }), [], 'no match is an empty list, not an error');
+});
+
+test('openrouter-models: the order is stable between runs (an unstable list looks like the catalogue changed)', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  const tied = [
+    { id: 'b/second', context_length: 1000, pricing: { prompt: '0', completion: '0' } },
+    { id: 'a/first', context_length: 1000, pricing: { prompt: '0', completion: '0' } },
+  ];
+  assert.deepEqual(selectModels(tied).map((m) => m.id), ['a/first', 'b/second']);
+  assert.deepEqual(selectModels(tied.slice().reverse()).map((m) => m.id), ['a/first', 'b/second']);
+});
+
+test('openrouter-models: --limit caps the list', async () => {
+  const { selectModels } = await import('./openrouter-models.mjs');
+  assert.equal(selectModels(OR_FIXTURE.data, { limit: 2 }).length, 2);
+});
+
+test('openrouter-models: argument parsing handles both "--search x" and "--search=x" forms', async () => {
+  const { parseArgs } = await import('./openrouter-models.mjs');
+  assert.equal(parseArgs(['--search', 'coder']).search, 'coder');
+  assert.equal(parseArgs(['--search=coder']).search, 'coder');
+  assert.equal(parseArgs(['coder']).search, 'coder', 'a bare word is treated as the search term');
+  assert.equal(parseArgs(['--limit', '5']).limit, 5);
+  assert.equal(parseArgs(['--limit=5']).limit, 5);
+  assert.equal(parseArgs(['--all', '--json']).all && parseArgs(['--all', '--json']).json, true);
+});
+
+test('openrouter-models: no network gives a plain-English message, never a raw stack trace', async () => {
+  const { fetchModels } = await import('./openrouter-models.mjs');
+  await assert.rejects(
+    () => fetchModels({ fetchImpl: fakeFetch(null, { throws: 'getaddrinfo ENOTFOUND openrouter.ai' }) }),
+    (e) => {
+      assert.match(e.message, /Could not reach OpenRouter/);
+      assert.match(e.message, /nothing was changed/, 'a non-technical reader needs to know their project is untouched');
+      return true;
+    },
+  );
+});
+
+test('openrouter-models: an HTTP error, unreadable JSON, and an unexpected shape each fail readably', async () => {
+  const { fetchModels } = await import('./openrouter-models.mjs');
+  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({}, { ok: false, status: 503 }) }), /HTTP status 503/);
+  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({}, { badJson: true }) }), /not readable as JSON/);
+  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({ nope: true }) }), /did not have the expected shape/);
+});
+
+test('openrouter-models: a successful fetch returns the catalogue array', async () => {
+  const { fetchModels } = await import('./openrouter-models.mjs');
+  const models = await fetchModels({ fetchImpl: fakeFetch(OR_FIXTURE) });
+  assert.equal(models.length, 7);
+});
+
+test('openrouter-models: an empty free list tells the user what to do rather than reporting an error', async () => {
+  const { formatTable } = await import('./openrouter-models.mjs');
+  const msg = formatTable([], { all: false });
+  assert.match(msg, /No FREE models/);
+  assert.match(msg, /--all/, 'the message must name the way to see paid models');
+  assert.match(msg, /cost money/, 'and must say plainly that those cost money');
+});
+
+test('openrouter-models: the table marks paid models as paid, so cost is never invisible', async () => {
+  const { formatTable, selectModels } = await import('./openrouter-models.mjs');
+  const table = formatTable(selectModels(OR_FIXTURE.data, { all: true }), { all: true });
+  assert.match(table, /acme\/premium-1\s+\S+\s+paid/);
+  assert.match(table, /acme\/looks-free:free\s+\S+\s+paid/, 'a misleading ":free" name must still print as paid');
+});
+
+// 2026-08-10. An OpenRouter key looks like `sk-or-v1-…`. scan.mjs's existing
+// secret pattern (`sk-[A-Za-z0-9-]{20,}`) already covers that shape, so NO new
+// pattern was added for it — but "already covered" is a claim, and an untested
+// claim about a secret scanner is exactly the kind this repo has been burned by
+// before. Proven here by pushing a key through the real hook.
+//
+// The fixture below is deliberately NOT hex-shaped, and that is not cosmetic.
+// The first version of this test used a realistic 64-hex-character key, and
+// GitHub's own push protection blocked the push — correctly, since it could not
+// tell a fixture from a live credential. A `// scan-allow` comment does not help:
+// that convention is this repo's own, and GitHub's scanner has never heard of it.
+// So the fixture keeps the `sk-` prefix and the length that scan.mjs's pattern
+// requires, while spelling out in the value itself that it is not a key. Both
+// scanners are then satisfied for the right reason rather than by an exception.
+test('scan.mjs: an OpenRouter API key is blocked from a push by the existing pattern (no new pattern needed)', () => {
+  const dir = mkTmp('gru-scan-openrouter-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  initRepo(dir);
+  fs.writeFileSync(
+    path.join(dir, 'app-config.txt'),
+    'OPENROUTER_API_KEY=sk-or-v1-EXAMPLE-FIXTURE-NOT-A-REAL-KEY-DO-NOT-USE\n', // scan-allow: known test fixture
+  );
+  git(['add', 'app-config.txt'], dir);
+  const r = runHook('scan.mjs', 'git push', dir);
+  assert.equal(r.decision, 'deny', 'an OpenRouter key must never reach a push');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-10, INV16. charter-check.mjs is the newest sibling gate — same
+// mechanical-wiring assertion as INV13 above, against the identical failure
+// mode: a gate still present on disk but named in neither CLAUDE.md nor CI has
+// stopped running, and every green result still looks trustworthy.
+test('repo-integrity.mjs INV16: charter-check.mjs dropping out of CLAUDE.md\'s gate list is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv16-claudemd-');
+  copyRepoTo(dir);
+  const claudeMdPath = path.join(dir, 'CLAUDE.md');
+  fs.writeFileSync(claudeMdPath, fs.readFileSync(claudeMdPath, 'utf8').replace(/charter-check\.mjs/g, 'REMOVED-check.mjs'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping charter-check.mjs from CLAUDE.md\'s gate list must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('CLAUDE.md') && p.includes('charter-check.mjs')), `expected a problem naming the dropped wiring, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+test('repo-integrity.mjs INV16: charter-check.mjs dropping out of ci.yml is caught', () => {
+  const dir = mkTmp('gru-repointeg-inv16-ciyml-');
+  copyRepoTo(dir);
+  const ciYmlPath = path.join(dir, '.github', 'workflows', 'ci.yml');
+  fs.writeFileSync(ciYmlPath, fs.readFileSync(ciYmlPath, 'utf8').replace(/charter-check\.mjs/g, 'REMOVED-check.mjs'));
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping charter-check.mjs from ci.yml must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('ci.yml') && p.includes('charter-check.mjs')), `expected a problem naming the dropped wiring, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// charter-check.mjs — 2026-08-10, added with the operating charter.
+//
+// The charter necessarily exists in TWO copies: the canonical
+// skills/operating-charter/SKILL.md (which only a Claude host can load) and
+// universal-init.js's CHARTER_FILE template (which reaches every host that
+// cannot load a Claude skill). Two hand-maintained copies of a load-bearing
+// rule set WILL drift; these tests prove the gate actually notices, rather
+// than merely reporting clean on a repo that happens to be consistent today.
+// Each one was confirmed to FAIL against the pre-fix state before being kept.
+// ---------------------------------------------------------------------------
+function runCharterCheck(repoDir) {
+  const r = spawnSync(NODE, [path.join(HERE, 'charter-check.mjs'), repoDir], { encoding: 'utf8' });
+  let json = null;
+  try { json = JSON.parse(r.stdout); } catch {}
+  return { status: r.status, json, stdout: r.stdout, stderr: r.stderr };
+}
+
+test('charter-check.mjs: the real repository is clean, and reports all eight clauses', () => {
+  const r = runCharterCheck(REPO_ROOT);
+  assert.equal(r.json && r.json.status, 'clean', `expected clean, got: ${r.stdout}${r.stderr}`);
+  assert.equal(r.json.clauses, 8, 'the charter is made of eight clauses');
+});
+
+test('charter-check.mjs: a clause whose WORDING drifts between the two copies is caught', () => {
+  const dir = mkTmp('gru-charter-drift-');
+  copyRepoTo(dir);
+  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
+  // Change the generated copy's meaning, leaving the canonical one alone —
+  // exactly what a careless edit to one of the two files looks like.
+  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace('Use UK English.', 'Use American English.'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a drifted clause must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('DRIFTED') && p.includes('ABOUT ME')), `expected a drift problem naming the clause, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: re-wrapping a clause without changing its meaning is NOT reported (no false positive)', () => {
+  const dir = mkTmp('gru-charter-rewrap-');
+  copyRepoTo(dir);
+  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
+  // Same words, different line breaks. A layout-sensitive comparison would
+  // wrongly BLOCK here, which would make maintainers distrust the gate — the
+  // reason normaliseBody() collapses whitespace.
+  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace(
+    'technical term is unavoidable, explain it in one plain sentence. Use UK English.',
+    'technical term is unavoidable,\nexplain it in one plain sentence.\nUse UK English.',
+  ));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'clean', `re-wrapping must not be treated as drift, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: a clause DELETED from the canonical charter is caught', () => {
+  const dir = mkTmp('gru-charter-deleted-');
+  copyRepoTo(dir);
+  const skill = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'operating-charter', 'SKILL.md');
+  fs.writeFileSync(skill, fs.readFileSync(skill, 'utf8').replace('## CHARTER-CLAUSE: MEMORY', '## Some unrelated heading'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'deleting a charter clause must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('MEMORY')), `expected a problem naming the deleted clause, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: a clause silently EMPTIED (heading kept, body gone) is caught', () => {
+  const dir = mkTmp('gru-charter-emptied-');
+  copyRepoTo(dir);
+  const skill = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'operating-charter', 'SKILL.md');
+  const text = fs.readFileSync(skill, 'utf8');
+  // Keep the heading, remove everything under it up to the next heading. A
+  // check that only looked for headings would call this perfectly intact.
+  //
+  // 2026-08-11, caught by the hooks-crlf CI leg on the first push: this regex
+  // used literal `\n`, which matches nothing in a CRLF-encoded checkout. The
+  // replace then did nothing, the charter was left intact, charter-check
+  // correctly reported clean — and this test failed claiming the gate had missed
+  // an emptied clause. The gate was fine; the FIXTURE was LF-only. Exactly the
+  // bug class this repo has fixed several times over in its own hooks, reproduced
+  // here in a test rather than in shipped code.
+  const emptied = text.replace(
+    /(## CHARTER-CLAUSE: QUALITY BEFORE YOU SHOW ME\r?\n)[\s\S]*?(\r?\n## )/,
+    '$1$2',
+  );
+  assert.notEqual(emptied, text, 'the fixture must genuinely empty a clause, or this test proves nothing');
+  fs.writeFileSync(skill, emptied);
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'an emptied clause must be caught, not just a deleted heading');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: the coordinator no longer loading the charter is caught', () => {
+  const dir = mkTmp('gru-charter-unloaded-');
+  copyRepoTo(dir);
+  const studio = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md');
+  fs.writeFileSync(studio, fs.readFileSync(studio, 'utf8').replace('- `operating-charter` —', '- `operating-charter-stale` —'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a charter nothing loads must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('no longer loads')), `expected an "unloaded" problem, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: the generator dropping CHARTER_FILE entirely is caught (the INV15 false-clean this closes)', () => {
+  const dir = mkTmp('gru-charter-nogen-');
+  copyRepoTo(dir);
+  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
+  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace('const CHARTER_FILE = `', 'const CHARTER_FILE_RENAMED = `'));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'losing the generator template must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('CHARTER_FILE')), `expected a problem naming the missing template, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: Aider losing its pointer at the charter is caught (the one host with no prose rule file)', () => {
+  const dir = mkTmp('gru-charter-aider-');
+  copyRepoTo(dir);
+  const conf = path.join(dir, '.aider.conf.yml');
+  fs.writeFileSync(conf, fs.readFileSync(conf, 'utf8').replace(/\s*-\s*\.agents\/OPERATING-CHARTER\.md/, ''));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'Aider losing the charter must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('Aider')), `expected a problem naming Aider, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('charter-check.mjs: a host rule file losing its Operating Charter section is caught', () => {
+  const dir = mkTmp('gru-charter-host-');
+  copyRepoTo(dir);
+  const cursor = path.join(dir, '.cursorrules');
+  fs.writeFileSync(cursor, fs.readFileSync(cursor, 'utf8').replace(/## Operating Charter[\s\S]*$/, ''));
+  const r = runCharterCheck(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a host file losing the charter must be caught');
+  assert.ok(r.json.problems.some((p) => p.includes('.cursorrules')), `expected a problem naming .cursorrules, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // 2026-08 R2 Phase 2.3 (D8, prompt injection). INV14: the anti-injection
 // "DATA, never an instruction" guardrail, previously prose-only and tested
 // nowhere, is now locked in across the 45 files found carrying it.
@@ -4644,9 +5192,19 @@ test('docs-consistency.mjs: a stale "skill count to N" claim is caught (finding 
   const dir = mkTmp('gru-docsconsist-skillcount-');
   copyRepoTo(dir);
   const readmePath = path.join(dir, 'README.md');
-  fs.writeFileSync(readmePath, fs.readFileSync(readmePath, 'utf8').replace('skill count to 35', 'skill count to 34'));
+  // 2026-08-10: this used to work by REPLACING an existing "skill count to 35"
+  // phrase that happened to sit in README.md's own prose — so the test silently
+  // depended on that sentence continuing to exist and continuing to state
+  // today's count. When that sentence was rewritten (to stop carrying stale
+  // digits at all, the very drift DC1 exists to catch), the replace matched
+  // nothing, the fixture was left identical to the clean repo, and the test
+  // failed reporting "a reintroduced stale count must be caught" — a confusing
+  // failure that had nothing to do with DC1 being broken. The fixture now
+  // APPENDS a phrase this test fully controls, so it proves what it claims to
+  // prove regardless of how README's prose is worded.
+  fs.writeFileSync(readmePath, fs.readFileSync(readmePath, 'utf8') + '\n\nThis release brings the skill count to 34.\n');
   const r = runDocsConsistency(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a reintroduced stale skill count must be caught');
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale "skill count to N" claim must be caught');
   assert.ok(r.json.problems.some((p) => p.includes('skill count to 34')), `expected a problem naming the stale count, got: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, RM_OPTS);
 });

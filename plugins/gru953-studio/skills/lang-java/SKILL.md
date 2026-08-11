@@ -6,7 +6,8 @@ description: The Java ecosystem pack — the exact build, test, lint, format and
 # Java pack
 
 The shared toolchain knowledge for Java work, so the `java-developer` agent
-stays thin. Plain-English rule is as set in the `studio` skill.
+stays thin. Plain-English rule is as set in the
+`operating-charter` skill.
 
 ## The six standard commands (used as acceptance-proving commands)
 

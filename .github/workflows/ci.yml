@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
   pull_request:
-    branches: [main]
+    branches: [main, development]
 
 jobs:
   # One-off checks that don't depend on OS or Node version: JSON validity,
@@ -62,11 +62,32 @@ jobs:
           else
             BASE="${{ github.event.before }}"
             if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-              RANGE="HEAD"
+              # 2026-08-11 fix, found the first time a NEW branch was ever pushed
+              # to this repository. Pushing a new branch reports an all-zero
+              # "before" SHA, because there is no previous tip — and RANGE="HEAD"
+              # then means "every commit that has ever existed", 146 of them, 15
+              # of which predate this check being introduced and carry no
+              # sign-off. So this step could NEVER pass on a new branch, and
+              # nobody had noticed because until now every push went to main.
+              #
+              # The intent is "every commit this push ADDS", so compare against
+              # the default branch instead. Falls back to HEAD only when there is
+              # genuinely nothing to compare with (the very first push to an empty
+              # repository), where checking everything is correct because
+              # everything IS new.
+              git fetch --no-tags --depth=200 origin "${{ github.event.repository.default_branch }}" 2>/dev/null || true
+              DEFAULT_REF="origin/${{ github.event.repository.default_branch }}"
+              if git rev-parse --verify --quiet "$DEFAULT_REF" >/dev/null; then
+                MERGE_BASE=$(git merge-base "$DEFAULT_REF" HEAD 2>/dev/null || true)
+                if [ -n "$MERGE_BASE" ]; then RANGE="$MERGE_BASE..HEAD"; else RANGE="HEAD"; fi
+              else
+                RANGE="HEAD"
+              fi
             else
               RANGE="$BASE..HEAD"
             fi
           fi
+          echo "Checking commits in range: $RANGE"
           MISSING=$(git log --no-merges --format='%H' $RANGE | while read -r sha; do
             git log -1 --format='%B' "$sha" | grep -q '^Signed-off-by:' || echo "$sha"
           done)
@@ -122,6 +143,8 @@ jobs:
         run: node plugins/gru953-studio/hooks/licence-scan.mjs .
       - name: Documentation-consistency check
         run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
+      - name: Operating-charter consistency check
+        run: node plugins/gru953-studio/hooks/charter-check.mjs .
 
   # 2026-08 audit round 2, Phase 2.2 (D3). Complements hooks.test.mjs's own
   # in-process toCrlf() simulation with a real, end-to-end proof: an actual
@@ -199,6 +222,8 @@ jobs:
         run: node plugins/gru953-studio/hooks/licence-scan.mjs .
       - name: Documentation-consistency check
         run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
+      - name: Operating-charter consistency check
+        run: node plugins/gru953-studio/hooks/charter-check.mjs .
 
   # 2026-07-26 audit stage 6. Separate from `hooks` on purpose: `npm ci` here
   # must never put node_modules into the hooks job's own workspace, and these
@@ -240,13 +265,143 @@ jobs:
           npm run compile
           npm run lint
 
+  # 2026-08-10, with the release installers. Builds every downloadable asset on
+  # EVERY pull request, not only on a release tag. The reason is specific: before
+  # this, packaging ran for the first time during a release, which is the worst
+  # moment to discover a broken package — the tag is already pushed and the
+  # version already claimed. Building here means a packaging defect fails a PR
+  # like any other defect.
+  #
+  # The .vsix is included: it is the one asset whose build shells out to another
+  # tool (@vscode/vsce) and therefore the one most likely to break from the
+  # outside.
+  packaging:
+    name: packaging (all release assets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install the VS Code extension's dependencies (needed to package the .vsix)
+        working-directory: clients/vscode
+        run: npm ci
+      - name: Build every release asset
+        run: node tools/build-release-assets.mjs --out dist
+      - name: Every archive must be readable, and structurally right
+        shell: bash
+        run: |
+          set -e
+          for z in dist/*.zip; do unzip -tq "$z"; done
+          VER=$(node -p "require('./plugins/gru953-studio/.claude-plugin/plugin.json').version")
+          # The Claude packages must carry the plugin manifest at the package root,
+          # or neither Claude Code nor Claude Desktop recognises them as a plugin.
+          for target in claude-code claude-desktop; do
+            unzip -Z1 "dist/gru953-studio-$target-$VER.zip" | grep -qx 'gru953-studio/.claude-plugin/plugin.json' \
+              || { echo "$target package is missing plugin.json at its root" >&2; exit 1; }
+            unzip -Z1 "dist/gru953-studio-$target-$VER.zip" | grep -qx 'INSTALL.txt' \
+              || { echo "$target package is missing its install guide" >&2; exit 1; }
+          done
+          # Antigravity uses a different layout, and must NOT contain agents/ or
+          # commands/ — it has no such component, so either would be a directory
+          # it silently ignores.
+          AG="dist/gru953-studio-antigravity-$VER.zip"
+          unzip -Z1 "$AG" | grep -qx 'gru953-studio/plugin.json' || { echo "Antigravity package needs plugin.json at its root" >&2; exit 1; }
+          unzip -Z1 "$AG" | grep -qx 'gru953-studio/rules/gru953-roster.md' || { echo "Antigravity package is missing the roster rule" >&2; exit 1; }
+          if unzip -Z1 "$AG" | grep -qE '^gru953-studio/(agents|commands)/'; then
+            echo "Antigravity package must not contain agents/ or commands/" >&2; exit 1
+          fi
+          test -f "dist/gru953-studio-$VER.vsix" || { echo "the .vsix was not built" >&2; exit 1; }
+          # Checksums must cover every asset, or the file gives false assurance.
+          ASSETS=$(ls dist | grep -v '^SHA256SUMS.txt$' | wc -l | tr -d ' ')
+          SUMS=$(wc -l < dist/SHA256SUMS.txt | tr -d ' ')
+          [ "$ASSETS" = "$SUMS" ] || { echo "SHA256SUMS.txt has $SUMS lines for $ASSETS assets" >&2; exit 1; }
+          echo "All $ASSETS release assets built and verified."
+      - name: The build must be reproducible (same source, byte-identical archives)
+        shell: bash
+        run: |
+          set -e
+          # Not a nicety: the published SHA256SUMS is only worth something if the
+          # same source always produces the same bytes. tools/lib/zip.mjs stamps a
+          # fixed timestamp for exactly this reason, and this proves it holds.
+          node tools/build-release-assets.mjs --skip-vsix --out dist2
+          for z in dist2/*.zip; do
+            base=$(basename "$z")
+            cmp "$z" "dist/$base" || { echo "$base is not reproducible" >&2; exit 1; }
+          done
+          echo "Every archive rebuilt byte-identically."
+
+  # 2026-08-10. Runs the universal installer end to end against a THROWAWAY home
+  # directory on all three operating systems. Everything it touches is inside that
+  # directory, so a CI runner is never left modified.
+  #
+  # This is the job that would have caught the PATH defect found by hand during
+  # development (the advice named the package's own src/ directory instead of
+  # npm's bin folder), and it is the only automated coverage of the Windows and
+  # Linux install paths actually running rather than being simulated.
+  installer:
+    name: installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Unit tests for every installer module
+        working-directory: clients/cli
+        run: |
+          npm ci
+          npm test
+      - name: doctor runs and reports, on a machine with no AI tools installed
+        shell: bash
+        run: |
+          # A fresh runner has none of the supported hosts, so this also proves the
+          # "nothing found" path reports honestly instead of crashing or claiming
+          # success. doctor exits non-zero only when something ESSENTIAL is
+          # missing; Node and git are present on every runner, so it must pass.
+          node clients/cli/src/index.js doctor
+      - name: install into a throwaway home, then uninstall again
+        shell: bash
+        run: |
+          set -e
+          FAKE="$RUNNER_TEMP/fakehome"
+          mkdir -p "$FAKE/.claude" "$FAKE/.gemini/config"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export USERPROFILE="$FAKE"
+          fi
+          export HOME="$FAKE"
+          node clients/cli/src/index.js install
+          # Claude Code and Antigravity are the two documented-location hosts, so
+          # both must genuinely be installed. Claude Desktop is expected to be
+          # skipped — Anthropic documents installing through the app.
+          test -e "$FAKE/.claude/plugins/gru953-studio" || { echo "Claude Code install did not land" >&2; exit 1; }
+          test -f "$FAKE/.gemini/config/plugins/gru953-studio/plugin.json" || { echo "Antigravity plugin.json missing" >&2; exit 1; }
+          test -f "$FAKE/.gemini/config/plugins/gru953-studio/rules/gru953-roster.md" || { echo "Antigravity roster rule missing" >&2; exit 1; }
+          node clients/cli/src/index.js uninstall
+          test ! -e "$FAKE/.claude/plugins/gru953-studio" || { echo "uninstall left the Claude Code install behind" >&2; exit 1; }
+          echo "install and uninstall both verified on $RUNNER_OS."
+      - name: the repo checkout must be untouched by an install into a fake home
+        shell: bash
+        run: |
+          # A linked install points AT the checkout, so an uninstall that followed
+          # the link instead of removing it would delete the plugin's own source.
+          # This is the assertion that would catch that.
+          test -f plugins/gru953-studio/.claude-plugin/plugin.json || { echo "the checkout was damaged" >&2; exit 1; }
+          test -d plugins/gru953-studio/skills || { echo "the checkout's skills are gone" >&2; exit 1; }
+          git diff --quiet || { echo "the working tree was modified:" >&2; git status --short >&2; exit 1; }
+          echo "Checkout intact."
+
   # A single, stable check name for branch protection to require, regardless
   # of how many legs the matrix above has (matrix job names are not stable
   # across edits to the matrix).
   ci-ok:
     name: CI
     if: always()
-    needs: [static, hooks, hooks-crlf, clients]
+    needs: [static, hooks, hooks-crlf, clients, packaging, installer]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job did not succeed

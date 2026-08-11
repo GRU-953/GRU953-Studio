@@ -7,7 +7,7 @@ description: The C# / .NET ecosystem pack — the exact build, test, lint, forma
 
 The shared toolchain knowledge for C#/.NET work (Windows and cross-platform), so
 the `csharp-developer` agent stays thin. Plain-English rule is as set in the
-`studio` skill.
+`operating-charter` skill.
 
 ## The six standard commands (used as acceptance-proving commands)
 

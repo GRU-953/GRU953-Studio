@@ -1,65 +1,59 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
+// 2026-08-10 rewrite. This used to create `.agents/skills/studio` and a
+// `Dev-Memory/` folder, then print "initialized successfully". Two things were
+// wrong with that, both confirmed against antigravity.google/docs/plugins on
+// 2026-08-10:
+//
+//  1. `.agents/skills/` is not a location Antigravity scans, and there was no
+//     `plugin.json` anywhere, so nothing there was ever recognised as a plugin.
+//     The real locations are `.agents/plugins/<name>/` (per workspace) and
+//     `~/.gemini/config/plugins/<name>/` (global), each containing a
+//     `plugin.json`. See install.js for the full layout.
+//  2. Only ONE skill of the whole set was linked, so every other protocol the
+//     studio depends on — memory, the quality gate, YAGNI, the language packs —
+//     was simply absent while the script reported success.
+//
+// It also created `Dev-Memory/` eagerly in whatever directory it was run from.
+// That is dropped: Dev-Memory belongs to a PROJECT and is created by the studio
+// when a project actually starts, and making an empty one in an arbitrary
+// working directory (a home folder, say) leaves confusing litter behind.
+
 const path = require('path');
-const { linkOrCopy } = require('./link-or-copy');
+const { installForAntigravity } = require('./install');
 
-console.log('Initializing GRU953-Studio for Google Antigravity...');
+const args = process.argv.slice(2);
+const scope = args.includes('--workspace') ? 'workspace' : 'global';
 
-const workspaceDir = process.cwd();
-const agentsDir = path.join(workspaceDir, '.agents');
-const pluginSourceDir = path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio');
+console.log('Setting up GRU953-Studio for Google Antigravity...');
 
-if (!fs.existsSync(agentsDir)) {
-    fs.mkdirSync(agentsDir, { recursive: true });
-    console.log('Created .agents directory.');
-}
+const result = installForAntigravity({
+    pluginSourceDir: path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio'),
+    scope,
+});
 
-const targetSkillsDir = path.join(agentsDir, 'skills');
-if (!fs.existsSync(targetSkillsDir)) {
-    fs.mkdirSync(targetSkillsDir, { recursive: true });
-}
+for (const step of result.steps) console.log(`  ${step}`);
 
-// 2026-07-26 audit finding 18. This used to be a bare `fs.symlinkSync` in a
-// try/catch that logged the error and carried on regardless — silently
-// failing on Windows every time (see link-or-copy.js for the real fix) and
-// still printing "initialized successfully!" at the end, with
-// `.agents/skills` left completely empty — a false success. Success is now
-// reported only when the content is actually there.
-let skillsReady = true;
-try {
-    const sourceSkillsDir = path.join(pluginSourceDir, 'skills');
-    if (fs.existsSync(sourceSkillsDir)) {
-        const studioSkillLink = path.join(targetSkillsDir, 'studio');
-        if (!fs.existsSync(studioSkillLink)) {
-            const result = linkOrCopy(path.join(sourceSkillsDir, 'studio'), studioSkillLink);
-            if (result.ok) {
-                console.log(`Studio skill available at .agents/skills/studio (${result.method}).`);
-            } else {
-                skillsReady = false;
-                console.error(`Could not make the studio skill available at .agents/skills/studio: ${result.error.message}`);
-                console.error('Check that .agents/skills is writable, then run this again.');
-            }
-        }
-    } else {
-        skillsReady = false;
-        console.error(`Could not find the studio skill source at ${sourceSkillsDir} — is this running from inside the GRU953-Studio plugin?`);
+if (result.ok) {
+    console.log('');
+    console.log(`GRU953-Studio is installed for Antigravity at:\n  ${result.target}`);
+    console.log('');
+    console.log('Restart Antigravity, then ask it to build something and it will follow the');
+    console.log('studio protocol. Two things to know, so nothing comes as a surprise:');
+    console.log('  * Antigravity has no place for separate specialist agents, so the roster is');
+    console.log('    provided as a rules file it follows itself. In Claude Code they run as');
+    console.log('    genuinely separate agents, which works better.');
+    console.log('  * The /studio slash commands are a Claude Code feature. Here, just ask in');
+    console.log('    plain words — "carry on with my project", "where are we up to".');
+    if (scope === 'global') {
+        console.log('');
+        console.log('Run this again with --workspace to install it for one project only instead.');
     }
-} catch (e) {
-    skillsReady = false;
-    console.error('Failed to set up skills:', e.message);
-}
-
-const devMemoryDir = path.join(workspaceDir, 'Dev-Memory');
-if (!fs.existsSync(devMemoryDir)) {
-    fs.mkdirSync(devMemoryDir, { recursive: true });
-    console.log('Created Dev-Memory directory.');
-}
-
-if (skillsReady) {
-    console.log('GRU953-Studio for Google Antigravity initialized successfully!');
-    console.log('You can now run agents with Google Antigravity that utilize the studio protocol.');
 } else {
-    console.error('GRU953-Studio for Google Antigravity did NOT initialize successfully — see the errors above.');
+    console.error('');
+    console.error('GRU953-Studio was NOT fully set up for Antigravity:');
+    for (const err of result.errors) console.error(`  - ${err}`);
+    console.error('');
+    console.error(`Check that ${result.target} is writable, then run this again.`);
     process.exitCode = 1;
 }

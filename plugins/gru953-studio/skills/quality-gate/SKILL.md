@@ -16,8 +16,8 @@ set of quality dimensions that must each be satisfied, or consciously ruled
 not-applicable, before work is backed up or released.
 
 `verify-progress.mjs` already proves each `done` task carries `verified:`
-evidence; this gate proves the *whole phase* clears the bar. Plain-English rule
-is exactly as set in the `studio` skill.
+evidence; this gate proves the *whole phase* clears the bar. Plain-English rule is exactly as set in the
+`operating-charter` skill.
 
 ## The Definition of Done (the required dimensions)
 

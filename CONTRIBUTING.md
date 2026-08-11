@@ -41,9 +41,19 @@ node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 node plugins/gru953-studio/hooks/licence-scan.mjs .
 # 7. documentation stays internally consistent (counts, duplicates, role references)
 node plugins/gru953-studio/hooks/docs-consistency.mjs .
-# 8. every required file is present (see .github/workflows/ci.yml for the exact list)
-# 9. the hook scripts lint clean and are formatted consistently (root-level dev tooling)
+# 8. the operating charter's two copies still say the same thing
+node plugins/gru953-studio/hooks/charter-check.mjs .
+# 9. every required file is present (see .github/workflows/ci.yml for the exact list)
+# 10. the hook and packaging scripts lint clean and are formatted consistently
 npm ci && npm run lint && npm run format:check
+```
+
+If your change touches anything under `tools/`, also build the release assets —
+CI does this on every pull request, so a packaging defect fails the build:
+
+```
+cd clients/vscode && npm ci && cd ../..
+node tools/build-release-assets.mjs --out dist
 ```
 
 If your change touches `clients/cli`, `clients/antigravity`, or `clients/vscode`,
@@ -79,9 +89,29 @@ Pull requests are expected to keep **continuous integration (CI) green** — CI
 is the automated set of checks that runs on every change (see
 `.github/workflows/ci.yml`).
 
+## Branches
+
+This repository uses exactly two long-lived branches, and the difference is about
+what a branch *means*:
+
+| Branch | What it holds |
+| :-- | :-- |
+| **`main`** | Only released versions — final, tested, stable. It moves only when a release is cut. |
+| **`development`** | Everything else: features, fixes, documentation, refactoring. |
+
+So: **branch from `development`, and open your pull request against
+`development`**, not `main`. CI runs on both. A maintainer merges `development`
+into `main` as part of cutting a release, together with the version bump and the
+tag.
+
+This is the same two-branch rule GRU953-Studio applies to every project it builds
+(see `plugins/gru953-studio/skills/checkpoint-commit/SKILL.md`), applied to the
+product itself — the alternative would be a tool that recommends a discipline it
+does not follow.
+
 ## Branch naming
 
-Create a branch from `main` for your work:
+Create a branch from `development` for your work:
 
 - `feature/<name>` — for new functionality.
 - `fix/<name>` — for bug fixes.

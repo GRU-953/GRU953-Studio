@@ -1,0 +1,19 @@
+# A portable package rather than an .msi, deliberately: building a signed Windows
+# installer needs a code-signing certificate with an annual cost, which is not
+# justified for a command npm installs in one line. winget does support portable
+# packages, but reviewers scrutinise them more closely — that may be why a
+# submission is declined, and that would be a fair outcome, not a defect.
+PackageIdentifier: GRU953.Studio
+PackageVersion: 5.1.4
+InstallerType: portable
+Commands:
+  - gru953-studio
+Installers:
+  - Architecture: neutral
+    InstallerUrl: https://github.com/GRU-953/GRU953-Studio/releases/download/v5.1.4/gru953-studio-claude-code-5.1.4.zip
+    # winget needs the checksum of the exact file it downloads, so this can only
+    # be filled in once the release asset exists. The real value is published in
+    # SHA256SUMS.txt with every release.
+    InstallerSha256: REPLACE_WITH_THE_RELEASE_ASSET_SHA256
+ManifestType: installer
+ManifestVersion: 1.6.0

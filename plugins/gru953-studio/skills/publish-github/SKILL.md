@@ -174,6 +174,24 @@ names now instead of numbers, so this can't drift again.)
 7. Push: `git -C <temp-clone-path> push -u origin main` — never
    create-and-push in one step. (The downloadable zip is attached later, in
    section 6, as part of the real Release.)
+8. **Create the `development` branch too (2026-08-10, owner-directed).** Every
+   GRU953-Studio project uses exactly two long-lived branches — `main` for the
+   final, tested, released version only, and `development` for all subsequent
+   work. The canonical statement of that rule, and why it changes no gate, is in
+   `checkpoint-commit`'s "Two branches, always" section; this is where the two
+   branches first come into existence:
+
+   ```
+   git -C <temp-clone-path> branch development main
+   git -C <temp-clone-path> push -u origin development
+   ```
+
+   Without this step a freshly published project has a `main` and nowhere to work,
+   so the very next change would either be committed straight onto the released
+   branch or need this done by hand — which is exactly the muddle the two-branch
+   rule exists to prevent. `main` stays the repository's default branch: it is
+   what a visitor should see, and it is the only branch a release is ever cut
+   from.
 
 ## 6. Tag and create a REAL GitHub Release (2026-07-10 audit addition)
 
