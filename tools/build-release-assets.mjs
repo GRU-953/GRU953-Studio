@@ -293,13 +293,19 @@ const INSTALL_WINDOWS_PORTABLE = (
 ) => `GRU953-Studio ${version} — the Windows command (portable)
 =============================================================
 
-Most people should not need this file. Two easier routes exist:
+Most people should not need this file. An easier route exists:
 
-  winget install GRU953.Studio          (once the winget submission is accepted)
-  npm install -g @gru953/studio-cli     (works today, if you have Node.js)
+  npm install -g @gru953/studio-cli     (if you have Node.js)
 
-This package is what winget installs behind the scenes, and it is here for anyone
-who would rather have the plain files.
+Or paste the one-line installer from the project's README, which sets the studio up
+in every AI tool on this computer at once.
+
+This package is here for anyone who would rather have the plain files, or who cannot
+use npm.
+
+(GRU953-Studio is deliberately NOT on winget. winget only accepts a .exe for this
+kind of package, and this is a Node.js tool — see tools/packaging/README.md in the
+repository for the full reasoning. That is a decision, not an oversight.)
 
 WHAT YOU NEED FIRST
 -------------------

@@ -1,12 +1,11 @@
 # Packaging for Homebrew and winget
 
-Two extra ways to install the `gru953-studio` command, for people who expect
-software to arrive the way everything else on their computer does.
+Extra ways to install the `gru953-studio` command, for people who expect software to
+arrive the way everything else on their computer does. One worked; one turned out to
+be impossible, and the record of why is kept here deliberately.
 
-**Status as of 2026-08-11: Homebrew is LIVE; winget is not.** The difference is
-who decides. The Homebrew tap is entirely within this project's control and is now
-published. winget depends on review by Microsoft and cannot be promised, so nothing
-in the user-facing documentation claims it works.
+**Status as of 2026-08-11: Homebrew is LIVE. winget is NOT VIABLE and has been
+abandoned — do not try again without reading why below.**
 
 ---
 
@@ -45,72 +44,108 @@ The formula pins one exact published tarball, so two lines change per release:
 2. Update `url` and `sha256` in `formula/gru953-studio.rb` here **and** in
    `Formula/gru953-studio.rb` in the tap repository.
 3. Verify before pushing the tap — all three of these, which caught a real style
-   error and confirmed the checksum on the first release:
+   error on the first release and confirmed the checksum on both:
    ```
    brew style GRU-953/tap/gru953-studio
    brew audit --strict --online GRU-953/tap/gru953-studio
    brew fetch GRU-953/tap/gru953-studio
    ```
+4. After pushing, confirm it from GITHUB rather than from your local copy — reset the
+   installed tap to what GitHub actually serves, then upgrade:
+   ```
+   cd "$(brew --repository)/Library/Taps/gru-953/homebrew-tap"
+   git fetch origin && git reset --hard origin/main
+   brew upgrade gru953-studio && brew test gru953-studio
+   ```
+   Testing the copy you just wrote proves only that you can read your own file. The
+   6.0.1 update was verified this way: 6.0.0 → 6.0.1, command runs, `brew test` passes.
+
+**Cross-check the checksum, do not just compute it.** `shasum` will happily hash
+whatever a redirect served you. Compare the tarball's sha512 against npm's own
+published integrity value first:
+```
+npm view @gru953/studio-cli@<version> dist.integrity
+node -e 'const c=require("crypto"),f=require("fs");console.log("sha512-"+c.createHash("sha512").update(f.readFileSync("<file>.tgz")).digest("base64"))'
+```
+Those two must match before the sha256 is worth writing down. Done for 6.0.1.
 
 There is no `version` line: Homebrew reads the version from the tarball's filename,
 and stating it twice is one more place to go stale.
 
 ---
 
-## winget (Windows) — Microsoft's to accept
+## winget (Windows) — NOT VIABLE, abandoned 2026-08-11
 
-`winget/` holds the three manifest files winget requires. Their SHAPE is now
-correct and schema-valid, but **two values must be set at release time before they
-can be submitted** — see the header comment in `GRU953.Studio.installer.yaml`.
+**Do not attempt this again without reading this section.** It cost five rounds of
+changes to a pull request on someone else's repository before the real cause was
+found, and the cause makes the whole approach impossible.
 
-### The mistake that was caught first, recorded so it is not repeated
+### The blocker, in one line
 
-The original manifests declared a `gru953-studio` command and pointed at
-`gru953-studio-claude-code-<version>.zip`. That archive contains 128 markdown
-files and no executable of any kind — it is the plugin, not the command. winget
-would have rejected it, and submitting it would have wasted Microsoft's reviewers'
-time on something that could never work. Found by downloading the published
-archive and looking inside it, rather than by reading the build script.
+winget accepts exactly **one** file type for a portable package. From
+`winget-cli`'s own source (`src/AppInstallerCommonCore/Manifest/ManifestValidation.cpp`):
 
-The fix needed a new release asset:
-`gru953-studio-windows-portable-<version>.zip`, containing a `.cmd` shim plus the
-CLI, with Node.js declared as a winget package dependency rather than bundled.
-`tools/build-release-assets.mjs` builds it, and both CI and `hooks.test.mjs` now
-assert it contains something runnable and no markdown — the exact distinction that
-was got wrong.
+```cpp
+constexpr std::array<std::wstring_view, 1> s_AllowedPortableFiletypes = {
+    L".exe",
+};
+```
 
-### Why this is still not submitted
+GRU953-Studio's command is a Node.js script whose Windows launcher is a `.cmd`. No
+manifest can make that valid. This is an architectural mismatch, not a manifest
+defect, and no amount of manifest editing will fix it.
 
-This repository publishes **immutable** releases, so an asset cannot be added to
-`v6.0.0` after the fact — GitHub returns `HTTP 422: Cannot upload assets to an
-immutable release`. winget needs a stable URL to an archive containing the command,
-so the Windows portable package has to ship with a release, and the manifests can
-only be completed once it has.
+`winget validate` says so directly:
 
-**The order is therefore:** cut the next release (which builds and attaches the
-Windows package automatically) → fill in `PackageVersion`, the version in
-`InstallerUrl`, and `InstallerSha256` → then submit.
+```
+Manifest Error: The file type of the referenced file is not allowed.
+[RelativeFilePath] Value: gru953-studio.cmd
+```
 
-Submitting means a pull request to `microsoft/winget-pkgs`, which Microsoft's own
-reviewers accept or reject on their own timetable.
+### Why we are not shipping an .exe to get around it
 
-So: **do not tell users `winget install` works until a submission has actually
-been accepted.** Until then the one-line installer and npm are the routes that do
-work, and those are what the README points at.
+Two routes exist, and both were rejected on the owner's decision:
 
-Two honest caveats about the manifests themselves:
+| Route | Cost |
+| :-- | :-- |
+| Node's Single Executable Application (bundles the runtime) | ~110MB per architecture, so ~220MB added to every release, plus a `postject` build dependency |
+| A small compiled C launcher | ~50KB, but an **unsigned** .exe — Windows SmartScreen warns on download, which is a poor first impression for a deliberately non-technical audience. Code signing has an annual cost |
 
-1. **`InstallerSha256`, `PackageVersion` and the `InstallerUrl` version are
-   placeholders**, for the reason above. `SHA256SUMS.txt` in each release carries
-   the real checksum, or compute it directly:
-   `shasum -a 256 dist/gru953-studio-windows-portable-<version>.zip`
-2. **winget prefers a real installer** (`.msi` or `.exe`) over a portable
-   archive. This project ships neither, because building a signed Windows
-   installer needs a code-signing certificate that costs money annually and is
-   not justified for a command that npm already installs in one line. The
-   manifests therefore describe a portable package, which winget does support but
-   reviewers scrutinise more closely. That may be the reason a submission is
-   declined, and if it is, that is a reasonable outcome rather than a bug to fix.
-3. **`GRU953` is not yet a publisher in winget-pkgs** (checked: `manifests/g/GRU953`
-   returns 404), so a submission also creates that folder, which reviewers look at
-   more carefully than an update to an existing package.
+For a tool that `npm install -g @gru953/studio-cli` installs in one line, neither is
+a good trade. Windows users already have four working routes: npm, the one-line
+PowerShell installer, the downloadable packages, and the Claude Code marketplace.
+
+### The lesson, which is the useful part
+
+The manifests were **schema-valid at every stage**. Five rounds of validating against
+the official JSON schemas passed cleanly while the submission kept failing, because
+the constraint that mattered lives in winget's C++ source, not in its schema or its
+documentation. Four of those five rounds were spent re-reading the specification —
+the thing that was already passing.
+
+What actually worked, in order of usefulness:
+
+1. **Running the real tool on the real platform.** `winget validate` on a Windows
+   machine gave the exact answer in seconds.
+2. **Comparing against something known to be accepted.** Diffing our manifest against
+   `manifests/s/sharkdp/fd` found two real problems (nested field placement, and
+   `Architecture: neutral`, which no accepted package uses) that the schema permitted.
+3. Reading the specification. This found nothing, twice.
+
+Applies well beyond winget: when a gate keeps failing and the spec keeps passing, the
+rule being enforced is not the rule being read.
+
+### The manifests are kept, deliberately
+
+`winget/` still holds the three manifests, at the point they were abandoned. They are
+kept rather than deleted so that anyone who revisits this can see exactly how far it
+got and what was already correct — schema 1.12.0, the right folder shape and casing,
+verified checksums, and the installer structure matching an accepted package. Only
+the `.exe` requirement defeated it.
+
+They are **not submitted and must not be submitted as they stand.** They also lack the
+`# yaml-language-server: $schema=` header that `winget validate` warns about, which
+would need adding first.
+
+The pull request, with the full history including the errors, is
+[microsoft/winget-pkgs#415492](https://github.com/microsoft/winget-pkgs/pull/415492).
