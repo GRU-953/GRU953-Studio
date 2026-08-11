@@ -1,5 +1,52 @@
 # Changelog
 
+## 6.0.1 — 2026-08-11
+
+A packaging release. Nothing about how GRU953-Studio works has changed, and there
+is no reason to update if 6.0.0 is working for you.
+
+### One new download, for Windows
+
+`gru953-studio-windows-portable-<version>.zip` — a `.cmd` launcher plus the
+command-line helper, which is what `winget` installs behind the scenes. It needs
+Node.js, and tells you plainly where to get it if you do not have it.
+
+This exists because of a mistake caught before it reached anyone. The winget
+manifests prepared in 6.0.0 declared a `gru953-studio` command while pointing at
+the Claude Code plugin package — an archive of 128 markdown files with no
+executable in it. winget would have rejected it, and submitting it would have spent
+Microsoft's reviewers' time on something that could never have worked. Found by
+downloading the published archive and looking inside, rather than by re-reading the
+build script.
+
+The manifests are now the right shape (a zip containing one portable command, with
+Node.js declared as a package dependency rather than bundled), checked against
+winget's own schema. Both CI and the test suite now assert that this package
+contains something runnable and no markdown — the exact distinction that was wrong.
+
+### The Homebrew tap is live
+
+```
+brew install GRU-953/tap/gru953-studio
+```
+
+[GRU-953/homebrew-tap](https://github.com/GRU-953/homebrew-tap) is published and
+verified: `brew style` clean, `brew audit --strict --online` clean, and a real
+install and `brew test` on macOS.
+
+One thing worth knowing, found by tapping it from GitHub as a new user would rather
+than testing the local copy: **Homebrew 6 refuses to load a formula from a
+third-party tap until you trust it.** `brew install` recorded the trust itself and
+went ahead, but you may be prompted — `brew trust GRU-953/tap` is the answer, and it
+costs nothing to anyone who is never asked.
+
+### Why this needed a release at all
+
+This repository publishes immutable releases, so a new asset cannot be added to
+v6.0.0 after the fact (GitHub returns "HTTP 422: Cannot upload assets to an
+immutable release"). That is a good property, not a fault — but it means a new
+download ships with a new version.
+
 ## 6.0.0 — 2026-08-11
 
 Seven owner-requested additions, and one honest answer to an eighth question

@@ -67,7 +67,14 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 6.0.0
+### Latest version: 6.0.1
+
+Version 6.0.1 is a packaging release — nothing about how the studio works has
+changed. It adds a Windows download that `winget` will install, and the Homebrew
+tap is now live: `brew install GRU-953/tap/gru953-studio`. Full detail in
+[CHANGELOG.md](CHANGELOG.md).
+
+### Version 6.0.0
 
 Version 6.0.0 adds seven things the owner asked for, and answers one question
 honestly rather than pretending.
