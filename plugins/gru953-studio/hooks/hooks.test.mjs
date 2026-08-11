@@ -4559,6 +4559,64 @@ test('build-release-assets: builds every installer, each in the layout its own h
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08-10. The Antigravity plugin layout is implemented TWICE — in
+// clients/cli/src/install-targets.js (the universal installer) and in
+// clients/antigravity/src/install.js (the standalone bridge). That duplication is
+// deliberate and explained in both files: they are separate published npm
+// packages, so a relative require across them works in a git checkout and breaks
+// the moment either is installed from npm, and coupling their versions for forty
+// lines of code is the worse trade.
+//
+// But duplicated load-bearing logic drifts. This test is the guard: both
+// implementations must produce the same directory structure. If it fails, the two
+// have diverged and one of them is now wrong — which is exactly the situation
+// nothing would otherwise notice.
+test('the two Antigravity installers produce the same layout (guarding a deliberate duplication)', async () => {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const cli = req(path.join(REPO_ROOT, 'clients', 'cli', 'src', 'install-targets.js'));
+  const bridge = req(path.join(REPO_ROOT, 'clients', 'antigravity', 'src', 'install.js'));
+
+  const pluginSourceDir = path.join(REPO_ROOT, 'plugins', 'gru953-studio');
+  const homeA = mkTmp('gru-agparity-cli-');
+  const homeB = mkTmp('gru-agparity-bridge-');
+
+  const targetA = path.join(homeA, '.gemini', 'config', 'plugins', 'gru953-studio');
+  const rA = cli.installAntigravity(
+    { installDir: targetA, kind: 'antigravity', name: 'Google Antigravity' },
+    { pluginSourceDir },
+  );
+  const rB = bridge.installForAntigravity({ pluginSourceDir, homeDir: homeB });
+  assert.equal(rA.ok, true, `the CLI installer failed: ${rA.message}`);
+  assert.equal(rB.ok, true, `the bridge installer failed: ${(rB.errors || []).join('; ')}`);
+
+  // Compare the shape, not the file contents: `skills` is a symlink in both, and
+  // following it would just compare the same source directory with itself.
+  const shapeOf = (root) =>
+    fs
+      .readdirSync(root, { withFileTypes: true })
+      .map((d) => `${d.name}${d.isDirectory() || d.isSymbolicLink() ? '/' : ''}`)
+      .sort();
+  assert.deepEqual(shapeOf(targetA), shapeOf(rB.target), 'the two installers must lay out the same top-level entries');
+  assert.deepEqual(
+    fs.readdirSync(path.join(targetA, 'rules')).sort(),
+    fs.readdirSync(path.join(rB.target, 'rules')).sort(),
+    'the two installers must write the same rules files',
+  );
+  // The roster projection is the piece most likely to drift, since each has its
+  // own copy of the generator. Compare the role names both produced.
+  const rolesIn = (p) => [...fs.readFileSync(p, 'utf8').matchAll(/^\| `([a-z0-9-]+)` \|/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    rolesIn(path.join(targetA, 'rules', 'gru953-roster.md')),
+    rolesIn(path.join(rB.target, 'rules', 'gru953-roster.md')),
+    'both roster projections must name the same specialists, in the same order',
+  );
+  assert.ok(rolesIn(path.join(targetA, 'rules', 'gru953-roster.md')).length > 0, 'and must actually contain roles');
+
+  fs.rmSync(homeA, RM_OPTS);
+  fs.rmSync(homeB, RM_OPTS);
+});
+
 // ---------------------------------------------------------------------------
 // openrouter-models.mjs — 2026-08-10, added with openrouter-integration.
 //

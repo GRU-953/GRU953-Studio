@@ -89,7 +89,14 @@ test('gru953-studio: start/pause/resume no longer exist (2026-07-26 audit findin
   for (const cmd of ['start', 'pause', 'resume']) {
     const r = runCli([cmd], dir);
     assert.doesNotMatch(r.stdout, new RegExp(`${cmd[0].toUpperCase()}${cmd.slice(1)}ing`), `${cmd} must not print a fake success message`);
-    assert.match(r.stdout, /Usage: gru953-studio/i, `${cmd} must fall through to the help text, not run a fake command`);
+    // 2026-08-10: this used to look for "Usage: gru953-studio", the whole of the
+    // old one-line help. The help became a full command list when the universal
+    // installer landed, so the expectation is re-pinned to a line only the help
+    // block prints. The assertion is deliberately just as strong — it still
+    // proves an unrecognised command falls through to help rather than doing
+    // something — and NOT weakened to something both help and an error share.
+    assert.match(r.stdout, /gru953-studio install\b/, `${cmd} must fall through to the help text, not run a fake command`);
+    assert.match(r.stdout, /Unknown command/i, `${cmd} must say plainly that it is not a command`);
   }
   fs.rmSync(dir, RM_OPTS);
 });
