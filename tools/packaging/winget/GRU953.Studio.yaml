@@ -1,0 +1,9 @@
+# winget version manifest. NOT SUBMITTED — see ../README.md. Submitting means a
+# pull request to microsoft/winget-pkgs, which Microsoft's reviewers accept or
+# reject on their own timetable, so nothing in the user documentation claims
+# "winget install" works until one has actually been accepted.
+PackageIdentifier: GRU953.Studio
+PackageVersion: 5.1.4
+DefaultLocale: en-GB
+ManifestType: version
+ManifestVersion: 1.6.0
