@@ -1,22 +1,19 @@
 # Homebrew formula for the GRU953-Studio command.
 #
-# Publish by copying this into a "Formula" folder in a public repository named
-# GRU-953/homebrew-tap — see ../README.md for the step-by-step. Homebrew core is
-# deliberately not attempted; its notability criteria are Homebrew's to judge.
+# This installs the `gru953-studio` command and nothing else. It deliberately does
+# NOT run `gru953-studio install` afterwards: that step looks for the AI coding
+# tools on the machine and writes into their configuration, which is not something
+# a package manager should do to somebody without being asked. The caveats below
+# tell the user the one command to run when they are ready.
 #
-# This installs the npm package and depends on Node, and does nothing else. It
-# does NOT run "gru953-studio install" on the user's behalf: that step finds
-# their AI coding tools and writes into their configuration, which is not
-# something a package manager should do without being asked.
+# Kept in step with the copy in the main repository at
+# tools/packaging/formula/gru953-studio.rb.
 class Gru953Studio < Formula
-  desc "AI project lead plus a team of specialist AI developers, for non-technical people"
+  desc "AI project lead and specialist AI developer team for non-technical people"
   homepage "https://github.com/GRU-953/GRU953-Studio"
-  url "https://registry.npmjs.org/@gru953/studio-cli/-/studio-cli-5.1.4.tgz"
-  # Replace with the real checksum of the .tgz above before publishing:
-  #   curl -sL <url> | shasum -a 256
-  sha256 "REPLACE_WITH_THE_TARBALL_SHA256"
+  url "https://registry.npmjs.org/@gru953/studio-cli/-/studio-cli-6.0.0.tgz"
+  sha256 "29b83fcdcc4d6140a8533db461f9148b29979e74bcf2983caaae79260bccc136"
   license "PolyForm-Noncommercial-1.0.0"
-  version "5.1.4"
 
   depends_on "node"
 
@@ -31,12 +28,20 @@ class Gru953Studio < Formula
         gru953-studio install
 
       That looks for Claude Code, Claude Desktop, Google Antigravity, VS Code,
-      Cursor and Windsurf on this computer and sets the studio up in each one it
-      finds. It asks before changing anything.
+      Cursor and Windsurf on this computer, and sets the studio up in each one it
+      finds. It asks before it changes anything, and it never installs system
+      software on your behalf.
+
+      To check everything is in place at any time:
+        gru953-studio doctor
     EOS
   end
 
   test do
+    # Proves the command is genuinely installed and runnable, not merely present.
     assert_match "GRU953-Studio", shell_output("#{bin}/gru953-studio help")
+    # Proves it can inspect a real directory without a project in it, which is the
+    # state every new user starts from.
+    assert_match(/GRU953-Studio/, shell_output("#{bin}/gru953-studio status"))
   end
 end

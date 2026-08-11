@@ -235,6 +235,17 @@ inside the VS Code and JetBrains editor extensions. Install and sign in first.
 /plugin install gru953-studio@gru953-studio
 ```
 
+**On a Mac or Linux with [Homebrew](https://brew.sh)?** One line, and it installs
+Node.js for you too:
+
+```
+brew install GRU-953/tap/gru953-studio
+```
+
+Then run `gru953-studio install` to set the studio up in every AI tool it finds.
+(Homebrew may ask you to trust the tap first; `brew trust GRU-953/tap` answers
+that.)
+
 **Or let one command do all of it.** If you would rather not type anything into
 Claude Code, paste this into your terminal instead and it will find every AI tool
 on your computer and set them all up:
