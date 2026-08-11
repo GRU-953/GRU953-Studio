@@ -44,12 +44,30 @@ The formula pins one exact published tarball, so two lines change per release:
 2. Update `url` and `sha256` in `formula/gru953-studio.rb` here **and** in
    `Formula/gru953-studio.rb` in the tap repository.
 3. Verify before pushing the tap — all three of these, which caught a real style
-   error and confirmed the checksum on the first release:
+   error on the first release and confirmed the checksum on both:
    ```
    brew style GRU-953/tap/gru953-studio
    brew audit --strict --online GRU-953/tap/gru953-studio
    brew fetch GRU-953/tap/gru953-studio
    ```
+4. After pushing, confirm it from GITHUB rather than from your local copy — reset the
+   installed tap to what GitHub actually serves, then upgrade:
+   ```
+   cd "$(brew --repository)/Library/Taps/gru-953/homebrew-tap"
+   git fetch origin && git reset --hard origin/main
+   brew upgrade gru953-studio && brew test gru953-studio
+   ```
+   Testing the copy you just wrote proves only that you can read your own file. The
+   6.0.1 update was verified this way: 6.0.0 → 6.0.1, command runs, `brew test` passes.
+
+**Cross-check the checksum, do not just compute it.** `shasum` will happily hash
+whatever a redirect served you. Compare the tarball's sha512 against npm's own
+published integrity value first:
+```
+npm view @gru953/studio-cli@<version> dist.integrity
+node -e 'const c=require("crypto"),f=require("fs");console.log("sha512-"+c.createHash("sha512").update(f.readFileSync("<file>.tgz")).digest("base64"))'
+```
+Those two must match before the sha256 is worth writing down. Done for 6.0.1.
 
 There is no `version` line: Homebrew reads the version from the tarball's filename,
 and stating it twice is one more place to go stale.
