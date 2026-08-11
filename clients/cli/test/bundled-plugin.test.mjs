@@ -92,7 +92,9 @@ test('npm pack produces a tarball containing the whole studio, not just the comm
     shell: process.platform === 'win32',
   });
   assert.equal(r.status, 0, `npm pack failed: ${r.stderr}`);
-  const tgz = r.stdout.trim().split('\n').filter(Boolean).pop();
+  // split on \r?\n: npm's output on Windows ends each line with \r\n, and a trailing
+  // carriage return in the filename made this point at a path that does not exist.
+  const tgz = r.stdout.trim().split(/\r?\n/).filter(Boolean).pop();
   const tarball = path.isAbsolute(tgz) ? tgz : path.join(os.tmpdir(), tgz);
   assert.ok(fs.existsSync(tarball), `expected a tarball at ${tarball}`);
 
@@ -107,7 +109,16 @@ test('npm pack produces a tarball containing the whole studio, not just the comm
     'package/plugin/hooks/openrouter-models.mjs',
     'package/src/index.js',
   ]) {
-    assert.ok(names.includes(required), `the tarball must contain ${required}`);
+    // The message carries what WAS in the tarball. When this failed on the Windows CI
+    // leg it said only "must contain ...", which told nobody anything — the real cause
+    // (npm consulting .gitignore and excluding ./plugin on older versions) took a
+    // separate investigation to find. A failing test should hand over its evidence.
+    assert.ok(
+      names.includes(required),
+      `the tarball must contain ${required}\nIt actually contains ${names.length} entries, ` +
+        `${names.filter((n) => n.startsWith('package/plugin/')).length} of them under package/plugin/.\n` +
+        `First 15: ${names.slice(0, 15).join(', ')}`,
+    );
   }
   assert.ok(
     names.filter((n) => n.startsWith('package/plugin/agents/')).length >= 30,
@@ -158,6 +169,23 @@ test('no user-facing message still claims an npm install lacks the studio', () =
   const stale = [/installed from npm, which does not include the studio/i, /an npm install does not include/i];
   for (const re of stale) {
     assert.ok(!re.test(src), `a stale message matching ${re} is still present`);
+  }
+});
+
+test('.npmignore exists, or npm falls back to .gitignore and drops the studio', () => {
+  // Not cosmetic. ./plugin is gitignored as build output, and with no .npmignore npm
+  // consults .gitignore — so on some npm versions the directory `files` explicitly
+  // asks for was excluded again by the rule keeping it out of git. Whether the
+  // published package contained the studio depended on which npm ran the publish.
+  // The Windows CI leg produced an empty plugin/ while npm 11.19 produced a correct
+  // one, from the same command.
+  const npmignore = path.join(PACKAGE_ROOT, '.npmignore');
+  assert.ok(fs.existsSync(npmignore), '.npmignore must exist so npm ignores .gitignore entirely');
+  // It must not itself exclude the thing it exists to protect.
+  const body = fs.readFileSync(npmignore, 'utf8');
+  const rules = body.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  for (const r of rules) {
+    assert.ok(!/^\/?(plugin|src)\/?$/.test(r), `.npmignore must not exclude ${r}`);
   }
 });
 

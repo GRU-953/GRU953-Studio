@@ -4547,7 +4547,17 @@ test('build-release-assets: builds every installer, each in the layout its own h
     const wp = list(`gru953-studio-windows-portable-${version}.zip`);
     assert.ok(wp.includes('gru953-studio.cmd'), 'the Windows package needs its shim at the archive root, where PortableCommandAlias expects it');
     assert.ok(wp.includes('src/index.js'), 'the Windows package must contain the CLI itself');
-    assert.ok(!wp.some((n) => n.endsWith('.md')), 'the Windows package is the command, not the plugin — no markdown belongs in it');
+    // 2026-08-11: these three are the fix for the Windows package having exactly the
+    // bug 6.0.2 fixed for npm — it shipped the command without the studio, so
+    // `install` could not install anything and its own INSTALL.txt promised otherwise.
+    // Caught by re-running the install verification against the PUBLISHED assets,
+    // after the npm path had already been fixed. Two packaging paths, one fixed, and
+    // nothing asserted the other.
+    assert.ok(wp.includes('plugin/.claude-plugin/plugin.json'), 'the Windows package must carry the studio, or `install` cannot install anything');
+    assert.ok(wp.filter((n) => n.startsWith('plugin/agents/')).length >= 30, 'the specialists must be in the Windows package too');
+    // src/index.js reads its own version from ../package.json; without it,
+    // `gru953-studio --version` printed "unknown" from this package.
+    assert.ok(wp.includes('package.json'), 'the Windows package needs a package.json so --version works');
     for (const z of [`gru953-studio-claude-code-${version}.zip`, `gru953-studio-claude-desktop-${version}.zip`]) {
       const names = list(z);
       assert.ok(names.includes('gru953-studio/.claude-plugin/plugin.json'), `${z} must carry plugin.json at the package root`);
