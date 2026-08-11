@@ -11,8 +11,8 @@
 class Gru953Studio < Formula
   desc "AI project lead and specialist AI developer team for non-technical people"
   homepage "https://github.com/GRU-953/GRU953-Studio"
-  url "https://registry.npmjs.org/@gru953/studio-cli/-/studio-cli-6.0.2.tgz"
-  sha256 "d263cfad44b1c7d022f20221294d8498bd141a8995adeff92dbf00c1052e85f2"
+  url "https://registry.npmjs.org/@gru953/studio-cli/-/studio-cli-6.0.3.tgz"
+  sha256 "e43c50a98dae5b6e5d442a1c6578cd7d2f35a99cb87ab1352604d20d92635071"
   license "PolyForm-Noncommercial-1.0.0"
 
   depends_on "node"
