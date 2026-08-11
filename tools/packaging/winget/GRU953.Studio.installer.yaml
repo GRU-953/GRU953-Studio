@@ -37,26 +37,32 @@
 # assets cannot be added to v6.0.0 after the fact (confirmed: GitHub returns HTTP 422,
 # "Cannot upload assets to an immutable release"). The archive therefore ships with the
 # next release, and these two lines are set then.
+# 2026-08-11, third correction. The fields below were first written at the TOP level,
+# which the schema permits. But a real, accepted nested-portable manifest
+# (manifests/s/sharkdp/fd) puts NestedInstallerFiles and Dependencies INSIDE each
+# installer entry, and the validation pipeline's content checks are stricter than the
+# raw schema. Structure matched to the proven-accepted shape rather than to what the
+# schema merely allows — comparing against a manifest winget has actually accepted is
+# better evidence than reading the specification alone.
 PackageIdentifier: GRU953.Studio
 PackageVersion: 6.0.1
 InstallerType: zip
 NestedInstallerType: portable
-NestedInstallerFiles:
-  - RelativeFilePath: gru953-studio.cmd
-    PortableCommandAlias: gru953-studio
-# The launcher loads the CLI from src/ beside itself via %~dp0, so it only works
-# from the folder it was extracted into. With the default (false) winget puts an
-# alias in its own links directory, and a .cmd invoked through that resolves %~dp0
-# to the alias's location, where src/ does not exist. Adding the install location
-# to PATH instead is what makes a script with sibling files work. Field added in
-# manifest schema 1.12.0.
-ArchiveBinariesDependOnPath: true
-Dependencies:
-  PackageDependencies:
-    - PackageIdentifier: OpenJS.NodeJS
 Installers:
   - Architecture: neutral
+    NestedInstallerFiles:
+      - RelativeFilePath: gru953-studio.cmd
+        PortableCommandAlias: gru953-studio
+    # The launcher loads the CLI from src/ beside itself via %~dp0, so it only works
+    # from the folder it was extracted into. With the default, a .cmd invoked through
+    # winget's alias resolves %~dp0 to the alias's directory, where src/ does not
+    # exist — it would install cleanly and then fail to run. Adding the install
+    # location to PATH instead is correct for a script with sibling files.
+    ArchiveBinariesDependOnPath: true
     InstallerUrl: https://github.com/GRU-953/GRU953-Studio/releases/download/v6.0.1/gru953-studio-windows-portable-6.0.1.zip
     InstallerSha256: 5E9EA972E08EB7F831CE6DE6F7FAA34F58178BAE8A17363B873CDAF14BFDFDA7
+    Dependencies:
+      PackageDependencies:
+        - PackageIdentifier: OpenJS.NodeJS
 ManifestType: installer
 ManifestVersion: 1.12.0
