@@ -1,5 +1,47 @@
 # Changelog
 
+## 6.0.3 — 2026-08-11
+
+Two packaging fixes, both found by re-running the install verification against the
+**published** 6.0.2 downloads rather than against the source code.
+
+### The Windows download could not install the studio
+
+`gru953-studio-windows-portable-<version>.zip` carried the command but not the studio's
+skills and roles, so `gru953-studio install` reported that something was wrong with the
+installation — and its own instructions promised it would work. That is the identical
+bug 6.0.2 fixed for npm, in the sibling packaging path. One was fixed; nothing asserted
+the other, so it stayed broken.
+
+The download is now self-contained. `gru953-studio --version` also works from it, which
+it did not before, because the package had no `package.json` for the command to read its
+own version from.
+
+### Publishing was npm-version-dependent, which is worse than it sounds
+
+The studio is copied into the package at pack time, into a directory that is gitignored
+because it is build output. When a package has no `.npmignore`, npm falls back to
+consulting `.gitignore` — so on some npm versions the directory that `files` explicitly
+asks for was excluded again by the rule keeping it out of git.
+
+**Whether the published package contained the studio at all depended on which npm
+version ran the publish.** The 6.0.2 tarball was correct by luck: the release workflow
+upgrades npm first. The Windows CI runner's older npm produced an empty one from the
+same command, which is how this was found. A `.npmignore` now stops npm consulting
+`.gitignore`, making the result identical everywhere.
+
+### Tests
+
+Both gaps existed because nothing asserted them:
+
+- The Windows package is now checked, in the test suite and in CI, for the studio, a
+  `package.json`, and that it reports the right version. Verified by removing the
+  bundling and watching the test fail.
+- The pack test now reports what the tarball actually contained when it fails. Its
+  first Windows failure said only "must contain ...", which told nobody anything, and
+  the real cause took a separate investigation.
+- A test asserts `.npmignore` exists and does not exclude the directories it protects.
+
 ## 6.0.2 — 2026-08-11
 
 A real bug fix. If you installed the `gru953-studio` command from npm or Homebrew,

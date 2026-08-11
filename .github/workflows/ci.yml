@@ -325,6 +325,13 @@ jobs:
           grep -q $'\r' /tmp/wp/gru953-studio.cmd || { echo "the shim must have CRLF line endings" >&2; exit 1; }
           grep -q 'src.index.js' /tmp/wp/gru953-studio.cmd || { echo "the shim does not invoke the CLI" >&2; exit 1; }
           node /tmp/wp/src/index.js help | grep -q 'gru953-studio install' || { echo "the packaged CLI does not run" >&2; exit 1; }
+          # 2026-08-11: the Windows package shipped the command without the studio, so
+          # `install` could not install anything — the same bug 6.0.2 fixed for npm, in
+          # the sibling packaging path nobody asserted. Checked here as well as in
+          # hooks.test.mjs because this job builds the REAL asset that gets published.
+          unzip -Z1 "$WP" | grep -qx 'plugin/.claude-plugin/plugin.json' || { echo "$WP does not carry the studio — install would fail" >&2; exit 1; }
+          unzip -Z1 "$WP" | grep -qx 'package.json' || { echo "$WP has no package.json, so --version reports 'unknown'" >&2; exit 1; }
+          test "$(node /tmp/wp/src/index.js --version)" = "$VER" || { echo "the packaged CLI reports the wrong version" >&2; exit 1; }
           # Checksums must cover every asset, or the file gives false assurance.
           ASSETS=$(ls dist | grep -v '^SHA256SUMS.txt$' | wc -l | tr -d ' ')
           SUMS=$(wc -l < dist/SHA256SUMS.txt | tr -d ' ')

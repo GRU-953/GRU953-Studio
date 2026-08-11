@@ -1,0 +1,21 @@
+# This file exists for one reason, and deleting it will silently break publishing.
+#
+# The studio is copied into ./plugin at pack time by scripts/bundle-plugin.mjs, and
+# ./plugin is gitignored because it is build output. When a package has NO .npmignore,
+# npm falls back to consulting .gitignore — so on some npm versions the directory that
+# `files` explicitly asks for was excluded again by the very ignore rule that keeps it
+# out of git. The result: whether the published package contained the studio at all
+# depended on which npm version happened to run the publish.
+#
+# Found on 2026-08-11 by the Windows CI leg, whose older npm produced a tarball with no
+# plugin/ in it while the same command on npm 11.19 produced a correct one. The
+# published 6.0.2 tarball was correct by luck — the release workflow upgrades npm before
+# publishing — which is exactly the kind of luck not to depend on.
+#
+# The mere PRESENCE of this file stops npm consulting .gitignore, making package.json's
+# `files` allowlist the single authority and the result identical on every npm version.
+#
+# Nothing needs to be listed here. The entries below are belt-and-braces for things
+# that could only ever be noise inside an included directory.
+.DS_Store
+*.tgz

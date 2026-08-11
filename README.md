@@ -67,7 +67,15 @@ commands** · **2 automatic push-time safety hooks** (plus a suite of pre-publis
 and CI integrity checks) · **zero third-party code
 dependencies**.
 
-### Latest version: 6.0.2
+### Latest version: 6.0.3
+
+Version 6.0.3 fixes two packaging problems found by testing the published downloads
+rather than the source: the **Windows download** carried the command but not the studio,
+so `gru953-studio install` could not work from it; and whether the npm package contained
+the studio depended on which npm version built it. Both fixed and now covered by tests.
+Full detail in [CHANGELOG.md](CHANGELOG.md).
+
+### Version 6.0.2
 
 Version 6.0.2 fixes a real bug: if you installed the `gru953-studio` command from
 npm or Homebrew, it could not actually install the studio — the published package

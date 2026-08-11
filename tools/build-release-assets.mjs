@@ -301,7 +301,11 @@ Or paste the one-line installer from the project's README, which sets the studio
 in every AI tool on this computer at once.
 
 This package is here for anyone who would rather have the plain files, or who cannot
-use npm.
+use npm. It is self-contained: the studio itself is inside it, so "gru953-studio
+install" works without downloading anything else.
+
+(In version 6.0.2 it was NOT self-contained — the studio was missing and "install"
+reported that something was wrong with the installation. Fixed in 6.0.3.)
 
 (GRU953-Studio is deliberately NOT on winget. winget only accepts a .exe for this
 kind of package, and this is a Node.js tool — see tools/packaging/README.md in the
@@ -449,9 +453,36 @@ export function buildAssets({ outDir, skipVsix = false, log = console.log } = {}
   if (!cliFiles.some((f) => f.name === 'index.js')) {
     throw new Error('the Windows portable package would contain no CLI entry point');
   }
+  // 2026-08-11: the studio itself, and a package.json.
+  //
+  // Without them this package had exactly the bug 6.0.2 fixed for npm — it carried
+  // the command but not the skills and roles, so `gru953-studio install` reported
+  // "something is wrong with this installation" and its own INSTALL.txt promised
+  // behaviour it could not deliver. Found by re-running the install verification
+  // against the published 6.0.2 assets: the npm path was fixed and this sibling
+  // path, built by different code a few hours earlier, was not.
+  //
+  // package.json is included because src/index.js reads its own version from
+  // `../package.json`; without it `gru953-studio --version` printed "unknown".
   const winEntries = [
     { name: 'gru953-studio.cmd', data: WINDOWS_SHIM.replace(/\n/g, '\r\n') },
     ...cliFiles.map((f) => ({ ...f, name: `src/${f.name}` })),
+    ...pluginFiles.map((f) => ({ ...f, name: `plugin/${f.name}` })),
+    {
+      name: 'package.json',
+      data:
+        JSON.stringify(
+          {
+            name: '@gru953/studio-cli',
+            version,
+            description:
+              'GRU953-Studio, as a portable Windows package. Not an npm install — see INSTALL.txt.',
+            private: true,
+          },
+          null,
+          2,
+        ) + '\n',
+    },
     { name: 'LICENSE', data: fs.readFileSync(path.join(REPO_ROOT, 'clients', 'cli', 'LICENSE')) },
     { name: 'INSTALL.txt', data: INSTALL_WINDOWS_PORTABLE(version).replace(/\n/g, '\r\n') },
   ];
