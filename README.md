@@ -12,6 +12,7 @@
   <a href="https://github.com/GRU-953/GRU953-Studio/wiki"><img alt="Guide" src="https://img.shields.io/badge/guide-the%20wiki-3257A0"></a>
   <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-PolyForm%20Noncommercial%201.0.0-B28400"></a>
   <a href="https://github.com/GRU-953/GRU953-Studio/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/GRU-953/GRU953-Studio?color=00AE99&label=release"></a>
+  <a href="https://github.com/GRU-953/homebrew-tap"><img alt="Homebrew tap" src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FGRU-953%2Fhomebrew-tap%2Fmain%2FFormula%2Fgru953-studio.rb&search=studio-cli-%28%5B0-9.%5D%2B%29.tgz&replace=v%241&label=homebrew&color=00AE99"></a>
   <a href="CODE_OF_CONDUCT.md"><img alt="Contributor Covenant" src="https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant%202.1-6DBE4C"></a>
 </p>
 
