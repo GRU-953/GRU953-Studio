@@ -716,11 +716,19 @@ function main() {
   // existing `// scan-allow: known test fixture` marker — one annotated LINE, so
   // the tests asserting those same strings ARE caught in a real project keep
   // working.
-  const OWN_FIXTURE_DIR =
-    path.resolve(HOOKS_DIR, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory') + path.sep;
+  // Windows filesystems are case-insensitive, so a path that differs only in case
+  // is the SAME file there. Comparing case-sensitively would silently fail to
+  // recognise this plugin's own fixture on the windows CI leg and reinstate X22 —
+  // a failure that would look like a Windows-only mystery rather than a comparison
+  // bug. Normalised on win32 only, so nothing changes on Linux or macOS where case
+  // genuinely distinguishes two different files.
+  const samePathCase = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+  const OWN_FIXTURE_DIR = samePathCase(
+    path.resolve(HOOKS_DIR, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory') + path.sep,
+  );
   const isOwnTestFixture = (f) => {
     try {
-      return (path.resolve(REPO, String(f)) + path.sep).startsWith(OWN_FIXTURE_DIR);
+      return samePathCase(path.resolve(REPO, String(f)) + path.sep).startsWith(OWN_FIXTURE_DIR);
     } catch {
       return false; // unresolvable path is never exempt
     }

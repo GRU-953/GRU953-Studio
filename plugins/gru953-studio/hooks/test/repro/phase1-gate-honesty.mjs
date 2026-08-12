@@ -322,28 +322,20 @@ cases.push({
 });
 
 // A copy of the repository, for the two gates that need one.
+//
+// 2026-08-13: this used `rsync`, which does not exist on Windows — the
+// windows-latest CI leg failed with "rsync failed: undefined". Replaced with
+// Node's own recursive copy plus a filter, which behaves identically on all three
+// operating systems and needs no external tool. Second Windows-portability defect
+// in this file caught by the project's three-OS matrix.
+const COPY_SKIP = new Set(['node_modules', '.git', 'dist', 'dist2', 'Dev-Memory']);
 function repoCopy() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gru-p1-repo-'));
-  const r = spawnSync(
-    'rsync',
-    [
-      '-a',
-      '--exclude',
-      'node_modules',
-      '--exclude',
-      '.git',
-      '--exclude',
-      'dist',
-      '--exclude',
-      'dist2',
-      '--exclude',
-      'Dev-Memory',
-      REPO + '/',
-      dir + '/',
-    ],
-    { encoding: 'utf8' },
-  );
-  if (r.status !== 0) throw new Error('rsync failed: ' + r.stderr);
+  fs.cpSync(REPO, dir, {
+    recursive: true,
+    force: true,
+    filter: (src) => !COPY_SKIP.has(path.basename(src)),
+  });
   return dir;
 }
 
