@@ -157,7 +157,7 @@ cases.push({
 
 cases.push({
   id: 'F3a',
-  what: "an UNRELATED repo with a lookalike fixture path ships private memory",
+  what: 'an UNRELATED repo with a lookalike fixture path ships private memory',
   buggy: 'none', // "none" = stepped aside = shipped unflagged
   run() {
     const d = tmp('gru-rv-f3a-');
@@ -315,7 +315,9 @@ cases.push({
   },
 });
 
-console.log(`Independent-review reproductions — expecting the ${expectBug ? 'DEFECTS' : 'FIXES'}\n`);
+console.log(
+  `Independent-review reproductions — expecting the ${expectBug ? 'DEFECTS' : 'FIXES'}\n`,
+);
 let failures = 0;
 for (const c of cases) {
   const got = c.run();

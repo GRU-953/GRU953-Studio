@@ -93,9 +93,7 @@ for (const cmd of DANGEROUS) {
     const got = decisionFor(hook, cmd, dir);
     const ok = got === want;
     if (!ok) failures++;
-    console.log(
-      `     ${ok ? 'ok  ' : 'FAIL'}  ${hook.padEnd(9)} ${String(got).padEnd(7)} ${cmd}`,
-    );
+    console.log(`     ${ok ? 'ok  ' : 'FAIL'}  ${hook.padEnd(9)} ${String(got).padEnd(7)} ${cmd}`);
   }
 }
 
@@ -118,7 +116,9 @@ console.log('\n  C. Control: a freshly-confirmed push must still be authorised')
   const got = decisionFor('gate.mjs', 'git push origin main', dir);
   const ok = got === 'allow';
   if (!ok) failures++;
-  console.log(`     ${ok ? 'ok  ' : 'FAIL'}  gate.mjs  ${got}  git push origin main (token present)`);
+  console.log(
+    `     ${ok ? 'ok  ' : 'FAIL'}  gate.mjs  ${got}  git push origin main (token present)`,
+  );
 }
 
 fs.rmSync(dir, { recursive: true, force: true });

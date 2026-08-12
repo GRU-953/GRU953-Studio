@@ -25,6 +25,17 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+// 2026-08-13: two cases below make a file UNREADABLE with `chmod 000`. On Windows
+// that does not restrict reading at all, so the gate legitimately still reads the
+// file and the case cannot demonstrate anything. Caught by this project's own
+// three-operating-system CI matrix, which is exactly what that matrix is for.
+//
+// They are skipped on Windows rather than weakened everywhere: the defect they pin
+// (a gate reporting success on input it could not read) is real and is still
+// covered on Windows by case P7, which replaces the file with a DIRECTORY — a
+// failure mode every platform produces.
+const IS_WINDOWS = process.platform === 'win32';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HOOKS = path.resolve(HERE, '..', '..');
 const REPO = path.resolve(HOOKS, '..', '..', '..');
@@ -152,7 +163,9 @@ cases.push({
     const p = path.join(dir, 'Dev-Memory', 'PROGRESS.md');
     fs.writeFileSync(
       p,
-      fs.readFileSync(p, 'utf8').replace(/-> exit 0 \(2026-07-2\d\)/g, '-> exit code 0 (2026-07-20)'),
+      fs
+        .readFileSync(p, 'utf8')
+        .replace(/-> exit 0 \(2026-07-2\d\)/g, '-> exit code 0 (2026-07-20)'),
     );
     return [dir];
   },
@@ -162,6 +175,7 @@ cases.push({
 cases.push({
   id: 'P6',
   finding: 'X12a',
+  skipOnWindows: true, // chmod 000 does not restrict reads on Windows
   hook: 'memory-integrity.mjs',
   what: 'INDEX.md exists but is unreadable (chmod 000) — gate calls it consistent',
   buggy: 'clean',
@@ -195,6 +209,7 @@ cases.push({
 cases.push({
   id: 'P8',
   finding: 'X12c',
+  skipOnWindows: true, // chmod 000 does not restrict reads on Windows
   hook: 'traceability-check.mjs',
   what: 'REQUIREMENTS.md unreadable is treated as absent, and Tiny Tier excuses it',
   buggy: 'clean',
@@ -226,7 +241,11 @@ cases.push({
   setup(dir) {
     fs.writeFileSync(
       path.join(dir, 'package.json'),
-      JSON.stringify({ name: 'x', version: '1.0.0', dependencies: { 'some-copyleft-lib': '^3.0.0' } }, null, 2),
+      JSON.stringify(
+        { name: 'x', version: '1.0.0', dependencies: { 'some-copyleft-lib': '^3.0.0' } },
+        null,
+        2,
+      ),
     );
     fs.mkdirSync(path.join(dir, 'node_modules'), { recursive: true });
     return [dir];
@@ -307,7 +326,21 @@ function repoCopy() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gru-p1-repo-'));
   const r = spawnSync(
     'rsync',
-    ['-a', '--exclude', 'node_modules', '--exclude', '.git', '--exclude', 'dist', '--exclude', 'dist2', '--exclude', 'Dev-Memory', REPO + '/', dir + '/'],
+    [
+      '-a',
+      '--exclude',
+      'node_modules',
+      '--exclude',
+      '.git',
+      '--exclude',
+      'dist',
+      '--exclude',
+      'dist2',
+      '--exclude',
+      'Dev-Memory',
+      REPO + '/',
+      dir + '/',
+    ],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) throw new Error('rsync failed: ' + r.stderr);
@@ -317,6 +350,12 @@ function repoCopy() {
 console.log(`Phase 1 reproductions — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\n`);
 let failures = 0;
 for (const c of cases) {
+  if (c.skipOnWindows && IS_WINDOWS) {
+    console.log(
+      `  skip  ${c.id.padEnd(4)} ${c.finding.padEnd(9)} ${c.what} — chmod cannot make a file unreadable on Windows; P7 covers this class here`,
+    );
+    continue;
+  }
   const dir = c.isRepoCopy ? repoCopy() : freshProject();
   let got, want;
   try {

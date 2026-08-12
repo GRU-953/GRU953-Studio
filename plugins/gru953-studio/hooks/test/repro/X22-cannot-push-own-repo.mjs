@@ -71,7 +71,9 @@ console.log(`X22 reproduction — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\
   const want = expectBug ? 'deny' : null;
   const ok = decision === want;
   if (!ok) failures++;
-  console.log(`  ${ok ? 'ok  ' : 'FAIL'}  A  the product repo: decision=${decision} (want ${want})`);
+  console.log(
+    `  ${ok ? 'ok  ' : 'FAIL'}  A  the product repo: decision=${decision} (want ${want})`,
+  );
   if (findings.length) {
     console.log(`        ${findings.length} finding(s) still reported:`);
     for (const f of findings.slice(0, 6)) console.log(`          ${f}`);
