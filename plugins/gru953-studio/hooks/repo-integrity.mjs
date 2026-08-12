@@ -836,6 +836,76 @@ if (ciYmlText === null) {
   fail(`.github/workflows/ci.yml no longer runs charter-check.mjs (2026-08-10 wiring regressed)`);
 }
 
+// ---- INV 17: no hook grants a blanket approval; only gate.mjs may authorise ----
+// 2026-08-13, finding X1 (CRITICAL, reproduced by execution — see
+// hooks/test/repro/X1-auto-approval.mjs). lib.mjs used to export a single
+// allow() that emitted `permissionDecision: "allow"` on every path where a hook
+// had no objection. Per the documented PreToolUse contract that value "permit[s]
+// the tool call to proceed without a permission prompt", so this plugin was
+// silently switching off the user's own permission prompts for every non-push
+// shell command — `rm -rf`, `curl … | sh` and `cat ~/.ssh/id_rsa` among them.
+//
+// The corrected design splits that into stepAside() (emit nothing — the
+// documented neutral) and authorise(reason) (emit "allow"), and confines the
+// latter to gate.mjs's two freshly-confirmed-token paths. This invariant is what
+// stops a future edit undoing that split quietly: a unit test can be deleted,
+// but a missing invariant fails the gate every contributor is told to run.
+{
+  const HOOKS_DIR = hooksDir;
+  let hookFiles = [];
+  try {
+    hookFiles = fs.readdirSync(HOOKS_DIR).filter((f) => f.endsWith('.mjs'));
+  } catch {
+    fail(`INV17: could not read ${HOOKS_DIR} to check for blanket approvals`);
+  }
+  for (const f of hookFiles) {
+    // Both of these necessarily quote the very pattern being searched for — the
+    // test suite asserts on it, and this file defines it — so scanning them
+    // would report a permanent false positive.
+    if (f === 'hooks.test.mjs' || f === 'repo-integrity.mjs') continue;
+    let text;
+    try {
+      text = fs.readFileSync(path.join(HOOKS_DIR, f), 'utf8');
+    } catch {
+      continue;
+    }
+    // Strip block and line comments so the historical explanations above (which
+    // legitimately quote the defective JSON) are not mistaken for live code.
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    if (/permissionDecision['"]?\s*:\s*['"]allow['"]/.test(code) && f !== 'lib.mjs') {
+      fail(
+        `INV17: ${f} emits permissionDecision "allow" directly. Only lib.mjs's authorise() may do that, and only gate.mjs may call it — a blanket approval suppresses the user's permission prompt (finding X1)`,
+      );
+    }
+    if (/\ballow\s*\(\s*\)/.test(code)) {
+      fail(
+        `INV17: ${f} still calls the removed allow(). Use stepAside() for "no objection" or authorise(reason) for a confirmed authorisation (finding X1)`,
+      );
+    }
+    if (f === 'scan.mjs' && /\bauthorise\s*\(/.test(code)) {
+      fail(
+        `INV17: scan.mjs calls authorise(). The secret scanner is veto-only: finding nothing means it has no objection, not that the push is approved (finding X1)`,
+      );
+    }
+  }
+  // And lib.mjs must still provide both halves of the split.
+  try {
+    const lib = fs.readFileSync(path.join(HOOKS_DIR, 'lib.mjs'), 'utf8');
+    if (!/export function stepAside\s*\(/.test(lib)) {
+      fail(
+        `INV17: lib.mjs no longer exports stepAside() — the neutral no-decision exit (finding X1)`,
+      );
+    }
+    if (/export function allow\s*\(/.test(lib)) {
+      fail(
+        `INV17: lib.mjs exports allow() again. It was deliberately split into stepAside() and authorise(reason) so that every approval is explicit (finding X1)`,
+      );
+    }
+  } catch {
+    fail(`INV17: could not read lib.mjs to verify the stepAside()/authorise() split`);
+  }
+}
+
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {
   console.log(

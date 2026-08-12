@@ -145,6 +145,59 @@ function scanNodeFromNodeModules(root) {
     else if (verdict === null)
       findings.push({ package: p, licence: licence || 'unknown', verdict: 'needs-review' });
   }
+
+  // 2026-08-13 (reproduced by execution — see
+  // test/repro/phase1-gate-honesty.mjs case P9). This returned `checked: true`
+  // unconditionally, purely because a node_modules DIRECTORY existed. So a
+  // project declaring `"dependencies": {"some-copyleft-lib": "^3.0.0"}` beside an
+  // EMPTY node_modules and no lockfile examined zero packages and reported
+  // `{"status":"clean"}`. A pruned or `--production` install silently narrowed
+  // the scan the same way, with no signal at all.
+  //
+  // This file already states the governing principle for exactly this situation:
+  // "node_modules is an install-artefact that is routinely not present/committed
+  // and can itself be stale, so it can never paper over a lockfile we failed to
+  // read. Any unchecked side now keeps the whole npm result honest." An empty or
+  // partial node_modules IS that stale artefact.
+  //
+  // So the declared dependency set is now cross-checked against what was actually
+  // resolved on disk. Anything declared but not found makes the result
+  // `checked: false`, which the caller turns into INCOMPLETE rather than a pass.
+  // devDependencies are deliberately included: a copyleft dev dependency still
+  // ships in a source-available release and still needs review.
+  const resolved = new Set(pkgDirs.map((p) => p.split(path.sep).join('/')));
+  let declared = [];
+  try {
+    const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    // 2026-08-13, independent-review finding F10 (reproduced).
+    // optionalDependencies were included here and made a legitimately-absent
+    // platform-specific package a PERMANENT incomplete: `fsevents` is macOS-only,
+    // so on Linux CI `npm ci` will never install it and the advice ("run npm ci
+    // and re-scan") can never fix it. That is the "gate that cries wolf gets
+    // routed around" failure this project's own changelog warns about, so optional
+    // dependencies are excluded. devDependencies stay: a copyleft dev dependency
+    // still ships in a source-available release and still needs review.
+    declared = [
+      ...Object.keys(rootPkg.dependencies || {}),
+      ...Object.keys(rootPkg.devDependencies || {}),
+    ];
+  } catch {
+    declared = []; // no readable root package.json — nothing to cross-check against
+  }
+  const unresolved = declared.filter((name) => !resolved.has(name));
+  if (unresolved.length > 0) {
+    return {
+      ecosystem: 'npm',
+      checked: false,
+      findings,
+      note:
+        `package.json declares ${unresolved.length} dependenc${unresolved.length === 1 ? 'y' : 'ies'} that ` +
+        `${unresolved.length === 1 ? 'is' : 'are'} not installed in node_modules, so ${unresolved.length === 1 ? 'its' : 'their'} ` +
+        `licence could not be examined: ${unresolved.slice(0, 8).join(', ')}` +
+        `${unresolved.length > 8 ? `, and ${unresolved.length - 8} more` : ''}. ` +
+        `Run \`npm ci\` (or \`npm install\`) and re-scan — an empty or pruned node_modules must never read as a clean pass.`,
+    };
+  }
   return { ecosystem: 'npm', checked: true, findings };
 }
 

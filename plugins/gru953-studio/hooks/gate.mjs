@@ -39,7 +39,9 @@ import process from 'node:process';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  allow,
+  stepAside,
+  authorise,
+  escalate,
   deny,
   readStdin,
   extractCommand,
@@ -309,6 +311,24 @@ function goPublicConfirmed(studioRoot) {
   return tokenConfirmedWithinTtl(text, expected);
 }
 
+// 2026-08-13, independent-review finding F4. An approval covers the WHOLE command
+// string, so a token must never approve a push with extra segments welded on.
+// Anything that could run a second command — a separator, a pipe, a background
+// `&`, a newline, or a substitution — means this is not the single confirmed
+// action, and the decision goes to the user instead of being granted silently.
+const MULTI_COMMAND_RE = /[;&|\n]|\$\(|`/;
+function authoriseOnlyIfSingleCommand(cmd, what, reason) {
+  if (MULTI_COMMAND_RE.test(String(cmd))) {
+    escalate(
+      `studio gate: ${what} was confirmed for this project, but this command does more than that one thing ` +
+        `(it contains a separator, pipe, background "&", newline or substitution), and an authorisation covers the ` +
+        `WHOLE command. Asking you to confirm this exact command rather than approving it silently. ` +
+        `Running the ${what} on its own line will be authorised without this prompt.`,
+    );
+  }
+  authorise(reason);
+}
+
 function main() {
   // 2026-07-31 maintenance fix (F1): readStdin() now throws StdinReadFailure
   // rather than returning '' when it could not reliably read the tool-call
@@ -337,7 +357,7 @@ function main() {
   // truncated read created (see lib.mjs's readStdinCore fix above this same
   // maintenance pass): isPushCapable('') fails closed, but extractCwd('')
   // falling back to this process's own cwd can still resolve the WRONG
-  // studio root and allow() a command this gate never actually inspected.
+  // studio root and stand aside on a command this gate never actually inspected.
   // Denying here closes that residual regardless of how a future caller
   // might reintroduce a partial read. A genuinely empty string (real "no
   // data") is unaffected — only "got something, but it doesn't parse" denies.
@@ -349,20 +369,23 @@ function main() {
         `studio gate: refusing to allow — the tool-call payload read from stdin is non-empty ` +
           `but is not valid JSON, so its command and working directory cannot be trusted. This ` +
           `can happen under a partial/corrupted read. Retry the command; refusing to let an ` +
-          `unparsed payload fall through to an unauthorised allow().`,
+          `unparsed payload fall through to an unchecked command.`,
       );
     }
   }
   const CMD = extractCommand(INPUT);
 
   if (!isPushCapable(CMD)) {
-    allow();
+    // Not push-capable: this gate has no business here. Emit NO decision so the
+    // command continues through Claude Code's normal permission flow (X1).
+    stepAside();
   }
 
   const SESSION_DIR = extractCwd(INPUT) || process.cwd();
   const STUDIO_ROOT = findStudioRoot(SESSION_DIR);
   if (STUDIO_ROOT === null) {
-    allow();
+    // Not a studio project: never interfere with someone else's repository.
+    stepAside();
   }
 
   // A command asking for PUBLIC (or internal) visibility needs its own,
@@ -370,7 +393,11 @@ function main() {
   // proves a PRIVATE publish was confirmed.
   if (isGoPublicCommand(CMD)) {
     if (goPublicConfirmed(STUDIO_ROOT)) {
-      allow();
+      authoriseOnlyIfSingleCommand(
+        CMD,
+        'going public',
+        'studio gate: going public was explicitly confirmed for this project and the record is still within its time limit.',
+      );
     }
     deny(
       `studio gate: refusing to change visibility to public — going public is a separate, explicit step from the private publish. Record it by running "node \\"${PLUGIN_ROOT}/hooks/confirm-go-public.mjs\\"" from the project root, only after the user has explicitly confirmed via its own pop-up (distinct from the private-publish confirmation).`,
@@ -386,7 +413,11 @@ function main() {
     checkpointConfirmed(STUDIO_ROOT) ||
     memoryPersistConfirmed(STUDIO_ROOT)
   ) {
-    allow();
+    authoriseOnlyIfSingleCommand(
+      CMD,
+      'the push',
+      'studio gate: a push authorisation (publish, per-phase checkpoint, or opt-in memory persistence) was explicitly confirmed for this project and is still within its time limit. Private push only.',
+    );
   }
   deny(
     `studio gate: refusing to push — this is a studio project but no push authorisation (publish or per-phase checkpoint) has been recorded. Pushing happens only after it is confirmed; record a publish by running "node \\"${PLUGIN_ROOT}/hooks/confirm-publish.mjs\\"" (reach the Publish stage or run /studio-publish first), or a per-phase backup checkpoint by running "node \\"${PLUGIN_ROOT}/hooks/confirm-checkpoint.mjs\\"" once the phase's quality gate is clean. Both write a project-bound record and authorise a PRIVATE push only.`,

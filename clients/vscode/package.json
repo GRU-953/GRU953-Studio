@@ -3,7 +3,7 @@
   "displayName": "GRU953-Studio",
   "description": "GRU953-Studio for VS Code, Cursor, and Windsurf",
   "icon": "icon.png",
-  "version": "6.0.3",
+  "version": "6.1.0",
   "publisher": "GRU953",
   "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
   "license": "SEE LICENSE IN LICENSE",

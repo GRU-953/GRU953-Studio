@@ -6,11 +6,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scan.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scan.mjs\"",
+            "timeout": 20
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs\"",
+            "timeout": 20
           }
         ]
       }
@@ -21,7 +23,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/self-heal-nudge.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/self-heal-nudge.mjs\"",
+            "timeout": 20
           }
         ]
       }
@@ -31,7 +34,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
+            "timeout": 20
           }
         ]
       }

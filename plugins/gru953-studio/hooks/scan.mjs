@@ -30,8 +30,15 @@ import crypto from 'node:crypto';
 // correct form in a .mjs file.
 import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
+// 2026-08-13 (findings F3 + the cwd defect): this hook's own directory on disk is
+// what identifies the ONE test-fixture Dev-Memory that may be exempt. Deriving it
+// from the module's own location makes the exemption absolute, cwd-independent,
+// and inherently bound to this plugin rather than to any path that merely looks
+// like it.
+import { fileURLToPath } from 'node:url';
+const HOOKS_DIR = path.dirname(fileURLToPath(import.meta.url));
 import {
-  allow,
+  stepAside,
   deny,
   readStdin,
   extractCommand,
@@ -337,7 +344,7 @@ function main() {
   // truncated read created (see lib.mjs's readStdinCore fix above this same
   // maintenance pass): isPushCapable('') fails closed, but extractCwd('')
   // falling back to this process's own cwd can still resolve the WRONG
-  // studio root and allow() a command this scan never actually inspected.
+  // studio root and stand aside on a command this scan never actually inspected.
   // Denying here closes that residual regardless of how a future caller
   // might reintroduce a partial read. A genuinely empty string (real "no
   // data") is unaffected — only "got something, but it doesn't parse" denies.
@@ -349,20 +356,22 @@ function main() {
         `studio scan: refusing to allow — the tool-call payload read from stdin is non-empty ` +
           `but is not valid JSON, so its command and working directory cannot be trusted. This ` +
           `can happen under a partial/corrupted read. Retry the command; refusing to let an ` +
-          `unparsed payload fall through to an unscanned allow().`,
+          `unparsed payload fall through to an unscanned command.`,
       );
     }
   }
   const CMD = extractCommand(INPUT);
 
   if (!isPushCapable(CMD)) {
-    allow();
+    // Not push-capable: nothing to scan. Emit NO decision (X1).
+    stepAside();
   }
 
   const SESSION_DIR = extractCwd(INPUT) || process.cwd();
   const STUDIO_ROOT = findStudioRoot(SESSION_DIR);
   if (STUDIO_ROOT === null) {
-    allow();
+    // Not a studio project: never interfere.
+    stepAside();
   }
 
   // 2026-07-10 audit fix (MAJOR): the fallback used to be STUDIO_ROOT, an
@@ -666,6 +675,57 @@ function main() {
   // built project's private memory) without catching the lowercase skill.
   const DEVMEMORY_RE = /(^|\/)Dev-Memory(\/|$)/;
 
+  // 2026-08-13, finding X22 (reproduced by execution — see
+  // test/repro/X22-cannot-push-own-repo.mjs). This scanner refused to let its OWN
+  // repository be pushed: eight of the sixteen findings came from its own
+  // committed golden test fixture, which lives at
+  // `plugins/gru953-studio/hooks/test/fixtures/dev-memory/golden/Dev-Memory/` and
+  // is named that way precisely because it is a fixture OF a Dev-Memory folder.
+  //
+  // The consequence was not cosmetic. Either the maintainer pushed with these
+  // hooks inactive — so the product's flagship protection was never dogfooded on
+  // its own source — or releasing was blocked outright. During the session that
+  // found this, the hook denied seven ordinary maintenance commands, several
+  // merely for mentioning publishing in passing.
+  //
+  // 2026-08-13, independent-review findings F3 and a cwd defect found alongside
+  // it. My first attempt used a path REGEX,
+  // `/(^|\/)plugins\/gru953-studio\/hooks\/test\/fixtures\/[^\s]*Dev-Memory(\/|$)/`,
+  // and it was wrong in both directions at once:
+  //
+  //   * TOO WIDE. It was not bound to this plugin's repository at all, and
+  //     `[^\s]*` crosses `/`. Reproduced: an unrelated throwaway repo tracking
+  //     `plugins/gru953-studio/hooks/test/fixtures/anything/Dev-Memory/PROGRESS.md`
+  //     shipped that private memory completely unflagged. Only the directory NAMES
+  //     matched; nothing tied it to this product.
+  //   * TOO NARROW. `scan.mjs` reports paths relative to the pushing command's own
+  //     working directory, not the repository root. Reproduced: pushing from the
+  //     repo root was exempt, and pushing the identical tree from the `hooks/`
+  //     subdirectory reported all eight findings again — so X22 came back
+  //     depending on where the person happened to be standing.
+  //
+  // Both are fixed by not pattern-matching a path at all. This hook lives INSIDE
+  // the plugin, so its own location on disk identifies the one fixture directory
+  // that may be exempt, absolutely and unambiguously. A file qualifies only if its
+  // resolved absolute path is inside that exact directory. Nothing about the
+  // scanned repository's layout, name, or the caller's cwd can satisfy it by
+  // accident, and a real project's `Dev-Memory/` can never be inside this
+  // plugin's own committed test fixtures.
+  //
+  // The secret-shaped strings in `hooks.test.mjs` are handled separately, by the
+  // existing `// scan-allow: known test fixture` marker — one annotated LINE, so
+  // the tests asserting those same strings ARE caught in a real project keep
+  // working.
+  const OWN_FIXTURE_DIR =
+    path.resolve(HOOKS_DIR, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory') + path.sep;
+  const isOwnTestFixture = (f) => {
+    try {
+      return (path.resolve(REPO, String(f)) + path.sep).startsWith(OWN_FIXTURE_DIR);
+    } catch {
+      return false; // unresolvable path is never exempt
+    }
+  };
+
   // Opt-in cloud memory persistence: with a valid token, a Dev-Memory path is
   // no longer an automatic finding — but the secret/key-file scan below still
   // runs on every file, Dev-Memory included, so a secret can never ride along.
@@ -689,7 +749,17 @@ function main() {
         const ln = lines[i];
         if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
           addFinding('secret', file, String(i + 1));
-        if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(i + 1));
+        // 2026-08-13, found while fixing X22. The SCAN_ALLOW_MARKER check was
+        // applied to SECRET_RE but NOT to SECRETVAR_RE, so the project's own
+        // documented escape hatch — "only a line ending in the explicit marker
+        // `// scan-allow: known test fixture` is exempt" — worked for a
+        // vendor-shaped secret (AKIA…, gh_…, AIza…) and silently did nothing for
+        // a variable-assignment one (`api_key = "…"`). A maintainer annotating a
+        // deliberate test vector had no way to tell which half of the scanner
+        // would honour the annotation. Reproduced: line 6167 of hooks.test.mjs
+        // carried the marker and was still reported. Both halves now honour it.
+        if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          addFinding('secret-var', file, String(i + 1));
       }
     }
   };
@@ -721,7 +791,8 @@ function main() {
         lineNo++;
         if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
           addFinding('secret', file, String(lineNo));
-        if (SECRETVAR_RE.test(ln)) addFinding('secret-var', file, String(lineNo));
+        if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          addFinding('secret-var', file, String(lineNo));
       };
       while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
         const slice = chunk.subarray(0, n);
@@ -854,7 +925,8 @@ function main() {
         for (const ln of variant.split(String.fromCharCode(0)).join('\n').split('\n')) {
           if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
             addFinding('secret-history', file, '0');
-          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-history', file, '0');
+          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+            addFinding('secret-var-history', file, '0');
         }
       }
     };
@@ -886,7 +958,7 @@ function main() {
           // file or Dev-Memory path committed then removed is still caught in history.
           if (file !== '/dev/null') {
             if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
-            if (DEVMEMORY_RE.test(file) && !allowDevMemory)
+            if (DEVMEMORY_RE.test(file) && !allowDevMemory && !isOwnTestFixture(file))
               addFinding('dev-memory-history', file, '0');
           }
           continue;
@@ -936,7 +1008,8 @@ function main() {
         for (const ln of variant.split('\n')) {
           if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
             addFinding('secret-commit-message', sha, '0');
-          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-commit-message', sha, '0');
+          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+            addFinding('secret-var-commit-message', sha, '0');
         }
       }
     }
@@ -977,7 +1050,8 @@ function main() {
         for (const ln of variant.split('\n')) {
           if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
             addFinding('secret-tag-message', tag, '0');
-          if (SECRETVAR_RE.test(ln)) addFinding('secret-var-tag-message', tag, '0');
+          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+            addFinding('secret-var-tag-message', tag, '0');
         }
       }
     }
@@ -988,7 +1062,7 @@ function main() {
     if (KEYFILE_RE.test(f)) {
       addFinding('key-file', f, '0');
     }
-    if (DEVMEMORY_RE.test(f) && !allowDevMemory) {
+    if (DEVMEMORY_RE.test(f) && !allowDevMemory && !isOwnTestFixture(f)) {
       addFinding('dev-memory', f, '0');
     }
     const abs = path.join(REPO, f);
@@ -1188,7 +1262,10 @@ function main() {
   scanTagMessages();
 
   if (findings.length === 0) {
-    allow();
+    // No secrets found. This scanner is VETO-ONLY: finding nothing means it has
+    // no objection, which is not the same as approving the push. Authorisation
+    // is gate.mjs's job and requires a confirmed token (X1).
+    stepAside();
   }
   // 2026-07-19 audit fix (real gap, found by execution): `findings` was fully
   // computed (each entry already redacted to {type,file,line} by redact() —

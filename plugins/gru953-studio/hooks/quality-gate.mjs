@@ -36,13 +36,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import {
-  splitPipeCells,
   stripBom,
   CONTRADICTION_RE,
   deEmphasise,
   isDirectory,
-  SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
+  parseTables,
 } from './lib.mjs';
 
 // The required Definition-of-Done dimensions. Each must appear as at least one
@@ -151,48 +150,93 @@ function read(p) {
 // spuriously satisfy/contradict the "tests" dimension and wrongly BLOCK (or,
 // worse, wrongly pass) a checkpoint that the real Definition-of-Done table
 // already cleared.
+// 2026-08-13, finding X2 (CRITICAL, reproduced by execution — see
+// test/repro/phase1-gate-honesty.mjs case P1). The version above read only the
+// FIRST Item+Status table and stopped. So a project that appended its CURRENT
+// phase's Definition of Done below the finished one — which `dev-memory`'s own
+// append-never-rewrite discipline actively encourages — got `{"status":"clean"}`
+// from this gate while its live table read
+// `| Automated tests | fail | npm test -> exit 1, 3 failing |`. This is the gate
+// that authorises checkpoint commits and Publish, and its own header promises
+// "every ambiguous state fails CLOSED".
+//
+// Now EVERY table whose header carries an Item-like and a Status column
+// contributes its rows, and main() already requires every matching row to be a
+// clean pass, so a failure anywhere blocks.
+//
+// The 2026-07-19 fix that introduced first-table-only was guarding against a real
+// case: an unrelated Item+Status table later in the file (a backlog list with a
+// row like "Improve test coverage tooling | todo") injecting a spurious row into
+// the "tests" dimension and wrongly blocking a complete DoD table.
+//
+// 2026-08-13, independent-review finding F1 (CRITICAL, reproduced). My first
+// attempt at reconciling those two risks used a coverage heuristic: a table
+// counted only if its rows covered at least three distinct required dimensions.
+// That reintroduced X2 for any NARROW table — and a narrow table is the most
+// likely real-world shape, because a phase in progress appends only the
+// dimensions still outstanding. Reproduced: a complete passing table followed by
+// a single row `| Automated tests | fail | npm test -> exit code 1, 3 failing |`
+// returned `{"status":"clean"}`. The heuristic discarded precisely the tables most
+// likely to record a live failure. Being clever was worse than being blunt.
+//
+// So: EVERY Item+Status table counts, with no heuristic. The unrelated-table case
+// is still expressible, but it must now be DECLARED rather than guessed at — an
+// explicit `<!-- not-a-definition-of-done -->` marker in the few lines above a
+// table excludes it. A silent exclusion is what caused this defect twice; an
+// explicit one is auditable, and anyone reading the file can see it.
+//
+// Also new: a RAGGED row — one whose column count disagrees with its header — is
+// no longer silently skipped. That was finding P11: a raw `|` inside an Evidence
+// cell shifted every later column, so `| Automated tests | pass | npm test |
+// tail -5 -> exit code 1, 3 failing right now |` parsed as a different shape and
+// the recorded failure became invisible. Such a row cannot be read positionally,
+// so it is reported as unverifiable and blocks — the same discipline
+// verify-progress.mjs already applies.
+// A table preceded by this marker is deliberately not part of the Definition of
+// Done. Kept explicit on purpose (finding F1): the only safe way to exclude a
+// table is for a human to say so in the file, where a reader can see it.
+const NOT_A_DOD_RE = /<!--\s*not-a-definition-of-done\s*-->/i;
+const OPT_OUT_LOOKBACK = 3;
 function parseRows(text) {
-  const rows = [];
-  const lines = text.split(/\r?\n/);
-  let inTable = false;
-  let idx = { item: -1, status: -1, evidence: -1 };
-  let found = false;
-  for (const line of lines) {
-    if (!/^\s*\|/.test(line)) {
-      if (found) break; // the Definition-of-Done table's rows are done
-      inTable = false;
-      idx = { item: -1, status: -1, evidence: -1 };
-      continue;
+  const lines = String(text).split(/\r?\n/);
+  const optedOut = (headerLine) => {
+    for (let k = Math.max(0, headerLine - OPT_OUT_LOOKBACK); k < headerLine; k++) {
+      if (NOT_A_DOD_RE.test(lines[k])) return true;
     }
-    const cells = splitPipeCells(line).map((c) => c.trim());
-    if (!inTable) {
-      inTable = true;
-      // 2026-07-26 further-pass audit fix: verify-progress.mjs already
-      // de-emphasises a header cell (strips **bold**/`code`/_italic_) before
-      // matching it, so "**Status**" and "`Status`" are recognised the same
-      // as plain "Status" — this file's own header matcher never had that,
-      // so a decorated header made the whole table unrecognised. Reproduced:
-      // a Definition-of-Done table with header `**Status**` reported every
-      // required dimension "missing" despite every row being correctly
-      // filled in.
-      const find = (re) => cells.findIndex((c) => re.test(deEmphasise(c)));
-      idx = {
-        item: find(/^(item|check|dimension|requirement|criterion|gate)$/i),
-        status: find(/^status$/i),
-        evidence: find(/^(evidence|proof|notes?|verified|command)$/i),
-      };
-      if (idx.item !== -1 && idx.status !== -1) found = true;
-      continue;
-    }
-    if (!found) continue; // not the Definition-of-Done table — ignore its rows
-    if (SEPARATOR_ROW_RE.test(line)) continue;
-    const item = cells[idx.item] || '';
-    const status = cells[idx.status] || '';
-    const evidence = idx.evidence === -1 ? '' : cells[idx.evidence] || '';
-    if (!item) continue;
-    rows.push({ item, status, evidence, raw: line.trim() });
+    return false;
+  };
+  const candidates = [];
+  for (const [tableIndex, table] of parseTables(text).entries()) {
+    if (optedOut(table.headerLine)) continue; // explicitly declared not a DoD table
+    // 2026-07-26 further-pass audit fix, preserved: deEmphasise() so a decorated
+    // header like "**Status**" or "`Status`" is recognised the same as "Status".
+    const find = (re) => table.headerCells.findIndex((c) => re.test(deEmphasise(c)));
+    const idx = {
+      item: find(/^(item|check|dimension|requirement|criterion|gate)$/i),
+      status: find(/^status$/i),
+      evidence: find(/^(evidence|proof|notes?|verified|command)$/i),
+    };
+    if (idx.item === -1 || idx.status === -1) continue; // not a Definition-of-Done shape
+    candidates.push({ tableIndex, table, idx });
   }
-  return rows;
+
+  // Every candidate counts. No heuristic, no position rule — see finding F1 above.
+  const rows = [];
+  const ragged = [];
+  for (const { tableIndex, table, idx } of candidates) {
+    for (const r of table.rows) {
+      if (r.ragged) {
+        if (r.cells.some((c) => c !== '')) ragged.push(r.raw.trim());
+        continue;
+      }
+      const item = r.cells[idx.item] || '';
+      const status = r.cells[idx.status] || '';
+      const evidence = idx.evidence === -1 ? '' : r.cells[idx.evidence] || '';
+      if (!item) continue;
+      rows.push({ item, status, evidence, raw: r.raw.trim(), tableIndex });
+    }
+  }
+  return { rows, ragged };
 }
 
 function main() {
@@ -236,11 +280,21 @@ function main() {
     );
     process.exit(1);
   }
-  const rows = parseRows(text);
+  const { rows, ragged } = parseRows(text);
   const problems = [];
   if (rows.length === 0) {
     problems.push(
       'QUALITY-GATE.md contains no Definition-of-Done table (need a table with at least "Item" and "Status" columns).',
+    );
+  }
+  // A row whose columns do not line up with its header cannot be read
+  // positionally, so its status and evidence cannot be trusted. Fail closed
+  // rather than skip it — an unescaped `|` inside an Evidence cell is the
+  // common cause, and it hid a recorded test failure (finding P11). Escape it
+  // as `\|`, per GitHub-flavoured markdown, and this clears.
+  for (const raw of ragged) {
+    problems.push(
+      `a row's columns do not line up with its header, so its status cannot be verified → "${raw}" (an unescaped "|" inside a cell is the usual cause — write it as \\|)`,
     );
   }
   for (const dim of REQUIRED) {

@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { splitPipeCells, stripBom, isDirectory, deEmphasise, SEPARATOR_ROW_RE } from './lib.mjs';
+import { stripBom, isDirectory, deEmphasise, parseTables } from './lib.mjs';
 
 // 2026-07-29 maintenance fix (audit finding 4): kept as its own separate
 // constant rather than importing lib.mjs's shared PLACEHOLDER_RE — this one
@@ -83,12 +83,10 @@ function read(p) {
     throw e; // surfaced by main()'s handler as a BLOCKING, explained problem
   }
 }
-function cells(line) {
-  const c = splitPipeCells(line);
-  if (c.length && c[0].trim() === '') c.shift();
-  if (c.length && c[c.length - 1].trim() === '') c.pop();
-  return c.map((x) => x.trim());
-}
+// 2026-08-13: the local cells() helper was removed with finding X10's fix. Cell
+// splitting and outer-pipe normalisation now happen once, in lib.mjs's shared
+// parseTables(), so all five gates read a table the same way instead of each
+// keeping its own near-identical copy.
 // 2026-07-29 maintenance fix (round 3, F1): tested the raw cell, so a
 // placeholder disguised in bold, e.g. "**tbd**", still failed PLACEHOLDER_RE
 // as-is and was wrongly accepted as real provenance/rights/alt-text — the
@@ -155,65 +153,82 @@ function main() {
   // once, for the content table (the one with an asset/medium column). After that
   // table ends, every later table is ignored (see the break below), so a second,
   // unrelated table's rows are never validated against the content table's columns.
-  const lines = text.split(/\r?\n/);
-  let inTable = false;
-  let idx = null;
-  let contentTableCaptured = false;
+  // 2026-08-13, finding X10 (reproduced by execution — see
+  // test/repro/phase1-gate-honesty.mjs case P2). The version above captured the
+  // FIRST asset table and then `break`-ed out on the next non-table line, so
+  // every later table went unvalidated. Grouping the register by medium —
+  // `## Images` then `## Audio` then `## Text`, the obvious way to organise it —
+  // therefore hid every asset after the first group. Reproduced: a second table
+  // holding `hero-banner.png | image | unknown, found on the web | tbd | unknown
+  // licence | —` returned `{"status":"clean","assets":2}`. It counted the asset
+  // and cleared it.
+  //
+  // Now EVERY table with an asset-like or medium-like column is validated, and
+  // each row carries its OWN column map — which is what the 2026-07-21 fix was
+  // really protecting against. That fix stopped one table's column positions
+  // being applied to another table's rows; it did that by ignoring the later
+  // tables entirely, when the precise fix is to give each table its own indices.
+  // Both risks are now closed at once.
+  //
+  // A RAGGED row (column count disagreeing with its header) can no longer be
+  // read positionally, so it is reported rather than skipped — the same
+  // discipline verify-progress.mjs and quality-gate.mjs apply.
   const rows = [];
-  for (const line of lines) {
-    if (!/^\s*\|/.test(line)) {
-      // 2026-07-21 audit fix: once the content table has ended, ignore every LATER
-      // table. Previously `idx` persisted and a subsequent unrelated table's rows
-      // were validated against the content table's column map — a spurious BLOCK
-      // (and, with two content-shaped tables, a possible mis-aligned false-clean).
-      // Mirrors quality-gate.mjs's "stop after the first matching table" fix.
-      if (contentTableCaptured) break;
-      inTable = false;
-      continue;
+  const ragged = [];
+  let sawContentTable = false;
+  for (const table of parseTables(text)) {
+    // 2026-07-29 maintenance fix, preserved: deEmphasise() so a bolded header
+    // like "**Approved**" is recognised the same as "Approved".
+    const find = (re) => table.headerCells.findIndex((h) => re.test(deEmphasise(h)));
+    const found = {
+      asset: find(/^(asset|name|file|item)$/i),
+      medium: find(/^(medium|type|kind)$/i),
+      source: find(/^(source|provenance|model|origin|by)$/i),
+      approved: find(/^(approved|approval|status|sign[- ]?off)$/i),
+      rights: find(/^(rights|licen[cs]e|usage)$/i),
+      // 2026-07-21 Round 6 fix, preserved: also accept the documented template
+      // header "Alt/Caption" and other slash/space-joined synonyms.
+      alt: find(
+        /^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i,
+      ),
+    };
+    if (found.asset === -1 && found.medium === -1) continue; // not a content table
+    sawContentTable = true;
+    for (const r of table.rows) {
+      if (r.ragged) {
+        if (r.cells.some((c) => c !== '')) ragged.push(r.raw.trim());
+        continue;
+      }
+      rows.push({ cells: r.cells, idx: found });
     }
-    const c = cells(line);
-    if (!inTable) {
-      inTable = true;
-      // 2026-07-29 maintenance fix: header cells were tested as-is, so a
-      // bolded header (e.g. "**Approved**") never matched, wrongly reporting
-      // the whole content table as unrecognised. deEmphasise() (already used
-      // by verify-progress.mjs/quality-gate.mjs/traceability-check.mjs for
-      // exactly this) strips markdown emphasis before matching.
-      const find = (re) => c.findIndex((h) => re.test(deEmphasise(h)));
-      const found = {
-        asset: find(/^(asset|name|file|item)$/i),
-        medium: find(/^(medium|type|kind)$/i),
-        source: find(/^(source|provenance|model|origin|by)$/i),
-        approved: find(/^(approved|approval|status|sign[- ]?off)$/i),
-        rights: find(/^(rights|licen[cs]e|usage)$/i),
-        // 2026-07-21 Round 6 fix: also accept the documented template header
-        // "Alt/Caption" (and other slash/space-joined synonyms) — the anchored
-        // single-word regex rejected it, so content-check blocked every media
-        // asset that DID carry a caption. See content-creation/SKILL.md's template.
-        alt: find(
-          /^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i,
-        ),
-      };
-      if (found.asset !== -1 || found.medium !== -1) {
-        idx = found;
-        contentTableCaptured = true;
-      } // the content table's columns
-      continue;
-    }
-    if (SEPARATOR_ROW_RE.test(line)) continue;
-    if (!idx) continue; // no content table seen yet
-    rows.push(c);
   }
-  if (!idx) idx = { asset: -1, medium: -1, source: -1, approved: -1, rights: -1, alt: -1 };
 
   const problems = [];
-  if (rows.length === 0) {
+  if (!sawContentTable) {
     // CONTENT.md exists but has no readable asset table — treat as incomplete.
     problems.push(
       'CONTENT.md has no recognisable content table (need columns for asset, medium, source/provenance, approved, rights).',
     );
+  } else if (rows.length === 0) {
+    // 2026-08-13, independent-review finding F2 (reproduced regression). Changing
+    // this condition from `rows.length === 0` to `!sawContentTable` let a
+    // HEADER-ONLY register pass — a content table created and never filled in
+    // returned `{"status":"clean","assets":0}`, where the previous version
+    // correctly refused it. "No content at all" is already expressed by having no
+    // CONTENT.md, which this gate treats as a clean no-op; an empty register is a
+    // different thing, and it is the shape of a step someone started and forgot.
+    problems.push(
+      'CONTENT.md has a content table with no rows — an empty register is not the same as having no content. Either record the assets, or delete CONTENT.md if this project genuinely ships no generated content.',
+    );
   }
-  for (const r of rows) {
+  for (const raw of ragged) {
+    problems.push(
+      `a content row's columns do not line up with its header, so its approval and rights cannot be verified → "${raw}" (an unescaped "|" inside a cell is the usual cause — write it as \\|)`,
+    );
+  }
+  for (const row of rows) {
+    const r = row.cells;
+    const idx = row.idx;
     const name =
       (idx.asset !== -1 && r[idx.asset]) || (idx.medium !== -1 && r[idx.medium]) || 'asset';
     const medium = idx.medium !== -1 ? r[idx.medium] || '' : '';

@@ -499,8 +499,36 @@ const REF_BASE_DIRS = [
 // at its own sibling governance/TRADEMARKS.md — resolves only against the
 // referencing file's own directory, not any of the fixed base dirs above;
 // found live in this repo while first running this check, not hypothetical.
+// 2026-08-13, finding X24 (reproduced by execution — see
+// test/repro/phase1-gate-honesty.mjs case P12). The bases above include the
+// referencing file's OWN directory but never a PARENT one. That is a false
+// positive against the most ordinary shape in a project's working memory: a note
+// at Dev-Memory/decisions/2026-08-13-something.md pointing at `UNBUILT.md`,
+// which lives one level up in Dev-Memory/ beside PROGRESS.md and
+// REQUIREMENTS.md. This gate blocked exactly that three times in one session,
+// including once on a note whose only content was a description of this defect —
+// it could not document its own bug without triggering it.
+//
+// The fix is to walk UP from the referencing file to the repository root, which
+// generalises correctly rather than special-casing Dev-Memory: any relative
+// reference that resolves anywhere on the path between a file and the repo root
+// is a real file, and the check's purpose is to catch references to files that do
+// not exist at all. Bounded by repoRoot, so it never escapes the repository.
+function ancestorDirs(file) {
+  const dirs = [];
+  let dir = path.dirname(path.resolve(file));
+  const root = path.resolve(repoRoot);
+  for (let guard = 0; guard < 64; guard++) {
+    dirs.push(dir);
+    if (dir === root || !dir.startsWith(root)) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // filesystem root
+    dir = parent;
+  }
+  return dirs;
+}
 function refResolves(token, referencingFile) {
-  const bases = [...REF_BASE_DIRS, path.dirname(referencingFile)];
+  const bases = [...REF_BASE_DIRS, ...ancestorDirs(referencingFile)];
   return bases.some((base) => {
     try {
       return fs.statSync(path.join(base, token)).isFile();
@@ -614,7 +642,24 @@ if (changelogText !== null) {
       } catch {
         continue; // invalid JSON is DC4's / CI's concern
       }
-      if (stated && stated !== releaseVersion) {
+      // 2026-08-13 (reproduced by execution — see
+      // test/repro/phase1-gate-honesty.mjs case P10). The condition used to be
+      // `if (stated && …)`, so a manifest whose version was absent, empty, or
+      // otherwise falsy was SKIPPED rather than failed. But this check exists
+      // precisely because "the publish workflow reads the manifest, not the tag"
+      // — and a manifest with no version publishes nothing just as surely as one
+      // with the wrong version. Reproduced: setting clients/cli/package.json's
+      // version to "" left both this gate and repo-integrity.mjs reporting clean.
+      // A non-semver value is treated the same way, for the same reason.
+      if (stated === undefined || stated === null || String(stated).trim() === '') {
+        fail(
+          `${rel} states no version at all (found ${JSON.stringify(stated)}), and CHANGELOG.md's newest release is ${releaseVersion} — a manifest with no version publishes nothing, exactly like a mismatched one`,
+        );
+      } else if (!/^\d+\.\d+\.\d+/.test(String(stated).trim())) {
+        fail(
+          `${rel} states version ${JSON.stringify(stated)}, which is not a semantic version — it cannot be compared with CHANGELOG.md's newest release ${releaseVersion}, so it fails closed`,
+        );
+      } else if (stated !== releaseVersion) {
         fail(
           `${rel} states version "${stated}", but CHANGELOG.md's newest release is ${releaseVersion} — a release that bumps one and not the other publishes nothing (the publish workflow reads the manifest, not the tag)`,
         );

@@ -34,11 +34,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   splitPipeCells,
-  stripBom,
   isDirectory,
   deEmphasise,
   SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
+  readOrBlock,
+  MISSING,
 } from './lib.mjs';
 
 // 2026-07-26 audit finding 7. GRAPH.schema.json and this file's own link
@@ -221,12 +222,24 @@ const MD_LINK_RE = /^\[([^\]]*)\]\(([^)]+)\)$/;
 // that heading at all, so a node genuinely defined there was reported as
 // undefined — a false BLOCK on legitimate data, caused by this file's own
 // fix above interacting badly with an unstripped BOM.
+// 2026-08-13, finding X12 (reproduced by execution — see
+// test/repro/phase1-gate-honesty.mjs cases P6 and P7). This returned null for
+// BOTH "the file isn't there" and "the file is there but I couldn't read it",
+// and all three callers treat null as "nothing to validate yet" and return
+// silently. So an INDEX.md that was unreadable (chmod 000) or replaced by a
+// DIRECTORY produced `{"status":"clean","reason":"recall index and knowledge
+// graph are internally consistent"}` — an affirmative claim about a file this
+// gate had not read a single byte of.
+//
+// content-check.mjs found and fixed this exact defect class in July and stated
+// the principle: "A gate that cannot read its input must never claim its input
+// is fine." The fix was never propagated here. It now uses the shared
+// readOrBlock() from lib.mjs, so ENOENT (genuinely absent) still stands down and
+// every other error throws — caught at the entry point below and reported as a
+// block, never as a pass.
 function read(p) {
-  try {
-    return stripBom(fs.readFileSync(p, 'utf8'));
-  } catch {
-    return null;
-  }
+  const t = readOrBlock(p);
+  return t === MISSING ? null : t;
 }
 
 // --- INDEX.md: every path-shaped "where" cell resolves to a real file --------
@@ -443,4 +456,23 @@ function main() {
   process.exit(1);
 }
 
-main();
+// 2026-08-13, finding X12: an input this gate cannot READ must never be reported
+// as an input this gate is happy with. read() now throws on any error other than
+// "genuinely absent", and that throw lands here, as a block with the real cause
+// named — not as a silent pass.
+try {
+  main();
+} catch (e) {
+  console.log(
+    JSON.stringify(
+      {
+        status: 'BLOCKED',
+        reason: 'a memory file exists but could not be read, so it cannot be verified',
+        detail: e && e.message ? e.message : String(e),
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(1);
+}

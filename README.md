@@ -55,7 +55,7 @@ roles** · **37 skills** (the internal playbooks the team follows) · **11 simpl
 commands** · **two automatic push-time safety hooks** (plus a suite of
 pre-publish and CI integrity checks) · **zero third-party code dependencies**.
 
-### Latest version: 6.0.3
+### Latest version: 6.1.0
 
 Everything the studio does is listed in plain English in
 [CHANGELOG.md](CHANGELOG.md), newest first — including what each release fixed

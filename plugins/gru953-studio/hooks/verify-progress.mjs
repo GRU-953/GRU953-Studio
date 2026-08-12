@@ -96,8 +96,39 @@ function main() {
   // trailing whitespace/table-cell padding) means only a `verified:` clause
   // that is the row's FINAL claim counts — a stale claim followed by a
   // later "but now fails" no longer matches.
-  const VERIFIED_RE =
-    /verified:.*(→|->)(?:(?!\b(?:not|never)\b).)*exit 0|verified:.*machine checks true|verified:.*user PASS/i;
+  // 2026-08-13, findings X11b and X25 — two defects in this one pattern, pulling
+  // in opposite directions. Both reproduced by execution; see
+  // test/repro/phase1-gate-honesty.mjs cases P4 and P5.
+  //
+  // X11b (over-acceptance). There was no left-hand boundary, so `verified:`
+  // matched the `verified:` INSIDE `unverified:`. A done row reading
+  // `| T1 | … | done | unverified: npm test -> exit 0 is what we expect once
+  // someone runs it |` returned `{"status":"clean"}` — evidence that says in
+  // plain English that nobody ran it was accepted as proof. Note `\b` cannot fix
+  // this: there is no word boundary between the `n` and the `v` of "unverified",
+  // so a negative lookbehind for a preceding letter is the correct guard.
+  //
+  // X25 (under-acceptance). Only the literal `exit 0` was accepted, so a
+  // genuinely passing task recorded as `-> exit code 0` was BLOCKED. lib.mjs's
+  // own CONTRADICTION_RE calls `exit code N` "the far more natural phrasing" and
+  // was widened years earlier to accept it on the FAILURE side. The success side
+  // never was — so this project recognised "exit code 1" as a failure claim but
+  // not "exit code 0" as a success claim. A gate that rejects real proof teaches
+  // people to route around it, which is how a gate stops being trusted.
+  // 2026-08-13, independent-review finding F8 (reproduced). The lookbehind below
+  // rejected only a preceding LETTER, so `unverified:` was correctly excluded but
+  // `un-verified:` and `not-verified:` were not — a hyphen satisfies the
+  // lookbehind. Reproduced: identical rows differing only in spelling returned
+  // BLOCKED for "unverified" and clean for "un-verified". The negated prefixes are
+  // now named explicitly, while `re-verified:` and `self-verified:` keep working.
+  const VERIFIED = String.raw`(?<!\b(?:un|non|not)-)(?<![A-Za-z])verified:`;
+  const EXIT_OK = String.raw`(?:exit[ \t]+0\b|exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*0\b)`;
+  const VERIFIED_RE = new RegExp(
+    `${VERIFIED}.*(→|->)(?:(?!\\b(?:not|never)\\b).)*${EXIT_OK}` +
+      `|${VERIFIED}.*machine checks true` +
+      `|${VERIFIED}.*user PASS`,
+    'i',
+  );
   // 2026-07-25: Structured JSON evidence format (machine-parseable)
   // Format: {"taskId":"T3","criterion":"...","command":"...","exitCode":0,"stdout":"...","stderr":"","durationMs":1240,"artifacts":[],"timestamp":"2026-07-25T10:30:00Z","verifier":"tester"}
   // 2026-07-26 audit finding 1 (MAJOR false-clean, found by execution). This
@@ -285,6 +316,8 @@ function main() {
   const unidentified = []; // task table(s) with a "done" claim we cannot verify (fail CLOSED)
   const failedEvidence = []; // "done" rows whose OWN structured evidence records a non-zero exit
   const malformedEvidence = []; // "done" rows whose structured evidence is missing required fields
+  let sawAnyTable = false; // X11a: a done claim with no table at all must not pass
+  const insideATable = new Set(); // F9: line indices belonging to a recognised table
 
   for (let i = 0; i < lines.length; i++) {
     const header = lines[i];
@@ -369,7 +402,54 @@ function main() {
         problems.push(row.trim());
     }
     if (sawDoneUnknown) unidentified.push(header.trim());
+    sawAnyTable = true;
+    // 2026-08-13, independent-review finding F9: record which lines belong to a
+    // recognised table, so the done-claim sweep below can examine everything
+    // OUTSIDE one. Previously the sweep ran only when no table existed at all,
+    // which meant a single table anywhere disabled it — and the common
+    // PROGRESS.md has a table.
+    for (let k = i; k < j; k++) insideATable.add(k);
     i = j - 1; // resume after this table (the for-loop's i++ advances to j)
+  }
+
+  // 2026-08-13, finding X11a (reproduced by execution — see
+  // test/repro/phase1-gate-honesty.mjs case P3). A PROGRESS.md containing no
+  // table at all returned `{"status":"clean","reason":"every \"done\" row has a
+  // verified: cell"}` — an affirmative claim the hook had never established.
+  // Reproduced with three tasks recorded as done in bullet form and no evidence
+  // anywhere. This hook's own Round-11 comment already required failing CLOSED
+  // when a table carries a "done" cell but no identifiable Status column,
+  // "because this hook is the SOLE mechanical enforcer of 'a task may only be
+  // marked done with a verified: line'". A file with no table is the same hazard
+  // one step further out, and both sibling gates (quality-gate.mjs,
+  // content-check.mjs) already block when their table is absent.
+  //
+  // Deliberately narrower than "any non-empty PROGRESS.md with no table". A
+  // brand-new project may legitimately have a PROGRESS.md that is a heading and
+  // nothing else, and blocking that would be a false positive with no safety
+  // upside. What is never legitimate is a DONE CLAIM that no table can verify —
+  // so the trigger is a done-shaped token outside any recognised table.
+  // 2026-08-13, independent-review finding F9 (reproduced): this used to be
+  // `if (!sawAnyTable)`, so one table anywhere switched the sweep off entirely —
+  // and a real PROGRESS.md always has a table. A file with a properly evidenced
+  // table PLUS three unevidenced "done" bullets underneath reported clean, which
+  // contradicts this fix's own stated rule: what is never legitimate is a done
+  // claim that no table can verify. The sweep now examines every line that is not
+  // part of a recognised table, whether or not a table exists.
+  {
+    const claims = [];
+    for (let k = 0; k < lines.length; k++) {
+      if (insideATable.has(k)) continue;
+      const l = lines[k];
+      if (l.trim() === '' || /^\s*#/.test(l)) continue;
+      if (l.split(/[|:—-]/).some((seg) => isDoneValue(seg.trim()))) claims.push(l);
+    }
+    if (claims.length > 0) {
+      unidentified.push(
+        `PROGRESS.md records ${claims.length} "done" claim(s) outside any recognised task table, so ${claims.length === 1 ? 'it' : 'they'} cannot be verified. ` +
+          `Every done claim belongs in a markdown table with a Status column (see the dev-memory skill). First claim: "${claims[0].trim()}"`,
+      );
+    }
   }
 
   if (
