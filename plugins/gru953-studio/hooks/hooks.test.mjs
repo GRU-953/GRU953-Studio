@@ -8383,6 +8383,13 @@ for (const script of [
   // controls, and one of those runs against the REAL plugin tree — so a version of this
   // check that failed on the product itself could never pass here.
   'X109-vendored-dependency.mjs',
+  // 2026-08-15: INV17's comment said "only gate.mjs may call it" while the code tested
+  // `f === 'scan.mjs'`, and the neighbouring literal-"allow" check could not cover the
+  // gap because a hook importing authorise from lib.mjs writes no such literal. X91 then
+  // removed the last legitimate caller, leaving a capability nobody may use, guarded by
+  // an invariant that could see one file. authorise() is deleted; this asserts it stays
+  // deleted, in both directions — no hook calls it, and lib.mjs does not export it.
+  'X110-no-blanket-approval.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

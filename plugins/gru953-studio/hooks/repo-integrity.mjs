@@ -882,9 +882,17 @@ if (ciYmlText === null) {
         `INV17: ${f} still calls the removed allow(). Use stepAside() for "no objection" or authorise(reason) for a confirmed authorisation (finding X1)`,
       );
     }
-    if (f === 'scan.mjs' && /\bauthorise\s*\(/.test(code)) {
+    // 2026-08-15, finding X110 (High, reproduced). This read `f === 'scan.mjs' && …`,
+    // while the comment at the top of INV17 claimed "only gate.mjs may call it". Two
+    // different rules: the stated one and the enforced one. And the neighbouring
+    // literal-"allow" check could not cover the gap, because a hook importing
+    // `authorise` from lib.mjs writes no such literal — the string lives in lib.mjs.
+    //
+    // X91 then removed the last legitimate caller, so today NO hook may call it. The
+    // capability itself is deleted from lib.mjs; this asserts it stays deleted.
+    if (/\bauthorise\s*\(/.test(code) && f !== 'lib.mjs') {
       fail(
-        `INV17: scan.mjs calls authorise(). The secret scanner is veto-only: finding nothing means it has no objection, not that the push is approved (finding X1)`,
+        `INV17: ${f} calls authorise(). No hook may emit "allow" — it suppresses the user's permission prompt, and a record on disk cannot prove a human agreed (findings X1, X91, X110). Use stepAside() for "no objection" or escalate(reason) to ask`,
       );
     }
   }
@@ -899,6 +907,15 @@ if (ciYmlText === null) {
     if (/export function allow\s*\(/.test(lib)) {
       fail(
         `INV17: lib.mjs exports allow() again. It was deliberately split into stepAside() and authorise(reason) so that every approval is explicit (finding X1)`,
+      );
+    }
+    // 2026-08-15, finding X110. authorise() emitted "allow" and was deleted once X91
+    // removed its last caller: a record on disk cannot prove a human agreed, so the gate
+    // asks instead. Policing a dangerous capability is weaker than not having it, so this
+    // asserts the absence rather than confining the use.
+    if (/export function authorise\s*\(/.test(lib)) {
+      fail(
+        `INV17: lib.mjs exports authorise() again. It emitted permissionDecision "allow", which suppresses the user's permission prompt; it was deleted because no hook is entitled to that (findings X91, X110). Re-adding it means re-opening the permission architecture in decisions/2026-08-15-permission-architectures.md, not a one-line restoration`,
       );
     }
   } catch {

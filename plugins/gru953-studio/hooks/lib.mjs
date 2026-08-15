@@ -130,18 +130,28 @@ export function escalate(reason) {
   process.exit(0);
 }
 
-export function authorise(reason) {
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-        permissionDecisionReason: String(reason),
-      },
-    }) + '\n',
-  );
-  process.exit(0);
-}
+// 2026-08-15, findings X91 and X110. `authorise(reason)` used to live here and emit
+// `permissionDecision: 'allow'`, which does not mean "no objection" — it SUPPRESSES the
+// permission prompt the user would otherwise have seen.
+//
+// X91 removed its last caller. `gate.mjs` granted that on the strength of a record under
+// Dev-Memory/, and everything the gate can read, an agent on the same machine can write:
+// the token is a sha256 of the project path, and confirm-publish.mjs issued one with
+// stdin closed. So the record now downgrades a hard `deny` to an `ask` instead, and no
+// hook is entitled to emit `allow` at all.
+//
+// X110 then showed the invariant guarding this could only see one file — INV17 tested
+// `f === 'scan.mjs'`, while its own comment claimed "only gate.mjs may call it". Rather
+// than widen the guard, the capability is DELETED: a function whose only permitted number
+// of callers is zero is dead code that exists to be misused. Removing a dangerous
+// capability beats policing it, which is the lesson of this whole round of findings.
+//
+// INV17 now asserts this absence in both directions — no hook calls authorise(), and
+// lib.mjs does not export it. Reproduction: hooks/test/repro/X110-no-blanket-approval.mjs.
+//
+// If a genuine need for `allow` ever arises, re-adding it is a deliberate decision with
+// its own reasoning, not a one-line restoration: it means re-opening the permission
+// architecture recorded in decisions/2026-08-15-permission-architectures.md.
 export function deny(reason) {
   process.stdout.write(
     JSON.stringify({
