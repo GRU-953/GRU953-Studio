@@ -316,7 +316,39 @@ function goPublicConfirmed(studioRoot) {
 // Anything that could run a second command — a separator, a pipe, a background
 // `&`, a newline, or a substitution — means this is not the single confirmed
 // action, and the decision goes to the user instead of being granted silently.
-const MULTI_COMMAND_RE = /[;&|\n]|\$\(|`/;
+//
+// 2026-08-15, finding X107 (High, reproduced). This read `/[;&|\n]|\$\(|`/` and so
+// caught `$( )` and backticks but NOT bash process substitution, `<( )` and `>( )`.
+// Bash executes the inside of a process substitution as a genuine second command:
+//
+//     bash -c 'echo "outer saw: $1"' _ <(echo "INNER RAN" >&2)
+//       INNER RAN
+//       outer saw: /dev/fd/12
+//
+// So `git push origin main <(rm -rf …)` was judged a single confirmed action and
+// granted `allow` — and `allow` does not mean "no objection", it SUPPRESSES the
+// permission prompt the user would otherwise have seen, for the whole string. The
+// comment above already named "a substitution" as disqualifying, so the intent was
+// right and only the pattern was short; X107 is a gap, not a missing feature.
+//
+// Chained with X91/X100 (the approval token is self-issuable — sha256 of the
+// project path, and confirm-publish.mjs issues one with stdin closed) this was the
+// most serious item on the register: self-issue a token, hide anything inside
+// `<(…)`, receive a silent allow. Fixing this closes the second half of that chain.
+//
+// NOT the gap disclosed at hooks.test.mjs:1914 — that is `isPushCapable` failing to
+// SEE a hidden push, which fails safe to a normal prompt. This ran the other way.
+//
+// Deliberately NOT widened to bare `<` or `>`. A plain redirect writes a file but
+// does not run a second command, which is what this guard is specified to catch;
+// `git push … > log.txt` still receives `allow` today. Whether an approval should
+// also cover redirection is a separate question, raised as X108 rather than settled
+// silently here — widening it would add prompts to ordinary use, and a gate that
+// cries wolf gets routed around (lesson L5).
+//
+// Reproduction: hooks/test/repro/X107-process-substitution.mjs — six cases, four of
+// them controls, red at the parent commit and green here.
+const MULTI_COMMAND_RE = /[;&|\n]|\$\(|<\(|>\(|`/;
 function authoriseOnlyIfSingleCommand(cmd, what, reason) {
   if (MULTI_COMMAND_RE.test(String(cmd))) {
     escalate(

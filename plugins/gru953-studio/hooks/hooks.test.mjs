@@ -8351,6 +8351,13 @@ for (const script of [
   // {allow, deny, ask, defer}. escalate() shipped 'escalate' — which is not a value —
   // from 2026-08-13 until this fix, so the F4 path rendered no decision at all.
   'X37-invalid-permission-decision.mjs',
+  // 2026-08-15: MULTI_COMMAND_RE caught `$( )` and backticks but not bash process
+  // substitution `<( )` / `>( )`, which bash also runs as a second command — so a push
+  // with one welded on was judged the single confirmed action and granted `allow`,
+  // suppressing the user's prompt for the whole string. Four of this reproduction's six
+  // cases are controls, so "it asks" cannot be produced by a gate that asks about
+  // everything.
+  'X107-process-substitution.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
