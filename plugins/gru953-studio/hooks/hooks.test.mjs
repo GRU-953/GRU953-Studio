@@ -8416,6 +8416,13 @@ for (const script of [
   // and "some entry runs scan.mjs" could be two DIFFERENT entries, leaving the safety
   // hooks wired to nothing a user types.
   'X116-X117-weaker-predicate.mjs',
+  // 2026-08-15: roster-check defaulted its two roots independently, so a bare invocation
+  // paired the plugin beside this script with any /roster/i baseline under the current
+  // directory. A foreign baseline of 5 blocked a healthy roster; a foreign baseline of 90
+  // passed a grown one — the false clean is why this was High. No rule in the data
+  // separates a legitimate pairing from an accidental one, so the caller must assert it by
+  // naming both roots. Control E holds the documented invocation.
+  'X114-cross-project-baseline.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
