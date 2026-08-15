@@ -21,25 +21,42 @@
 // the second table's assets never examined at all. The first table sets sawContentTable,
 // so the existing "no recognisable content table" failure never fires either.
 //
-// THE DISCRIMINATOR. A mistyped content table still matches most of its OTHER columns —
-// Source, Approved, Rights, Alt — while an unrelated table matches none of them. So:
+// THE FIX, SECOND ATTEMPT — and the first one was wrong.
 //
-//     0 or 1 recognised content columns, no asset/medium  -> genuinely unrelated, skip
-//     2 or more, but no asset/medium                      -> a content table with a typo, REPORT
+// The first fix GUESSED: it flagged any table matching two or more of the six content
+// columns while lacking asset/medium. An adversarial pass then showed that guess blocking
+// SEVEN of thirteen realistic auxiliary tables — `| Model | Status |`, `| Licence | Status |`,
+// `| Caption | Status |`, `| Origin | Status |`, `| By | Status |`, `| Usage | Status |` —
+// every one a false alarm on an ordinary content register, and this gate is one of the
+// seven blocking pre-flight checks, so each would stop a release. Two independent refuters
+// confirmed all seven were clean before the change, so all seven were regressions.
 //
-// The threshold is 2 rather than 1 deliberately: a references table headed
-// `| Source | URL |` matches exactly one, and must not be dragged in.
+// It is reverted. The precise fix is to tolerate the PLURAL in the recogniser:
+//
+//     asset:  /^(assets?|names?|files?|items?)$/i
+//     medium: /^(mediums?|media|types?|kinds?)$/i
+//
+// A mistyped register is then simply RECOGNISED, and its rows are validated on their
+// merits — so it now fails naming the real problems ("not approved", "no rights note")
+// rather than on a heuristic's opinion about what a table looks like. Recognition beats
+// guessing, and it cannot raise a false alarm, because a table that is not a content table
+// still matches nothing.
+//
+// The lesson, recorded because it cost a regression: before adding a heuristic to catch a
+// mis-spelling, ask whether the RECOGNISER can simply be made to accept it.
 //
 //   case                                                          required
 //   A  a correct register                                          clean    (control)
 //   B  correct register + "## Rejected drafts | Draft | Reason |"   clean    (control — the existing test)
-//   C  correct register + a references table | Source | URL |       clean    (control — threshold)
-//   D  correct register + | Assets | Media | Source | Approved |…   FAILS    <- X122
-//   E  ONLY a mistyped table, no correct one                        FAILS    (control — already worked)
+//   C  correct register + a references table | Source | URL |       clean    (control)
+//   F  correct register + | Model | Status |                        clean    (control — the regression)
+//   G  correct register + | Licence | Status |                      clean    (control — the regression)
+//   D  correct register + | Assets | Media | Source | Approved |...  FAILS   <- X122
+//   E  ONLY a mistyped table, no correct one                        FAILS    (control)
 //
-// Controls B and C are the ones that make this fix safe rather than merely strict: a gate
-// that blocked on any unfamiliar table would be a false-block generator, which is the
-// defect this file's own history is full of.
+// F and G matter most. They are the exact shapes the first fix broke, and they are held
+// here so that a future "improvement" reaching again for a looks-like-a-table heuristic
+// fails loudly instead of quietly stopping a release on a healthy register.
 //
 // Usage:
 //   node X122-mistyped-content-table.mjs                # asserts the FIXED state
@@ -132,6 +149,22 @@ if (E.status === 'clean') {
 console.log('  E  ONLY a mistyped table ............................. BLOCKED (as expected)');
 
 // ---- The defect --------------------------------------------------------------
+const REGRESSION_TABLES = {
+  'F  + | Model | Status |': '\n## Models used\n| Model | Status |\n| :-- | :-- |\n| gemini-2.5 | current |\n',
+  'G  + | Licence | Status |': '\n## Licences\n| Licence | Status |\n| :-- | :-- |\n| CC-BY | cleared |\n',
+};
+for (const [name, table] of Object.entries(REGRESSION_TABLES)) {
+  const v = verdict(GOOD_TABLE + table);
+  if (v.status !== 'clean') {
+    die(
+      `control ${name} failed: an ordinary auxiliary table caused ${v.status}. This is the exact ` +
+        `regression the first X122 fix introduced — this gate is a blocking pre-flight check, so a ` +
+        `false alarm here stops a release on a healthy register: ${v.problems[0] || ''}`,
+    );
+  }
+  console.log(`  ${name} .......................... clean   (as expected)`);
+}
+
 const D = verdict(GOOD_TABLE + MISTYPED_TABLE);
 const caught = D.status !== 'clean';
 console.log(`  D  a good register + a MISTYPED content table ........ ${caught ? 'BLOCKED' : 'clean  '}${caught ? '' : '  <- X122'}`);

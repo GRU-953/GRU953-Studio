@@ -175,15 +175,27 @@ function main() {
   // discipline verify-progress.mjs and quality-gate.mjs apply.
   const rows = [];
   const ragged = [];
-  const mistypedTables = []; // X122: looks like a content table, but has no asset/medium column
   let sawContentTable = false;
   for (const table of parseTables(text)) {
     // 2026-07-29 maintenance fix, preserved: deEmphasise() so a bolded header
     // like "**Approved**" is recognised the same as "Approved".
     const find = (re) => table.headerCells.findIndex((h) => re.test(deEmphasise(h)));
     const found = {
-      asset: find(/^(asset|name|file|item)$/i),
-      medium: find(/^(medium|type|kind)$/i),
+      // 2026-08-15, finding X122, second attempt. A register headed
+      // `| Assets | Media | … |` — both key headers pluralised, the likeliest slip — was
+      // not recognised, so its rows were skipped in silence.
+      //
+      // The FIRST fix guessed: it flagged any table matching two or more of the six
+      // content columns while lacking asset/medium. An adversarial pass then showed that
+      // guess blocking seven of thirteen realistic auxiliary tables — `| Model | Status |`
+      // and `| Licence | Status |` among them — each a Publish-blocking false alarm on a
+      // perfectly ordinary content register. It was reverted.
+      //
+      // This is the precise fix instead: tolerate the plural. A mistyped register is then
+      // simply RECOGNISED and its rows validated on their merits, with no heuristic
+      // deciding what a table "looks like". Recognition beats guessing.
+      asset: find(/^(assets?|names?|files?|items?)$/i),
+      medium: find(/^(mediums?|media|types?|kinds?)$/i),
       source: find(/^(source|provenance|model|origin|by)$/i),
       approved: find(/^(approved|approval|status|sign[- ]?off)$/i),
       rights: find(/^(rights|licen[cs]e|usage)$/i),
@@ -193,32 +205,7 @@ function main() {
         /^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i,
       ),
     };
-    // 2026-08-15, finding X122 (High, reproduced). This was a bare
-    // `if (found.asset === -1 && found.medium === -1) continue;` and could not tell
-    // "a table about something else" from "a content table with a typo in its headers".
-    // So a register holding one good table and a second headed `| Assets | Media | … |`
-    // — plural, the likeliest slip — passed as clean with the second table's assets never
-    // examined. The good table sets sawContentTable, so the "no recognisable content
-    // table" failure below never fired either.
-    //
-    // The discriminator: a mistyped content table still matches most of its OTHER columns
-    // (Source, Approved, Rights, Alt), while a genuinely unrelated table matches none.
-    // Fewer than two matches means unrelated, and is skipped exactly as before; two or
-    // more with no asset/medium column means a content table nobody can read, and is
-    // reported.
-    //
-    // The threshold is two rather than one deliberately. A references table headed
-    // `| Source | URL |` matches exactly one, and blocking on it would make this gate a
-    // false-block generator — the defect this file's own history is full of, and the one
-    // hooks.test.mjs's "unrelated second table" case exists to prevent. Both are held as
-    // controls in hooks/test/repro/X122-mistyped-content-table.mjs.
-    if (found.asset === -1 && found.medium === -1) {
-      const recognisedColumns = Object.values(found).filter((i) => i !== -1).length;
-      if (recognisedColumns >= 2) {
-        mistypedTables.push(table.headerCells.join(' | '));
-      }
-      continue; // not a content table
-    }
+    if (found.asset === -1 && found.medium === -1) continue; // not a content table
     sawContentTable = true;
     for (const r of table.rows) {
       if (r.ragged) {
@@ -230,13 +217,6 @@ function main() {
   }
 
   const problems = [];
-  // X122: reported whether or not a readable content table was also present — the whole
-  // point is that one good table used to mask an unreadable one.
-  for (const headers of mistypedTables) {
-    problems.push(
-      `a table headed "${headers}" matches two or more content columns but has no asset/medium column, so every asset in it is skipped without being checked. If it is a content table, correct its headers (asset, medium, source, approved, rights, alt); if it is not, remove the columns that make it look like one (finding X122)`,
-    );
-  }
   if (!sawContentTable) {
     // CONTENT.md exists but has no readable asset table — treat as incomplete.
     problems.push(
