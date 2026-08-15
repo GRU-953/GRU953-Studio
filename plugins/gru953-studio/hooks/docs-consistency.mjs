@@ -723,6 +723,20 @@ if (indexHtmlText !== null) {
 // heading is unambiguous. README.md's "Latest version: X.Y.Z" line is
 // included because it is the version a reader sees before anything else.
 const changelogText = read(path.join(repoRoot, 'CHANGELOG.md'));
+
+// 2026-08-15, finding X118 (High, reproduced). Everything below is inside
+// `if (changelogText !== null)`, so deleting or renaming CHANGELOG.md did not merely
+// skip one check — it silently switched off every version cross-check in this gate at
+// once. The gate went on reporting `clean`, having verified nothing about versions.
+//
+// This is the same rule as X113 and X115: a gate that cannot read its input must never
+// claim its input is fine. The absence is now a failure in its own right, so the block
+// below is skipped only when it has already been reported.
+if (changelogText === null) {
+  fail(
+    `CHANGELOG.md is missing or unreadable, so every version cross-check in this gate is silently skipped — the release version, the manifests and the docs go unverified against each other (finding X118)`,
+  );
+}
 if (changelogText !== null) {
   const newest = changelogText.match(/^##\s+v?(\d+\.\d+\.\d+)\b/m);
   if (!newest) {

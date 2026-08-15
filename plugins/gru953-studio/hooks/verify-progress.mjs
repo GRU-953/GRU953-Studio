@@ -46,10 +46,49 @@ import {
 
 function main() {
   const root = process.argv[2] || process.cwd();
-  const file = path.join(root, 'Dev-Memory', 'PROGRESS.md');
-  if (!fs.existsSync(file)) {
-    console.log(JSON.stringify({ status: 'no PROGRESS.md found', file }));
+  const devMemory = path.join(root, 'Dev-Memory');
+  const file = path.join(devMemory, 'PROGRESS.md');
+
+  // 2026-08-15, finding X113 (High, reproduced). This used to be a single
+  // `if (!fs.existsSync(file))` that printed "no PROGRESS.md found" and exited 0. It
+  // collapsed two situations that are not the same:
+  //
+  //   * someone else's repository, where this gate must never interfere — correct to
+  //     stand down; and
+  //   * a real studio project whose PROGRESS.md is missing, where the gate cannot do the
+  //     job it exists for and said "fine" anyway.
+  //
+  // The second is the defect. A gate that cannot read its input must never claim its
+  // input is fine — the same rule as X106's swallowed parse error and X115/X118.
+  //
+  // The distinction is Dev-Memory/: its absence means "not a studio project", its
+  // presence means this IS one. Reproduction:
+  // hooks/test/repro/X113-X115-X118-absent-input.mjs, whose control proves the
+  // stand-down path still works — a fix that broke it would break the product for
+  // everyone who installs the plugin.
+  let inStudioProject = false;
+  try {
+    inStudioProject = fs.statSync(devMemory).isDirectory();
+  } catch {
+    inStudioProject = false;
+  }
+  if (!inStudioProject) {
+    console.log(
+      JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }),
+    );
     process.exit(0);
+  }
+  if (!fs.existsSync(file)) {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        problems: [
+          'Dev-Memory/ exists but Dev-Memory/PROGRESS.md is missing, so no task can be checked for the evidence a done task must carry. This gate cannot verify what it cannot read (finding X113)',
+        ],
+        file,
+      }),
+    );
+    process.exit(1);
   }
   // 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
   // fix — checked by execution rather than assumed: the table-row test below

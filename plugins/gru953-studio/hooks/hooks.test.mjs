@@ -8390,6 +8390,15 @@ for (const script of [
   // an invariant that could see one file. authorise() is deleted; this asserts it stays
   // deleted, in both directions — no hook calls it, and lib.mjs does not export it.
   'X110-no-blanket-approval.mjs',
+  // 2026-08-15: three gates reported success when the thing they read was simply not
+  // there — verify-progress exited 0 on a studio project with no PROGRESS.md,
+  // licence-scan reported clean for a directory that does not exist, and
+  // docs-consistency skipped EVERY version cross-check when CHANGELOG.md was absent.
+  // One rule broken in three places, so one reproduction covers all three, each with its
+  // own case and its own control. The controls matter more than usual here: "input
+  // absent" must fail, but "not a studio project" must still stand down, and a fix that
+  // confused the two would break the plugin inside every repository it is installed in.
+  'X113-X115-X118-absent-input.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

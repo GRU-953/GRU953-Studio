@@ -884,6 +884,38 @@ function scanOneDirectory(dir) {
 
 function main() {
   const root = process.argv[2] || process.cwd();
+
+  // 2026-08-15, finding X115 (High, reproduced). findManifestDirs() on a directory that
+  // does not exist returns nothing, and "nothing found" fell through to the clean report
+  // at the bottom of this function — so pointing this scanner at a path that is not
+  // there produced `{"status":"clean"}` and exit 0. A licence scan that never ran read
+  // as a licence scan that passed.
+  //
+  // The distinction that matters: a real directory with genuinely NO dependency
+  // manifests is legitimately clean — this plugin itself has none, and that must keep
+  // passing. What must fail is being unable to look at all. The reproduction at
+  // hooks/test/repro/X113-X115-X118-absent-input.mjs holds both sides.
+  let rootIsDirectory = false;
+  try {
+    rootIsDirectory = fs.statSync(root).isDirectory();
+  } catch {
+    rootIsDirectory = false;
+  }
+  if (!rootIsDirectory) {
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: `cannot scan ${root} — it does not exist or is not a directory, so no licence conclusion can be drawn about it (finding X115)`,
+          results: [],
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(1);
+  }
+
   const manifestDirs = findManifestDirs(root);
 
   const results = [];
