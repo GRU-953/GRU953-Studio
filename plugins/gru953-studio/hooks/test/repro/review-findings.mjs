@@ -200,7 +200,14 @@ cases.push({
     fs.rmSync(d, { recursive: true, force: true });
     return v;
   },
-  fixed: 'escalate',
+  // 2026-08-15 (X37): this expectation was 'escalate' — a value the PreToolUse contract
+  // does not define. The documented set is {allow, deny, ask, defer}; escalation is
+  // expressed as 'ask'. So this reproduction was PINNING THE DEFECT: it went green while
+  // the F4 path emitted an unrecognised value, which renders no decision at all and lets
+  // the call fall through to normal permission evaluation — the silent auto-mode approval
+  // F4 exists to prevent. Same failure mode the changelog records for X1, where 23 tests
+  // asserted the defective behaviour and nine audit rounds passed over it.
+  fixed: 'ask',
 });
 
 cases.push({

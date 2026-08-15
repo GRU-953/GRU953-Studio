@@ -40,7 +40,20 @@ import process from 'node:process';
 //
 //   | "allow"    | Permit the tool call to proceed without a permission prompt |
 //   | "deny"     | Block the tool call ...                                     |
-//   | "escalate" | Show the permission prompt to the user, even in auto mode    |
+//   | "ask"      | Prompt the user to confirm                                  |
+//   | "defer"    | Exit gracefully so the tool can be resumed later            |
+//
+// Those four are the WHOLE set (hooks.md:987, :1708, :1717 — precedence runs
+// deny > defer > ask > allow). Corrected 2026-08-15: this table previously listed
+// a fifth value, "escalate", which does not exist. The word appears exactly once
+// in the entire document, at hooks.md:1021, inside prose DESCRIBING what "ask"
+// does — "allow, deny, or escalate to the user". That one descriptive word reads
+// exactly like a value name and sits in the events table, which is where an
+// implementer checking the API looks first. Do not reintroduce it: an
+// unrecognised value renders no decision at all, so the call falls through to
+// normal permission evaluation. Verified by fetching the raw hooks.md and
+// grepping it — three separate summarised fetches of that page each returned a
+// different answer for this field, so summaries are not evidence here.
 //
 //   "A hook that doesn't return JSON, or returns JSON without a
 //    permissionDecision, doesn't affect the permission flow; the call continues
@@ -85,17 +98,31 @@ export function stepAside() {
 // That is precisely the hazard X1 was raised against, and it contradicts
 // authorise()'s own contract: legitimate only where the user confirmed THIS EXACT
 // action. Rather than deny such commands outright — which would break ordinary
-// `git add … && git commit … && git push …` flows — the gate now ESCALATES them.
-// Per the documented contract, "escalate" shows the permission prompt to the user
-// even in auto mode: the token still proves intent, but the extra segments get a
-// human's eyes instead of a silent approval. This is the same
-// "escalate rather than guess" principle chosen for the wider architecture.
+// `git add … && git commit … && git push …` flows — the gate now ESCALATES them:
+// the token still proves intent, but the extra segments get a human's eyes
+// instead of a silent approval. This is the same "escalate rather than guess"
+// principle chosen for the wider architecture.
+//
+// NAMING TRAP, and the reason this function was broken from the day it was
+// written (2026-08-13 to 2026-08-15): "escalate" is the name of the PRINCIPLE,
+// not of the wire value. The contract expresses escalation as "ask". This
+// function emitted 'escalate' — an undocumented value — so it rendered no
+// decision, and the call fell through to normal permission evaluation. In an
+// interactive session that still prompts, so the bug was invisible; in auto mode
+// it is exactly the silent approval finding F4 exists to prevent, which is the
+// one case the comment above claims to cover.
+//
+// The function keeps its conceptual name deliberately — it is what the
+// architecture calls this move — but the emitted value must stay 'ask'.
+// `test/repro/X37-invalid-permission-decision.mjs` asserts the general invariant
+// (no hook may emit a permissionDecision outside the documented set), so this
+// class cannot recur if the platform later renames or adds a value.
 export function escalate(reason) {
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        permissionDecision: 'escalate',
+        permissionDecision: 'ask',
         permissionDecisionReason: String(reason),
       },
     }) + '\n',

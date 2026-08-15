@@ -8289,8 +8289,14 @@ test('the golden Dev-Memory fixture stays clean on all five project gates after 
 // every no-objection path. Per the documented PreToolUse contract that value
 // "permit[s] the tool call to proceed without a permission prompt", so
 // installing this plugin suppressed the user's own prompts for every non-push
-// shell command. The neutral action is to emit nothing at all; there is no
-// "defer" value in the contract. Reproduced in test/repro/X1-auto-approval.mjs.
+// shell command. The neutral action is to emit nothing at all.
+// Corrected 2026-08-15: this comment previously asserted there is no "defer"
+// value in the contract. There is — the documented set is {allow, deny, ask,
+// defer} (hooks.md:987, :1708, :1717). "defer" is simply the wrong tool here: it
+// is honoured only under `claude -p` in non-interactive mode, and only when the
+// turn makes a single tool call (hooks.md:1749, :1777). Emitting nothing remains
+// the correct neutral action; the reasoning for it was just wrong.
+// Reproduced in test/repro/X1-auto-approval.mjs.
 //
 // These three tests lock in the corrected shape: step aside by default,
 // authorise only on a freshly-confirmed token, and never approve anything a
@@ -8341,6 +8347,10 @@ for (const script of [
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',
+  // 2026-08-15: no hook may emit a permissionDecision outside the documented set
+  // {allow, deny, ask, defer}. escalate() shipped 'escalate' — which is not a value —
+  // from 2026-08-13 until this fix, so the F4 path rendered no decision at all.
+  'X37-invalid-permission-decision.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
