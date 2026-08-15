@@ -8408,6 +8408,14 @@ for (const script of [
   // guard the threshold, because a gate that blocked on any unfamiliar table would be a
   // false-block generator — which the "unrelated second table" test above already forbids.
   'X122-mistyped-content-table.mjs',
+  // 2026-08-15: two invariants that tested something weaker than the fact they claimed.
+  // X117 asserted a gate "runs in CI" by testing that its FILENAME appeared anywhere in
+  // ci.yml — a comment satisfied it, and this repo's ci.yml has exactly such a comment,
+  // so the step could have been deleted unnoticed. X116 computed matchers and commands
+  // over all PreToolUse entries and never correlated them, so "some entry covers Bash"
+  // and "some entry runs scan.mjs" could be two DIFFERENT entries, leaving the safety
+  // hooks wired to nothing a user types.
+  'X116-X117-weaker-predicate.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

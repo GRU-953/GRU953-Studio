@@ -450,13 +450,33 @@ if (hooksJsonText === null) {
       fail(
         `hooks.json's PreToolUse matcher no longer covers "Monitor" — a push-capable command run via the Monitor tool would bypass both scan.mjs and gate.mjs entirely (2026-07-12 Claude-Topics compliance fix regressed)`,
       );
-    const allCommands = preToolUse
-      .flatMap((e) => (Array.isArray(e.hooks) ? e.hooks : []))
-      .map((h) => String(h.command || ''));
-    if (!allCommands.some((c) => /scan\.mjs/.test(c)))
-      fail(`hooks.json no longer wires scan.mjs as a PreToolUse hook`);
-    if (!allCommands.some((c) => /gate\.mjs/.test(c)))
-      fail(`hooks.json no longer wires gate.mjs as a PreToolUse hook`);
+    // 2026-08-15, finding X116 (High, reproduced). `matchers` above and `allCommands`
+    // here were both computed over ALL PreToolUse entries and never correlated. So
+    // "some entry covers Bash" and "some entry runs scan.mjs" could be satisfied by two
+    // DIFFERENT entries, and scan.mjs need never run on a Bash command at all — which is
+    // exactly what these invariants exist to guarantee. Two true statements were standing
+    // in for the one structural fact that matters.
+    //
+    // Now correlated: for each required hook, find the entries that actually run it, and
+    // require at least one of THOSE entries to cover the tools the guard must cover.
+    // Reproduction: hooks/test/repro/X116-X117-weaker-predicate.mjs.
+    const REQUIRED_TOOLS = ['Bash', 'PowerShell', 'Monitor'];
+    for (const required of ['scan.mjs', 'gate.mjs']) {
+      const entriesRunningIt = preToolUse.filter((e) =>
+        (Array.isArray(e.hooks) ? e.hooks : []).some((h) => new RegExp(required.replace('.', '\\.')).test(String(h.command || ''))),
+      );
+      if (entriesRunningIt.length === 0) {
+        fail(`hooks.json no longer wires ${required} as a PreToolUse hook`);
+        continue;
+      }
+      const itsMatchers = entriesRunningIt.map((e) => String(e.matcher || ''));
+      const uncovered = REQUIRED_TOOLS.filter((t) => !matcherCoversTool(itsMatchers, t));
+      if (uncovered.length > 0) {
+        fail(
+          `hooks.json no longer wires ${required} under a matcher covering ${uncovered.join(', ')} — it is registered, but not for the tool(s) it exists to guard, so a push-capable command run that way bypasses it entirely (finding X116)`,
+        );
+      }
+    }
   }
 }
 
@@ -582,11 +602,32 @@ if (claudeMdText === null) {
   );
 }
 const ciYmlText = read(path.join(repoRoot, '.github', 'workflows', 'ci.yml'));
+
+// 2026-08-15, finding X117 (High, reproduced). The two checks below claim a gate RUNS in
+// CI. What they tested was that its FILENAME occurs somewhere in ci.yml — in a step, in a
+// job name, in a comment, anywhere. Delete the `run:` line and the check stayed quiet as
+// long as the name survived in prose.
+//
+// That is not hypothetical here: ci.yml carries a comment reading "docs-consistency.mjs's
+// lifecycle-stage-count check located its target paragraph with a literal \n\n…". That
+// comment alone satisfied the old test, so the step it guards could have been removed
+// today and nothing would have noticed.
+//
+// Comment lines are stripped before testing. A YAML parser would be stronger still, but
+// it would be a dependency, and this closes the demonstrated hole: prose no longer counts
+// as wiring. Reproduction: hooks/test/repro/X116-X117-weaker-predicate.mjs.
+const ciYmlCode =
+  ciYmlText === null
+    ? null
+    : ciYmlText
+        .split('\n')
+        .filter((line) => !/^\s*#/.test(line))
+        .join('\n');
 if (ciYmlText === null) {
   fail(
     `.github/workflows/ci.yml is missing or unreadable — cannot verify docs-consistency.mjs runs in CI`,
   );
-} else if (!/docs-consistency\.mjs/.test(ciYmlText)) {
+} else if (!/docs-consistency\.mjs/.test(ciYmlCode)) {
   fail(
     `.github/workflows/ci.yml no longer runs docs-consistency.mjs (2026-07-26 wiring regressed)`,
   );
@@ -832,7 +873,7 @@ if (claudeMdText === null) {
 }
 if (ciYmlText === null) {
   // Already reported by INV13's own null check — not repeated here.
-} else if (!/charter-check\.mjs/.test(ciYmlText)) {
+} else if (!/charter-check\.mjs/.test(ciYmlCode)) {
   fail(`.github/workflows/ci.yml no longer runs charter-check.mjs (2026-08-10 wiring regressed)`);
 }
 
