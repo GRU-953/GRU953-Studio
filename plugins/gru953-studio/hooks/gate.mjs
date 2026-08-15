@@ -40,7 +40,11 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
   stepAside,
-  authorise,
+  // 2026-08-15, finding X91: `authorise` is deliberately NO LONGER imported. This gate
+  // must never emit `allow`, because `allow` suppresses the user's permission prompt on
+  // the strength of a record the gate cannot attribute to a person. Removing the import
+  // rather than merely removing the call is the point — a future edit that reaches for
+  // it fails at load, instead of quietly reintroducing a silent approval.
   escalate,
   deny,
   readStdin,
@@ -349,16 +353,48 @@ function goPublicConfirmed(studioRoot) {
 // Reproduction: hooks/test/repro/X107-process-substitution.mjs — six cases, four of
 // them controls, red at the parent commit and green here.
 const MULTI_COMMAND_RE = /[;&|\n]|\$\(|<\(|>\(|`/;
-function authoriseOnlyIfSingleCommand(cmd, what, reason) {
+// 2026-08-15, finding X91 (High, reproduced). This function used to end in
+// `authorise(reason)` — `allow` — which SUPPRESSES the permission prompt the user
+// would otherwise have seen. It did so on the strength of a record under Dev-Memory/.
+//
+// That record cannot carry the weight. Everything this gate consults is the local
+// filesystem, so anything it can READ, an agent on the same machine can WRITE:
+//
+//   X91  the token is sha256("studio-publish:" + studioRoot); the project path is not
+//        a secret, so the record forges directly, without invoking anything
+//   X100 confirm-publish.mjs reads no stdin and takes no nonce — run with stdin closed
+//        it still issues a valid approval
+//
+// No better token fixes this. A nonce written to disk is a nonce the agent can read; a
+// nonce held in memory dies with the process. A hook cannot distinguish an agent from a
+// user on one filesystem, so "a human approved this" was never a claim this gate could
+// make. It was reimplementing, in a place the agent can reach, the one mechanism that
+// already works correctly: the platform's own prompt.
+//
+// So the record's job changed. It no longer grants silent permission — it downgrades a
+// hard `deny` to an `ask`. Forgery now buys nothing: the forger lands exactly where an
+// honest user lands, at the prompt. The guarantee stops being "a human approved this"
+// (never true) and becomes "a human is being asked" (always true).
+//
+// Cost, stated plainly: one confirmation per push that previously passed silently. That
+// is the whole of the behaviour change. It is not a cry-wolf risk (lesson L5) — pushing
+// is rare and consequential, and the prompt names the exact command.
+//
+// Reproduction: hooks/test/repro/X91-self-issued-token-never-allows.mjs
+function confirmOnlyIfSingleCommand(cmd, what, reason) {
   if (MULTI_COMMAND_RE.test(String(cmd))) {
     escalate(
       `studio gate: ${what} was confirmed for this project, but this command does more than that one thing ` +
         `(it contains a separator, pipe, background "&", newline or substitution), and an authorisation covers the ` +
         `WHOLE command. Asking you to confirm this exact command rather than approving it silently. ` +
-        `Running the ${what} on its own line will be authorised without this prompt.`,
+        `Running the ${what} on its own line will still ask you once, and only about that one command.`,
     );
   }
-  authorise(reason);
+  escalate(
+    `${reason} Confirm this push. The recorded ${what} is what allows this to be asked rather than refused ` +
+      `outright — but it is a file on this machine, so it cannot by itself prove you agreed. You are the ` +
+      `only thing that can.`,
+  );
 }
 
 function main() {
@@ -425,7 +461,7 @@ function main() {
   // proves a PRIVATE publish was confirmed.
   if (isGoPublicCommand(CMD)) {
     if (goPublicConfirmed(STUDIO_ROOT)) {
-      authoriseOnlyIfSingleCommand(
+      confirmOnlyIfSingleCommand(
         CMD,
         'going public',
         'studio gate: going public was explicitly confirmed for this project and the record is still within its time limit.',
@@ -445,7 +481,7 @@ function main() {
     checkpointConfirmed(STUDIO_ROOT) ||
     memoryPersistConfirmed(STUDIO_ROOT)
   ) {
-    authoriseOnlyIfSingleCommand(
+    confirmOnlyIfSingleCommand(
       CMD,
       'the push',
       'studio gate: a push authorisation (publish, per-phase checkpoint, or opt-in memory persistence) was explicitly confirmed for this project and is still within its time limit. Private push only.',

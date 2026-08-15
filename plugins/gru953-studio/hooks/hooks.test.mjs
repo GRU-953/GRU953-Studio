@@ -325,7 +325,7 @@ test('gate.mjs: allows a push after confirm-publish is recorded', () => {
   const c = spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
   assert.equal(c.status, 0);
   const r = runHook('gate.mjs', 'git push', dir);
-  assert.equal(r.decision, 'allow');
+  assert.equal(r.decision, 'ask', 'X91: a record on disk cannot prove you agreed, so it now buys a prompt, never a silent yes');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -478,7 +478,7 @@ test('gate.mjs: private-publish token does NOT authorise going public', () => {
   // After recording the go-public confirmation, it is allowed.
   spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
   const goPublic2 = runHook('gate.mjs', 'gh repo edit me/app --visibility public', dir);
-  assert.equal(goPublic2.decision, 'allow');
+  assert.equal(goPublic2.decision, 'ask', 'the go-public record moves this off deny and onto a prompt (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -521,7 +521,7 @@ test('gate.mjs: a `gh api` visibility-to-public write needs the go-public token,
   // After recording the go-public confirmation, it is allowed.
   spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
   const allowed = runHook('gate.mjs', 'gh api -X PATCH repos/me/app -f visibility=public', dir);
-  assert.equal(allowed.decision, 'allow');
+  assert.equal(allowed.decision, 'ask', 'the go-public record moves this off deny and onto a prompt (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -1602,7 +1602,7 @@ test('gate.mjs: a stale publish/go-public confirmation past its TTL is no longer
   // a freshly-recorded confirmation must still work.
   spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
   const fresh = runHook('gate.mjs', 'git push origin main', dir);
-  assert.equal(fresh.decision, 'allow', 'a fresh confirmation must still be honoured');
+  assert.equal(fresh.decision, 'ask', 'a fresh confirmation must still be honoured — honoured now means asked, not silently allowed (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -3246,7 +3246,7 @@ test('gate.mjs: a checkpoint token authorises a private push', () => {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'deny', 'no token => deny');
   spawnSync(NODE, [path.join(HERE, 'confirm-checkpoint.mjs'), dir], { encoding: 'utf8' });
-  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'checkpoint token => allow a private push');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'ask', 'checkpoint token => a private push is asked, not refused (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -3266,7 +3266,7 @@ test('gate.mjs: a checkpoint token is distinct — a publish token does not requ
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   // publish token alone still authorises a private push (unchanged behaviour)
   spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
-  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'publish token still authorises a private push');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'ask', 'publish token still puts a private push on the permitted path — asked, not refused (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -3352,7 +3352,7 @@ test('gate.mjs: a memory-persist token authorises a private push but NEVER going
   const dir = mkTmp('gru-mempersist-gate-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   spawnSync(NODE, [path.join(HERE, 'confirm-memory-persist.mjs'), dir], { encoding: 'utf8' });
-  assert.equal(runHook('gate.mjs', 'git push origin memory', dir).decision, 'allow', 'private push allowed by the persist token');
+  assert.equal(runHook('gate.mjs', 'git push origin memory', dir).decision, 'ask', 'the persist token puts a private push on the permitted path (X91)');
   for (const c of ['gh repo edit me/app --visibility public', 'gh repo create me/app --public']) {
     assert.equal(runHook('gate.mjs', c, dir).decision, 'deny', `persist token must never authorise go-public: "${c}"`);
   }
@@ -3380,7 +3380,7 @@ test('gate.mjs: a publish token does NOT authorise going public (2026-08 R2 Phas
   const dir = mkTmp('gru-publish-nogo-public-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
-  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow', 'sanity: the publish token itself must still authorise an ordinary push');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'ask', 'sanity: the publish token must still put an ordinary push on the permitted path (X91)');
   for (const c of ['gh repo edit me/app --visibility public', 'gh repo create me/app --public', 'gh repo edit me/app --visibility="public"']) {
     assert.equal(runHook('gate.mjs', c, dir).decision, 'deny', `publish token must never authorise go-public: "${c}"`);
   }
@@ -3400,7 +3400,7 @@ test('gate.mjs: all three ordinary-push tokens together still do not authorise g
   assert.equal(runHook('gate.mjs', 'gh repo edit me/app --visibility public', dir).decision, 'deny', 'no combination of the three ordinary-push tokens may substitute for GO-PUBLIC-APPROVED');
   // Adding the real go-public token now, alongside the other three, must allow it.
   spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
-  assert.equal(runHook('gate.mjs', 'gh repo edit me/app --visibility public', dir).decision, 'allow', 'the real go-public token must still work once actually present');
+  assert.equal(runHook('gate.mjs', 'gh repo edit me/app --visibility public', dir).decision, 'ask', 'the real go-public token must still work once present — it asks rather than refuses (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -3448,14 +3448,14 @@ for (const cfg of TOKEN_CONFIGS) {
   test(`gate.mjs: ${cfg.record} still validates with CRLF line endings`, () => {
     const dir = mkTmp('gru-tok-crlf-');
     writeTokenFile(dir, cfg, { eol: '\r\n' });
-    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'allow', `${cfg.record} with CRLF endings must still be honoured`);
+    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'ask', `${cfg.record} with CRLF endings must still be honoured — as a prompt, not a silent yes (X91)`);
     fs.rmSync(dir, RM_OPTS);
   });
 
   test(`gate.mjs: ${cfg.record} still validates with a leading UTF-8 BOM`, () => {
     const dir = mkTmp('gru-tok-bom-');
     writeTokenFile(dir, cfg, { bom: true });
-    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'allow', `${cfg.record} with a leading BOM must still be honoured`);
+    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'ask', `${cfg.record} with a leading BOM must still be honoured — as a prompt, not a silent yes (X91)`);
     fs.rmSync(dir, RM_OPTS);
   });
 }
@@ -3467,7 +3467,7 @@ for (const cfg of [TOKEN_CONFIGS[1], TOKEN_CONFIGS[3]]) {
   test(`gate.mjs: ${cfg.record} just inside its 60-minute TTL is honoured, just outside is not`, () => {
     const dir = mkTmp('gru-tok-ttl-');
     writeTokenFile(dir, cfg, { issuedMs: Date.now() - 59 * 60 * 1000 });
-    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'allow', `${cfg.record} at 59 minutes old must still be honoured`);
+    assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'ask', `${cfg.record} at 59 minutes old must still be honoured — as a prompt (X91)`);
     writeTokenFile(dir, cfg, { issuedMs: Date.now() - 61 * 60 * 1000 });
     assert.equal(runHook('gate.mjs', cfg.pushCmd, dir).decision, 'deny', `${cfg.record} at 61 minutes old must no longer be honoured`);
     fs.rmSync(dir, RM_OPTS);
@@ -3547,8 +3547,8 @@ test('gate.mjs: the same injected prose does not break a legitimate push when a 
   writeTokenFile(dir, TOKEN_CONFIGS[0]); // a genuine PUBLISH-APPROVED token
   assert.equal(
     runHook('gate.mjs', 'git push origin main', dir).decision,
-    'allow',
-    'a genuine token must still authorise the push regardless of unrelated injected prose elsewhere in Dev-Memory',
+    'ask',
+    'a genuine token must still keep the push off deny regardless of unrelated injected prose elsewhere in Dev-Memory — X91: it reaches the prompt, it is not silently allowed',
   );
   fs.rmSync(dir, RM_OPTS);
 });
@@ -5570,7 +5570,7 @@ test('gate.mjs: gh api default-visibility repo creation needs the go-public toke
   assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app', dir).decision, 'deny', 'default-visibility repo creation defaults to public and must need the go-public token');
   assert.equal(runHook('gate.mjs', 'gh api /user/repos -fname=app', dir).decision, 'deny', 'attached-shorthand repo creation must also need go-public');
   // explicitly private repo creation rides the ordinary private-publish token.
-  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'allow', 'an explicitly-private repo creation is a private push');
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'ask', 'an explicitly-private repo creation stays on the private path — asked, not refused (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -5849,7 +5849,7 @@ test('gate.mjs: an incidental "private=..." inside an unrelated field VALUE does
   spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' }); // private-publish token only
   assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f description="toggle private=true to hide"', dir).decision, 'deny', 'a fake private= buried in a description value must not suppress the go-public gate');
   // a REAL private field still rides the ordinary private-publish token
-  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'allow', 'an explicitly-private repo create is a private push');
+  assert.equal(runHook('gate.mjs', 'gh api -X POST /user/repos -f name=app -f private=true', dir).decision, 'ask', 'an explicitly-private repo create stays on the private path — asked, not refused (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -6045,7 +6045,7 @@ test('gate.mjs: gh api attached-equals field forms (--field=visibility=public) s
     assert.equal(runHook('gate.mjs', cmd, dir).decision, 'deny', `attached-equals go-public must be gated: "${cmd}"`);
   }
   // a non-visibility private edit is an ordinary private push (allowed on the publish token)
-  assert.equal(runHook('gate.mjs', 'gh api -X PATCH repos/me/app --field=description=hi', dir).decision, 'allow', 'a non-visibility edit rides the publish token');
+  assert.equal(runHook('gate.mjs', 'gh api -X PATCH repos/me/app --field=description=hi', dir).decision, 'ask', 'a non-visibility edit still rides the publish token — asked, not refused (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -6283,7 +6283,7 @@ test('gate.mjs: gh repo create --internal (standalone flag) needs the go-public 
   assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --internal', dir).decision, 'deny', 'internal visibility is non-private and must need the go-public token');
   assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --public', dir).decision, 'deny', 'control: --public must need go-public');
   assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --visibility internal', dir).decision, 'deny', 'control: --visibility internal must need go-public');
-  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --private', dir).decision, 'allow', '--private must stay allowed on a private token');
+  assert.equal(runHook('gate.mjs', 'gh repo create myorg/app --private', dir).decision, 'ask', '--private must stay on the permitted path with a private token (X91)');
   fs.rmSync(dir, RM_OPTS);
   // and a routine checkpoint token must not authorise it either
   const d2 = mkTmp('gru-gate-r12-internal-ckpt-');
@@ -6365,8 +6365,8 @@ test('gate.mjs: an expired token cannot be revalidated by an unrelated fresh ISS
 
   // Control: correctly paired and fresh must still work.
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `${token}\nISSUED:${fresh}\n`);
-  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'allow',
-    'a correctly paired, in-date token must still authorise the push');
+  assert.equal(runHook('gate.mjs', 'git push origin main', dir).decision, 'ask',
+    'a correctly paired, in-date token must still reach the prompt rather than a refusal (X91)');
 
   // Control: correctly paired but expired must still be refused.
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PUBLISH-APPROVED'), `${token}\nISSUED:${expired}\n`);
@@ -7944,7 +7944,7 @@ test('gate.mjs: the JSON-body go-public fix does not over-block writes that cann
     'git push origin main',
   ]) {
     const r = runHook('gate.mjs', cmd, dir);
-    assert.equal(r.decision, 'allow', `the private-publish token must still authorise this: ${cmd}`);
+    assert.equal(r.decision, 'ask', `the private-publish token must still keep this off deny: ${cmd} (X91)`);
   }
   fs.rmSync(dir, RM_OPTS);
 });
@@ -7958,7 +7958,7 @@ test('gate.mjs: a JSON-body visibility change is allowed once GO-PUBLIC-APPROVED
   const cmd = `gh api -X PATCH repos/me/app --input - <<< '{"visibility":"public"}'`;
   assert.equal(runHook('gate.mjs', cmd, dir).decision, 'deny', 'must be denied on the private token alone');
   spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
-  assert.equal(runHook('gate.mjs', cmd, dir).decision, 'allow', 'must be allowed once the go-public token is recorded');
+  assert.equal(runHook('gate.mjs', cmd, dir).decision, 'ask', 'must reach the prompt once the go-public token is recorded (X91)');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -8358,6 +8358,14 @@ for (const script of [
   // cases are controls, so "it asks" cannot be produced by a gate that asks about
   // everything.
   'X107-process-substitution.mjs',
+  // 2026-08-15: this gate emitted `allow` — which SUPPRESSES the user's permission
+  // prompt — on the strength of a file under Dev-Memory/. That file cannot carry the
+  // weight: the token is a sha256 of the project path, and confirm-publish.mjs issues
+  // one with stdin closed. Everything the gate reads is the local filesystem, so
+  // anything it can read an agent can write, and no better token fixes that. The record
+  // now downgrades a hard refusal to a prompt instead. Five cases, three of them
+  // controls, so "it asks" cannot be produced by a gate that asks about everything.
+  'X91-self-issued-token-never-allows.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
@@ -8440,7 +8448,7 @@ test('X1: gate.mjs authorises ONLY on a freshly-confirmed token, and still denie
 
   spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
   const authorised = runHook('gate.mjs', 'git push origin main', dir);
-  assert.equal(authorised.decision, 'allow', 'a freshly-confirmed push must still be authorised');
+  assert.equal(authorised.decision, 'ask', 'a freshly-confirmed push must still reach the prompt rather than a refusal (X91)');
   const reason = JSON.parse(authorised.stdout).hookSpecificOutput.permissionDecisionReason;
   assert.ok(
     typeof reason === 'string' && reason.length > 0,

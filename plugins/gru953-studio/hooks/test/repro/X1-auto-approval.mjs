@@ -107,14 +107,26 @@ console.log('\n  B. Control: an unauthorised push must still be DENIED');
   console.log(`     ${ok ? 'ok  ' : 'FAIL'}  gate.mjs  ${got}  git push origin main`);
 }
 
-// A push WITH a freshly-recorded token must still be authorised. This is the one
-// place an explicit "allow" is legitimate: the user confirmed seconds earlier and
-// the token is bound to this project's path and expires.
-console.log('\n  C. Control: a freshly-confirmed push must still be authorised');
+// A push WITH a freshly-recorded token must still reach the user rather than being
+// refused outright.
+//
+// 2026-08-15, finding X91. This block used to expect "allow", above the comment:
+// "This is the one place an explicit allow is legitimate: the user confirmed seconds
+// earlier and the token is bound to this project's path and expires."
+//
+// That sentence was the defect, written down as a justification. The token proves
+// neither that a user confirmed nor that seconds had passed — it is
+// sha256("studio-publish:" + projectPath), computable by any caller, and
+// confirm-publish.mjs issues one with stdin closed. Binding and expiry are real, but
+// they bound WHICH project and FOR HOW LONG, never WHETHER A PERSON AGREED.
+//
+// The expectation is now "ask": the record keeps the push off `deny`, and the person
+// is still the one who says yes.
+console.log('\n  C. Control: a freshly-confirmed push must still reach the user, not be refused');
 {
   spawnSync(NODE, [path.join(HOOKS, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
   const got = decisionFor('gate.mjs', 'git push origin main', dir);
-  const ok = got === 'allow';
+  const ok = got === 'ask';
   if (!ok) failures++;
   console.log(
     `     ${ok ? 'ok  ' : 'FAIL'}  gate.mjs  ${got}  git push origin main (token present)`,

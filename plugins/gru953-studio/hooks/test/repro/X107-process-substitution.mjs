@@ -65,7 +65,21 @@ function die(msg) {
   process.exit(1);
 }
 
-/** Run gate.mjs on `cmd` from a throwaway studio root and return its decision. */
+// 2026-08-15, finding X91. This reproduction originally distinguished its cases by the
+// decision alone: a plain push returned `allow` and a multi-command push returned `ask`.
+// X91's fix removed `allow` from this gate entirely — an approval record on disk cannot
+// prove a person agreed, so it now buys a prompt rather than silence.
+//
+// That closes X107 twice over (nothing is silently allowed, so process substitution
+// cannot obtain a silent allow either) but it also collapses this test's signal: every
+// case now returns `ask`, and a test where every branch expects the same answer proves
+// nothing at all.
+//
+// So the assertion moved to the gate's REASON, which still differs. The multi-command
+// path says the command "does more than that one thing"; the single-command path does
+// not. That is the distinction this reproduction exists to defend, and it survives.
+
+/** Run gate.mjs on `cmd` and return { decision, reason }. */
 function decide(cmd, withToken) {
   const root = mkdtempSync(join(tmpdir(), 'x107-'));
   try {
@@ -80,38 +94,62 @@ function decide(cmd, withToken) {
     const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: cmd }, cwd: root });
     const r = spawnSync(NODE, [join(HOOKS, 'gate.mjs')], { input, encoding: 'utf8' });
     const out = `${r.stdout || ''}`.trim();
-    if (!out) return 'no decision';
+    if (!out) return { decision: 'no decision', reason: '' };
     try {
-      return JSON.parse(out)?.hookSpecificOutput?.permissionDecision ?? 'unparsed';
+      const d = JSON.parse(out)?.hookSpecificOutput ?? {};
+      return { decision: d.permissionDecision ?? 'unparsed', reason: String(d.permissionDecisionReason ?? '') };
     } catch {
-      return 'unparsed';
+      return { decision: 'unparsed', reason: out };
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
+// The sentence the multi-command branch emits and the single-command branch does not.
+const MULTI_MARKER = 'does more than that one thing';
+
+// `multi` is the real assertion now: does the gate treat this as MORE than one command?
 const CASES = [
-  { cmd: 'git push origin main', token: true, want: 'allow', role: 'the gate must still work' },
-  { cmd: 'git push origin main && rm -rf /tmp/x', token: true, want: 'ask', role: 'control: && is caught' },
-  { cmd: 'git push origin main $(id)', token: true, want: 'ask', role: 'control: $( ) is caught' },
-  { cmd: 'git push origin main <(id)', token: true, want: 'ask', role: 'X107 — process substitution in' },
-  { cmd: 'git push origin main >(cat)', token: true, want: 'ask', role: 'X107 — process substitution out' },
-  { cmd: 'git push origin main <(id)', token: false, want: 'deny', role: 'control: token is load-bearing' },
+  { cmd: 'git push origin main', token: true, want: 'ask', multi: false, role: 'a lone push is ONE command' },
+  { cmd: 'git push origin main && rm -rf /tmp/x', token: true, want: 'ask', multi: true, role: 'control: && is caught' },
+  { cmd: 'git push origin main $(id)', token: true, want: 'ask', multi: true, role: 'control: $( ) is caught' },
+  { cmd: 'git push origin main <(id)', token: true, want: 'ask', multi: true, role: 'X107 — process substitution in' },
+  { cmd: 'git push origin main >(cat)', token: true, want: 'ask', multi: true, role: 'X107 — process substitution out' },
+  { cmd: 'git push origin main <(id)', token: false, want: 'deny', multi: null, role: 'control: token is load-bearing' },
 ];
 
 let controlsOk = true;
+let markerSeen = false;
 const defects = [];
 
 for (const c of CASES) {
-  const got = decide(c.cmd, c.token);
-  const ok = got === c.want;
+  const { decision, reason } = decide(c.cmd, c.token);
+  const sawMulti = reason.includes(MULTI_MARKER);
+  if (sawMulti) markerSeen = true;
+  const decisionOk = decision === c.want;
+  const multiOk = c.multi === null || sawMulti === c.multi;
+  const ok = decisionOk && multiOk;
   const isX107 = c.role.startsWith('X107');
-  console.log(`  ${ok ? 'ok  ' : 'BAD '} want=${c.want.padEnd(5)} got=${got.padEnd(12)} ${c.cmd}   (${c.role})`);
-  if (!ok) {
-    if (isX107) defects.push(c.cmd);
-    else controlsOk = false;
-  }
+  console.log(
+    `  ${ok ? 'ok  ' : 'BAD '} ${decision.padEnd(11)} multi=${String(sawMulti).padEnd(5)} ${c.cmd}   (${c.role})`,
+  );
+  if (ok) continue;
+  // The X107 defect now looks like this: decision is right, but the gate did NOT
+  // recognise the command as more than one thing.
+  if (isX107 && decisionOk && !sawMulti) defects.push(c.cmd);
+  else controlsOk = false;
+}
+
+// Guard against the whole test silently becoming vacuous: if the multi-command branch
+// were deleted outright, no case would carry the marker and every X107 row would look
+// like a defect for the wrong reason — or, worse, a future refactor could drop the
+// marker text and this file would report a defect that is really a renamed message.
+if (!markerSeen) {
+  die(
+    `no case produced the multi-command message ("${MULTI_MARKER}"). Either that branch was ` +
+      'removed, or its wording changed. Re-read gate.mjs before trusting any result above.',
+  );
 }
 
 if (!controlsOk) {
@@ -129,17 +167,24 @@ if (expectBug) {
         'reproduction that can no longer detect anything.',
     );
   }
-  console.log(`\nX107 REPRODUCED: ${defects.length} process-substitution form(s) silently allowed.`);
+  console.log(
+    `\nX107 REPRODUCED: ${defects.length} process-substitution form(s) not recognised as a second command.`,
+  );
   process.exit(0);
 }
 
 if (defects.length === 0) {
-  console.log('\nPASS: process substitution now goes to the user, and the ordinary push still works.');
+  console.log(
+    '\nPASS: process substitution is recognised as a second command, a lone push is not, ' +
+      'and both still reach the user rather than being approved silently.',
+  );
   process.exit(0);
 }
 
 die(
-  `X107 is OPEN: ${defects.join(' and ')} received a silent allow. ` +
+  `X107 is OPEN: ${defects.join(' and ')} was not recognised as more than one command. ` +
     'The guard catches $( ) and backticks but not <( ) or >( ), which bash also executes as a ' +
-    'second command. Fix: add <( and >( to MULTI_COMMAND_RE in gate.mjs.',
+    'second command. Fix: add <( and >( to MULTI_COMMAND_RE in gate.mjs. ' +
+    'Note since X91: this no longer yields a SILENT approval — nothing does — but the user is ' +
+    'still told this is one command when it is two, which is the guarantee at stake.',
 );
