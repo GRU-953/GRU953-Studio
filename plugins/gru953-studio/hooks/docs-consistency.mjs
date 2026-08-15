@@ -496,6 +496,82 @@ if (mcpPackageJsonRaw !== null) {
   }
 }
 
+// 2026-08-15, finding X109 (Medium, reproduced). The check above reads the manifest and
+// nothing else, so third-party code that is never DECLARED is never seen: a compiled
+// `.node`/`.dylib`, a bundled `node_modules/`, or a library pasted in as a `.js` file
+// all leave the manifest empty while CONTRIBUTING.md and 18 hook headers go on calling
+// zero third-party dependencies "a mechanically-checked property".
+//
+// WHY AN ALLOWLIST RATHER THAN A LIST OF BANNED EXTENSIONS. Looking for `.node`, `.so`,
+// `.dll` and friends is the exact failure mode this family of findings is about — a
+// check that only looks for what somebody thought of. X86 checked references but not
+// coverage; X99 checked the register's shape but never compared it with its source; X106
+// checked whether a sentence was honest rather than whether the rule held. So this is
+// inverted: the plugin ships markdown, stdlib-only ES modules, a little JSON and a
+// licence, and anything ELSE fails rather than passing unexamined.
+//
+// The cost is deliberate: a legitimately new file type makes this fail until someone
+// widens PERMITTED on purpose. That is the intended behaviour, and the message below
+// says exactly how — an over-strict gate nobody can understand is one that gets switched
+// off (lesson L5).
+//
+// NOT COVERED, and deliberately not half-covered: a dependency fetched over the network
+// at run time. `hooks/openrouter-models.mjs` legitimately uses Node's built-in fetch to
+// read a public model catalogue, so "this plugin never fetches anything" is NOT a
+// property this product has and must not be asserted as one. Disclosed in RESIDUALS.md.
+//
+// Reproduction: hooks/test/repro/X109-vendored-dependency.mjs — five cases, two controls,
+// one of which is the real tree.
+const PERMITTED_EXTENSIONS = new Set(['.md', '.mjs', '.json']);
+const PERMITTED_FILENAMES = new Set(['LICENSE', 'LICENCE']);
+const VENDOR_DIRECTORY_NAMES = new Set(['node_modules', 'vendor', 'third_party', 'third-party']);
+
+function collectForeignArtefacts(dir, rel, foreign, vendorDirs) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    // Unreadable directory: report it rather than treating it as empty. A gate that
+    // cannot read its input must never claim its input is fine (the C8 rule, and the
+    // second half of X106).
+    foreign.push(`${rel || '.'} (unreadable — cannot verify its contents)`);
+    return;
+  }
+  for (const entry of entries) {
+    const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (VENDOR_DIRECTORY_NAMES.has(entry.name)) {
+        vendorDirs.push(childRel);
+        continue; // named explicitly; no need to list every file inside it
+      }
+      collectForeignArtefacts(path.join(dir, entry.name), childRel, foreign, vendorDirs);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (PERMITTED_FILENAMES.has(entry.name)) continue;
+    const ext = path.extname(entry.name);
+    if (PERMITTED_EXTENSIONS.has(ext)) continue;
+    foreign.push(childRel);
+  }
+}
+
+{
+  const foreign = [];
+  const vendorDirs = [];
+  collectForeignArtefacts(pluginRoot, '', foreign, vendorDirs);
+  if (vendorDirs.length > 0) {
+    fail(
+      `a vendored-dependency directory exists inside the plugin: ${vendorDirs.join(', ')} — third-party code copied into the tree is still a third-party dependency, and this plugin's zero-dependency property is asserted in CONTRIBUTING.md and in 18 shipped hook headers (X109)`,
+    );
+  }
+  if (foreign.length > 0) {
+    const shown = foreign.slice(0, 10).join(', ');
+    fail(
+      `the plugin tree contains ${foreign.length} file(s) that are not markdown, ES modules, JSON or a licence: ${shown}${foreign.length > 10 ? ', …' : ''} — this plugin ships only those types, so anything else may be vendored third-party code, which its zero-dependency property forbids (X109). If the file is legitimate, add its extension to PERMITTED_EXTENSIONS in this file, deliberately and in the same commit that adds the file`,
+    );
+  }
+}
+
 // ---- DC7: dangling cross-file "see `path`" references (2026-07-27 R1 Phase 1.3, new) --
 // No prior check verified this at all — a "see `some/file.md`" pointer whose
 // target moved or was deleted became invisible prose, silently. Scoped

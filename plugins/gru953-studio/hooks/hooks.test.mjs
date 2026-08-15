@@ -8375,6 +8375,14 @@ for (const script of [
   // all. Registered only now that both halves are fixed; while the finding was open this
   // reproduction was deliberately left out so the suite stayed honest.
   'X106-disarmable-dependency-gate.mjs',
+  // 2026-08-15: the zero-dependency check read the manifest and nothing else, so code
+  // that is never DECLARED was never seen — a compiled binary, a bundled node_modules/,
+  // or a library pasted in as a .js file. Now checked by allowlist rather than by a list
+  // of banned extensions, because a banned list only finds what somebody thought of,
+  // which is the failure mode X86, X99 and X106 all share. Two of its five cases are
+  // controls, and one of those runs against the REAL plugin tree — so a version of this
+  // check that failed on the product itself could never pass here.
+  'X109-vendored-dependency.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
