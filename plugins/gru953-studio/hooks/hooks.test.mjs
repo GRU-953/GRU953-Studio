@@ -8399,6 +8399,15 @@ for (const script of [
   // absent" must fail, but "not a studio project" must still stand down, and a fix that
   // confused the two would break the plugin inside every repository it is installed in.
   'X113-X115-X118-absent-input.mjs',
+  // 2026-08-15: `if (found.asset === -1 && found.medium === -1) continue;` could not tell
+  // a table about something else from a content table with a typo in its headers, so a
+  // register holding one good table and a second headed `| Assets | Media | … |` passed
+  // as clean with the second table's assets never examined. Now discriminated by how many
+  // OTHER content columns match: fewer than two is unrelated and still skipped silently,
+  // two or more is a content table nobody can read and is reported. Two of its five cases
+  // guard the threshold, because a gate that blocked on any unfamiliar table would be a
+  // false-block generator — which the "unrelated second table" test above already forbids.
+  'X122-mistyped-content-table.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
