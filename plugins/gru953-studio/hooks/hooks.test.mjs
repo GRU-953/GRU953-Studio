@@ -8366,6 +8366,15 @@ for (const script of [
   // now downgrades a hard refusal to a prompt instead. Five cases, three of them
   // controls, so "it asks" cannot be produced by a gate that asks about everything.
   'X91-self-issued-token-never-allows.mjs',
+  // 2026-08-15: DC6 read `if (claimsZeroDependencies && hasRealDependency) fail(...)`,
+  // so it did not check the zero-dependency property — it checked whether README.md was
+  // lying about it, and deleting the sentence disarmed the guard. Its swallowed parse
+  // error was the same mistake again: "cannot read" was reported as "fine", and the
+  // comment excusing it ("repo-integrity's / licence-scan's concern") was false —
+  // licence-scan reads the ROOT manifest and repo-integrity reads no dependencies at
+  // all. Registered only now that both halves are fixed; while the finding was open this
+  // reproduction was deliberately left out so the suite stayed honest.
+  'X106-disarmable-dependency-gate.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

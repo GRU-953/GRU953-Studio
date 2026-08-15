@@ -446,25 +446,54 @@ for (const f of allMd) {
 // package.json is ever reintroduced with a real dependency while README
 // still makes this claim, that is a genuine regression of finding 29, not a
 // disclosed known state.
-const mcpPackageJsonRaw = read(path.join(pluginRoot, 'package.json'));
-let hasRealDependency = false;
-if (mcpPackageJsonRaw !== null) {
-  try {
-    const mcpPackageJson = JSON.parse(mcpPackageJsonRaw);
-    hasRealDependency = !!(
-      mcpPackageJson.dependencies && Object.keys(mcpPackageJson.dependencies).length > 0
-    );
-  } catch {
-    /* invalid JSON here is repo-integrity's / licence-scan's concern, not this gate's */
-  }
-}
+// 2026-08-15, finding X106 (High, reproduced). This check used to read:
+//
+//     if (claimsZeroDependencies && hasRealDependency) fail(...)
+//
+// It fired only when BOTH held, so it did not check the zero-dependency property at
+// all — it checked whether README.md was LYING about the property. And the cheapest way
+// to stop lying is to stop claiming: delete the sentence and a real dependency passed
+// unnoticed, while CONTRIBUTING.md and the header comment of 18 shipped hooks went on
+// calling zero-dependency "a deliberate, mechanically-checked property".
+//
+// A guard that can be switched off by removing the sentence it guards is not a guard.
+// The property is a project rule, not a claim in one document, so it is now tested on
+// its own terms and README.md's wording is irrelevant to it.
+//
+// The swallowed parse error was the same mistake in a second form. Its comment read
+// "invalid JSON here is repo-integrity's / licence-scan's concern, not this gate's" —
+// and that was FALSE, checked rather than assumed: licence-scan.mjs reads the ROOT
+// package.json, never the plugin's own, and repo-integrity.mjs does not read
+// dependencies at all. So an unparseable manifest was reported by nobody, and this gate
+// treated "I could not read it" as "it is fine" — the exact inversion the project's own
+// C8 rule forbids. It now fails closed.
+//
+// Reproduction: hooks/test/repro/X106-disarmable-dependency-gate.mjs — five cases, three
+// of them controls.
+// Read once and keep: later checks in this file (the version cross-check at DC8, among
+// others) use README.md's text. Only the zero-dependency check stopped depending on it.
 const readmeText = read(path.join(repoRoot, 'README.md')) || '';
-const claimsZeroDependencies =
-  /zero third-party code\s*\ndependencies|zero third-party code dependencies/i.test(readmeText);
-if (claimsZeroDependencies && hasRealDependency) {
-  fail(
-    `README.md claims "zero third-party code dependencies" but plugins/gru953-studio/package.json declares a real dependency — finding 29 has regressed`,
-  );
+
+const mcpPackageJsonRaw = read(path.join(pluginRoot, 'package.json'));
+if (mcpPackageJsonRaw !== null) {
+  let mcpPackageJson = null;
+  try {
+    mcpPackageJson = JSON.parse(mcpPackageJsonRaw);
+  } catch {
+    mcpPackageJson = null;
+  }
+  if (mcpPackageJson === null) {
+    fail(
+      `plugins/gru953-studio/package.json exists but cannot be parsed, so the zero-dependency property cannot be verified — refusing to report it as satisfied (finding 29 / X106). A gate that cannot read its input must never claim its input is fine.`,
+    );
+  } else if (
+    mcpPackageJson.dependencies &&
+    Object.keys(mcpPackageJson.dependencies).length > 0
+  ) {
+    fail(
+      `plugins/gru953-studio/package.json declares a runtime dependency, but zero third-party dependencies is a mechanically-checked property of this plugin, asserted in CONTRIBUTING.md and in 18 shipped hook headers — finding 29 has regressed (X106: this now fails regardless of what README.md claims)`,
+    );
+  }
 }
 
 // ---- DC7: dangling cross-file "see `path`" references (2026-07-27 R1 Phase 1.3, new) --

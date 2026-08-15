@@ -19,13 +19,27 @@
 // source): every one of them verifies internal agreement rather than the truth
 // of the thing guarded.
 //
-// The four cases below are the whole argument. Case B is the defect.
+// There is a SECOND way through, on the same line of reasoning. The parse failure is
+// swallowed:
+//
+//     try { ... } catch { /* invalid JSON here is repo-integrity's /
+//                            licence-scan's concern, not this gate's */ }
+//
+// That comment is false, and it was checked rather than assumed: licence-scan.mjs reads
+// the ROOT package.json (line 171), never the plugin's own, and repo-integrity.mjs does
+// not read dependencies at all. So a manifest that cannot be parsed is reported by
+// nobody, and DC6 treats "I could not read it" as "it is fine" — the exact inversion
+// the project's own C8 rule forbids: a gate that cannot read its input must never claim
+// its input is fine.
+//
+// The five cases below are the whole argument. B and E are the defects.
 //
 //   case                              README claim   dependency   DC6 fires?
 //   A  honest violation               present        present      YES  <- the only one it catches
-//   B  claim deleted, dep added       absent         present      no   <- X106
+//   B  claim deleted, dep added       absent         present      no   <- X106, first half
 //   C  claim present, no dep          present        absent       no   (correct)
 //   D  neither                        absent         absent       no   (correct)
+//   E  manifest unparseable           absent         unknown      no   <- X106, second half
 //
 // Usage:
 //   node X106-disarmable-dependency-gate.mjs                # asserts the FIXED state
@@ -49,9 +63,16 @@ const repoRoot = join(pluginRoot, '..', '..');              // .../sandbox
 const gate = join(pluginRoot, 'hooks', 'docs-consistency.mjs');
 
 const CLAIM = 'zero third-party code dependencies';
-// The exact wording DC6's own failure message uses, so we detect DC6 firing and
-// never mistake some other check's failure for it.
-const DC6_SIGNAL = 'finding 29 has regressed';
+// A marker present in every DC6 failure message and in no other check's, so we detect
+// DC6 firing and never mistake another check's complaint about the skeleton fixture for
+// it. Deliberately not the full sentence: the wording changes when the check is fixed,
+// and a reproduction that breaks on rewording tests the prose, not the behaviour.
+//
+// It must also be stable ACROSS the fix, so the same script can prove red before and
+// green after. "finding 29" is the historical id DC6 has always cited and the fixed
+// messages keep citing. A first attempt used "zero-dependency", which the pre-fix
+// message does not contain — control A caught that immediately, which is what it is for.
+const DC6_SIGNAL = 'finding 29';
 
 function die(msg) {
   console.error(`FAIL: ${msg}`);
@@ -66,7 +87,7 @@ function die(msg) {
  * that is expected and irrelevant. We assert on DC6's own message, never on the
  * exit code, because an exit code cannot tell us WHICH check failed.
  */
-function dc6Fires({ claim, dependency }) {
+function dc6Fires({ claim, dependency, malformed }) {
   const dir = mkdtempSync(join(tmpdir(), 'x106-'));
   try {
     const plugin = join(dir, 'plugins', 'gru953-studio');
@@ -79,7 +100,10 @@ function dc6Fires({ claim, dependency }) {
         : '# Fixture\n\nA README that simply does not mention dependencies at all.\n',
     );
 
-    if (dependency) {
+    if (malformed) {
+      // Truncated mid-write — the realistic shape, not a contrived string.
+      writeFileSync(join(plugin, 'package.json'), '{"name":"fixture","dependencies":{"left-pad"');
+    } else if (dependency) {
       writeFileSync(
         join(plugin, 'package.json'),
         JSON.stringify({ name: 'fixture', version: '0.0.0', dependencies: { 'left-pad': '^1.0.0' } }, null, 2),
@@ -117,9 +141,17 @@ console.log('  control C (claim, no dependency) -> silent ......................
 if (dc6Fires({ claim: false, dependency: false })) die('case D fired: no claim and no dependency must not fail.');
 console.log('  control D (neither) -> silent ................................... as expected');
 
-// --- The defect: claim deleted, dependency added. -----------------------------
+// --- The defects. -------------------------------------------------------------
+// B: the claim is deleted, so the conjunction can never be satisfied.
 const B = dc6Fires({ claim: false, dependency: true });
 console.log(`  case B    (claim DELETED + dependency) -> DC6 ${B ? 'fires' : 'SILENT'}`);
+
+// E: the manifest cannot be parsed, so the property cannot be verified — and the
+// swallowed catch reports that as no dependency. Checked, not assumed: licence-scan.mjs
+// reads the ROOT package.json (line 171), not the plugin's, and repo-integrity.mjs does
+// not read dependencies at all, so no other gate covers this.
+const E = dc6Fires({ claim: false, dependency: false, malformed: true });
+console.log(`  case E    (manifest UNPARSEABLE)       -> DC6 ${E ? 'fires' : 'SILENT'}`);
 
 // --- Second half of the finding: the guarantee is still asserted elsewhere. ---
 // The hole only matters because other files keep promising the property. If a
@@ -137,30 +169,40 @@ if (existsSync(contributing)) {
 }
 console.log(`  the guarantee is still asserted in CONTRIBUTING.md ${assertedElsewhere} time(s)`);
 
-// The defect IS DC6 staying silent in case B, so --expect-bug passes when B is false.
+// The defect is DC6 staying SILENT on B or E, so --expect-bug passes when either is silent.
+const open = [];
+if (!B) open.push('B (claim deleted + real dependency)');
+if (!E) open.push('E (manifest unparseable)');
+
 if (expectBug) {
-  if (B) {
+  if (open.length === 0) {
     die(
-      'expected the X106 defect and did not find it: DC6 fired on a real dependency even with ' +
-        'the README claim deleted, so the gate now checks the property rather than the claim. ' +
-        'If DC6 was fixed, delete this --expect-bug branch deliberately rather than leaving a ' +
-        'reproduction that can no longer detect anything.',
+      'expected the X106 defect and did not find it: DC6 now fires both on a real dependency ' +
+        'with the README claim deleted, and on a manifest it cannot parse. If it was fixed, ' +
+        'delete this --expect-bug branch deliberately rather than leaving a reproduction that ' +
+        'can no longer detect anything.',
     );
   }
-  console.log('\nX106 REPRODUCED: deleting the README sentence disarms the gate that guards it.');
+  console.log(`\nX106 REPRODUCED: ${open.length} way(s) past the guard — ${open.join(', ')}.`);
   process.exit(0);
 }
 
-if (B) {
-  console.log('\nPASS: DC6 now fires on a real dependency regardless of what the README claims.');
+if (open.length === 0) {
+  console.log(
+    '\nPASS: the zero-dependency property is checked on its own terms — a declared dependency ' +
+      'fails whatever the README says, and a manifest that cannot be read fails closed.',
+  );
   process.exit(0);
 }
 
 die(
-  'X106 is OPEN: DC6 checks whether the README is lying, not whether the property holds. ' +
-    'Delete the "' +
+  `X106 is OPEN — ${open.join(' and ')}. ` +
+    'DC6 checks whether the README is LYING, not whether the property HOLDS: it fires only when ' +
+    'the claim and a real dependency are both present, so deleting the "' +
     CLAIM +
-    '" sentence and a real dependency passes unnoticed, while the guarantee stays asserted ' +
-    'in CONTRIBUTING.md and in 18 shipped hook headers. ' +
-    'Fix: test hasRealDependency on its own, and treat the README claim as a separate check.',
+    '" sentence disarms it — while the guarantee stays asserted in CONTRIBUTING.md and in 18 ' +
+    'shipped hook headers. And its swallowed parse error reports "cannot read" as "fine", which ' +
+    'no other gate covers: licence-scan reads the ROOT manifest, repo-integrity reads no ' +
+    'dependencies at all. ' +
+    'Fix: test the dependency on its own, and fail closed when the manifest cannot be parsed.',
 );
