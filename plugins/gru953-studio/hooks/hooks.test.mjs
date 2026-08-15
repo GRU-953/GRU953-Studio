@@ -8423,6 +8423,13 @@ for (const script of [
   // separates a legitimate pairing from an accidental one, so the caller must assert it by
   // naming both roots. Control E holds the documented invocation.
   'X114-cross-project-baseline.mjs',
+  // 2026-08-15: content-check verified a row's paperwork and never that the asset existed — a
+  // wholly imaginary asset passed as clean. It could not be fixed when first raised, because
+  // nothing said where assets live; the owner settled that on 15 Aug with a Path column per
+  // row. Optional, so every register written before then still passes — but a register without
+  // it now reports assetExistenceChecked:false and says so, instead of letting silence read as
+  // assurance. Cases A and D are the controls that keep old registers and text rows working.
+  'X121-asset-existence.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

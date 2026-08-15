@@ -196,6 +196,16 @@ function main() {
       // deciding what a table "looks like". Recognition beats guessing.
       asset: find(/^(assets?|names?|files?|items?)$/i),
       medium: find(/^(mediums?|media|types?|kinds?)$/i),
+      // 2026-08-15, finding X121, on the owner's decision of the same date. Until now this
+      // gate checked a row's paperwork and never that the asset existed — a wholly imaginary
+      // `totally-imaginary.svg` passed as clean, with the reason "every recorded content asset
+      // has approval, provenance, rights and (for media) alt-text", which was true and
+      // meaningless. Nothing could resolve a name to a file, because nothing said where assets
+      // live, so this went to the owner as a convention decision rather than a gate fix.
+      //
+      // The decision: a path in each register row. It handles text rows that are not files at
+      // all, works whatever layout a project uses, and imposes no folder rule.
+      path: find(/^(paths?|file ?paths?|locations?|where)$/i),
       source: find(/^(source|provenance|model|origin|by)$/i),
       approved: find(/^(approved|approval|status|sign[- ]?off)$/i),
       rights: find(/^(rights|licen[cs]e|usage)$/i),
@@ -272,16 +282,55 @@ function main() {
       problems.push(
         `content "${name}": media asset has no alt-text/caption/transcript — required for accessibility.`,
       );
+
+    // X121: does the recorded asset actually exist? Only answerable when the register
+    // carries a Path column, which is why the column is the owner's chosen convention.
+    if (idx.path !== -1) {
+      const rawPath = idx.path !== -1 ? String(r[idx.path] || '') : '';
+      const assetPath = deEmphasise(rawPath).trim();
+      if (ph(assetPath)) {
+        // A text asset is in-app copy, not a file on disk, so an empty path is correct.
+        // A media asset with no path cannot be checked at all, which is the gap X121 exists
+        // to close — so it is a problem rather than a silent pass.
+        if (!isTextOnly)
+          problems.push(
+            `content "${name}": media asset records no path, so nothing can confirm it exists. Give its path in the Path column (finding X121).`,
+          );
+      } else {
+        // Resolved against the project root, and confined to it: a register must not send
+        // this gate walking outside the project it describes.
+        const resolved = path.resolve(root, assetPath);
+        if (!resolved.startsWith(path.resolve(root))) {
+          problems.push(
+            `content "${name}": path "${assetPath}" resolves outside the project, which a content register may not do (finding X121).`,
+          );
+        } else if (!fs.existsSync(resolved)) {
+          problems.push(
+            `content "${name}": recorded at "${assetPath}", but no file exists there — an asset that is approved, attributed and licensed but absent is not shippable (finding X121).`,
+          );
+        }
+      }
+    }
   }
 
   if (problems.length === 0) {
+    // X121: say what was NOT checked. A register with no Path column cannot have its assets
+    // resolved to files, and the old reason — "every recorded content asset has approval,
+    // provenance, rights and (for media) alt-text" — was true while a wholly imaginary asset
+    // sat in the register. It never claimed to check existence, but nothing said it hadn't,
+    // and a silence that reads as assurance is the defect this whole round of findings is
+    // about. The column stays optional so every register written before today keeps working;
+    // what changes is that its clean verdict now admits the gap instead of implying coverage.
+    const assetExistenceChecked = rows.some((row) => row.idx.path !== -1);
     console.log(
       JSON.stringify(
         {
           status: 'clean',
-          reason:
-            'every recorded content asset has approval, provenance, rights and (for media) alt-text',
+          reason: assetExistenceChecked
+            ? 'every recorded content asset has approval, provenance, rights, (for media) alt-text, and a file where it says it is'
+            : 'every recorded content asset has approval, provenance, rights and (for media) alt-text. Whether each asset EXISTS was NOT verified: this register has no Path column, so nothing resolves an asset name to a file (finding X121)',
           assets: rows.length,
+          assetExistenceChecked,
         },
         null,
         2,

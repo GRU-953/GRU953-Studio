@@ -51,10 +51,24 @@ The `content-director` produces a content plan (what content each screen/flow
 needs, in which languages, which media) and records every asset in
 `Dev-Memory/CONTENT.md` (written by `memory-keeper`, secrets-scanned as always):
 
-| Asset | Medium | Source | Approved | Rights | Alt/Caption |
-| :-- | :-- | :-- | :-- | :-- | :-- |
-| welcome_hero.png | image | Gemini image, prompt #4 | approved | AI-generated, user owns output | Family using the app |
-| onboarding copy | text | Claude (bn+en) | approved | original | — |
+| Asset | Path | Medium | Source | Approved | Rights | Alt/Caption |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| welcome_hero.png | assets/img/welcome_hero.png | image | Gemini image, prompt #4 | approved | AI-generated, user owns output | Family using the app |
+| onboarding copy | | text | Claude (bn+en) | approved | original | — |
+
+**The `Path` column** (added 2026-08-15, finding X121). It records where the asset actually is,
+relative to the project root, so `content-check.mjs` can confirm the file exists rather than
+only that its paperwork is filled in. Without it, a wholly imaginary asset passed as clean.
+
+- **Media rows must have one.** An image, audio or video asset that records no path cannot be
+  checked at all, so the gate refuses it.
+- **Text rows leave it empty.** In-app copy is not a file on disk, and an empty path is correct
+  for it — the gate does not ask where a string lives.
+- **Any layout works.** There is no required folder; the row says where its own asset is. A
+  path that resolves outside the project is refused.
+- **Registers written before this date still pass.** The column is optional, and a register
+  without it is reported as clean *with `assetExistenceChecked: false`* and a plain sentence
+  saying existence was not verified — so the silence cannot be mistaken for a check.
 
 Every row needs a recorded **approval**, **provenance** (which model + prompt,
 or that a human supplied it), a plain **rights/licence** note, and — for media —
