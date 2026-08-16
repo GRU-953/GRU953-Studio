@@ -133,6 +133,29 @@ for (const c of CASES) {
   if (!caught) open.push('D9');
 }
 
+// ---- D7: a later section that REORDERS its columns must not be trusted --------
+// P6 round 1, finding L3 — a guard that was written and never wired up.
+//
+// Merging every matching table means later rows are read positionally against the FIRST
+// table's headers. The hazard was seen and a guard written for it — mismatchedFragments —
+// and then nothing ever read it. So a REQUIREMENTS.md whose second section swaps two column
+// positions has its rows silently judged against the wrong columns, and a requirement marked
+// "met" with an empty Verification cell passes as clean. Rows in that section are not ragged
+// against their OWN header, so the ragged check does not fire either.
+//
+// The byte-identical row in a canonically-ordered section BLOCKS, which is what makes this a
+// false clean rather than a difference of opinion.
+{
+  const REORDERED_HDR = '| ID | Requirement | Tasks | Status | Verification |\n| :-- | :-- | :-- | :-- | :-- |\n';
+  const v = verdict(
+    GOOD_REQ + '\n## Phase 2\n\n' + REORDERED_HDR + '| R9 | the user can log out | T9 | met |  |\n',
+    GOOD_PROG + '| T9 | Build logout | done | verified: `npm test` -> exit 0 (2026-08-15) |\n',
+  );
+  const caught = v.status !== 'clean';
+  console.log(`  D7  a later section that REORDERS its columns .. ${caught ? 'BLOCKED' : 'clean  '}${caught ? '' : '  <- P6 L3'}`);
+  if (!caught) open.push('D7');
+}
+
 // ---- D2: DELIBERATELY NOT FIXED, and checked so the decision cannot rot -------
 // A row written without its leading pipe, inside an otherwise piped table, is still
 // dropped. Reading it would mean deciding that a pipe-bearing line IS data — and this

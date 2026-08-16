@@ -454,7 +454,21 @@ function main() {
     let effectiveHeaderCells = headerCells;
     let effectiveStatusIndex = statusColumnIndex;
     let firstRowIndex = i + 1;
+    //
+    // P6 round 1, finding L2 — a regression this rule introduced the same day, together with
+    // X139's widening of what counts as a completion word. A perfectly ordinary SECOND task
+    // table headed `| Task | Done | Notes |` satisfied all three conditions: no Status column,
+    // the same width as the table above, and a cell reading "Done". Its HEADER was eaten as a
+    // data row and reported as an unevidenced completion — blocking a checkpoint and a Publish
+    // with a message naming a header as a row, which the owner cannot act on.
+    //
+    // The missing discriminator is markdown's own, and it is exact rather than heuristic: a
+    // line followed by a SEPARATOR ROW is a header. A torn continuation row never has one
+    // beneath it. Control G of the reproduction holds that fixture with matching column
+    // counts, which is the only shape in which this rule can fire at all.
+    const followedBySeparator = SEPARATOR_ROW_RE.test(next);
     const isTornFragment =
+      !followedBySeparator &&
       statusColumnIndex === -1 &&
       lastTaskHeaderCells !== null &&
       headerCells.length === lastTaskHeaderCells.length &&

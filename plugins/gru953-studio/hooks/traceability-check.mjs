@@ -383,6 +383,21 @@ function main() {
   // silence are now said out loud. Neither guesses at the content: they report that
   // something in the file could not be read, which is the capability every one of these
   // gates was missing.
+  // P6 round 1, finding L3 — a guard written and never wired up. parseTable() computes
+  // `mismatchedFragments` for a later section whose columns differ from the first table's,
+  // and its own comment says such a fragment "would be read positionally against these, so it
+  // is reported rather than trusted". Nothing read it. So a REQUIREMENTS.md whose Phase 2
+  // section swaps two column positions had its rows judged against the WRONG columns, and a
+  // requirement marked "met" with an empty Verification cell passed as clean — in one of the
+  // seven blocking Publish pre-flight checks. The byte-identical row in a canonically-ordered
+  // section blocked, which is what made it a false clean rather than a difference of opinion.
+  //
+  // Consuming it here is the whole fix. Reproduction: X138's case D7.
+  for (const frag of reqTable.mismatchedFragments || []) {
+    problems.push(
+      `REQUIREMENTS.md has a later table headed "${frag}" whose columns differ from the first table's, so its rows would be read against the WRONG columns. Give every section the same column order, or split them into separate files (finding X138 / P6-L3).`,
+    );
+  }
   for (const frag of reqTable.orphanedFragments || []) {
     problems.push(
       `REQUIREMENTS.md has a pipe table starting "${frag}" with the same number of columns as the matrix but no recognisable header — most often a matrix torn in two by a stray blank line, in which case every row below that line is going unchecked (finding X138 / D6).`,

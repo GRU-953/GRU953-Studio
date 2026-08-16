@@ -101,6 +101,39 @@ if (D.status !== 'clean') {
 }
 console.log('  D  standalone | Task | Done | Notes | .......... clean   (control)');
 
+// ---- Control G: an ORDINARY SECOND TABLE must not be eaten -------------------
+// P6 round 1, finding L2 — a regression this file's own control D missed.
+//
+// D covers a table headed `| Task | Done | Notes |` with NO predecessor, which is the case
+// that cannot fire. With a real task table above it, all three torn-fragment conditions are
+// satisfied by a perfectly ordinary second table: no Status column, the same column count,
+// and a cell reading "Done" — which X139 had just widened into a completion word hours
+// earlier. Its HEADER line was then consumed as a data row and reported as a done row with
+// no evidence, blocking a checkpoint and a Publish with a message naming a header as a row.
+//
+// The discriminator is markdown's own: a line followed by a separator row IS a header. A
+// torn continuation row never has one beneath it.
+{
+  // The column counts must MATCH for the torn-fragment condition to fire at all — an earlier
+  // draft of this control used a 4-column first table against a 3-column second and therefore
+  // proved nothing. This is the round's own verified fixture: three columns either side.
+  const legitimate =
+    '# Progress\n\n| Task | Status | Notes |\n| :-- | :-- | :-- |\n' +
+    '| T1 build the parser | done | verified: `npm test` -> exit 0 (2026-08-15) |\n' +
+    '\n## Phase 2 checklist\n\n| Task | Done | Notes |\n| :-- | :-- | :-- |\n' +
+    '| T3 draft the docs | no | in progress |\n';
+  const v = verdict(legitimate);
+  if (v.status !== 'clean') {
+    die(
+      'control G failed: an ordinary second table headed "| Task | Done | Notes |", following a ' +
+        'real task table, was reported ' + v.status + '. Its header is being eaten as a data row — ' +
+        'the P6 round 1 L2 regression. A line followed by a separator row is a HEADER: ' +
+        JSON.stringify(v.problems).slice(0, 200),
+    );
+  }
+  console.log('  G  an ordinary second table, WITH a predecessor . clean   (control: P6 L2)');
+}
+
 // ---- Control E: a tear between two HEALTHY halves is not a defect -------------
 const E = verdict(HDR + GOOD + '\n' + '| T2 | Build logout | done | verified: `npm test` -> exit 0 (2026-08-15) |\n');
 if (E.status !== 'clean') {
