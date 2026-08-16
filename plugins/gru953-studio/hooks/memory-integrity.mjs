@@ -427,8 +427,30 @@ function checkGraph(devMemory, problems) {
   // ("- All links use verbs like implements and blocks") was parsed as a link and
   // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
   // introduced).
+  // 2026-08-15, finding X145 / memory-integrity D3 (reproduced). This required a BULLET
+  // marker, so a link written as an ordinary numbered list item — `1. T1 depends-on R99` — or
+  // as a table row — `| T1 | depends-on | R99 |` — matched nothing, was never validated, and a
+  // reference to a node that does not exist passed as "internally consistent". Both render
+  // identically to a reader; neither is exotic.
+  //
+  // Widening the marker is safe ONLY because of the 2026-07-21 fix directly above: the type
+  // token is constrained to the documented vocabulary. Before that, this pattern accepted any
+  // lowercase word and a prose bullet ("All links use verbs like implements and blocks") was
+  // parsed as a link with its words reported as undefined nodes. Prose does not carry a
+  // vocabulary word in exactly the second position, which is what keeps it out — control D of
+  // the reproduction holds that same sentence, numbered, so the protection is proven rather
+  // than assumed.
+  //
+  // The three accepted forms are: a bullet (`-` or `*`), a numbered item (`1.` or `1)`), and a
+  // table row, whose leading pipe and cell separators are treated as the marker and the gaps.
+  const linkVocabulary = loadLinkVocabulary().join('|');
   const LINK_RE = new RegExp(
-    `^\\s*[-*]\\s+(\\S+)\\s+(${loadLinkVocabulary().join('|')})\\s+(\\S+)`,
+    `^\\s*(?:[-*]|\\d+[.)])\\s+(\\S+)\\s+(${linkVocabulary})\\s+(\\S+)`,
+    'i',
+  );
+  // A table row states the same triple with pipes instead of spaces.
+  const LINK_TABLE_RE = new RegExp(
+    `^\\s*\\|\\s*([^|]+?)\\s*\\|\\s*(${linkVocabulary})\\s*\\|\\s*([^|]+?)\\s*\\|`,
     'i',
   );
   // 2026-07-26 further-pass audit fix (false-block, confirmed by execution).
@@ -457,7 +479,7 @@ function checkGraph(devMemory, problems) {
     inLinks = s.open;
     if (s.isHeading) continue;
     if (!inLinks) continue;
-    const m = line.match(LINK_RE);
+    const m = line.match(LINK_RE) || line.match(LINK_TABLE_RE);
     if (!m) continue;
     const [, rawSrc, type, rawDst] = m;
     const src = stripTrailingPunctuation(rawSrc);

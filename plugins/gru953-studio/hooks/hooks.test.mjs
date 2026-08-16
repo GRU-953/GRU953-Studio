@@ -8485,6 +8485,13 @@ for (const script of [
   // check to the evidence cell because "Regression" in an item NAME blocked a green row, and
   // scanning the whole row would undo it.
   'X144-row-judged-whole.mjs',
+  // 2026-08-15: LINK_RE required a BULLET marker, so a graph link written as an ordinary
+  // numbered list item or a table row was never validated and its dangling reference passed
+  // as "internally consistent". Widening the marker is safe only because the 2026-07-21 fix
+  // constrains the type token to the documented vocabulary — control D holds the very prose
+  // sentence that caused a spurious block before that constraint existed, now numbered, so
+  // the protection is proven rather than assumed.
+  'X145-link-list-forms.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
