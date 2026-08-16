@@ -7627,6 +7627,28 @@ test('X1: no hook auto-approves a dangerous non-push command — the permission 
 // no-op that passes whatever it is pointed at.
 // ---------------------------------------------------------------------------
 for (const script of [
+  // ---- 2026-08-17, finding X207 -------------------------------------------------
+  // These seven were on disk and run by NOBODY, including every reproduction written
+  // that week. A file the harness does not name is a test that cannot fail - the same
+  // shape as X176, and as X188 one level up: a check that cannot see returns clean.
+  //
+  // X35-name-collision.mjs is still deliberately absent: its defect is OPEN, so it fails
+  // by design. That exclusion is recorded here rather than left as a silent gap, because
+  // a silent gap is exactly how these seven went missing.
+  // a crash and a block were indistinguishable, so a shipped ReferenceError passed a green suite
+  'X188-crash-is-not-a-verdict.mjs',
+  // a graph section ended early; an index row missing a cell was skipped in silence
+  'X190-X191-memory-scope-and-ragged.mjs',
+  // the PROGRESS branch ignored warnings the REQUIREMENTS branch consumed; a bold header read as a mismatch
+  'X192-X193-traceability-progress-and-headers.mjs',
+  // ordinary sentences blocked the checkpoint; the repair then traded that for a false clean (X196)
+  'X194-done-claim-prose.mjs',
+  // the gate claimed an existence check it had not made
+  'X195-existence-disclosure.mjs',
+  // the push-authorisation token layer removed; the secret scan kept and proven still to refuse
+  'X214-push-safety-narrowed.mjs',
+  // INV4 could not tell a live reference from a record of a deleted one
+  'X215-live-versus-historical-reference.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',
