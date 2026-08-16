@@ -353,14 +353,49 @@ function checkGraph(devMemory, problems) {
   // bullet under an unrelated heading turned a correctly-BLOCKED dangling-link
   // case into a false "clean". Scoped to a Nodes/Graph section the same way the
   // link pass is scoped, below.
+  // 2026-08-15, finding X140 / memory-integrity D2 (High, reproduced). Both passes over this
+  // file scoped themselves with a LEVEL-AGNOSTIC match that reassigned the flag on every
+  // heading:
+  //
+  //     if (heading) { inNodes = /node/i.test(heading[1]); continue; }
+  //
+  // So a `### Phase 2` sub-heading INSIDE a correct `## Nodes` or `## Links` section switched
+  // checking off for the rest of the file — after the gate had already parsed and resolved
+  // real entries in that very section, so it demonstrably believed it had read the file.
+  // Nothing about the input looks wrong: the documented parent heading is present, and
+  // grouping a growing list by phase is ordinary maintenance on a file this plugin tells
+  // projects to keep growing.
+  //
+  // sectionScope() applies markdown's own nesting rule instead: a section ends at the next
+  // heading of the SAME or SHALLOWER level, and a deeper heading is a sub-heading that
+  // belongs to the section it sits inside. Reproduction:
+  // hooks/test/repro/X140-section-scope.mjs, whose control E proves a SIBLING heading still
+  // ends the section — otherwise this would trade a silent skip for a false alarm, with
+  // prose under a later heading parsed as data.
+  const sectionScope = (opensRe) => {
+    let open = false;
+    let level = 0;
+    return (line) => {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (!heading) return { isHeading: false, open };
+      const depth = heading[1].length;
+      if (opensRe.test(heading[2])) {
+        open = true;
+        level = depth;
+      } else if (open && depth <= level) {
+        open = false; // a sibling or shallower heading genuinely ends the section
+      }
+      return { isHeading: true, open };
+    };
+  };
+
   const nodeTypeVocabulary = loadNodeTypeVocabulary();
+  const nodeScope = sectionScope(/node/i);
   let inNodes = false;
   for (const line of lines) {
-    const heading = line.match(/^#{1,6}\s+(.*)$/);
-    if (heading) {
-      inNodes = /node/i.test(heading[1]);
-      continue;
-    }
+    const s = nodeScope(line);
+    inNodes = s.open;
+    if (s.isHeading) continue;
     if (!inNodes) continue;
     const m = line.match(NODE_DEF_RE);
     if (m) {
@@ -400,12 +435,21 @@ function checkGraph(devMemory, problems) {
   // legitimately end in sentence punctuation, so trailing punctuation is
   // stripped from each captured id before checking it against `nodes`.
   const stripTrailingPunctuation = (s) => s.replace(/[.,;:!?)\]]+$/, '');
+  // 2026-08-15, finding X140 / memory-integrity D1 (Medium, reproduced). The links section
+  // was recognised only by the words "link" or "edge", so a list under `## Relationships` —
+  // the word the design's own prose uses, "their relationships as typed links" — was never
+  // checked at all, and a dangling reference beneath it passed as clean.
+  //
+  // The widening is ADDITIVE ONLY. No heading recognised today stops being recognised,
+  // because a narrowing change would turn files that ARE checked into files that are not —
+  // the very defect being fixed. In particular the existing quirk that "Knowledge" contains
+  // "edge", so `## Knowledge graph` enables link parsing, is deliberately left alone:
+  // tightening it with word boundaries would be a regression in the direction that matters.
+  const linkScope = sectionScope(/link|edge|relationship|relation|connection/i);
   for (const line of lines) {
-    const heading = line.match(/^#{1,6}\s+(.*)$/);
-    if (heading) {
-      inLinks = /link|edge/i.test(heading[1]);
-      continue;
-    }
+    const s = linkScope(line);
+    inLinks = s.open;
+    if (s.isHeading) continue;
     if (!inLinks) continue;
     const m = line.match(LINK_RE);
     if (!m) continue;

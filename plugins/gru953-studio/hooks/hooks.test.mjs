@@ -8446,6 +8446,13 @@ for (const script of [
   // rows checked and a wrong guess would block healthy work. Control D holds five unfinished
   // statuses that must stay untouched.
   'X139-completion-synonyms.mjs',
+  // 2026-08-15: both passes over GRAPH.md reassigned their section flag on EVERY heading,
+  // regardless of depth, so a `### Phase 2` sub-heading inside a correct `## Links` section
+  // switched checking off for the rest of the file — after the gate had already resolved
+  // real links in that very section. Now scoped by markdown's own nesting rule: a section
+  // ends at the next heading of the same or shallower level. Control E proves a SIBLING
+  // heading still ends it, so prose under a later heading is not parsed as data.
+  'X140-section-scope.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
