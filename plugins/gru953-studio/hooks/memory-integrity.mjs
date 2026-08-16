@@ -328,7 +328,9 @@ function checkIndex(root, devMemory, problems) {
       // to Dev-Memory/ (a bare filename recorded in the index).
       const candidates = [path.resolve(root, where), path.resolve(devMemory, where)];
       if (!candidates.some((p) => fs.existsSync(p))) {
-        problems.push(`INDEX.md points at "${where}", which does not exist — a stale recall entry.`);
+        problems.push(
+          `INDEX.md points at "${where}", which does not exist — a stale recall entry.`,
+        );
       }
     }
   }

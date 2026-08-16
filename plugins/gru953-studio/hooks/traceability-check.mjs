@@ -46,11 +46,9 @@
 import path from 'node:path';
 import process from 'node:process';
 import {
-  splitPipeCells,
   CONTRADICTION_RE,
   deEmphasise,
   isDirectory,
-  SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
   readOrBlock,
   MISSING,

@@ -463,7 +463,9 @@ if (hooksJsonText === null) {
     const REQUIRED_TOOLS = ['Bash', 'PowerShell', 'Monitor'];
     for (const required of ['scan.mjs', 'gate.mjs']) {
       const entriesRunningIt = preToolUse.filter((e) =>
-        (Array.isArray(e.hooks) ? e.hooks : []).some((h) => new RegExp(required.replace('.', '\\.')).test(String(h.command || ''))),
+        (Array.isArray(e.hooks) ? e.hooks : []).some((h) =>
+          new RegExp(required.replace('.', '\\.')).test(String(h.command || '')),
+        ),
       );
       if (entriesRunningIt.length === 0) {
         fail(`hooks.json no longer wires ${required} as a PreToolUse hook`);

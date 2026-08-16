@@ -63,15 +63,6 @@ function run(gate, dir) {
   return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-function tmp(build) {
-  const dir = mkdtempSync(join(tmpdir(), 'x113-'));
-  try {
-    if (build) build(dir);
-    return build ? undefined : dir;
-  } finally {
-    /* caller removes */
-  }
-}
 
 function withTmp(build, fn) {
   const dir = mkdtempSync(join(tmpdir(), 'x113-'));

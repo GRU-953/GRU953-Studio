@@ -50,7 +50,7 @@
 // the exact failure the F4 regression test committed, where a test certified a
 // broken fix by pinning the defect as its expected value.
 
-import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';

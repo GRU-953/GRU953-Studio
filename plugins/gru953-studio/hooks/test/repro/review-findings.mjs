@@ -181,7 +181,6 @@ cases.push({
   what: "this plugin's own fixture stays exempt when pushed from a SUBDIRECTORY",
   buggy: 'deny',
   run() {
-    const repoRoot = path.resolve(HOOKS, '..', '..', '..');
     return hookDecision('scan.mjs', PUSH, HOOKS) === 'deny' ? 'deny' : 'none';
     // (repoRoot referenced for clarity; the subdirectory is HOOKS itself)
   },

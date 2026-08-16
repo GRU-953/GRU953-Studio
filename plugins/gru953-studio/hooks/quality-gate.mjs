@@ -238,6 +238,8 @@ function parseRows(text) {
   // Every candidate counts. No heuristic, no position rule — see finding F1 above.
   const rows = [];
   const ragged = [];
+  // X144 / P6-L1: blank-Item rows whose other cells record a failure.
+  const orphanFailures = [];
   for (const { tableIndex, table, idx } of candidates) {
     for (const r of table.rows) {
       if (r.ragged) {
@@ -264,18 +266,31 @@ function parseRows(text) {
       // so a continuation row recording a real failure vanished. It is no longer attributable
       // to a dimension, but a failure it records still counts.
       if (!item) {
-        if (contradiction) {
-          problems.push(
-            `a row with no Item name records a failure that nothing else in this file accounts for → "${r.raw.trim()}" (finding X144)`,
-          );
-        }
+        // 2026-08-15, P6 round 1 finding L1 — a crash I introduced with X144 hours earlier.
+        // This called problems.push() from inside parseRows(), where `problems` does not
+        // exist: it is a const declared in main(). Any QUALITY-GATE.md carrying a blank-Item
+        // row with a recorded failure crashed the gate with a ReferenceError.
+        //
+        // Collected alongside `ragged` instead — which this function already returns for
+        // exactly this purpose — and reported by main(). Same outcome, correct scope.
+        //
+        // `npm run lint` catches an undefined variable and would have caught this. It is in
+        // the repo's own CI and I did not run it: I ran the twelve documented gates all day
+        // and never the static job beside them. That is the lesson, not the typo.
+        if (contradiction) orphanFailures.push(r.raw.trim());
         continue;
       }
       rows.push({
-        contradiction, item, status, evidence, raw: r.raw.trim(), tableIndex });
+        contradiction,
+        item,
+        status,
+        evidence,
+        raw: r.raw.trim(),
+        tableIndex,
+      });
     }
   }
-  return { rows, ragged };
+  return { rows, ragged, orphanFailures };
 }
 
 function main() {
@@ -319,11 +334,18 @@ function main() {
     );
     process.exit(1);
   }
-  const { rows, ragged } = parseRows(text);
+  const { rows, ragged, orphanFailures } = parseRows(text);
   const problems = [];
   // D6: which Item row satisfied each required dimension. Reported on a clean verdict so a
   // collision is visible to a reader even though the gate does not judge it.
   const satisfiedBy = {};
+  // X144 / P6-L1: a blank-Item row cannot be attributed to a dimension, but a failure it
+  // records still counts and is reported on its own terms.
+  for (const raw of orphanFailures) {
+    problems.push(
+      `a row with no Item name records a failure that nothing else in this file accounts for → "${raw}" (finding X144)`,
+    );
+  }
   if (rows.length === 0) {
     problems.push(
       'QUALITY-GATE.md contains no Definition-of-Done table (need a table with at least "Item" and "Status" columns).',

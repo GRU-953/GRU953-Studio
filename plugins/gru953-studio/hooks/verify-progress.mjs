@@ -74,7 +74,11 @@ function main() {
   }
   if (!inStudioProject) {
     console.log(
-      JSON.stringify({ status: 'not a studio project', reason: 'no Dev-Memory/ directory — nothing to check', root }),
+      JSON.stringify({
+        status: 'not a studio project',
+        reason: 'no Dev-Memory/ directory — nothing to check',
+        root,
+      }),
     );
     process.exit(0);
   }
@@ -388,7 +392,10 @@ function main() {
   const unidentified = []; // task table(s) with a "done" claim we cannot verify (fail CLOSED)
   const failedEvidence = []; // "done" rows whose OWN structured evidence records a non-zero exit
   const malformedEvidence = []; // "done" rows whose structured evidence is missing required fields
-  let sawAnyTable = false; // X11a: a done claim with no table at all must not pass
+  // X11a: `sawAnyTable` was removed on 2026-08-15. It had been assigned and never read since
+  // the outside-table sweep stopped being conditional on it — see the note further down —
+  // so it was dead weight that read as a live guard. Confirmed unread at 752fb83 before
+  // removal, so this is not a consequence of today's changes to this file.
   // X142: the header of the last table that HAD a Status column, so a later fragment of the
   // same width carrying a completion claim can be recognised as a continuation of it rather
   // than mistaken for a new table whose rows nobody checks.
@@ -550,7 +557,6 @@ function main() {
         problems.push(row.trim());
     }
     if (sawDoneUnknown) unidentified.push(header.trim());
-    sawAnyTable = true;
     // 2026-08-13, independent-review finding F9: record which lines belong to a
     // recognised table, so the done-claim sweep below can examine everything
     // OUTSIDE one. Previously the sweep ran only when no table existed at all,

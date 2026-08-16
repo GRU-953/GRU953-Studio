@@ -486,10 +486,7 @@ if (mcpPackageJsonRaw !== null) {
     fail(
       `plugins/gru953-studio/package.json exists but cannot be parsed, so the zero-dependency property cannot be verified — refusing to report it as satisfied (finding 29 / X106). A gate that cannot read its input must never claim its input is fine.`,
     );
-  } else if (
-    mcpPackageJson.dependencies &&
-    Object.keys(mcpPackageJson.dependencies).length > 0
-  ) {
+  } else if (mcpPackageJson.dependencies && Object.keys(mcpPackageJson.dependencies).length > 0) {
     fail(
       `plugins/gru953-studio/package.json declares a runtime dependency, but zero third-party dependencies is a mechanically-checked property of this plugin, asserted in CONTRIBUTING.md and in 18 shipped hook headers — finding 29 has regressed (X106: this now fails regardless of what README.md claims)`,
     );
