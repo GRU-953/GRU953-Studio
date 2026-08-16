@@ -321,6 +321,9 @@ function main() {
   }
   const { rows, ragged } = parseRows(text);
   const problems = [];
+  // D6: which Item row satisfied each required dimension. Reported on a clean verdict so a
+  // collision is visible to a reader even though the gate does not judge it.
+  const satisfiedBy = {};
   if (rows.length === 0) {
     problems.push(
       'QUALITY-GATE.md contains no Definition-of-Done table (need a table with at least "Item" and "Status" columns).',
@@ -338,6 +341,30 @@ function main() {
   }
   for (const dim of REQUIRED) {
     const matches = rows.filter((r) => dim.match.test(r.item));
+    // 2026-08-15, finding D6 of the silent-skip sweep — answered by MEASUREMENT rather than by
+    // tightening. D6 says a dimension can be satisfied by an unrelated row, because the Item
+    // cell only has to CONTAIN the keyword.
+    //
+    // Measured across 24 distinct Item labels from six sources — this project's live table,
+    // the golden fixture, two sibling checkouts, the documented template and the test suite:
+    //
+    //     labels matching MORE than one dimension : 0
+    //     keyword at the START of the label       : 6 of 10 real labels
+    //     keyword LATER in the label              : 4 of 10
+    //       ("Automated tests", "Independent code review", "Regression tests",
+    //        "Improve test coverage tooling integration")
+    //
+    // So no collision occurs in any real data, and the obvious tightening — requiring the
+    // keyword at the start — would MISS 4 of 10 real labels and block healthy projects with
+    // "missing required dimension". That is the failure mode that gets a gate switched off,
+    // and it would be a worse defect than the one being fixed.
+    //
+    // The evidence therefore says: do not tighten. What it does support is making the match
+    // VISIBLE, so a human reading a clean verdict can see which row vouched for each
+    // dimension and spot a wrong one themselves. This changes nothing about what passes, so
+    // it carries no false-alarm risk at all. D6 stays open as a disclosed residual with the
+    // measurement attached.
+    satisfiedBy[dim.key] = matches.map((r) => r.item);
     if (matches.length === 0) {
       problems.push(
         `missing required dimension: ${dim.label} — no row in QUALITY-GATE.md covers it (mark it pass with evidence, or "n/a" with a reason, but it may not be absent).`,
@@ -404,6 +431,10 @@ function main() {
           reason:
             'every required Definition-of-Done dimension passes or is consciously N/A with a reason',
           dimensions: REQUIRED.map((d) => d.key),
+          // D6: name the row that vouched for each dimension. A dimension satisfied by a row
+          // that is plainly about something else is then visible here, rather than hidden
+          // behind the word "clean".
+          satisfiedBy,
         },
         null,
         2,
