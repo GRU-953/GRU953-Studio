@@ -321,16 +321,34 @@ function main() {
     // and a silence that reads as assurance is the defect this whole round of findings is
     // about. The column stays optional so every register written before today keeps working;
     // what changes is that its clean verdict now admits the gap instead of implying coverage.
-    const assetExistenceChecked = rows.some((row) => row.idx.path !== -1);
+    // 2026-08-16, finding X195. This was `rows.some(...)`, over rows drawn from EVERY table in
+    // the register. A register grouped by medium — "## Artwork" carrying a Path column,
+    // "## Sound" not — therefore reported assetExistenceChecked: true and "a file where it
+    // says it is", while the sound assets were never resolved to anything at all.
+    //
+    // That is a positive false statement made by the one field whose entire purpose is to stop
+    // silence being mistaken for a check, and grouping a register by medium is the ordinary way
+    // to write one. Coverage is now claimed only when EVERY row could be checked; a partial
+    // register says how far the check reached instead of rounding it up.
+    //
+    // It deliberately does not start BLOCKING. The Path column is optional by design, and
+    // failing a partial register would break every register written before X121 landed — which
+    // is what the optionality was for. X195's controls A and E hold both halves of that.
+    const checkedRows = rows.filter((row) => row.idx.path !== -1).length;
+    const assetExistenceChecked = rows.length > 0 && checkedRows === rows.length;
+    const unchecked = rows.length - checkedRows;
     console.log(
       JSON.stringify(
         {
           status: 'clean',
           reason: assetExistenceChecked
             ? 'every recorded content asset has approval, provenance, rights, (for media) alt-text, and a file where it says it is'
-            : 'every recorded content asset has approval, provenance, rights and (for media) alt-text. Whether each asset EXISTS was NOT verified: this register has no Path column, so nothing resolves an asset name to a file (finding X121)',
+            : checkedRows === 0
+              ? 'every recorded content asset has approval, provenance, rights and (for media) alt-text. Whether each asset EXISTS was NOT verified: this register has no Path column, so nothing resolves an asset name to a file (finding X121)'
+              : `every recorded content asset has approval, provenance, rights and (for media) alt-text. Existence was verified for ${checkedRows} of ${rows.length}: the other ${unchecked} sit in a table with no Path column, so nothing resolves them to a file (finding X195)`,
           assets: rows.length,
           assetExistenceChecked,
+          assetsExistenceChecked: checkedRows,
         },
         null,
         2,
