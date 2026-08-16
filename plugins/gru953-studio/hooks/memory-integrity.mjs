@@ -320,6 +320,18 @@ function checkIndex(root, devMemory, problems) {
     // string) and silently skipped the check entirely. deEmphasise() strips
     // the emphasis the same way this file's own header-cell fix already does.
     for (const row of table.rows) {
+      // 2026-08-16, finding X191: a row whose cell count disagrees with the header shifts every
+      // value along, so `cells[whereCol]` is another column's text or nothing at all. `where`
+      // then came out empty or unrecognisable and the `continue` below skipped the row without
+      // a word — the gate reporting the index consistent about a row it could not read.
+      // Reported instead, in the same words traceability-check.mjs already uses for its own
+      // tables, because a row that cannot be read is never evidence of health.
+      if (row.ragged) {
+        problems.push(
+          `INDEX.md row "${row.raw}" has a different number of cells than the header, so its values line up against the WRONG columns and its target is never checked. Escape any literal pipe as \\| (finding X191).`,
+        );
+        continue;
+      }
       let where = deEmphasise((row.cells[whereCol] || '').replace(/^`|`$/g, '')).trim();
       const mdLink = where.match(MD_LINK_RE);
       if (mdLink) where = mdLink[2].trim();
@@ -403,8 +415,19 @@ function checkGraph(devMemory, problems) {
       if (!heading) return { isHeading: false, open };
       const depth = heading[1].length;
       if (opensRe.test(heading[2])) {
-        open = true;
-        level = depth;
+        // 2026-08-16, finding X190: this used to set `level = depth` unconditionally, so a
+        // DEEPER sub-heading that happened to contain the section word — "### Implementation
+        // links" under "## Links" — became the new boundary at depth 3. The next sibling,
+        // "### Dependencies", is depth 3 and does not match, so it closed the section that
+        // "## Links" had opened, and everything below went unchecked in silence.
+        //
+        // The section's boundary is the depth of the heading that OPENED it. A matching
+        // sub-heading nested inside it is part of the section, not a new one; only a matching
+        // heading at the same depth or shallower re-anchors it.
+        if (!open || depth <= level) {
+          open = true;
+          level = depth;
+        }
       } else if (open && depth <= level) {
         open = false; // a sibling or shallower heading genuinely ends the section
       }
