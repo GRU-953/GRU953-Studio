@@ -8492,6 +8492,13 @@ for (const script of [
   // sentence that caused a spurious block before that constraint existed, now numbered, so
   // the protection is proven rather than assumed.
   'X145-link-list-forms.mjs',
+  // 2026-08-15: structured evidence counted only when the task key was spelled exactly
+  // `taskId`, so a second object recording exitCode 1 but keyed taskID / task_id / taskid /
+  // TaskId was never examined and the row passed on an older passing object — the exact
+  // masking the multi-object check was added to prevent, reopened through a spelling.
+  // Control E is the line the fix must not cross: an object with NO task key must stay
+  // ignored, or every stray JSON snippet in a notes cell would start blocking releases.
+  'X146-miskeyed-evidence.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

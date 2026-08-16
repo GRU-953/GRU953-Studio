@@ -505,9 +505,31 @@ function main() {
       // recording a non-zero exit disqualifies the row, mirroring the prose
       // rule that a row may honestly narrate history but not also currently
       // claim to be failing and still count as done.
-      const jsonCandidates = extractJsonObjects(row).filter(
-        (o) => o && typeof o === 'object' && !Array.isArray(o) && 'taskId' in o,
-      );
+      // 2026-08-15, finding X146 (High, reproduced). This filtered on the key spelled exactly
+      // `taskId`, so a second object recording "exitCode": 1 but keyed `taskID`, `task_id`,
+      // `taskid` or `TaskId` was not evidence, was never examined, and the row passed on the
+      // strength of the first object alone. That is precisely the masking the multi-object
+      // check above was added to prevent, reopened through a spelling.
+      //
+      // The line this must not cross: an arbitrary JSON object does NOT become evidence just
+      // because it mentions an exit code. Recognition is limited to spellings of the task key
+      // itself — case and an optional underscore — and nothing else. Control E of the
+      // reproduction holds an object with no task key at all, which must stay ignored, or
+      // every stray snippet in a notes cell would start blocking releases.
+      //
+      // The canonical spelling is written back, so the field validation below — which asks for
+      // `taskId` — still reports a genuinely absent task id rather than being fooled by the
+      // rename. A mis-keyed object is therefore both COUNTED and reported as malformed, which
+      // is the honest outcome: it is evidence, and its shape is wrong.
+      const TASK_KEY_RE = /^task_?id$/i;
+      const jsonCandidates = extractJsonObjects(row)
+        .filter((o) => o && typeof o === 'object' && !Array.isArray(o))
+        .filter((o) => Object.keys(o).some((k) => TASK_KEY_RE.test(k)))
+        .map((o) => {
+          if ('taskId' in o) return o;
+          const actual = Object.keys(o).find((k) => TASK_KEY_RE.test(k));
+          return { ...o, taskId: o[actual] };
+        });
       let hasPassingJsonEvidence = false;
       if (jsonCandidates.length > 0) {
         const malformed = jsonCandidates
