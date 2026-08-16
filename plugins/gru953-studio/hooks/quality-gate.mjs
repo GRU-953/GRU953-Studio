@@ -247,8 +247,32 @@ function parseRows(text) {
       const item = r.cells[idx.item] || '';
       const status = r.cells[idx.status] || '';
       const evidence = idx.evidence === -1 ? '' : r.cells[idx.evidence] || '';
-      if (!item) continue;
-      rows.push({ item, status, evidence, raw: r.raw.trim(), tableIndex });
+      // 2026-08-15, finding X144 / quality-gate D3 and D4. The contradiction check read the
+      // EVIDENCE cell alone, so two claims of failure were invisible: one written in the
+      // STATUS cell ("pass, but 3 still failing" — PASS_RE is prefix-anchored and matches
+      // "pass"), and one written in a FOURTH column, because idx.evidence takes the first
+      // matching header and a later Notes column is never read.
+      //
+      // Scanning the whole row would undo a deliberate fix of 2026-08-05: CONTRADICTION_RE
+      // used to run against the raw row, and the word "Regression" in an item's NAME wrongly
+      // blocked a green row. So the rule is every cell EXCEPT the item name — the name is a
+      // label, every other cell is a claim. Control E of the reproduction holds that exact
+      // regression row so this cannot be undone by accident.
+      const claimCells = r.cells.filter((_, i) => i !== idx.item);
+      const contradiction = claimCells.find((c) => CONTRADICTION_RE.test(c));
+      // D2: a row with a blank Item cell used to be dropped here, before anything was read —
+      // so a continuation row recording a real failure vanished. It is no longer attributable
+      // to a dimension, but a failure it records still counts.
+      if (!item) {
+        if (contradiction) {
+          problems.push(
+            `a row with no Item name records a failure that nothing else in this file accounts for → "${r.raw.trim()}" (finding X144)`,
+          );
+        }
+        continue;
+      }
+      rows.push({
+        contradiction, item, status, evidence, raw: r.raw.trim(), tableIndex });
     }
   }
   return { rows, ragged };
@@ -334,7 +358,9 @@ function main() {
       // legitimately green row. A contradiction claim lives in the EVIDENCE
       // cell, never in the item's name — scope the check to that cell, the
       // same cell the placeholder/evidence checks below already read.
-      if (CONTRADICTION_RE.test(r.evidence)) {
+      // X144: `contradiction` is the first claim cell that says this row is failing —
+      // every cell except the item's name. Previously this tested r.evidence alone.
+      if (r.contradiction) {
         problems.push(
           `${dim.label}: a row is marked passing but its own text says it is currently failing/unverified → "${r.raw}"`,
         );

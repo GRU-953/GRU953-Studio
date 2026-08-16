@@ -8477,6 +8477,14 @@ for (const script of [
   // "none of the tests failed", an ordinary sentence that must survive — which is why the
   // prefix rule covers only words that cannot begin a genuine sentence.
   'X143-quality-gate-recognition.mjs',
+  // 2026-08-15, three quality-gate findings with one shape: the row was judged by ONE cell,
+  // so a failure recorded anywhere else was invisible — in the STATUS cell ("pass, but 3
+  // still failing"), in a FOURTH column the evidence index never reached, or in a row whose
+  // blank Item cell made it vanish before anything was read. Now every cell EXCEPT the item's
+  // name is treated as a claim. Control E is load-bearing: a fix of 2026-08-05 narrowed this
+  // check to the evidence cell because "Regression" in an item NAME blocked a green row, and
+  // scanning the whole row would undo it.
+  'X144-row-judged-whole.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
