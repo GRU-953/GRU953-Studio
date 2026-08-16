@@ -329,8 +329,41 @@ function main() {
   // this gate failing OPEN. Strip surrounding emphasis, then any leading run of
   // non-alphanumeric decoration, before the "starts with the word done" test —
   // still rejecting "undone"/"donee" (Round 7) and tolerating "Done ✅"/"DONE!".
-  const isDoneValue = (c) =>
-    /^done\b/i.test(deEmphasise(String(c == null ? '' : c)).replace(/^[^A-Za-z0-9]+/, ''));
+  // 2026-08-15, finding X139 / verify-progress D1 (High, reproduced). This recognised
+  // completion by exactly one word: /^done\b/i. A task marked `Completed`, `Finished`,
+  // `Shipped`, `Delivered` or `✅` was therefore not a done row, was never evidence-checked,
+  // and contributed nothing — so the gate reported clean about a project whose tasks claimed
+  // to be finished with no proof at all. A false clean, not a fail-closed: the identical row
+  // marked `done` blocks.
+  //
+  // Widening this makes MORE rows evidence-checked, never fewer, so the risk here is a false
+  // alarm rather than a miss. Every accepted word therefore unambiguously means finished:
+  //
+  //   NOT accepted — "closed": ambiguous. A task closed as won't-do is not a task completed,
+  //     and demanding proof of completion for it would be exactly that false alarm.
+  //   NOT accepted — translations. The sweep suggested "Terminé". Guessing which languages
+  //     and which words would invent a vocabulary nobody agreed, and a wrong guess blocks a
+  //     healthy project. A project that needs one is a decision to record, not a synonym to
+  //     assume.
+  //   NOT accepted — typos ("doen"). Accepting near-misses is how a recogniser stops being
+  //     predictable, and an unpredictable gate is one people route around.
+  //
+  // The prefix anchor is load-bearing and is kept: it is what keeps "not done", "undone",
+  // "incomplete", "in progress" and "doing" out. A word-boundary match anywhere in the cell
+  // would accept "not done" and demand evidence for unfinished work.
+  //
+  // Reproduction: hooks/test/repro/X139-completion-synonyms.mjs, whose control D holds five
+  // unfinished statuses that must stay untouched.
+  const DONE_WORDS = /^(done|completed?|finished|shipped|delivered)\b/i;
+  // Symbols survive the decoration strip below, so they are tested on the de-emphasised
+  // cell before it: a bare tick or a ticked checkbox is a completion claim in every project
+  // that uses one.
+  const DONE_SYMBOLS = /^\s*(✅|✔️?|☑️?|\[x\]|100\s*%)\s*$/i;
+  const isDoneValue = (c) => {
+    const raw = deEmphasise(String(c == null ? '' : c)).trim();
+    if (DONE_SYMBOLS.test(raw)) return true;
+    return DONE_WORDS.test(raw.replace(/^[^A-Za-z0-9]+/, ''));
+  };
   // 2026-07-21 Round 12 audit fix (medium): GFM outer pipes are OPTIONAL per row,
   // so a piped `| a | b |` and a pipe-less `a | b` render identically but
   // splitPipeCells yields ['',a,b,''] vs [a,b]. If a data row's outer-pipe style

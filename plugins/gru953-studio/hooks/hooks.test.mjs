@@ -8439,6 +8439,13 @@ for (const script of [
   // The control (a healthy single-table project must stay clean) is the important one:
   // blocking a good project would be worse than any defect this closes.
   'X138-shared-table-reader.mjs',
+  // 2026-08-15: verify-progress recognised completion by one word, /^done\b/i, so a task
+  // marked Completed, Finished, Shipped, Delivered or a bare tick was never evidence-checked
+  // and the gate reported clean about unproven work. Widened to the unambiguous synonyms
+  // only — "closed" and translations are deliberately excluded, because widening makes MORE
+  // rows checked and a wrong guess would block healthy work. Control D holds five unfinished
+  // statuses that must stay untouched.
+  'X139-completion-synonyms.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
