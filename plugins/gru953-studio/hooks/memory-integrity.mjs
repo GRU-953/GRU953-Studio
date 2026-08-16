@@ -35,6 +35,8 @@ import { fileURLToPath } from 'node:url';
 import {
   splitPipeCells,
   isDirectory,
+  // 2026-08-15: checkIndex reads through the shared reader now, not its own line walk.
+  parseTables,
   deEmphasise,
   SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
@@ -247,28 +249,31 @@ function checkIndex(root, devMemory, problems) {
   const file = path.join(devMemory, 'INDEX.md');
   const text = read(file);
   if (text === null) return; // no structured index yet — nothing to validate
-  const lines = text.split(/\r?\n/);
-  let inTable = false;
-  let whereCol = -1;
-  // 2026-07-29 maintenance fix (audit finding 2): reset alongside whereCol
-  // itself, at both places whereCol is (re)computed per table — the fix below
-  // pushes one problem per TABLE, not one per data row.
-  let unrecognisedHeaderReported = false;
-  for (const line of lines) {
-    if (!/^\s*\|/.test(line)) {
-      inTable = false;
-      whereCol = -1;
-      unrecognisedHeaderReported = false;
-      continue;
-    }
-    const cells = splitPipeCells(line).map((c) => c.trim());
-    if (!inTable) {
-      inTable = true;
-      whereCol = cells.findIndex((c) => /^(file|path|where|location)$/i.test(deEmphasise(c)));
-      unrecognisedHeaderReported = false;
-      continue;
-    }
-    if (SEPARATOR_ROW_RE.test(line)) continue;
+  // 2026-08-15, finding X141 / memory-integrity D9 (High, reproduced). This function used to
+  // walk lines itself and enter table mode only on a line beginning with a pipe:
+  //
+  //     if (!/^\s*\|/.test(line)) { inTable = false; whereCol = -1; continue; }
+  //
+  // Outer pipes are OPTIONAL in GitHub-flavoured markdown — `What | Where` renders exactly
+  // as `| What | Where |` does — so an ordinary index written the second way was recognised
+  // in no respect at all, every row skipped, and the gate reported the index "internally
+  // consistent" while its entries pointed at files that do not exist. That is this gate's
+  // entire job.
+  //
+  // This was the THIRD private table parser found in one sweep, and the third with a fault
+  // the shared reader does not have. So the fix is a deletion: lib.mjs's parseTables() has
+  // recognised pipe-less tables since it was written, it is fence-aware as of today, and
+  // traceability-check was moved onto it this morning for the same reason.
+  //
+  // The per-table "no recognisable Where column" report is preserved exactly — a 2026-07-29
+  // fix made that a problem rather than a silent skip, and control E of the reproduction
+  // exists so this move cannot quietly undo it.
+  //
+  // Reproduction: hooks/test/repro/X141-index-pipeless-table.mjs.
+  for (const table of parseTables(text)) {
+    const whereCol = table.headerCells.findIndex((c) =>
+      /^(file|path|where|location)$/i.test(deEmphasise(c)),
+    );
     if (whereCol === -1) {
       // 2026-07-29 maintenance fix: this used to `continue` silently, so a
       // table whose header wasn't recognised (e.g. a genuine file/path/
@@ -284,12 +289,11 @@ function checkIndex(root, devMemory, problems) {
       // loop), so an unrecognised header emitted one identical sentence per
       // row instead of once per table. `unrecognisedHeaderReported` reports
       // it only the first time for this table.
-      if (!unrecognisedHeaderReported) {
-        problems.push(
-          'INDEX.md has a table with no recognisable file/path/where/location header column — its rows cannot be checked for stale references.',
-        );
-        unrecognisedHeaderReported = true;
-      }
+      // The 2026-07-29 de-duplication flag is gone with the private walk: this branch now
+      // runs once per TABLE by construction, which is what that flag was emulating.
+      problems.push(
+        'INDEX.md has a table with no recognisable file/path/where/location header column — its rows cannot be checked for stale references.',
+      );
       continue;
     }
     // 2026-07-29 maintenance fix (round 3, F1): the backtick strip alone
@@ -300,15 +304,17 @@ function checkIndex(root, devMemory, problems) {
     // failed LOOKS_LIKE_PATH_RE outright (needs the extension to end the
     // string) and silently skipped the check entirely. deEmphasise() strips
     // the emphasis the same way this file's own header-cell fix already does.
-    let where = deEmphasise((cells[whereCol] || '').replace(/^`|`$/g, '')).trim();
-    const mdLink = where.match(MD_LINK_RE);
-    if (mdLink) where = mdLink[2].trim();
-    if (!where || PLACEHOLDER_RE.test(where) || !LOOKS_LIKE_PATH_RE.test(where)) continue;
-    // Resolve relative to the project root; also accept a path already relative
-    // to Dev-Memory/ (a bare filename recorded in the index).
-    const candidates = [path.resolve(root, where), path.resolve(devMemory, where)];
-    if (!candidates.some((p) => fs.existsSync(p))) {
-      problems.push(`INDEX.md points at "${where}", which does not exist — a stale recall entry.`);
+    for (const row of table.rows) {
+      let where = deEmphasise((row.cells[whereCol] || '').replace(/^`|`$/g, '')).trim();
+      const mdLink = where.match(MD_LINK_RE);
+      if (mdLink) where = mdLink[2].trim();
+      if (!where || PLACEHOLDER_RE.test(where) || !LOOKS_LIKE_PATH_RE.test(where)) continue;
+      // Resolve relative to the project root; also accept a path already relative
+      // to Dev-Memory/ (a bare filename recorded in the index).
+      const candidates = [path.resolve(root, where), path.resolve(devMemory, where)];
+      if (!candidates.some((p) => fs.existsSync(p))) {
+        problems.push(`INDEX.md points at "${where}", which does not exist — a stale recall entry.`);
+      }
     }
   }
 }

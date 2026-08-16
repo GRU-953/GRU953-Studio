@@ -8453,6 +8453,13 @@ for (const script of [
   // ends at the next heading of the same or shallower level. Control E proves a SIBLING
   // heading still ends it, so prose under a later heading is not parsed as data.
   'X140-section-scope.mjs',
+  // 2026-08-15: checkIndex entered table mode only on a line starting with a pipe, but outer
+  // pipes are optional in GitHub-flavoured markdown — so an ordinary index written without
+  // them was recognised in no respect at all and its stale references went unreported, which
+  // is this gate's entire job. The THIRD private table parser found in one sweep, and the
+  // third with a fault the shared reader does not have; the fix is a deletion. Control E
+  // guards the 2026-07-29 behaviour that an unrecognised header is reported, not skipped.
+  'X141-index-pipeless-table.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
