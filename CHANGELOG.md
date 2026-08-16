@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Ordinary GitHub work was refused as though it were going public
+
+- **`gate.mjs`: filing an issue was denied with a message about changing
+  visibility (finding X189).** A `gh api` write whose body sits in a file
+  cannot be read, so it fails closed — correctly — when aimed at a path that
+  can carry `visibility`. That rule was meant to cover the repository root and
+  repo-creation endpoints only, and its own comment said so. The endpoint test
+  ended in `(?![A-Za-z0-9_])`, which a following `/` satisfies, so
+  `repos/o/r/issues`, `.../releases`, `.../dispatches` and `.../pulls` all
+  matched the "repository root" and were refused. The remedy the denial
+  suggested was to record the go-public approval — the single most consequential
+  token in the product — to unblock filing an issue.
+- **The test that should have caught it was decorative.** `hooks.test.mjs`
+  carries a test named "does not over-block writes that cannot change
+  visibility". Its only sub-resource case with an unreadable body also carried
+  `-f private=true`, which clears the command through a different branch
+  entirely, so the predicate under test was never reached. Cases without that
+  flag are now included.
+- **GitHub Pages is deliberately still fail-closed.** Pages is a sub-resource,
+  so narrowing the rule would have quietly relaxed it — and a Pages site
+  publishes the repository's content on the web. It is now named explicitly
+  rather than caught by accident, with its own test.
+
 ## 6.1.0 — 2026-08-13
 
 **Please update. Every earlier version reduced the safety of the machine it was
@@ -506,10 +531,15 @@ Round 8 go-public bypasses were found.
   from a file whose contents are not in the command text, so such a write can
   never be *proven* private. It now fails closed — but only when aimed at a
   repository root endpoint (`repos/<owner>/<repo>`) or a repo-creation
-  endpoint, the only paths whose body can carry visibility at all. A
+  endpoint, the only paths whose body can carry visibility at all. ~~A
   sub-resource (`.../issues`, `.../dispatches`, `.../releases`) is untouched,
   so the fix never demands a go-public token for a write that could not change
-  visibility anyway.
+  visibility anyway.~~
+  **Struck 2026-08-16 (finding X189): that sentence was never true.** The
+  repository-root test ended in `(?![A-Za-z0-9_])`, a boundary a following `/`
+  satisfies, so every sub-resource matched the root and filing an issue was
+  refused with a message about going public. Corrected in 6.1.1 below. It is
+  struck rather than deleted because the claim was published and acted on.
 - **`scan.mjs`: the small-file gzip path had no decompression cap.** The
   `>MAX_SCAN_BYTES` branch has capped `gunzipSync` at 64 MiB since 2026-07-26;
   its twin — the branch handling a gzip file small enough to read whole — passed

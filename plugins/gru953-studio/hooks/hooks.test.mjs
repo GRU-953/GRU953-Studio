@@ -7940,12 +7940,51 @@ test('gate.mjs: the JSON-body go-public fix does not over-block writes that cann
     // a repo SUB-resource cannot carry visibility whatever its body says
     'gh api --method POST repos/me/app/issues -f title=bug',
     'gh api -X POST repos/me/app/dispatches --input payload.json -f private=true',
+    // 2026-08-16, finding X189: the two cases above never reached the endpoint predicate this
+    // test exists to protect, so it passed green for nine months while the over-block was
+    // happening. The first has no `--input`, so apiUninspectableBody is false; the second
+    // carries `-f private=true`, which clears it through apiExplicitPrivate. The combination
+    // that actually exercises the predicate — an UNINSPECTABLE body sent to a sub-resource,
+    // with no private flag — was missing, and it was denied with a message about going public.
+    'gh api --method POST repos/me/app/issues --input issue.json',
+    'gh api -X POST repos/me/app/dispatches --input payload.json',
+    'gh api --method POST repos/me/app/releases --input rel.json',
+    'gh api --method PATCH repos/me/app/issues/7 --input patch.json',
     // and an ordinary private push is untouched
     'git push origin main',
   ]) {
     const r = runHook('gate.mjs', cmd, dir);
     assert.equal(r.decision, 'ask', `the private-publish token must still keep this off deny: ${cmd} (X91)`);
   }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The other half of X189, and the reason its fix is not simply "exclude every sub-resource":
+// GitHub Pages IS a sub-resource, and it publishes the repository's content on the web. It was
+// denied before the fix by accident (the root predicate swallowed every sub-resource); it is
+// denied after the fix on purpose. Without this test, narrowing the predicate would silently
+// relax a real protection and nothing would notice.
+test('gate.mjs: a Pages write with an unreadable body still needs the go-public token (X189)', () => {
+  const dir = mkTmp('gru-gate-pages-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  spawnSync(NODE, [path.join(HERE, 'confirm-publish.mjs'), dir], { encoding: 'utf8' });
+  for (const cmd of [
+    'gh api --method POST repos/me/app/pages --input body.json',
+    'gh api -X PUT repos/me/app/pages --input body.json',
+  ]) {
+    assert.equal(
+      runHook('gate.mjs', cmd, dir).decision,
+      'deny',
+      `Pages publishes the repo on the web, so an unreadable body sent there must stay fail-closed: ${cmd}`,
+    );
+  }
+  // ...and it gates rather than forbids: the go-public token unlocks it.
+  spawnSync(NODE, [path.join(HERE, 'confirm-go-public.mjs'), dir], { encoding: 'utf8' });
+  assert.equal(
+    runHook('gate.mjs', 'gh api --method POST repos/me/app/pages --input body.json', dir).decision,
+    'ask',
+    'with GO-PUBLIC recorded the Pages write must reach the user rather than being refused outright',
+  );
   fs.rmSync(dir, RM_OPTS);
 });
 

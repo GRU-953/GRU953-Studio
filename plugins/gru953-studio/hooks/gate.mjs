@@ -229,9 +229,27 @@ function isGoPublicCommand(rawC) {
   // `.../releases` — cannot change visibility whatever its body says, so an
   // uninspectable body sent there is not swept up and is never asked for a
   // go-public token it has no business needing.
+  //
+  // 2026-08-16, finding X189: that last sentence was FALSE for nine months. The boundary
+  // below was LEXICAL_BOUNDARY, `(?![A-Za-z0-9_])` — a lookahead that a following `/`
+  // satisfies — so `repos/o/r/issues` matched the "repository root" test and filing an issue
+  // was refused with a message about going public. The paragraph above, and CHANGELOG's
+  // account of the same fix, both described behaviour the code did not have.
+  //
+  // The boundary now also refuses a further path SEGMENT, so the root means the root. A bare
+  // trailing slash (`repos/o/r/`) is still the root and still matches.
   const apiUninspectableBody = /--input[ \t=]+['"]?(?!-['"\s]|-$)[^ \t]/i.test(c);
   const apiRepoRootEndpoint = new RegExp(
-    `\\/?repos\\/[^ \\t/'"]+\\/[^ \\t/'"]+['"]?${LEXICAL_BOUNDARY}`,
+    `\\/?repos\\/[^ \\t/'"]+\\/[^ \\t/'"]+['"]?${LEXICAL_BOUNDARY}(?!\\/[A-Za-z0-9_])`,
+    'i',
+  ).test(c);
+  // ...with ONE named exception, because the narrow reading of X189 would have quietly
+  // relaxed a real protection. GitHub Pages is a sub-resource that genuinely publishes the
+  // repository's content on the web, so a write to `repos/o/r/pages` whose body cannot be
+  // read stays fail-closed exactly as the root does. It is listed rather than caught by
+  // accident, and X189's control F pins it.
+  const apiRepoPagesEndpoint = new RegExp(
+    `\\/?repos\\/[^ \\t/'"]+\\/[^ \\t/'"]+\\/pages${LEXICAL_BOUNDARY}`,
     'i',
   ).test(c);
   // 2026-07-21 Round 2 fix: GitHub's REST default for repo creation is
@@ -249,7 +267,9 @@ function isGoPublicCommand(rawC) {
     isGhApi &&
     (apiExplicitPublic ||
       (apiRepoCreate && !apiExplicitPrivate) ||
-      (apiUninspectableBody && (apiRepoCreate || apiRepoRootEndpoint) && !apiExplicitPrivate));
+      (apiUninspectableBody &&
+        (apiRepoCreate || apiRepoRootEndpoint || apiRepoPagesEndpoint) &&
+        !apiExplicitPrivate));
   return repoVisibility || apiVisibility;
 }
 function goPublicToken(studioRoot) {
