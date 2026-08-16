@@ -18,12 +18,12 @@
 // Note on the two inverse cases (P5, P12): "buggy" for them means BLOCKED (a
 // false positive), so the fixed state is `clean`. Encoded per-case, not assumed.
 
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 // 2026-08-13: two cases below make a file UNREADABLE with `chmod 000`. On Windows
 // that does not restrict reading at all, so the gate legitimately still reads the
@@ -52,10 +52,23 @@ function freshProject() {
   return dir;
 }
 
-// Runs a gate and reports 'clean' (exit 0) or 'blocked' (non-zero).
+function die(msg) {
+  console.error(`FAIL: ${msg}`);
+  process.exit(1);
+}
+
+// Runs a gate and reports 'clean' or 'blocked'.
+//
+// This used to read `r.status === 0 ? 'clean' : 'blocked'` — the exit code and nothing else.
+// A gate that THREW exits non-zero, so it was reported as 'blocked', which is this file's
+// word for "the gate correctly objected". Every case here would therefore have passed against
+// a gate that never ran. That is not a hypothetical: a ReferenceError shipped in
+// quality-gate.mjs on 15 August 2026 and no reproduction in this directory noticed.
+//
+// The verdict now comes from the gate's own parsed report, and a crash is named as a crash.
 function verdict(hook, args) {
-  const r = spawnSync(NODE, [path.join(HOOKS, hook), ...args], { encoding: 'utf8' });
-  return r.status === 0 ? 'clean' : 'blocked';
+  const v = refuseCrash(readGate(NODE, path.join(HOOKS, hook), args), `${hook} in phase1-gate-honesty.mjs`, die);
+  return v.kind === 'clean' ? 'clean' : 'blocked';
 }
 
 const cases = [];

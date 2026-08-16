@@ -48,7 +48,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -65,20 +66,13 @@ function problems(build) {
   const dir = mkdtempSync(join(tmpdir(), 'x116-'));
   try {
     build(dir);
-    let out = '';
-    try {
-      out = execFileSync(process.execPath, [gate, dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (e) {
-      out = `${e.stdout || ''}${e.stderr || ''}`;
-    }
     // Parse rather than grep: this gate emits JSON, so quotes inside messages arrive
-    // escaped and raw substring matching silently finds nothing.
-    try {
-      return JSON.parse(out).problems || [];
-    } catch {
-      die(`repo-integrity produced output this script could not parse:\n${out.slice(0, 400)}`);
-    }
-    return [];
+    // escaped and raw substring matching silently finds nothing. readGate() additionally
+    // separates a gate that THREW from one that objected — both exit non-zero, and this
+    // reproduction concludes "the check did not fire" from an empty problems list, which a
+    // crash would produce just as readily as a healthy clean run.
+    const v = refuseCrash(readGate(process.execPath, gate, [dir]), 'X116-X117-weaker-predicate.mjs', die);
+    return v.problems;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

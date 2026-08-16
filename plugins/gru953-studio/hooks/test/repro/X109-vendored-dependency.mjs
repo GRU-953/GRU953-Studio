@@ -55,7 +55,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -71,18 +72,21 @@ function die(msg) {
   process.exit(1);
 }
 
-/** Run docs-consistency against `dir` and report whether the X109 check complained. */
+/**
+ * Run docs-consistency against `dir` and report whether the X109 check complained.
+ *
+ * A skeleton fixture fails many other checks; that is expected and irrelevant. We assert on
+ * this check's own marker, never on the exit code, because an exit code cannot say WHICH
+ * check objected.
+ *
+ * But "the marker is absent" had two causes and this function could not tell them apart: the
+ * check stayed quiet, or the gate THREW before reaching it. Both returned false, and false
+ * here means "the defect is present". readGate() names a crash so it can never be reported
+ * as a finding.
+ */
 function fires(dir) {
-  let out = '';
-  try {
-    out = execFileSync(process.execPath, [gate, dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    // A skeleton fixture fails many other checks; that is expected and irrelevant. We
-    // assert on this check's own marker, never on the exit code, because an exit code
-    // cannot say WHICH check objected.
-    out = `${e.stdout || ''}${e.stderr || ''}`;
-  }
-  return out.includes(SIGNAL);
+  const v = refuseCrash(readGate(process.execPath, gate, [dir]), 'X109-vendored-dependency.mjs', die);
+  return v.raw.includes(SIGNAL);
 }
 
 /** Build a minimal but well-formed plugin skeleton, then let `extra` add to it. */

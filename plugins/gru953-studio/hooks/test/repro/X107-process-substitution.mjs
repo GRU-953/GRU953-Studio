@@ -52,8 +52,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+
 import { createHash } from 'node:crypto';
+import { readDecision, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -91,16 +92,17 @@ function decide(cmd, withToken) {
         `STUDIO-PUBLISH-CONFIRMED:${token}\nISSUED:${Date.now()}\n`,
       );
     }
-    const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: cmd }, cwd: root });
-    const r = spawnSync(NODE, [join(HOOKS, 'gate.mjs')], { input, encoding: 'utf8' });
-    const out = `${r.stdout || ''}`.trim();
-    if (!out) return { decision: 'no decision', reason: '' };
-    try {
-      const d = JSON.parse(out)?.hookSpecificOutput ?? {};
-      return { decision: d.permissionDecision ?? 'unparsed', reason: String(d.permissionDecisionReason ?? '') };
-    } catch {
-      return { decision: 'unparsed', reason: out };
-    }
+    // A hook that stands aside prints nothing; so does a hook that died. readDecision()
+    // separates them on the exit code and stderr, so a crash can never be read here as the
+    // documented neutral. See _verdict.mjs.
+    const v = refuseCrash(
+      readDecision(NODE, join(HOOKS, 'gate.mjs'), { tool_name: 'Bash', tool_input: { command: cmd }, cwd: root }),
+      'X107-process-substitution.mjs',
+      die,
+    );
+    return v.kind === 'silent'
+      ? { decision: 'no decision', reason: '' }
+      : { decision: v.decision, reason: v.reason };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

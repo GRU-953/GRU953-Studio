@@ -48,7 +48,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -69,13 +69,10 @@ function verdict(status, evidence) {
       '# Progress\n\n| ID | Task | Status | Evidence |\n| :-- | :-- | :-- | :-- |\n' +
         `| T1 | Build the login screen | ${status} | ${evidence} |\n`,
     );
-    const r = spawnSync(process.execPath, [join(HOOKS, 'verify-progress.mjs'), dir], { encoding: 'utf8' });
-    const out = `${r.stdout || ''}${r.stderr || ''}`;
-    try {
-      return { status: JSON.parse(out).status, code: r.status };
-    } catch {
-      return { status: 'unparsed', code: r.status, raw: out.slice(0, 200) };
-    }
+    // A crash is not a verdict. readGate() names it; refuseCrash() refuses to
+    // let this reproduction reason about it. See _verdict.mjs.
+    const v = refuseCrash(readGate(process.execPath, join(HOOKS, 'verify-progress.mjs'), [dir]), 'X139-completion-synonyms.mjs', die);
+    return { status: v.status, code: v.code, raw: v.raw.slice(0, 200) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

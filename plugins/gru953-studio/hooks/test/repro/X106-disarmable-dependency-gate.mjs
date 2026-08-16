@@ -55,6 +55,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -110,14 +111,12 @@ function dc6Fires({ claim, dependency, malformed }) {
       );
     }
 
-    let out = '';
-    try {
-      out = execFileSync(process.execPath, [gate, dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (e) {
-      // Non-zero exit is the normal case for a skeleton repo. The output is what matters.
-      out = `${e.stdout || ''}${e.stderr || ''}`;
-    }
-    return out.includes(DC6_SIGNAL);
+    // Non-zero exit is the normal case for a skeleton repo, so the OUTPUT is what matters,
+    // never the exit code. That left one gap: a gate that THREW also produced no marker, and
+    // "no marker" is read below as "DC6 did not fire" — a defect verdict manufactured by a
+    // gate that never ran. readGate() names the crash instead.
+    const v = refuseCrash(readGate(process.execPath, gate, [dir]), 'X106-disarmable-dependency-gate.mjs', die);
+    return v.raw.includes(DC6_SIGNAL);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

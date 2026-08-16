@@ -52,7 +52,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -67,13 +68,10 @@ function die(msg) {
 
 /** Run roster-check from `cwd` with `args`, and return its parsed verdict. */
 function run(args, cwd) {
-  const r = spawnSync(process.execPath, [gate, ...args], { cwd, encoding: 'utf8' });
-  const out = `${r.stdout || ''}${r.stderr || ''}`;
-  try {
-    return { ...JSON.parse(out), code: r.status };
-  } catch {
-    return { status: 'unparsed', raw: out.slice(0, 300), code: r.status };
-  }
+  // A crash is not a verdict. readGate() names it; refuseCrash() refuses to
+  // let this reproduction reason about it. See _verdict.mjs.
+  const v = refuseCrash(readGate(process.execPath, gate, args, { cwd }), 'X114-cross-project-baseline.mjs', die);
+  return { ...v.json, status: v.status, code: v.code, raw: v.raw.slice(0, 300) };
 }
 
 /** A throwaway project carrying a roster baseline that has nothing to do with this plugin. */

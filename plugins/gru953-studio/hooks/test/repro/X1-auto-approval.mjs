@@ -38,6 +38,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { readDecision, refuseCrash } from './_verdict.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HOOKS = path.resolve(HERE, '..', '..');
@@ -58,15 +59,23 @@ function makeProject() {
   return dir;
 }
 
+function die(msg) {
+  console.error(`FAIL: ${msg}`);
+  process.exit(1);
+}
+
 // Returns the permissionDecision a hook emits, or null when it emits none.
+//
+// `null` used to mean two different things — the hook stood aside, or it threw and this
+// script swallowed the stack trace. Those are not the same result, and a crash silently
+// reported as "no decision" is a hook failure dressed as a design choice.
 function decisionFor(hook, command, cwd) {
-  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd });
-  const r = spawnSync(NODE, [path.join(HOOKS, hook)], { input, encoding: 'utf8' });
-  try {
-    return JSON.parse(r.stdout).hookSpecificOutput.permissionDecision ?? null;
-  } catch {
-    return null;
-  }
+  const v = refuseCrash(
+    readDecision(NODE, path.join(HOOKS, hook), { tool_name: 'Bash', tool_input: { command }, cwd }),
+    `${hook} in X1-auto-approval.mjs`,
+    die,
+  );
+  return v.kind === 'silent' ? null : v.decision;
 }
 
 // The commands a user would most want a prompt for. None is a push, so all of

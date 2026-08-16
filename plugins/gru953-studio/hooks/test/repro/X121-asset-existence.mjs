@@ -46,7 +46,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -68,14 +68,12 @@ function verdict(contentMd, realFiles = []) {
       mkdirSync(dirname(full), { recursive: true });
       writeFileSync(full, 'x');
     }
-    const r = spawnSync(process.execPath, [join(HOOKS, 'content-check.mjs'), dir], { encoding: 'utf8' });
-    const out = `${r.stdout || ''}${r.stderr || ''}`;
-    try {
-      const j = JSON.parse(out);
-      return { status: j.status, problems: j.problems || [], json: j, code: r.status };
-    } catch {
-      return { status: 'unparsed', problems: [], json: {}, code: r.status, raw: out.slice(0, 200) };
-    }
+    // A crash is not a verdict. readGate() names it; refuseCrash() refuses to
+    // let this reproduction reason about it. See _verdict.mjs.
+    const v = refuseCrash(readGate(process.execPath, join(HOOKS, 'content-check.mjs'), [dir]), 'X121-asset-existence.mjs', die);
+    // `json` is carried through because case A below reads the gate's own disclosure field
+    // (`assetExistenceChecked`), not just its status.
+    return { status: v.status, problems: v.problems, code: v.code, json: v.json, raw: v.raw.slice(0, 200) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

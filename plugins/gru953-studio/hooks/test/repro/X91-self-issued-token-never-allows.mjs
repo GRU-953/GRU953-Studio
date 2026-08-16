@@ -55,6 +55,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readDecision, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -80,15 +81,16 @@ function decide(cmd, prepare) {
   try {
     mkdirSync(join(root, 'Dev-Memory'), { recursive: true });
     if (prepare) prepare(root);
-    const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: cmd }, cwd: root });
-    const r = spawnSync(NODE, [join(HOOKS, 'gate.mjs')], { input, encoding: 'utf8' });
-    const out = `${r.stdout || ''}`.trim();
-    if (!out) return 'no decision';
-    try {
-      return JSON.parse(out)?.hookSpecificOutput?.permissionDecision ?? 'unparsed';
-    } catch {
-      return 'unparsed';
-    }
+    // Case 5 below REQUIRES 'no decision' — a hook that stands aside is the documented
+    // neutral. A hook that DIED also prints nothing, so silence alone cannot be read as
+    // standing aside: readDecision() separates the two on the exit code and stderr, and a
+    // crash can therefore never satisfy the case that expects silence.
+    const v = refuseCrash(
+      readDecision(NODE, join(HOOKS, 'gate.mjs'), { tool_name: 'Bash', tool_input: { command: cmd }, cwd: root }),
+      'X91-self-issued-token-never-allows.mjs',
+      die,
+    );
+    return v.kind === 'silent' ? 'no decision' : v.decision;
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

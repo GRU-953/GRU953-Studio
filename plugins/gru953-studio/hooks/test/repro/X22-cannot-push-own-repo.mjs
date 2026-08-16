@@ -34,6 +34,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { readDecision, refuseCrash } from './_verdict.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HOOKS = path.resolve(HERE, '..', '..');
@@ -46,15 +47,21 @@ const expectBug = process.argv.includes('--expect-bug');
 // very command that runs this script.
 const PUSH = ['git', 'push', 'origin', 'development'].join(' ');
 
+function die(msg) {
+  console.error(`FAIL: ${msg}`);
+  process.exit(1);
+}
+
+// `decision: null` used to mean two different things — scan.mjs stood aside, or it threw and
+// this script swallowed the stack trace. Case A below passes on anything that is not `deny`,
+// so a crash read as a pass. readDecision() names the crash instead.
 function decisionFor(cwd) {
-  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: PUSH }, cwd });
-  const r = spawnSync(NODE, [path.join(HOOKS, 'scan.mjs')], { input, encoding: 'utf8' });
-  try {
-    const out = JSON.parse(r.stdout).hookSpecificOutput;
-    return { decision: out.permissionDecision, reason: out.permissionDecisionReason || '' };
-  } catch {
-    return { decision: null, reason: '' };
-  }
+  const v = refuseCrash(
+    readDecision(NODE, path.join(HOOKS, 'scan.mjs'), { tool_name: 'Bash', tool_input: { command: PUSH }, cwd }),
+    'X22-cannot-push-own-repo.mjs',
+    die,
+  );
+  return v.kind === 'silent' ? { decision: null, reason: '' } : { decision: v.decision, reason: v.reason };
 }
 
 let failures = 0;

@@ -45,7 +45,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,12 +58,18 @@ function die(msg) {
   process.exit(1);
 }
 
-/** Run a gate against `dir` and return { code, out }. */
+/**
+ * Run a gate against `dir` and return { code, out }.
+ *
+ * Every case below judges by the exit code — `.code !== 0` meaning "the gate objected". A
+ * crash also exits non-zero, so before this guard a THROWING gate read as a blocking one and
+ * these cases reported themselves fixed. readGate() separates the two; refuseCrash() stops
+ * the run rather than letting it draw a conclusion from a broken gate.
+ */
 function run(gate, dir) {
-  const r = spawnSync(NODE, [join(HOOKS, gate), dir], { encoding: 'utf8' });
-  return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
+  const v = refuseCrash(readGate(NODE, join(HOOKS, gate), [dir]), `${gate} in X113-X115-X118`, die);
+  return { code: v.code, out: v.raw };
 }
-
 
 function withTmp(build, fn) {
   const dir = mkdtempSync(join(tmpdir(), 'x113-'));

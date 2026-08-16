@@ -48,6 +48,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -82,28 +83,17 @@ function inv17Messages(extra) {
         'export function escalate(r) { console.log(String(r)); process.exit(0); }\n',
     );
     if (extra) extra(hooks);
-    let out = '';
-    try {
-      out = execFileSync(process.execPath, [gate, dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (e) {
-      out = `${e.stdout || ''}${e.stderr || ''}`;
-    }
     // Parse the report rather than grepping its text. repo-integrity emits JSON, so the
     // quotes inside a message arrive escaped (`\"allow\"`) and a raw substring match on
     // `"allow"` silently finds nothing — which is how the first version of this script
     // reported a broken harness rather than a result. Parsing removes the whole class.
-    try {
-      const report = JSON.parse(out);
-      return (report.problems || []).filter((p) => String(p).includes(MARKER));
-    } catch {
-      // Not JSON (a crash, or a future change of format): fall back to line matching, and
-      // say so rather than silently returning nothing.
-      const lines = out.split('\n').filter((l) => l.includes(MARKER));
-      if (lines.length === 0 && out.trim() !== '') {
-        die(`repo-integrity produced output this script could not parse as JSON:\n${out.slice(0, 400)}`);
-      }
-      return lines.map((l) => l.trim());
-    }
+    //
+    // The earlier fallback here guessed: unparseable output was line-matched instead, so a
+    // crash returned an empty list and this reproduction read that as "the check did not
+    // fire" — a defect-present verdict produced by a gate that never ran. readGate() names
+    // the crash instead of guessing at it.
+    const v = refuseCrash(readGate(process.execPath, gate, [dir]), 'X110-no-blanket-approval.mjs', die);
+    return v.problems.filter((p) => String(p).includes(MARKER));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

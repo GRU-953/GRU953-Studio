@@ -66,7 +66,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+
+import { readGate, refuseCrash } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -101,18 +102,14 @@ function verdict(contentMd) {
   try {
     mkdirSync(join(dir, 'Dev-Memory'), { recursive: true });
     writeFileSync(join(dir, 'Dev-Memory', 'CONTENT.md'), contentMd);
-    const r = spawnSync(NODE, [join(HOOKS, 'content-check.mjs'), dir], { encoding: 'utf8' });
-    const out = `${r.stdout || ''}${r.stderr || ''}`;
-    let status = 'unparsed';
-    let problems = [];
-    try {
-      const j = JSON.parse(out);
-      status = j.status;
-      problems = j.problems || [];
-    } catch {
-      /* leave as unparsed */
-    }
-    return { status, problems, code: r.status };
+    // A crash is not a verdict. readGate() names it; refuseCrash() refuses to
+    // let this reproduction reason about it. See _verdict.mjs.
+    const v = refuseCrash(
+      readGate(NODE, join(HOOKS, 'content-check.mjs'), [dir]),
+      'X122-mistyped-content-table.mjs',
+      die,
+    );
+    return { status: v.status, problems: v.problems, code: v.code };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
