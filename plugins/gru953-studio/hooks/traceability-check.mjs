@@ -279,8 +279,36 @@ function parseTable(text, wantHeaderRe) {
   const orphaned = all
     .filter((t) => !matching.includes(t) && t.headerCells.length === width)
     .map((t) => t.headerCells.join(' | '));
+  // 2026-08-16, finding X197 — found by P6 round 3, and a regression of X192 fixed the same
+  // day. Merging every table that merely CONTAINS an id-ish column swept in tables that are
+  // not part of this register at all. An ordinary
+  //
+  //     ## Notes
+  //     | Task | Owner | Note |
+  //
+  // beside a four-column task table matched on "Task", was merged, and — once X192 taught this
+  // branch to report mismatched headers — blocked a perfectly healthy PROGRESS.md.
+  //
+  // The discriminator is already used ten lines above for orphans, and is the right one here
+  // too: a torn fragment of a table has the SAME number of columns, because it is the same
+  // table. A different width cannot be a positional continuation of this one, so it is a
+  // separate table and is left alone, exactly as a reader would leave it.
+  const nameSet = (cells) => new Set(cells.map((c) => deEmphasise(String(c)).trim().toLowerCase()));
+  const firstNames = nameSet(matching[0].headerCells);
+  const belongsToThisRegister = (t) => {
+    const names = [...nameSet(t.headerCells)];
+    if (names.length === 0) return false;
+    const shared = names.filter((n) => firstNames.has(n)).length;
+    // Half or more of its columns are columns of THIS register, so it is a section of the same
+    // table written with a different column set — the case X138 exists for, and it is reported.
+    // Below that it is a different table (a "## Notes" aside that merely mentions "Task"), and
+    // a reader would not merge it. Column COUNT alone was tried first and was too blunt: it
+    // silently dropped a genuine six-column-vs-four-column mismatch in REQUIREMENTS.md.
+    return shared * 2 >= names.length;
+  };
+  const fragments = [matching[0], ...matching.slice(1).filter(belongsToThisRegister)];
   const rows = [];
-  for (const t of matching) {
+  for (const t of fragments) {
     for (const r of t.rows) {
       rows.push({ cells: r.cells, raw: String(r.raw).trim(), ragged: r.ragged });
     }
@@ -301,7 +329,7 @@ function parseTable(text, wantHeaderRe) {
   const headerKey = (cells) =>
     cells.map((c) => deEmphasise(String(c)).trim().toLowerCase()).join(' ');
   const firstKey = headerKey(headers);
-  const mismatched = matching
+  const mismatched = fragments
     .slice(1)
     .filter((t) => headerKey(t.headerCells) !== firstKey)
     .map((t) => t.headerCells.join(' | '));

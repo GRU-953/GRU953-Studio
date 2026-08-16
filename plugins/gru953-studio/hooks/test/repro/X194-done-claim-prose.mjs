@@ -113,6 +113,27 @@ for (const [id, line, why] of [
   console.log(`  ${id}  ${line.padEnd(16)} ............... BLOCKED (control)`);
 }
 
+// ---- B2: X196 — the claims the FIRST version of this fix silently stopped catching ----
+// P6 round 3 found that requiring the segment to BE exactly a completion value traded the
+// false alarm for a FALSE CLEAN — the worse direction. Every real claim carrying a qualifier
+// went quiet. These are held here so the trade cannot be made again.
+for (const [line, why] of [
+  ['- T9 — done (2026-08-16)', 'a claim with a date'],
+  ['- T9 — done, evidence to follow', 'a claim with a note'],
+  ['T9: completed on Tuesday', 'a claim with a qualifier'],
+  ['- T9 — shipped to staging', 'an X139 synonym with a qualifier'],
+]) {
+  const v = verdict(append(line));
+  if (!swept(v)) {
+    die(
+      `control B2 failed: "${line}" is ${why} and must be reported. Requiring the segment to be ` +
+        'EXACTLY a completion value silences every claim that carries a qualifier — that was ' +
+        `finding X196, and it is a false clean, which is worse than the false alarm it replaced: ${v.messages[0] || '(nothing said)'}`,
+    );
+  }
+  console.log(`  B2 ${line.padEnd(31)} .... BLOCKED (control: X196)`);
+}
+
 // ---- E: X194 --------------------------------------------------------------------
 const PROSE = [
   'Shipped items are listed in the release notes.',

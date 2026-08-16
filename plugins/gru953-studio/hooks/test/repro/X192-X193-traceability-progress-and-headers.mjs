@@ -129,6 +129,24 @@ const D = verdict((dm) => appendFileSync(join(dm, 'PROGRESS.md'), `| ${firstTask
 const dCaught = D.problems.some((p) => String(p).includes(RAGGED_SAYS));
 console.log(`  D  a ragged PROGRESS row whose id DOES trace ... ${dCaught ? 'BLOCKED' : 'clean  '}${dCaught ? '' : '  <- X192'}`);
 
+// ---- C2: X197 — the false alarm the FIRST version of the X192 fix carried in ----------
+// P6 round 3 found that reporting a mismatch for EVERY later table containing an id-ish column
+// blocked a perfectly healthy PROGRESS.md: an ordinary "## Notes" table headed
+// | Task | Owner | Note | matched on "Task", was merged, and was then reported as columns that
+// differ. A torn fragment of a table has the SAME number of columns, because it is the same
+// table; a different width is a separate table and must be left alone.
+const NOTES_TABLE = (dm) =>
+  appendFileSync(join(dm, 'PROGRESS.md'), '\n## Notes\n\n| Task | Owner | Note |\n| :-- | :-- | :-- |\n| T1 | me | went fine |\n');
+const C2 = verdict(NOTES_TABLE);
+if (C2.problems.some((p) => String(p).includes(MISMATCH_SAYS))) {
+  die(
+    'control C2 failed: an ordinary "## Notes" table of a DIFFERENT width was reported as a ' +
+      'column mismatch. It cannot be a positional continuation of a four-column task table, so ' +
+      `it is a separate table and must be left alone (finding X197): ${C2.problems.find((p) => String(p).includes(MISMATCH_SAYS))}`,
+  );
+}
+console.log('  C2 an ordinary "## Notes" table of another width  clean   (control: X197)');
+
 // ---- E, F, G, H: header matching -------------------------------------------------
 const repeatHeader = (header) => (dm) => {
   const p = join(dm, 'REQUIREMENTS.md');

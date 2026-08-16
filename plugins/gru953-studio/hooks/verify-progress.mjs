@@ -640,14 +640,36 @@ function main() {
       //     "Delivered to staging on Tuesday."       "Completed work: see the table."
       //     "Done deals are recorded elsewhere."     "Shipped items are listed in the notes."
       //
+      // 2026-08-16 AGAIN, finding X196 — found by P6 round 3, hours after the fix above. The
+      // "must BE the whole value" rule was too strict and traded the false alarm for a FALSE
+      // CLEAN, which is the worse direction and the exact trade this project had just warned
+      // itself against in the X193 commit. It silently stopped catching every real claim that
+      // carries a qualifier:
+      //
+      //     "- T9 — done (2026-08-16)"        "- T9 — done, evidence to follow"
+      //     "T9: completed on Tuesday"
+      //
+      // The true discriminator is POSITION, not exactness. A done CLAIM is written as
+      // `<thing> — done…`: the completion word follows a separator. Prose that merely begins
+      // with a completion word starts the LINE. So a segment counts when it is either exactly
+      // a completion value (a bare `done` line), or begins with one AND is not the first
+      // segment of its line. "Delivered to staging on Tuesday." has no separator, so its only
+      // segment is the first, and it stays clean; "Completed work: see the table." fails on
+      // both halves — segment 0 is first, segment 1 does not begin with a completion word.
+      //
       // A status IS the value; prose merely starts with the word. So here the segment must BE
       // a completion value, trailing punctuation allowed — `T9: done` still has a segment that
       // is "done", while "Delivered to staging on Tuesday." has no segment that is anything
       // but a sentence. The status-cell reading is deliberately untouched: widening it was
       // X139, and narrowing it here would undo that fix where it was actually needed (X194's
       // control F pins a Status cell reading "shipped").
-      if (l.split(/[|:—-]/).some((seg) => seg.trim() !== '' && isDoneClaimValue(seg)))
-        claims.push(l);
+      const segs = l.split(/[|:—-]/);
+      const isClaim = segs.some((seg, si) => {
+        if (seg.trim() === '') return false;
+        if (isDoneClaimValue(seg)) return true; // a bare `done`, wherever it sits
+        return si > 0 && isDoneValue(seg); // `<thing> — done (2026-08-16)`
+      });
+      if (isClaim) claims.push(l);
     }
     if (claims.length > 0) {
       unidentified.push(
