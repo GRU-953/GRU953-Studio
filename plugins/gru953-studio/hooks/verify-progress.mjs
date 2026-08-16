@@ -368,6 +368,26 @@ function main() {
     if (DONE_SYMBOLS.test(raw)) return true;
     return DONE_WORDS.test(raw.replace(/^[^A-Za-z0-9]+/, ''));
   };
+  // 2026-08-16, finding X194: the same vocabulary, anchored to the WHOLE value.
+  //
+  // isDoneValue above is prefix-anchored on purpose — it reads a STATUS CELL, where "done
+  // (2026-07-20)" is a completion claim and the trailing note is incidental. The prose sweep
+  // near the end of this file used the same predicate on ordinary sentences, where a prefix
+  // match means only that the sentence begins with a completion word: "Delivered to staging on
+  // Tuesday." blocked the phase checkpoint.
+  //
+  // A status IS the value; prose merely starts with the word. Trailing sentence punctuation is
+  // stripped so "done." still counts, and the symbols are shared because they are already
+  // whole-value anchored.
+  const DONE_VALUE_ONLY = /^(done|completed?|finished|shipped|delivered)$/i;
+  const isDoneClaimValue = (c) => {
+    const raw = deEmphasise(String(c == null ? '' : c))
+      .trim()
+      .replace(/[.,;!?)\]]+$/, '')
+      .trim();
+    if (DONE_SYMBOLS.test(raw)) return true;
+    return DONE_VALUE_ONLY.test(raw.replace(/^[^A-Za-z0-9]+/, ''));
+  };
   // 2026-07-21 Round 12 audit fix (medium): GFM outer pipes are OPTIONAL per row,
   // so a piped `| a | b |` and a pipe-less `a | b` render identically but
   // splitPipeCells yields ['',a,b,''] vs [a,b]. If a data row's outer-pipe style
@@ -610,7 +630,24 @@ function main() {
       if (insideATable.has(k)) continue;
       const l = lines[k];
       if (l.trim() === '' || /^\s*#/.test(l)) continue;
-      if (l.split(/[|:—-]/).some((seg) => isDoneValue(seg.trim()))) claims.push(l);
+      // 2026-08-16, finding X194. This used to call isDoneValue on each segment, but that
+      // predicate is PREFIX-anchored (`/^(done|completed?|finished|shipped|delivered)\b/i`)
+      // because it was written to read a STATUS CELL, where the whole cell is the value.
+      // Pointed at prose it said yes to any sentence, or any colon/dash-separated fragment of
+      // one, that merely BEGINS with a completion word — so ordinary lines a person writes
+      // without a second thought blocked the phase checkpoint:
+      //
+      //     "Delivered to staging on Tuesday."       "Completed work: see the table."
+      //     "Done deals are recorded elsewhere."     "Shipped items are listed in the notes."
+      //
+      // A status IS the value; prose merely starts with the word. So here the segment must BE
+      // a completion value, trailing punctuation allowed — `T9: done` still has a segment that
+      // is "done", while "Delivered to staging on Tuesday." has no segment that is anything
+      // but a sentence. The status-cell reading is deliberately untouched: widening it was
+      // X139, and narrowing it here would undo that fix where it was actually needed (X194's
+      // control F pins a Status cell reading "shipped").
+      if (l.split(/[|:—-]/).some((seg) => seg.trim() !== '' && isDoneClaimValue(seg)))
+        claims.push(l);
     }
     if (claims.length > 0) {
       unidentified.push(
