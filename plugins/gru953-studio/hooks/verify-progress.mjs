@@ -389,6 +389,11 @@ function main() {
   const failedEvidence = []; // "done" rows whose OWN structured evidence records a non-zero exit
   const malformedEvidence = []; // "done" rows whose structured evidence is missing required fields
   let sawAnyTable = false; // X11a: a done claim with no table at all must not pass
+  // X142: the header of the last table that HAD a Status column, so a later fragment of the
+  // same width carrying a completion claim can be recognised as a continuation of it rather
+  // than mistaken for a new table whose rows nobody checks.
+  let lastTaskHeaderCells = null;
+  let lastStatusColumnIndex = -1;
   const insideATable = new Set(); // F9: line indices belonging to a recognised table
 
   for (let i = 0; i < lines.length; i++) {
@@ -407,8 +412,57 @@ function main() {
 
     const headerCells = normCells(header);
     const statusColumnIndex = headerCells.findIndex(isStatusHeader);
+
+    // 2026-08-15, finding X142 / verify-progress D6 (reproduced). A blank line ends a table
+    // here, and the scanner then treats the next pipe-led line as a new HEADER. So a task
+    // table torn in two by one stray blank line has its first row below the tear consumed as
+    // a header — and a completion claim there is never evidence-checked. Proven to be the
+    // tear rather than the row: the identical line with no blank above it blocks.
+    //
+    // It is REPORTED rather than read as data. Reading it would mean deciding that a pipe-led
+    // line is data rather than a heading, and that guess produced a false-alarm regression in
+    // this codebase earlier today. The signal used instead is measured: a fragment with
+    // exactly as many columns as a real task table seen above it, carrying a completion
+    // claim, and with no Status column of its own, is a torn table.
+    //
+    // A genuine standalone table headed `| Task | Done | Notes |` has no such predecessor to
+    // match, so it is untouched — control D of the reproduction holds that exact shape, and
+    // control E holds a tear between two HEALTHY halves, which stays quiet because nothing
+    // below it goes unchecked.
+    //
+    // FIRST ATTEMPT, and why it was wrong: this originally REPORTED the fragment rather than
+    // reading it. Control E rejected that — a tear always leaves a row unchecked, whether or
+    // not that row happens to be fine, so reporting every tear would block healthy files over
+    // a stray blank line. A gate that nags about formatting is one people route around.
+    //
+    // Reading it is also the safer guess here, which it was not in traceability-check. The
+    // signal is narrow: the table above HAD a Status column at width N, and this fragment is
+    // width N with NO Status column of its own. A genuinely new task table would carry its
+    // own Status column — that is the only kind this gate reads at all. The alternative
+    // reading, a brand-new table that coincidentally matches the width, carries a completion
+    // word and has no Status column, is contrived.
+    //
+    // A standalone `| Task | Done | Notes |` is untouched because there is no previous task
+    // table to match against — control D holds exactly that.
+    let effectiveHeaderCells = headerCells;
+    let effectiveStatusIndex = statusColumnIndex;
+    let firstRowIndex = i + 1;
+    const isTornFragment =
+      statusColumnIndex === -1 &&
+      lastTaskHeaderCells !== null &&
+      headerCells.length === lastTaskHeaderCells.length &&
+      headerCells.some(isDoneValue);
+    if (isTornFragment) {
+      effectiveHeaderCells = lastTaskHeaderCells;
+      effectiveStatusIndex = lastStatusColumnIndex;
+      firstRowIndex = i; // this line is a ROW of the table above, not a header
+    } else if (statusColumnIndex !== -1) {
+      lastTaskHeaderCells = headerCells;
+      lastStatusColumnIndex = statusColumnIndex;
+    }
+
     let sawDoneUnknown = false;
-    let j = i + 1;
+    let j = firstRowIndex;
     for (; j < lines.length; j++) {
       const row = lines[j];
       if (!looksLikeRow(row)) break; // a blank / pipe-less line ends the table
@@ -419,11 +473,11 @@ function main() {
       // header (a ragged/ambiguous row). If such a row makes a "done" claim we
       // record it as unverifiable rather than silently skipping it. A row with no
       // "done" claim is left alone (no false block).
-      if (statusColumnIndex === -1 || cells.length !== headerCells.length) {
+      if (effectiveStatusIndex === -1 || cells.length !== effectiveHeaderCells.length) {
         if (cells.some(isDoneValue)) sawDoneUnknown = true;
         continue;
       }
-      if (!isDoneValue(cells[statusColumnIndex])) continue;
+      if (!isDoneValue(cells[effectiveStatusIndex])) continue;
       const hasVerified = VERIFIED_RE.test(row);
       // 2026-07-26 audit finding 1: structured evidence only counts when the
       // command it records actually SUCCEEDED. A recorded non-zero exit code is

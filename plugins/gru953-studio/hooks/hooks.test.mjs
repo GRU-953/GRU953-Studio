@@ -8460,6 +8460,14 @@ for (const script of [
   // third with a fault the shared reader does not have; the fix is a deletion. Control E
   // guards the 2026-07-29 behaviour that an unrecognised header is reported, not skipped.
   'X141-index-pipeless-table.mjs',
+  // 2026-08-15: a blank line ends a table here, and the next pipe-led line was consumed as a
+  // HEADER — so a task table torn in two by one stray blank line had the first row below the
+  // tear never evidence-checked. Now read as a continuation of the table above, using its
+  // columns, on a narrow signal: the table above HAD a Status column at width N and this
+  // fragment is width N with none of its own. Control D holds a standalone | Task | Done |
+  // Notes | that must stay untouched; control E holds a tear between two HEALTHY halves,
+  // which must stay clean — reporting every tear would nag healthy files over formatting.
+  'X142-torn-progress-table.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
