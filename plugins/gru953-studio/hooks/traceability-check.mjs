@@ -288,9 +288,22 @@ function parseTable(text, wantHeaderRe) {
   // The first matching table names the columns. A later fragment with different columns
   // would be read positionally against these, so it is reported rather than trusted.
   const headers = matching[0].headerCells;
+  // 2026-08-16, finding X193: this compared header cells by RAW join, while every other
+  // consumer of the same cells resolves them through deEmphasise() and a case-insensitive
+  // regex (see col() below, and the header matcher above). So a later section repeating the
+  // FIRST section's header in **bold**, or in a different case, was reported as a table whose
+  // columns differ — a false alarm on a healthy file, in a blocking Publish check.
+  //
+  // The comparison now normalises exactly as the reader does, and no further: a genuinely
+  // reordered or renamed header still differs and is still reported. Widening it past styling
+  // would swap a false alarm for a false clean, which is the worse trade — X193's control H
+  // pins that line. The NUL separator stays: it keeps ['a b','c'] distinct from ['a','b c'].
+  const headerKey = (cells) =>
+    cells.map((c) => deEmphasise(String(c)).trim().toLowerCase()).join(' ');
+  const firstKey = headerKey(headers);
   const mismatched = matching
     .slice(1)
-    .filter((t) => t.headerCells.join(' ') !== headers.join(' '))
+    .filter((t) => headerKey(t.headerCells) !== firstKey)
     .map((t) => t.headerCells.join(' | '));
   return { headers, rows, mismatchedFragments: mismatched, orphanedFragments: orphaned };
 }
@@ -472,6 +485,34 @@ function main() {
     );
   } else {
     const progTable = parseTable(progText, /^(id|task ?id|#|task)$/i);
+    // 2026-08-16, finding X192. parseTable() returns three warnings about tables it could not
+    // read with confidence, and the REQUIREMENTS branch above consumes all three — that was
+    // finding X138 / P6-L3, fixed in round 1. This branch consumed none of them: same file,
+    // same function, same defect, fixed once. Measured from the golden fixture, a mismatched
+    // later table in REQUIREMENTS.md BLOCKED while the identical defect in PROGRESS.md
+    // returned clean with zero problems.
+    //
+    // It is not cosmetic here. PROGRESS.md's ID column is what the dangling-reference and
+    // scope-creep checks match against, so a fragment read positionally against the wrong
+    // headers yields ids taken from whatever column happens to sit at that index.
+    if (progTable) {
+      for (const frag of progTable.mismatchedFragments || []) {
+        problems.push(
+          `PROGRESS.md has a later table headed "${frag}" whose columns differ from the first table's, so its rows would be read against the WRONG columns — including the ID column this check matches against. Give every section the same column order, or split them into separate files (finding X192).`,
+        );
+      }
+      for (const frag of progTable.orphanedFragments || []) {
+        problems.push(
+          `PROGRESS.md has a pipe table starting "${frag}" with the same number of columns as the task table but no recognisable header — most often a table torn in two by a stray blank line, in which case every row below that line is going unchecked (finding X192).`,
+        );
+      }
+      for (const r of progTable.rows) {
+        if (r.ragged)
+          problems.push(
+            `PROGRESS.md row "${r.raw}" has a different number of cells than the header, so its values line up against the WRONG columns. Escape any literal pipe as \\| (finding X192).`,
+          );
+      }
+    }
     let idCol = -1;
     let progIds = null;
     if (progTable) {
