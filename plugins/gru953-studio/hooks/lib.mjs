@@ -611,6 +611,29 @@ export const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // unaffected — only a cell that says nothing else.
 export const PLACEHOLDER_RE = /^(|[-—–]+|tbd|tbc|todo|none|n\/?a|pending|\.\.\.)$/i;
 
+// 2026-08-15, finding X143 / quality-gate D7 (reproduced). PLACEHOLDER_RE above is whole-cell
+// anchored, so `tbd` is caught and `tbd - will attach the proof after the demo` is not. The
+// second is the one that actually gets written: the same empty claim with an apology attached.
+//
+// The obvious fix — treat any cell STARTING with a placeholder word as a placeholder — was
+// measured before being written, and it is wrong. `none of the tests failed` currently passes
+// and must keep passing: it is an ordinary English sentence reporting a real result. So the
+// prefix rule applies only to the words that cannot begin a genuine sentence of evidence:
+//
+//     tbd, tbc, todo, pending, placeholder   -> an excuse may follow, and it is still nothing
+//     none, n/a, dashes, ellipsis            -> whole-cell only; these DO start real sentences
+//
+// The separator after the word is required, so "todos are tracked in the issue tracker" and
+// "pending review by the security team" — both real statements — are untouched.
+export const PLACEHOLDER_WITH_EXCUSE_RE = /^(tbd|tbc|todo|pending|placeholder)\b\s*[-—–:,;(]/i;
+
+// True when a cell says nothing of substance: a bare placeholder, or a placeholder with an
+// excuse attached. Callers that judge evidence should use this rather than PLACEHOLDER_RE.
+export function isPlaceholderEvidence(cell) {
+  const t = String(cell == null ? '' : cell).trim();
+  return PLACEHOLDER_RE.test(t) || PLACEHOLDER_WITH_EXCUSE_RE.test(t);
+}
+
 // ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
 // 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
 // each read frontmatter with `text.match(/^---\n([\s\S]*?)\n---/)` — an

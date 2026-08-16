@@ -8468,6 +8468,15 @@ for (const script of [
   // Notes | that must stay untouched; control E holds a tear between two HEALTHY halves,
   // which must stay clean — reporting every tear would nag healthy files over formatting.
   'X142-torn-progress-table.mjs',
+  // 2026-08-15, two quality-gate findings with one lesson. D1: the status column was matched
+  // as /^status$/i and nothing else, so a second Definition-of-Done table headed
+  // | Item | Result | Evidence | recording a FAILED re-run was skipped in silence — the X122
+  // shape one gate along, answered the same way X122 arrived at the hard way: recognise the
+  // ordinary word, do not add a heuristic. D7: PLACEHOLDER_RE is whole-cell anchored, so
+  // "tbd - will attach the proof after the demo" passed as evidence. Control E holds
+  // "none of the tests failed", an ordinary sentence that must survive — which is why the
+  // prefix rule covers only words that cannot begin a genuine sentence.
+  'X143-quality-gate-recognition.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

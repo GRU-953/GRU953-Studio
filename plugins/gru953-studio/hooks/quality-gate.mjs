@@ -41,6 +41,9 @@ import {
   deEmphasise,
   isDirectory,
   PLACEHOLDER_RE,
+  // X143: evidence is judged by this, which also catches a placeholder with an excuse
+  // appended ("tbd - will attach after the demo"), while leaving real sentences alone.
+  isPlaceholderEvidence,
   parseTables,
 } from './lib.mjs';
 
@@ -213,7 +216,19 @@ function parseRows(text) {
     const find = (re) => table.headerCells.findIndex((c) => re.test(deEmphasise(c)));
     const idx = {
       item: find(/^(item|check|dimension|requirement|criterion|gate)$/i),
-      status: find(/^status$/i),
+      // 2026-08-15, finding X143 / quality-gate D1 (High, reproduced). This was
+      // `find(/^status$/i)` and nothing else, so a second Definition-of-Done table headed
+      // `| Item | Result | Evidence |` — recording a re-run that FAILED — had no column this
+      // gate calls Status, was skipped entirely, and the gate reported clean. The first
+      // table's presence suppressed the "no Definition-of-Done table" failure, so nothing was
+      // said at all.
+      //
+      // That is the X122 shape one gate along: a register nobody can read, sitting beside one
+      // that can. And the answer is the same one X122 arrived at the hard way — RECOGNISE the
+      // ordinary word rather than add a heuristic about what a table looks like. A synonym
+      // list cannot raise a false alarm: a table with none of these columns is still not a
+      // Definition-of-Done table and is still left alone.
+      status: find(/^(status|result|outcome|verdict|state)$/i),
       evidence: find(/^(evidence|proof|notes?|verified|command)$/i),
     };
     if (idx.item === -1 || idx.status === -1) continue; // not a Definition-of-Done shape
@@ -337,13 +352,13 @@ function main() {
       // in bold, e.g. "**tbd**", still failed PLACEHOLDER_RE as-is and was
       // wrongly accepted as real evidence.
       if (PASS_RE.test(deEmphasise(r.status))) {
-        if (PLACEHOLDER_RE.test(deEmphasise(r.evidence).trim())) {
+        if (isPlaceholderEvidence(deEmphasise(r.evidence))) {
           problems.push(
             `${dim.label}: marked "${r.status}" but carries no evidence — a pass needs a concrete proof/command/reference.`,
           );
         }
       } else if (NA_RE.test(deEmphasise(r.status))) {
-        if (PLACEHOLDER_RE.test(deEmphasise(r.evidence).trim())) {
+        if (isPlaceholderEvidence(deEmphasise(r.evidence))) {
           problems.push(
             `${dim.label}: marked not-applicable but gives no reason — "n/a" needs a stated reason (e.g. "no user interface").`,
           );
