@@ -7827,6 +7827,68 @@ for (const script of [
   });
 }
 
+// ---- 2026-08-17, finding X207, the durable half ------------------------------
+// Adding the seven missing reproductions fixed the instances. This fixes the CAUSE: the list
+// above is hand-maintained, so the next reproduction written can be forgotten exactly as those
+// seven were. A file the harness does not name is a test that cannot fail.
+//
+// The list is an inline array in a `for` header, so this reads it back out of this file's own
+// source. That is not elegant. A hand-maintained list with nothing checking it is worse, and
+// this is the smallest change that closes the hole without restructuring a 400-test file.
+test('X207: every reproduction on disk is run by this harness, or excluded by name', () => {
+  const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
+  // lastIndexOf, not indexOf: there are two `for (const script of [` loops and the
+  // reproduction list is the second. The first attempt matched the other one, read an empty
+  // list, and reported all 29 reproductions unrun - a guard that cries wolf teaches people to
+  // silence it, which would have been worse than the hole it was closing.
+// Search only the part of the file BEFORE this test. The previous attempt used
+  // lastIndexOf over the whole source and found the occurrence inside this very test — a
+  // check reading its own text and concluding the list was empty. Self-reference is easy to
+  // miss and reads as a real failure.
+  const beforeThisTest = src.slice(0, src.indexOf("test('X207:"));
+  const listStart = beforeThisTest.lastIndexOf('for (const script of [');
+  const listBody = src.slice(listStart, src.indexOf(']) {', listStart));
+// Entries only, never commentary. The comments in that list name other hooks in passing
+  // ('scan.mjs' among them), and matching any quoted .mjs anywhere swept those in — the check
+  // then reported a hook as a missing reproduction.
+  const listed = new Set(
+    listBody
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => !l.startsWith('//'))
+      .flatMap((l) => [...l.matchAll(/^'([A-Za-z0-9_.-]+\.mjs)',?$/g)].map((m) => m[1])),
+  );
+
+  // Excluded BY NAME with a reason, never simply absent — an unexplained absence is
+  // indistinguishable from the oversight this test exists to catch.
+  const EXCLUDED = new Map([
+    [
+      'X35-name-collision.mjs',
+      'its defect is OPEN — `studio` is still declared as both a command and a skill — so it fails by design',
+    ],
+  ]);
+
+  const dir = path.join(HERE, 'test', 'repro');
+  const onDisk = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.mjs') && f !== '_verdict.mjs');
+  const unrun = onDisk.filter((f) => !listed.has(f) && !EXCLUDED.has(f));
+
+  assert.deepEqual(
+    unrun,
+    [],
+    `reproduction(s) on disk that nobody runs: ${unrun.join(', ')}. Add each to the list above, ` +
+      'or exclude it by name with a reason. A reproduction nobody runs is a test that cannot fail ' +
+      '(finding X207 — seven were in this state, including every one written that week).',
+  );
+
+  // And the converse: a name in the list that no longer exists on disk would make the harness
+  // spawn a missing file, which node reports as a crash rather than as a missing test.
+  const missing = [...listed].filter((f) => !onDisk.includes(f));
+  assert.deepEqual(missing, [], `listed but not on disk: ${missing.join(', ')}`);
+});
+
+
 test('X16: every command hook declares an explicit timeout, and the hooks finish well inside it', () => {
   // A timed-out command hook does NOT block the tool call — per the documented
   // contract, "the call continues through the normal permission flow, so don't
