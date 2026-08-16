@@ -538,7 +538,8 @@ Round 8 go-public bypasses were found.
   **Struck 2026-08-16 (finding X189): that sentence was never true.** The
   repository-root test ended in `(?![A-Za-z0-9_])`, a boundary a following `/`
   satisfies, so every sub-resource matched the root and filing an issue was
-  refused with a message about going public. Corrected in 6.1.1 below. It is
+  refused with a message about going public. Corrected under "Unreleased" at
+  the top of this file. It is
   struck rather than deleted because the claim was published and acted on.
 - **`scan.mjs`: the small-file gzip path had no decompression cap.** The
   `>MAX_SCAN_BYTES` branch has capped `gunzipSync` at 64 MiB since 2026-07-26;
