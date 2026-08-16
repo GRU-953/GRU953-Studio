@@ -208,7 +208,22 @@ function checkFocus(devMemory, problems) {
 // 2026-07-19: a bare non-ASCII/Bangla filename with no slash (e.g. "নথি.md")
 // previously failed this heuristic and was silently skipped from the
 // stale-file check even when the target genuinely didn't exist.
-const LOOKS_LIKE_PATH_RE = /(^|\/)[^/\s]+\.[A-Za-z0-9]+$|\//;
+// 2026-08-15, finding X147 / memory-integrity D10 (reproduced). The stem was `[^/\s]+` — no
+// whitespace — so an index entry reading `Project Plan.md` was not recognised as a path and
+// its existence was never checked. Filenames with spaces are entirely ordinary, especially in
+// a memory folder a person writes by hand.
+//
+// The obvious widening is dangerous: simply allowing spaces makes ordinary prose look like a
+// filename. `in section 4.2`, `version 1.2`, `about 3.5 hours` and `it costs 4.99` all become
+// "paths", and every one would then be reported as a file that does not exist — a false alarm
+// on a healthy index, which is worse than the gap being fixed.
+//
+// The discriminator, measured across twelve realistic cells BEFORE this was written: a file
+// extension begins with a LETTER. `.md`, `.json`, `.txt` do; `.2`, `.5`, `.99` do not. That
+// one constraint separated every case correctly. The prose cells are held as controls in
+// hooks/test/repro/X147-path-with-space.mjs, so a future widening cannot quietly reintroduce
+// them, and so is the non-ASCII case the 2026-07-19 fix added.
+const LOOKS_LIKE_PATH_RE = /(^|\/)[^/]+\.[A-Za-z][A-Za-z0-9]{0,5}$|\//;
 // A markdown-link cell, `[Label](target)` — unwrapped to its target before
 // the path/existence test below (found the same day: a cell written this
 // way ends in ")", not the file extension, so it also fell through

@@ -8499,6 +8499,13 @@ for (const script of [
   // Control E is the line the fix must not cross: an object with NO task key must stay
   // ignored, or every stray JSON snippet in a notes cell would start blocking releases.
   'X146-miskeyed-evidence.mjs',
+  // 2026-08-15: the path heuristic excluded whitespace from a filename stem, so an index entry
+  // reading "Project Plan.md" was never checked for staleness. Simply allowing spaces would
+  // turn prose into filenames — "in section 4.2", "it costs 4.99" — so the extension is now
+  // required to begin with a LETTER, the one constraint that separated all twelve measured
+  // cases. Control E holds five prose cells and control F the non-ASCII filename a 2026-07-19
+  // fix added, so neither can be lost to a future widening.
+  'X147-path-with-space.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
