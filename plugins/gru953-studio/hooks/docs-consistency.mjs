@@ -92,7 +92,23 @@ const agentNames = new Set(agentFiles.map((f) => f.replace(/\.md$/, '')));
 const skillCount = skillDirs.length;
 
 const allFiles = walk(repoRoot);
-const allMd = allFiles.filter((f) => f.endsWith('.md'));
+// 2026-08-17, finding X216 — the same live-versus-historical distinction X215 made for INV4,
+// in its sibling gate. This check exists to catch a STALE CLAIM: a live document telling a user
+// there are 7 skills when there are 37. A RECORD is the opposite case — a decision note saying
+// "4 agents, 7 skills, 1 command were edited" is counting what it touched, not asserting a total,
+// and a changelog describing the day a count changed must be free to name the old one.
+//
+// Caught on this project's own note: `2026-08-16-x214-remove-token-layer.md` was blocked for the
+// phrase "7 skills", written while listing the seven files updated that day. The only way to
+// satisfy the old rule was to stop recording what was done.
+//
+// Same categories as X215, stated once rather than exempted file by file: records, test material
+// and build output. Everything a user actually reads stays covered — X216's reproduction holds a
+// live README with a wrong count and requires it to BLOCK.
+const RECORD_OR_FIXTURE_RE = /(^|\/)(CHANGELOG\.md|AUDIT-[^/]*\.md)|(^|\/)Dev-Memory\//i;
+const allMd = allFiles.filter(
+  (f) => f.endsWith('.md') && !RECORD_OR_FIXTURE_RE.test(path.relative(repoRoot, f)),
+);
 
 // Files that legitimately quote a stale or wrong number as EVIDENCE, not as
 // a live claim. AUDIT-2026-07.md IS the findings register — its own rows

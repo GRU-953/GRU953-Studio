@@ -1944,7 +1944,7 @@ function unescapeBackslashesRespectingQuotes(s) {
 // project carries (see SECURITY.md). Requiring the resolved path to also
 // live under a fixed directory was considered and rejected: the legitimate
 // invocation form varies by design (an absolute `${CLAUDE_PLUGIN_ROOT}/...`
-// path from the plugin cache, or a relative `hooks/confirm-publish.mjs` from
+// path from the plugin cache, or a relative `confirm-publish.mjs` from
 // within the project root), so no single directory prefix covers every real
 // use without also blocking it.
 // 2026-07-11 Round 4 audit fix: the closing anchor only tolerated trailing

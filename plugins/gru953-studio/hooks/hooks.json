@@ -8,11 +8,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scan.mjs\"",
             "timeout": 20
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs\"",
-            "timeout": 20
           }
         ]
       }

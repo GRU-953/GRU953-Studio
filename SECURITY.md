@@ -108,7 +108,8 @@ this was the single most severe bypass found across the whole loop, since
 it defeated the matcher's very first check with zero confirmation tokens
 of any kind recorded, for the plain `push`/`repo create`/`repo edit` cases
 themselves, not just an edge-case flag value. `isGoPublicCommand`
-(`hooks/gate.mjs`) shares this same canonicalisation and case-insensitivity,
+(`gate.mjs` (removed 2026-08-16, finding X214); this paragraph records
+what was true when the audit ran) shares this same canonicalisation and case-insensitivity,
 and its own token-matching regex tolerates quotes/`$IFS` around every one
 of `gh`/`repo`/`create`/`edit`/`--public`/`--visibility`, closing a critical
 gap where it used to match raw, un-normalized, case-sensitive text entirely
@@ -187,7 +188,9 @@ disclosed rather than eliminated: doing better would mean verifying the
 resolved path against a fixed, known-good location, which isn't possible
 here because the legitimate invocation form genuinely varies (an absolute
 `${CLAUDE_PLUGIN_ROOT}/...` path from the plugin cache, or a relative
-`hooks/confirm-publish.mjs` from within the project root).
+`confirm-publish.mjs` (removed 2026-08-16, finding X214) from within the project root).
+**Removed 2026-08-16, finding X214** — the confirmation scripts and the gate they
+fed are gone; this paragraph is kept as a record of the reasoning at the time.
 
 **2026-07-11 Round 9 additions** (found by a dedicated audit lens attacking
 agent behaviour and instruction-following, not shell text — a genuinely

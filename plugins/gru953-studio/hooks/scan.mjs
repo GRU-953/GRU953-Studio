@@ -68,16 +68,22 @@ import {
 // so there is exactly one implementation and the two hooks cannot drift
 // apart on this again.
 function memoryPersistAllowed(studioRoot) {
-  const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
-  let text;
+  // 2026-08-16, X214. This used to require a sha256 token with a TTL, minted by
+  // confirm-memory-persist.mjs. X91 established that such a token proves nothing: anything this
+  // hook can read, an agent on the same machine can write. It was ceremony, and it cost a whole
+  // script, a TTL, and two findings.
+  //
+  // What actually matters is that the person whose private memory it is has said so ON PURPOSE.
+  // A file they create by name does that, and — unlike a hash — they can see it, understand it,
+  // and delete it. The secret scan below still runs over those files regardless, so this opt-in
+  // never ships a credential; it only stops the working-memory rule from refusing a push the
+  // owner deliberately intends.
+  const marker = path.join(studioRoot, 'Dev-Memory', 'SHIP-MEMORY-DELIBERATELY');
   try {
-    fs.accessSync(record, fs.constants.R_OK);
-    text = fs.readFileSync(record, 'utf8');
+    return fs.statSync(marker).isFile();
   } catch {
     return false;
   }
-  const expected = `STUDIO-MEMORY-PERSIST-CONFIRMED:${crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex')}`;
-  return tokenConfirmedWithinTtl(text, expected);
 }
 
 // ---- Dev-Memory content probe (2026-07-31 maintenance fix) -------------------

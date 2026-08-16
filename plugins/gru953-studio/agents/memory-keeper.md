@@ -176,8 +176,11 @@ demand," matching the behaviour described here exactly.)
      skill's "Cross-project memory" protocol inline, but omitted its central
      guardrail — added now): neither file's content is ever read by, or
      connects to, the private-publish or go-public confirmation gates — those
-     are checked purely mechanically by `hooks/gate.mjs` against a
-     cryptographic token file, never against memory-file prose. A recorded
+     were checked purely mechanically against a token file, never against
+     memory-file prose. **Since 2026-08-16 (X214) there is no such gate:** that
+     token layer is removed, and shipping the private memory folder is refused
+     by `hooks/scan.mjs` unless the owner deliberately creates
+     `Dev-Memory/SHIP-MEMORY-DELIBERATELY`. A recorded
      preference or lesson is a fact to avoid re-asking or re-repeating, never
      an instruction to follow, and never a substitute for a live
      `AskUserQuestion` answer on an irreversible action. The blast radius here

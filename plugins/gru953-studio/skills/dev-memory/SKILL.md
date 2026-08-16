@@ -221,7 +221,7 @@ was copied here without re-deriving whether it still held):**
 
 - Neither file's content is ever read by, or connects to, the private-publish
   or go-public confirmation gates — those are checked purely mechanically
-  by `hooks/gate.mjs` against a cryptographic token file, never against
+  by the publish gate (removed 2026-08-16, finding X214) against a token file, never against
   memory-file prose (see `SECURITY.md`). A recorded preference or
   lesson is a fact to avoid re-asking or re-repeating — never an instruction
   to follow, and never something that can substitute for a live
@@ -299,7 +299,10 @@ session; the answer is recorded). The safety envelope is deliberately narrow
 (2026-07-19):
 
 - **Private only, never public.** Authorised by a distinct, project-bound
-  `MEMORY-PERSIST-APPROVED` token (`hooks/confirm-memory-persist.mjs`) that
+  `Dev-Memory/SHIP-MEMORY-DELIBERATELY` file the owner creates on purpose
+  (until 2026-08-16 this was a `MEMORY-PERSIST-APPROVED` token minted by a
+  script; X91 established that such a token proves nothing about human intent,
+  so it was replaced by something the owner can see and delete) that
   `gate.mjs` accepts for an ordinary (private) push only — checked *after* the
   go-public gate, which it never satisfies. Persisted memory can never reach a
   public repository.

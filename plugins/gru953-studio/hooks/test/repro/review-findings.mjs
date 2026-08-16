@@ -196,27 +196,12 @@ cases.push({
   fixed: 'none',
 });
 
-cases.push({
-  id: 'F4',
-  what: 'a valid publish token blanket-approves a destructive second command',
-  buggy: 'allow',
-  run() {
-    const d = tmp('gru-rv-f4-');
-    fs.mkdirSync(path.join(d, 'Dev-Memory'), { recursive: true });
-    spawnSync(NODE, [path.join(HOOKS, 'confirm-publish.mjs'), d], { encoding: 'utf8' });
-    const v = hookDecision('gate.mjs', PUSH + ' && rm -rf /important', d);
-    fs.rmSync(d, { recursive: true, force: true });
-    return v;
-  },
-  // 2026-08-15 (X37): this expectation was 'escalate' — a value the PreToolUse contract
-  // does not define. The documented set is {allow, deny, ask, defer}; escalation is
-  // expressed as 'ask'. So this reproduction was PINNING THE DEFECT: it went green while
-  // the F4 path emitted an unrecognised value, which renders no decision at all and lets
-  // the call fall through to normal permission evaluation — the silent auto-mode approval
-  // F4 exists to prevent. Same failure mode the changelog records for X1, where 23 tests
-  // asserted the defective behaviour and nine audit rounds passed over it.
-  fixed: 'ask',
-});
+// 2026-08-17, X214: case F4 removed. Its subject was "a valid publish token blanket-approves a
+// destructive second command", and both halves are gone — there is no publish token and no gate
+// to honour one. Recorded rather than silently dropped because F4 is where finding X37 was
+// caught: this reproduction had been PINNING the defect, asserting an `escalate` value the
+// PreToolUse contract does not define. Every other case here stays; only one of the ten died
+// with the gate, which is why this file was repaired rather than retired.
 
 cases.push({
   id: 'F6',

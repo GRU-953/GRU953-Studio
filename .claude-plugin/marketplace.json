@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "gru953-studio",
-      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 38 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub \u2014 under your name, as sole author. Built for non-technical users, in plain UK English. Runs natively on Claude Code, Google Antigravity, Cursor, Windsurf, Devin, Aider, OpenHands, and all 2026 agentic platforms.",
+      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 38 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub \u2014 under your name, as sole author. Built for non-technical users, in plain UK English. A native Claude Code plugin. For other AI coding tools — Cursor, Cline, Windsurf, GitHub Copilot and anything reading an AGENTS.md — it writes that tool's own instructions file, so the same working rules follow you across editors. Those file conventions change often; support is best-effort and checked per release.",
       "author": {
         "name": "Aninda Sundar Howlader"
       },

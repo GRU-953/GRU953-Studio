@@ -35,9 +35,7 @@ Publish the current project's working app to a private GitHub repository.
    "No, not now".
 4. If the user says no, stop politely and note in `Dev-Memory/PROGRESS.md`
    that publishing remains pending.
-5. If yes: record the confirmation so the publish-gate hook allows the
-   push — `node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-publish.mjs"` from the
-   project root. Then load `publish-github` and follow it exactly and in
+5. If yes: note the agreement in the project's record, then load `publish-github` and follow it exactly and in
    order: verify tools, set author identity from the signed-in user,
    attribution cleanup in a throwaway clone, create the private repository,
    ensure `LICENSE`, `NOTICE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, and

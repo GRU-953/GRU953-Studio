@@ -32,9 +32,11 @@ intact. Plain-English rule is as set in the
    private planning memory.
 2. **No secrets.** `scan.mjs` runs on every push regardless of any token, so a
    checkpoint can never ship a secret or key file.
-3. **Private only, never public.** A checkpoint is authorised by a dedicated,
-   project-bound `CHECKPOINT-APPROVED` token (`hooks/confirm-checkpoint.mjs`),
-   which `gate.mjs` accepts for an ordinary (private) push **only**. Going public
+3. **Private only, never public.** A checkpoint is an ordinary private push.
+   It used to require a project-bound token; that layer was removed on
+   2026-08-16 (X214) because a file-based token cannot establish that a person
+   agreed — anything the hook can read, an agent can write.  Authorisation is
+   now Claude Code's own permission prompt. Going public
    still requires the separate `GO-PUBLIC-APPROVED` token, checked first — a
    checkpoint can never change visibility to public.
 4. **Quality first.** A checkpoint is taken only after the phase's `quality-gate`
@@ -48,7 +50,9 @@ intact. Plain-English rule is as set in the
    scan passes (`licence-scan.mjs`).
 2. Ensure `Dev-Memory/` is `.gitignore`d; stage the app's code only.
 3. Record the per-phase backup authorisation: run
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-checkpoint.mjs"` from the project
+   nothing — the confirmation script was removed on 2026-08-16 (X214) and a
+   checkpoint is now an ordinary private push, authorised by the permission
+   prompt. From the project
    root (the user enables per-phase backup once, at the phased-plan/warframe
    approval — see `warframe-prototype`; this records that consent for the phase's
    push). The token is TTL-bounded and private-only.
@@ -61,11 +65,11 @@ intact. Plain-English rule is as set in the
 
 ## Reused machinery (no duplication)
 
-- Push safety: the existing `hooks/scan.mjs` (secret/Dev-Memory block) and
-  `hooks/gate.mjs` (token gate) — extended in v3.8.0 only to accept the distinct
+- Push safety: `hooks/scan.mjs` (secret/Dev-Memory block). The token gate that
+  sat beside it was removed on 2026-08-16 (X214) — extended in v3.8.0 only to accept the distinct
   checkpoint token for a private push, leaving the go-public gate untouched.
 - Licence safety: the existing `hooks/licence-scan.mjs`.
-- Confirmation: `hooks/confirm-checkpoint.mjs`, a sibling of `confirm-publish.mjs`
+- Confirmation: `confirm-checkpoint.mjs` (removed 2026-08-16, finding X214), a sibling of `confirm-publish.mjs`
   / `confirm-go-public.mjs`.
 
 ## Who applies this
@@ -99,7 +103,7 @@ Practical consequences, so this is a rule with teeth rather than a preference:
 3. **At first publish, both branches are created**, so a project never has a
    `development` commit with nowhere to be released from, and never a `main` with
    no place to work.
-4. **Nothing about push safety changes.** `hooks/gate.mjs` authorises a push by
+4. **Push safety is now the secret scan alone.** `gate.mjs` (removed 2026-08-16, finding X214) authorised a push by
    the recorded confirmation token, not by which branch is being pushed —
    verified, not assumed, when this rule was written. So a checkpoint to
    `development` needs the same `CHECKPOINT-APPROVED` token it always did, and

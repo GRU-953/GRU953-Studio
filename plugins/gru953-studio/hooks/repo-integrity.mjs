@@ -177,11 +177,58 @@ if (fs.existsSync(studioSkillFile)) {
 }
 
 // ---- INV 4: every referenced hook file exists --------------------------------
+//
+// 2026-08-16, finding X215. This asserted that every `hooks/<name>.mjs` mentioned ANYWHERE in
+// the repository exists on disk. For a live instruction that is exactly right: a skill telling a
+// user to run a script that is gone is a broken product.
+//
+// For a RECORD it is the opposite. A changelog entry describing the day a hook was removed must
+// name that hook — that is what the entry IS. So must a findings register describing the defect
+// that removed it. Under the old rule those files became unfixable: the only way to satisfy the
+// check was to delete the history, which is falsifying a record to satisfy a check about records.
+//
+// Not hypothetical — removing the push-authorisation layer (X214) put this invariant into
+// exactly that state, blocking on CHANGELOG.md, Dev-Memory/FINDINGS.md and an archived plan,
+// none of which instructs anybody to do anything.
+//
+// The distinction is a property of the FILE, not of the sentence, and it is stated once by
+// CATEGORY rather than by exempting whichever file blocked today. Exempting one file at a time
+// ends with an invariant that covers nothing and still reports clean.
+//
+// Reproduction: hooks/test/repro/X215-live-versus-historical-reference.mjs, whose controls A, B
+// and C hold a live skill, agent and command naming a missing hook and require each to BLOCK —
+// so an exemption drawn wide enough to swallow a genuinely broken instruction fails the test.
+// Three categories are exempt, each because naming a missing hook is its JOB, not a defect:
+//
+//   RECORDS      describe what happened. A changelog entry about removing a hook must name it.
+//   TEST MATERIAL must name a file that does not exist in order to test the does-not-exist case.
+//                 X215's own reproduction does exactly this, deliberately.
+//   BUILD OUTPUT  under clients/cli/plugin/ is regenerated from the source this check already
+//                 covers. Whether that copy is STALE is a different question, and it has its own
+//                 finding (X38); answering it here would mean this invariant reporting the same
+//                 defect twice under a name that does not describe it.
+//
+// Everything else — skills, agents, commands, hooks, README, SECURITY.md, the manifests — is a
+// live instruction and stays covered. That boundary is what controls A, B and C pin.
+const EXEMPT_FROM_INV4_RE = new RegExp(
+  [
+    '(^|/)(CHANGELOG\\.md|AUDIT-[^/]*\\.md)', // records
+    '(^|/)Dev-Memory/',
+    '(^|/)\\.kilo/',
+    '[^/]*-audit-[^/]*\\.md',
+    '(^|/)hooks/test/', // test material
+    '(^|/)clients/cli/plugin/', // build output
+  ].join('|'),
+  'i',
+);
+const isHistoricalRecord = (f) => EXEMPT_FROM_INV4_RE.test(path.relative(repoRoot, f));
+
 const knownHooks = new Set(hookFiles);
 const refHook = /hooks\/([a-z0-9-]+\.mjs)/gi;
 for (const f of allFiles.filter(
   (x) => x.endsWith('.md') || x.endsWith('.json') || x.endsWith('.yml') || x.endsWith('.mjs'),
 )) {
+  if (isHistoricalRecord(f)) continue;
   const text = read(f) || '';
   let m;
   while ((m = refHook.exec(text))) {
@@ -461,7 +508,12 @@ if (hooksJsonText === null) {
     // require at least one of THOSE entries to cover the tools the guard must cover.
     // Reproduction: hooks/test/repro/X116-X117-weaker-predicate.mjs.
     const REQUIRED_TOOLS = ['Bash', 'PowerShell', 'Monitor'];
-    for (const required of ['scan.mjs', 'gate.mjs']) {
+    // 2026-08-16, X214: `gate.mjs` was removed. Dropping it from this list is deliberate, not an
+    // oversight — the push-authorisation token layer it enforced could not establish what it
+    // claimed (X91: anything the hook can read, an agent can write), and this list must describe
+    // the product that exists. `scan.mjs` STAYS required: the secret scan refuses on evidence,
+    // and a build that silently stopped wiring it would ship credentials with nothing objecting.
+    for (const required of ['scan.mjs']) {
       const entriesRunningIt = preToolUse.filter((e) =>
         (Array.isArray(e.hooks) ? e.hooks : []).some((h) =>
           new RegExp(required.replace('.', '\\.')).test(String(h.command || '')),
