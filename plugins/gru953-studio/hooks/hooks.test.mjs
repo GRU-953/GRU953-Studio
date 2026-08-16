@@ -8430,6 +8430,15 @@ for (const script of [
   // it now reports assetExistenceChecked:false and says so, instead of letting silence read as
   // assurance. Cases A and D are the controls that keep old registers and text rows working.
   'X121-asset-existence.mjs',
+  // 2026-08-15, the shared-table-reader build. traceability-check carried its own table
+  // parser that stopped early in five separate ways — only the first table read, a blank
+  // line truncating the matrix, a fenced EXAMPLE taken as the live matrix, no ragged-row
+  // detection — each dropping input that held a real defect while the gate reported clean.
+  // It now reads through lib.mjs's shared parseTables(), which is fence-aware as of this
+  // change, and reports the two things it still cannot read rather than dropping them.
+  // The control (a healthy single-table project must stay clean) is the important one:
+  // blocking a good project would be worse than any defect this closes.
+  'X138-shared-table-reader.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

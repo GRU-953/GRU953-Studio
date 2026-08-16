@@ -802,6 +802,37 @@ export function readOrBlock(p) {
 //   ragged row that makes any claim, never skip it silently.
 export function parseTables(text) {
   const lines = String(text).split(/\r?\n/);
+  // 2026-08-15, the shared-table-reader build (traceability-check D3, and the same shape
+  // found in content-check). A fenced block is documentation, not data: a `​```markdown`
+  // example of "what a row looks like" was read as a live table, and in traceability-check
+  // it was taken as THE requirements matrix — so the real matrix below it went unread and
+  // its defects unexamined.
+  //
+  // Fenced lines are blanked rather than removed, so every index this function reports
+  // (headerLine, and any line number a caller derives from it) still refers to the real
+  // line in the real file. Silently renumbering a file's lines would be a worse defect
+  // than the one being fixed.
+  const inFence = new Array(lines.length).fill(false);
+  {
+    let fence = null; // the opening delimiter, so ``` does not close ~~~ or a longer run
+    for (let i = 0; i < lines.length; i++) {
+      const m = /^\s*(`{3,}|~{3,})/.exec(lines[i]);
+      if (fence === null) {
+        if (m) {
+          fence = m[1][0].repeat(3);
+          inFence[i] = true;
+        }
+      } else {
+        inFence[i] = true;
+        if (m && m[1][0].repeat(3) === fence) fence = null;
+      }
+    }
+    // An unterminated fence would otherwise swallow the rest of the file. A file that ends
+    // mid-fence is malformed, and treating everything after it as documentation would hide
+    // real tables — so the run is abandoned rather than trusted.
+    if (fence !== null) inFence.fill(false);
+  }
+  for (let i = 0; i < lines.length; i++) if (inFence[i]) lines[i] = '';
   const normCells = (line) => {
     const cells = splitPipeCells(line).map((c) => c.trim());
     const t = line.trim();

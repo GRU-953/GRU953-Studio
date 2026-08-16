@@ -54,6 +54,9 @@ import {
   PLACEHOLDER_RE,
   readOrBlock,
   MISSING,
+  // 2026-08-15: this gate now reads tables through the shared reader rather than its own
+  // private parser. See parseTable() below for the five defects that closed.
+  parseTables,
 } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
@@ -236,35 +239,62 @@ function readTier(devMemory) {
 // Generic per-table parser: returns { headers, rows } for the FIRST table whose
 // header matches `wantHeader`, resetting on any non-`|` line so a stray earlier
 // table can't leak its columns. Each row is the array of trimmed cells.
+// 2026-08-15, the shared-table-reader build. This gate carried its own table parser, and it
+// stopped early in five separate ways — every one of them dropping input that held a real
+// defect while the gate reported clean:
+//
+//   D1  only the FIRST matching table was read, so a matrix split by phase lost everything
+//       after the first heading
+//   D5  the same, applied to PROGRESS.md — so the reverse check, the scope-creep guard that
+//       is the whole reason two-way traceability exists, ran against only the first section
+//   D6  one stray blank line truncated the matrix and every row below it was discarded
+//   D3  a ```markdown EXAMPLE table was taken as the live matrix, hiding the real one below
+//   D9  no ragged-row detection at all, so one unescaped pipe shifted every later cell and
+//       the row was read into the WRONG columns rather than reported
+//
+// These are not five defects. They are one: a private parser, invented here, that nothing
+// else exercises. `lib.mjs`'s shared `parseTables()` — already used by content-check and
+// quality-gate — has none of these faults, and it is now fence-aware, which closes D3 for
+// every caller at once rather than only for this one.
+//
+// So this function keeps its name and its contract and becomes a thin adapter over the
+// shared reader. Notably it MERGES every table whose header matches: a matrix split across
+// phases is one matrix, and treating it as several was the cause of D1, D5 and D6.
+//
+// Reproduction: hooks/test/repro/X138-shared-table-reader.mjs.
 function parseTable(text, wantHeaderRe) {
-  const lines = text.split(/\r?\n/);
-  let inTable = false;
-  let headers = null;
+  const all = parseTables(text);
+  const matching = all.filter((t) => t.headerCells.some((c) => wantHeaderRe.test(deEmphasise(c))));
+  if (matching.length === 0) return null;
+
+  // D6: a stray blank line inside a matrix ends the table, and the pipe-led line beneath it
+  // becomes the HEADER of a new one — whose cells are data, so it matches nothing and was
+  // dropped in silence along with every row below it.
+  //
+  // Reading it as a continuation would mean GUESSING that a pipe-led line is data rather
+  // than a heading, and guessing is what caused a false-alarm regression in this codebase
+  // earlier today. So it is REPORTED instead, on a signal with a real basis: a stray
+  // fragment carrying exactly as many columns as the real matrix is a torn matrix, whereas
+  // a legend or an aside carries a different number. That distinction is measured, not
+  // assumed — and reporting cannot block a healthy file the way mis-reading it could.
+  const width = matching[0].headerCells.length;
+  const orphaned = all
+    .filter((t) => !matching.includes(t) && t.headerCells.length === width)
+    .map((t) => t.headerCells.join(' | '));
   const rows = [];
-  for (const line of lines) {
-    if (!/^\s*\|/.test(line)) {
-      if (headers) break; // finished the table we wanted
-      inTable = false;
-      continue;
+  for (const t of matching) {
+    for (const r of t.rows) {
+      rows.push({ cells: r.cells, raw: String(r.raw).trim(), ragged: r.ragged });
     }
-    const cells = splitPipeCells(line).map((c) => c.trim());
-    if (!inTable) {
-      inTable = true;
-      // 2026-07-26 further-pass audit fix: de-emphasise before testing, the
-      // same as verify-progress.mjs already does — otherwise a decorated
-      // header ("**ID**", "`Requirement`") makes the whole table
-      // unrecognised even though every row is otherwise well-formed.
-      if (cells.some((c) => wantHeaderRe.test(deEmphasise(c)))) headers = cells;
-      continue;
-    }
-    if (!headers) {
-      inTable = false;
-      continue;
-    }
-    if (SEPARATOR_ROW_RE.test(line)) continue;
-    rows.push({ cells, raw: line.trim() });
   }
-  return headers ? { headers, rows } : null;
+  // The first matching table names the columns. A later fragment with different columns
+  // would be read positionally against these, so it is reported rather than trusted.
+  const headers = matching[0].headerCells;
+  const mismatched = matching
+    .slice(1)
+    .filter((t) => t.headerCells.join(' ') !== headers.join(' '))
+    .map((t) => t.headerCells.join(' | '));
+  return { headers, rows, mismatchedFragments: mismatched, orphanedFragments: orphaned };
 }
 function col(headers, re) {
   return headers.findIndex((c) => re.test(deEmphasise(c)));
@@ -351,6 +381,22 @@ function main() {
     );
     process.exit(1);
   }
+  // 2026-08-15, the shared-table-reader build. Two things that used to be dropped in
+  // silence are now said out loud. Neither guesses at the content: they report that
+  // something in the file could not be read, which is the capability every one of these
+  // gates was missing.
+  for (const frag of reqTable.orphanedFragments || []) {
+    problems.push(
+      `REQUIREMENTS.md has a pipe table starting "${frag}" with the same number of columns as the matrix but no recognisable header — most often a matrix torn in two by a stray blank line, in which case every row below that line is going unchecked (finding X138 / D6).`,
+    );
+  }
+  for (const r of reqTable.rows) {
+    if (r.ragged)
+      problems.push(
+        `REQUIREMENTS.md row "${r.raw}" has a different number of cells than the header, so its values line up against the WRONG columns. Escape any literal pipe as \\| (finding X138 / D9).`,
+      );
+  }
+
   const H = reqTable.headers;
   const cId = col(H, /^(id|ref)$/i);
   const cReq = col(H, /^(requirement|req|need|criterion)$/i);
