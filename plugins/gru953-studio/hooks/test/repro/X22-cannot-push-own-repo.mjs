@@ -70,6 +70,26 @@ console.log(`X22 reproduction — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\
 
 // --- A. the product repository itself must be pushable -----------------------
 {
+  // 2026-08-17, finding X176. scan.mjs stands aside — returning exactly `null` — when
+  // findStudioRoot() finds no Dev-Memory/ at or above the checkout. Dev-Memory/ is gitignored, so
+  // in CI there is none, and this case's assertion (decision === null) was satisfied by the
+  // standing-aside rather than by the fixture exemption it exists to prove. It passed for the
+  // wrong reason and would have passed with that exemption deleted.
+  //
+  // The exemption resolves against HOOKS_DIR, the hook's own location, so it applies ONLY to the
+  // real checkout — deliberately, since that is what stops it becoming "ignore anything under a
+  // test directory". The case therefore cannot be simulated elsewhere, and in CI it cannot be
+  // exercised at all.
+  //
+  // So it says so. A check that cannot check must not report success — the same rule as X113
+  // (a gate that cannot read its input), X195 (a disclosure that admits what was not verified)
+  // and X188 (a crash is not a verdict).
+  const engaged = fs.existsSync(path.join(REPO, 'Dev-Memory'));
+  if (!engaged) {
+    console.log(
+      '  ....  A  NOT EXERCISED - no Dev-Memory/ at or above this checkout, so scan.mjs stands aside; this case cannot tell the fixture exemption working from scan.mjs never running. CI-unverifiable by construction (finding X176).',
+    );
+  }
   const { decision, reason } = decisionFor(REPO);
   const findings = reason
     .split('\n')
@@ -77,7 +97,7 @@ console.log(`X22 reproduction — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\
     .map((l) => l.trim());
   const want = expectBug ? 'deny' : null;
   const ok = decision === want;
-  if (!ok) failures++;
+  if (!ok && engaged) failures++;
   console.log(
     `  ${ok ? 'ok  ' : 'FAIL'}  A  the product repo: decision=${decision} (want ${want})`,
   );
