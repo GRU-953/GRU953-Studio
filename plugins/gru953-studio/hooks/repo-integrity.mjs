@@ -1120,6 +1120,87 @@ if (ciYmlText === null) {
   }
 }
 
+// ---- INV 18: the packaged copy has not drifted from source --------------------
+//
+// 2026-08-17, finding X220 (the mechanical half of X38). `clients/cli/plugin/` is a copy of the
+// plugin, produced by clients/cli/scripts/bundle-plugin.mjs at packaging time and gitignored because
+// it is build output. It is what `npm pack` ships, so it is what an installing user receives. Its
+// only guarantee, until now, was that somebody had remembered to run the bundler.
+//
+// They had not. On 2026-08-17 the copy was two days stale and still carried `gate.mjs` and the four
+// `confirm-*.mjs` minters, deleted by X214 the day before — so it also lacked every fix since. Twice
+// that day the stale copy was mistaken for the truth: X219's first version asked "does this hook
+// exist anywhere?" and the copy answered YES for `gate.mjs`, reporting clean on 36 broken references;
+// and a stale copy of `scan.mjs` with behaviour matching this one exactly turned out to be what a
+// live session's PreToolUse hook actually runs, which is X40.
+//
+// Round 1 filed precisely this on 15 August as r1/X43 — "a drifted twin that never received the F4
+// `escalate` fix. A security fix present in one copy, absent in the shipped other" — and it entered
+// the register as a one-line note about staleness with the security half dropped (X99).
+//
+// ABSENCE IS FINE. A fresh clone has no packaged copy, and failing there would fail everyone who had
+// done nothing wrong, which is how a guard gets switched off (L5). X220's control D pins that, and
+// control C pins that an identical copy is recognised — a check that cannot see a correct copy can
+// never be satisfied.
+const packagedRoot = path.join(repoRoot, 'clients', 'cli', 'plugin');
+if (fs.existsSync(packagedRoot)) {
+  const relFiles = (root) =>
+    walk(root)
+      .map((f) => path.relative(root, f))
+      .filter((f) => !f.split(path.sep).includes('node_modules') && !f.endsWith('.DS_Store'))
+      .sort();
+  const sourceFiles = new Set(relFiles(pluginRoot));
+  const packagedFiles = relFiles(packagedRoot);
+
+  // Reported by CATEGORY with a count, not one line per file: a drifted copy differs in hundreds of
+  // files at once, and a gate that prints hundreds of lines is a gate nobody reads.
+  const extra = packagedFiles.filter((f) => !sourceFiles.has(f));
+  const missing = [...sourceFiles].filter((f) => !packagedFiles.includes(f));
+  const differing = packagedFiles
+    .filter((f) => sourceFiles.has(f))
+    .filter((f) => {
+      try {
+        return !fs
+          .readFileSync(path.join(packagedRoot, f))
+          .equals(fs.readFileSync(path.join(pluginRoot, f)));
+      } catch {
+        return true; // unreadable either side counts as drifted, never as clean
+      }
+    });
+
+  const REBUILD =
+    'Rebuild it with `node scripts/bundle-plugin.mjs` from clients/cli. It is build output, so ' +
+    'rebuilding loses nothing.';
+
+  // ONLY the surviving-deleted-file case blocks, and the reason is a friction measurement rather than
+  // a preference. A first version of this invariant blocked on all three conditions and immediately
+  // turned the suite red three times over — not on a defect, but because source had been edited after
+  // the last bundle. That is the state a contributor is in every time they touch a hook, so the guard
+  // would have interrupted ordinary work constantly, and a guard that does that gets switched off,
+  // taking the real protection with it (L5). It would also have been redundant: `prepack` runs the
+  // bundler, so missing and differing files are regenerated before anything is ever published.
+  //
+  // A file the copy carries that source does NOT is different in kind. Editing source cannot create
+  // one — only deleting from source, without rebundling, can — so it is never a transient state. It is
+  // exactly what was found on 2026-08-17: five hooks deleted by X214 still sitting in the shipped
+  // copy, where two separate checks then read them as real. Blocking on that costs nothing and catches
+  // the thing that actually happened.
+  //
+  // The other two are still computed, and reported ONLY alongside a real finding, so a stale copy is
+  // never a silent one — but they cannot fail the gate on their own.
+  if (extra.length) {
+    const alsoStale =
+      missing.length || differing.length
+        ? ` The copy is stale in other ways too (${missing.length} missing, ${differing.length} differing), which is expected if source has moved since the last bundle and does not itself fail this gate.`
+        : '';
+    fail(
+      `INV18: the packaged copy carries ${extra.length} file(s) that no longer exist in source, so a ` +
+        `user installing this would receive code that has been DELETED — e.g. ${extra.slice(0, 3).join(', ')}. ` +
+        `Editing source cannot cause this; only deleting from source without rebundling can.${alsoStale} ${REBUILD}`,
+    );
+  }
+}
+
 // ---- report ------------------------------------------------------------------
 if (problems.length === 0) {
   console.log(

@@ -562,12 +562,26 @@ const REPO_ROOT = path.join(HERE, '..', '..', '..');
 // the copy proportional to the repository's own tracked content.
 const COPY_EXCLUDE = new Set(['.git', 'Dev-Memory', 'node_modules', 'out', 'dist', 'build', 'coverage', '.vscode-test']);
 
+// 2026-08-17, X220: also skip the packaged copy under clients/cli/plugin/. Dozens of tests here copy
+// the repo, mutate ONE source file to plant a decoy, and assert `clean` about some unrelated
+// invariant. INV18 compares the packaged copy against source, so a mutation to source alone makes the
+// copy legitimately drifted — and two such tests began failing on INV18 rather than on the thing they
+// test. Making each of them mutate both sides would be noise in dozens of places for no gain, so the
+// build output is simply left out of the temp copy: with no packaged copy present INV18 stays silent
+// by design (X220's control D), which is exactly right for a fixture that is not testing packaging.
+// INV18's own coverage does not depend on these copies — X220 controls A and B hold the drifted cases
+// and control E holds the real tree.
+// Excluded by relative PATH, not by directory NAME: the segment "plugin" is too common a word to
+// blacklist repo-wide, which is L15 — where the thing removed shares a name with things kept,
+// enumerate, never sweep.
+const COPY_EXCLUDE_PATHS = [path.join('clients', 'cli', 'plugin')];
 function copyRepoTo(dir) {
   fs.cpSync(REPO_ROOT, dir, {
     recursive: true,
     filter: (src) => {
       const rel = path.relative(REPO_ROOT, src);
       if (!rel) return true;
+      if (COPY_EXCLUDE_PATHS.some((p) => rel === p || rel.startsWith(p + path.sep))) return false;
       return !rel.split(path.sep).some((seg) => COPY_EXCLUDE.has(seg));
     },
   });
@@ -7704,6 +7718,11 @@ for (const script of [
   // run a script that is gone. X215 hardened this same invariant the day before and missed it because
   // all three of its controls used the prefixed spelling too.
   'X219-bare-hook-reference.mjs',
+  // 2026-08-17, X220 (the mechanical half of X38): nothing detected that the packaged copy under
+  // clients/cli/plugin/ - what `npm pack` ships, so what an installing user receives - had drifted from
+  // source. It was two days stale and still carried the five hooks X214 deleted. Control D holds a
+  // checkout with NO packaged copy and requires silence, because a fresh clone has none.
+  'X220-packaged-copy-freshness.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',
