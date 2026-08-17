@@ -531,6 +531,66 @@ function checkGraph(devMemory, problems) {
   }
 }
 
+// ---- X86: what recall actually covers, and what the index cannot see -------------
+//
+// Two different defects with two different answers. Coverage is a JUDGEMENT and is reported.
+// An unindexed file is a RULE and blocks: INDEX.md is the recall index by design — the dev-memory
+// skill has a session read it first — so a memory file absent from it cannot be recalled at all.
+// That is not a statistic, it is a file the product cannot see.
+function idsIn(text, re) {
+  return new Set([...String(text || '').matchAll(re)].map((m) => m[1]));
+}
+
+function measureRecallCoverage(devMemory) {
+  const readOr = (f) => {
+    try {
+      return fs.readFileSync(path.join(devMemory, f), 'utf8');
+    } catch {
+      return '';
+    }
+  };
+  const graph = readOr('GRAPH.md');
+  const nodes = idsIn(graph, /^\s*[-*]?\s*\[([A-Za-z]+-?\d+)\]/gm);
+  const of = (text, re) => {
+    const ids = idsIn(text, re);
+    const inGraph = [...ids].filter((x) => nodes.has(x)).length;
+    return {
+      total: ids.size,
+      inGraph,
+      percent: ids.size === 0 ? null : Math.round((100 * inGraph) / ids.size),
+    };
+  };
+  return {
+    graphNodes: nodes.size,
+    tasks: of(readOr('PROGRESS.md'), /^\|\s*\**([A-Za-z]?T\d+)\**\s*\|/gm),
+    requirements: of(readOr('REQUIREMENTS.md'), /^\|\s*\**(R\d+)\**\s*\|/gm),
+    lessons: of(readOr('LESSONS.md'), /^\s*#{2,3}\s*(L\d+)\b/gm),
+    note:
+      'Reported, not enforced. A low percentage may be deliberate; it is shown so a clean verdict ' +
+      'cannot be mistaken for a statement about recall quality (finding X86).',
+  };
+}
+
+function checkIndexCoversFiles(devMemory, problems) {
+  let index;
+  let onDisk;
+  try {
+    index = fs.readFileSync(path.join(devMemory, 'INDEX.md'), 'utf8');
+    onDisk = fs.readdirSync(devMemory).filter((f) => f.endsWith('.md') && f !== 'INDEX.md');
+  } catch {
+    return; // a missing INDEX.md is already reported by checkIndex
+  }
+  for (const f of onDisk) {
+    if (!index.includes(f)) {
+      problems.push(
+        `Dev-Memory/${f} exists but INDEX.md does not name it, so nothing can recall it. INDEX.md ` +
+          'is the recall index a session reads first (see the dev-memory skill); a memory file ' +
+          'absent from it is invisible to the product (finding X86).',
+      );
+    }
+  }
+}
+
 function main() {
   const root = process.argv[2] || process.cwd();
   const devMemory = path.join(root, 'Dev-Memory');
@@ -552,10 +612,31 @@ function main() {
   checkIndex(root, devMemory, problems);
   checkGraph(devMemory, problems);
   checkFocus(devMemory, problems);
+  checkIndexCoversFiles(devMemory, problems);
+  const coverage = measureRecallCoverage(devMemory);
   if (problems.length === 0) {
     console.log(
       JSON.stringify(
-        { status: 'clean', reason: 'recall index and knowledge graph are internally consistent' },
+        {
+          status: 'clean',
+          // 2026-08-17, finding X86. This reason used to stand alone, and it is TRUE: the gate
+          // checks referential integrity — every link points at a node that exists — and nothing
+          // else. That is exactly why it misled. It never asked whether the graph COVERS the
+          // work, so recall degraded silently while the verdict read as assurance. Measured on
+          // this project's own memory at the time: 45% of tasks, 52% of requirements and 9% of
+          // lessons were in the graph, and the gate said clean.
+          //
+          // Coverage is DISCLOSED, never enforced. No honest threshold exists — 45% may be right
+          // for a project that graphs only its live work and wrong for one that graphs
+          // everything — and a gate blocking at an invented number would fail every project on
+          // day one and be switched off (L5). So the numbers sit beside the word "clean" and stop
+          // it implying something it never checked. Same remedy as X195, where content-check was
+          // made to admit what it had not verified.
+          reason:
+            'recall index and knowledge graph are internally consistent. Coverage of the graph is ' +
+            'REPORTED below, not enforced: a sparse graph is a choice, not a defect (finding X86)',
+          recallCoverage: coverage,
+        },
         null,
         2,
       ),

@@ -2210,7 +2210,7 @@ test('memory-integrity.mjs: a well-formed graph + index is clean', () => {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), 'x\n');
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
-    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Tasks | Dev-Memory/PROGRESS.md | table | x |\n');
+    '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Graph | Dev-Memory/GRAPH.md | recall graph | graph |\n| Tasks | Dev-Memory/PROGRESS.md | table | x |\n');
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] task: a\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n');
   const r = runScript('memory-integrity.mjs', dir);
@@ -7653,6 +7653,10 @@ test('X39: a raw write to a whole disk is refused, not left to a prompt that may
 // no-op that passes whatever it is pointed at.
 // ---------------------------------------------------------------------------
 for (const script of [
+  // 2026-08-17, X86: the memory gate said "internally consistent" while 45% of tasks, 52% of
+  // requirements and 9% of lessons were in the graph. Coverage is now REPORTED, never
+  // enforced (control E holds 1-of-10 and requires clean); an unindexed file BLOCKS.
+  'X86-recall-coverage.mjs',
   // 2026-08-17, X39: nothing refused rm -rf /, a raw write to a whole disk, mkfs over a
   // partition, or a history rewrite. 19 ordinary commands are held as controls, including
   // five found by an adversarial false-alarm hunt.
