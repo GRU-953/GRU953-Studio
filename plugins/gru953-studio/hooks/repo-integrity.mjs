@@ -1120,6 +1120,36 @@ if (ciYmlText === null) {
   }
 }
 
+// ---- INV 19: no command and skill share a name --------------------------------
+//
+// 2026-08-17, finding X221 (the mechanical half of X35). Commands are declared as
+// `commands/<name>.md` and skills as `skills/<name>/`, and both land in ONE namespace. Which one
+// answers a bare `<name>` is undocumented platform behaviour that can change without notice, so a
+// collision is a live ambiguity rather than a tidiness question.
+//
+// `studio` was declared as both from the beginning — X35, open since 13 August, settled by the owner
+// on 2026-08-17 by renaming the COMMAND to `studio-start`: the cheap side, since 48 files reference the
+// skill name and almost nothing referenced the command's. Round 1 raised THIS half separately as
+// r1/X64 — "would have caught X35 automatically" — and it was folded into X35's extension and never
+// built, so the register carried the finding and not the guard. Fixing the one collision without this
+// would leave the next one exactly as undetectable as the first was.
+//
+// WHOLE names, compared exactly. A check asking "does either name contain the other" would flag the
+// command `studio-start` against the skill `studio` and so fail the very repair it protects — L15
+// again, where the changed thing shares a name with things kept. X221's control C pins that.
+{
+  const commandNames = new Set(commandFiles.map((f) => f.replace(/\.md$/, '')));
+  const collisions = skillDirs.filter((s) => commandNames.has(s)).sort();
+  for (const name of collisions) {
+    fail(
+      `INV19: '${name}' is declared BOTH as commands/${name}.md and as skills/${name}/. Commands and ` +
+        'skills share one namespace and which one answers is undocumented platform behaviour, so this ' +
+        'is ambiguous rather than merely untidy. Rename whichever side is referenced less — usually the ' +
+        'command, since skill names are referenced across many more files.',
+    );
+  }
+}
+
 // ---- INV 18: the packaged copy has not drifted from source --------------------
 //
 // 2026-08-17, finding X220 (the mechanical half of X38). `clients/cli/plugin/` is a copy of the

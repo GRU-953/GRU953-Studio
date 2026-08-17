@@ -17,4 +17,4 @@ Speak plain, simple UK English.
 3. Give a short, calm report: what is finished so far, what was in progress
    (now safely set back to not-started), and that everything is saved. Make
    clear the difference from pausing: this ends the work session; they can
-   start again any time with `/studio` or `/studio-resume`.
+   start again any time with `/studio-start` or `/studio-resume`.

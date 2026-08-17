@@ -9,7 +9,7 @@ user-invocable: false
 Dev-Memory is GRU953-Studio's project notebook: a small set of plain-text
 files in a `Dev-Memory/` folder inside the user's own project directory.
 It exists so no work is ever lost — close the computer mid-project, come
-back a week later in a new session, type `/studio`, and the studio picks up
+back a week later in a new session, type `/studio-start`, and the studio picks up
 at the exact point it stopped.
 
 Written by the `memory-keeper` role. At the start of every session, the

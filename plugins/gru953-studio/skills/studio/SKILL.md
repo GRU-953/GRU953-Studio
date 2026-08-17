@@ -6,7 +6,7 @@ description: >-
   working, tested, privately-published MVP. Activate whenever the user's
   message starts with "[" and ends with "]" (e.g. "[ a simple expense
   tracker ]"), whenever they say "studio", "GRU953-Studio", "build my
-  idea", "build my app", or "make me an app", or when they run /studio —
+  idea", "build my app", or "make me an app", or when they run /studio-start —
   and to resume a project when a Dev-Memory folder exists in the working
   directory.
 ---

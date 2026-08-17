@@ -9,7 +9,7 @@ technical jargon.
 1. Look for `Dev-Memory/` in the current working directory. If it does not
    exist, tell the user kindly that no studio project has been started
    here yet, and that they can begin one by typing their idea between
-   square brackets or running `/studio`.
+   square brackets or running `/studio-start`.
 2. If it exists, read `Dev-Memory/PROGRESS.md` (the task table — its Status
    column is the source of truth; the "▶ RESUME HERE" pointer is only a
    hint), the last few entries of `Dev-Memory/SESSION-LOG.md`, and

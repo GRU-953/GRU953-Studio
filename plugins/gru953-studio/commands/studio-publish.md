@@ -7,7 +7,7 @@ Publish the current project's working app to a private GitHub repository.
 
 1. Confirm there is a project here: check for `Dev-Memory/` and a working
    codebase in the current directory. If neither exists, tell the user in
-   plain English there is nothing to publish yet and suggest `/studio`.
+   plain English there is nothing to publish yet and suggest `/studio-start`.
 2. First, confirm the Dev-Memory resume rehearsal (see `dev-memory` skill)
    has actually been done at least once for this project — a project that
    cannot prove it resumes correctly is not ready to publish regardless of

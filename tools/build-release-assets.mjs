@@ -241,7 +241,7 @@ To install from this download:
        Windows:        %USERPROFILE%\\.claude\\plugins\\
     Create the "plugins" folder if it is not there yet.
  3. Restart Claude Code.
- 4. Type /studio to begin.
+ 4. Type /studio-start to begin.
 
 You will also need two free tools, which the studio checks for and explains if
 they are missing: Node.js (https://nodejs.org) and, only when you publish, the
@@ -367,7 +367,7 @@ Two limitations, stated plainly rather than hidden
    the ${'specialists'} are provided as a rules file (rules/gru953-roster.md)
    that tells Antigravity to adopt each role itself. In Claude Code they run as
    genuinely separate agents, which works better.
- * The studio's slash commands (/studio, /studio-status and the rest) are a
+ * The studio's slash commands (/studio-start, /studio-status and the rest) are a
    Claude Code feature. In Antigravity, ask in plain words instead — "carry on
    with my project", "where are we up to" — which the studio skill handles.
 

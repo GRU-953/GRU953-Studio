@@ -66,7 +66,7 @@ any change in behaviour.
    hand. Treat a very heavy transcript the same way.
 5. Stop cleanly, never mid-task: finish or safely park the current step,
    write all memory files, then tell the user plainly: "GRU953-Studio has
-   saved everything. To continue, open a new session and type /studio — it
+   saved everything. To continue, open a new session and type /studio-start — it
    will pick up exactly where it stopped." Then stop.
 
 ## Honesty

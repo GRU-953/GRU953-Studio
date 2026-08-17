@@ -7723,6 +7723,12 @@ for (const script of [
   // source. It was two days stale and still carried the five hooks X214 deleted. Control D holds a
   // checkout with NO packaged copy and requires silence, because a fresh clone has none.
   'X220-packaged-copy-freshness.mjs',
+  // 2026-08-17, X221 (the mechanical half of X35): nothing compared command names against skill names,
+  // so the `studio` collision could recur silently. Round 1 raised this as r1/X64 - "would have caught
+  // X35 automatically" - and it was folded into X35 and never built. Control C holds the command
+  // `studio-start` against the skill `studio` and requires SILENCE, because that is the shape the owner
+  // chose to resolve X35 and a loose check would fail its own repair.
+  'X221-command-skill-name-collision.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',

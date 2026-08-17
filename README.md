@@ -126,7 +126,7 @@ and JetBrains editor extensions. Install and sign in first.
 /plugin install gru953-studio@gru953-studio
 ```
 
-That's it — type `/studio` to begin. The very first time, it runs a short, one-off
+That's it — type `/studio-start` to begin. The very first time, it runs a short, one-off
 "getting to know you" setup; it never asks again.
 
 ### Other ways to install it
@@ -243,7 +243,7 @@ You never have to sit and watch. A few simple commands, typed any time:
 
 | Command | What it does |
 | :-- | :-- |
-| `/studio` | Start a new project, or resume the current one. |
+| `/studio-start` | Start a new project, or resume the current one. |
 | `/studio-status` | A plain-English progress report. |
 | `/studio-pause` · `/studio-resume` | Pause, then pick up exactly where you left off. |
 | `/studio-stop` | Set everything down cleanly for the day. |

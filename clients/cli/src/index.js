@@ -200,7 +200,7 @@ function cmdInstall(argv) {
 
     console.log('');
     if (failures === 0) {
-        console.log('Finished. In Claude Code, type /studio to begin.');
+        console.log('Finished. In Claude Code, type /studio-start to begin.');
         console.log('Updates: GRU953-Studio checks once a day, the first time you use it.');
         console.log('For a scheduled daily check instead, run: gru953-studio autoupdate on');
     } else {
