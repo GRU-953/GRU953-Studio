@@ -7698,6 +7698,12 @@ for (const script of [
   // line with a mid-line marker went unreported. Ten enforcement sites each asked the question
   // separately - the register said six - so the fix is one named helper, not ten corrections.
   'X218-scan-allow-marker-position.mjs',
+  // 2026-08-17, X219: INV4 matched only `hooks/<name>.mjs`, so the commonest spelling of a broken
+  // reference - a bare `gate.mjs` - was invisible, and 36 references to five hooks X214 deleted
+  // survived in SECURITY.md, four skills, an agent and a command, four of them live instructions to
+  // run a script that is gone. X215 hardened this same invariant the day before and missed it because
+  // all three of its controls used the prefixed spelling too.
+  'X219-bare-hook-reference.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',

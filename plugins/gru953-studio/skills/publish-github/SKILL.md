@@ -130,7 +130,10 @@ Never rewrite history in the user's live project directory.
 
 ## 5. Create the private repository, add licensing, and push
 
-**Order matters here (2026-07-10 Round 4 audit fix):** `gate.mjs` denies
+**Order matters here (2026-07-10 Round 4 audit fix; the mechanism named below
+was removed on 2026-08-16, finding X214 — the ORDER still matters, because
+confirming before you create anything is right regardless of what enforces
+it):** `gate.mjs` denied
 `gh repo create`/`git push` unless the publish confirmation is ALREADY
 recorded — so confirming (step 3 below) must happen before `gh repo create`
 (step 4), not after it. The earlier version of this list got this backwards

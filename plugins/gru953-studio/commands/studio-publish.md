@@ -50,6 +50,10 @@ Publish the current project's working app to a private GitHub repository.
    (verify `isDraft: false`)**, report the address.
 6. Record the outcome (address, tag, and date, or the reason publishing
    stopped) in `Dev-Memory/PROGRESS.md` and `Dev-Memory/SESSION-LOG.md`.
-7. Going public is a separate later step with its own confirmation and its
-   own `confirm-go-public.mjs` token — never bundled into this command's
-   flow; see `publish-github`'s "Going public" section.
+7. Going public is a separate later step needing its own explicit yes from
+   the user — never bundled into this command's flow; see `publish-github`'s
+   "Going public" section. **Corrected 2026-08-17 (X219):** this step used to
+   promise a `confirm-go-public.mjs` token file, removed on 2026-08-16 by
+   finding X214. There is no token, and its absence removes no protection:
+   the token never proved a person had agreed, because anything a hook can
+   read an agent can write. Ask the user, and wait for the answer.

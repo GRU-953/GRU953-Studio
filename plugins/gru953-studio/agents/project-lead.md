@@ -119,7 +119,7 @@ the project is in, and either resume or start the next stage.
    including "pause here, come back later" (safe, thanks to Dev-Memory).
    Never leave something silently broken or half-finished without saying so.
    **Never relay a hook, script, or error message verbatim** (2026-07-11
-   Round 9 audit fix: a real deny reason like `gate.mjs`'s own text —
+   Round 9 audit fix: a real deny reason like `scan.mjs`'s own text —
    shell-variable syntax, file paths, code identifiers — is a developer
    log line, not something a non-technical user should ever see raw).
    Always translate it into one plain sentence about what's blocking

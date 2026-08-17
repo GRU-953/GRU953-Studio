@@ -222,18 +222,105 @@ const EXEMPT_FROM_INV4_RE = new RegExp(
   'i',
 );
 const isHistoricalRecord = (f) => EXEMPT_FROM_INV4_RE.test(path.relative(repoRoot, f));
+// The packaging copy, named once so the two places that care cannot drift apart: it is exempt as a
+// PLACE references may live (above), and it is also not admissible as EVIDENCE that a file exists
+// (X219, below).
+const isBuildOutput = (f) => /(^|\/)clients\/cli\/plugin\//.test(path.relative(repoRoot, f));
 
 const knownHooks = new Set(hookFiles);
 const refHook = /hooks\/([a-z0-9-]+\.mjs)/gi;
+
+// 2026-08-17, finding X219. The rule above recognises only ONE spelling — a reference must carry
+// the `hooks/` prefix. Prose almost never writes it that way, so the commonest form of a broken
+// reference was invisible, and the comment above claiming SECURITY.md "stays covered" was true of
+// one spelling only. Measured: 36 references to five hooks X214 deleted (`gate.mjs` and its four
+// `confirm-*.mjs` minters) had accumulated across SECURITY.md, four skills, an agent and a command
+// while this invariant reported clean. Four were live INSTRUCTIONS to run a script that is gone.
+//
+// X215 hardened this same invariant the day before and missed it, because all three of its
+// live-instruction controls used the prefixed spelling too — a control inherits the author's blind
+// spot unless something forces the other case. X219's control E now holds the prefixed form so
+// widening cannot trade one blind spot for the other.
+//
+// The bare rule is narrow on purpose, and the narrowness was measured before it was written: flag a
+// bare `<name>.mjs` only when NO file of that basename exists ANYWHERE in the repository. Live prose
+// carries 117 bare `.mjs` references; exactly five names exist nowhere, and all five are the deleted
+// ones. So `lib.mjs`, every gate, and every reproduction filename quoted in a document stay silent —
+// zero false alarms on this tree. That mattered more than reach: a guard that interrupts honest work
+// gets switched off, taking the real protection with it (L5), and 112 false alarms would have done
+// exactly that. Controls B and C pin both halves.
+//
+// PROSE ONLY, deliberately. `.mjs` files carry 70 bare references to `gate.mjs` in comments
+// explaining how a past fix came about — "gate.mjs's first line exited before the check ran", and
+// so on. Those are records in the sense X215 established: a comment describing what happened must
+// name the thing it happened to, and the only way to satisfy a check about them is to delete the
+// history. A skill telling an agent to run a script is the opposite — an instruction, and a false
+// one is a broken product. The distinction is instruction versus record, one level finer than X215
+// drew it, and it is drawn by file KIND rather than by exempting whichever file blocked today.
+// Built from SOURCE only. `walk()` reads the filesystem, not git, and the packaging copy under
+// clients/cli/plugin/ is regenerated rather than tracked — it still holds a gate.mjs from before
+// X214 deleted it. Counting that copy as proof the hook exists made this rule report clean on all
+// 36 references, which is how the first version of it was measured as finding nothing. A stale copy
+// answering "does this still exist?" is the standing rule in reverse: evidence gathered from
+// clients/cli/plugin/ is evidence about the copy, never about the source. Whether that copy is stale
+// is X38's question, not this one.
+const anyMjsBasename = new Set(
+  allFiles.filter((x) => x.endsWith('.mjs') && !isBuildOutput(x)).map((x) => path.basename(x)),
+);
+const refBareHook = /(?<![A-Za-z0-9._/-])([a-z0-9][a-z0-9-]*\.mjs)/gi;
+
 for (const f of allFiles.filter(
   (x) => x.endsWith('.md') || x.endsWith('.json') || x.endsWith('.yml') || x.endsWith('.mjs'),
 )) {
   if (isHistoricalRecord(f)) continue;
   const text = read(f) || '';
   let m;
+  refHook.lastIndex = 0;
   while ((m = refHook.exec(text))) {
     if (!knownHooks.has(m[1]))
       fail(`file ${path.relative(repoRoot, f)} references hooks/${m[1]} which does not exist`);
+  }
+  if (f.endsWith('.mjs')) continue; // records, per the note above
+  // A reference that DISCLOSES the removal is a record and passes, per X215: "gate.mjs (removed
+  // 2026-08-16, finding X214) checked specifically for visibility-changing commands" is true, useful,
+  // and the only way to satisfy a check that rejected it would be to delete the sentence. What is
+  // NOT allowed is naming a removed file as though it were still there.
+  //
+  // The unit is the PARAGRAPH, not the line, and that was learned by getting it wrong first. A
+  // per-line rule looked tighter and was measured against these same files: this prose is hard
+  // wrapped near 76 characters, so a sentence routinely spans three or four lines and the disclosure
+  // lands on a different line from the filename. Five true records failed that way, and satisfying
+  // it would have meant reflowing sentences to suit a checker — the same anti-pattern X215 named,
+  // where the only way to pass is to distort the record. A paragraph is the natural unit of one
+  // claim in markdown and cannot reach across a blank line into an unrelated section. X219's
+  // controls F and G pin both directions: a wrapped disclosure passes, a disclosure in a NEIGHBOURING
+  // paragraph does not.
+  //
+  // An explicit removal word is required. "previously" and "used to" also open sentences that go on
+  // to describe present behaviour, so they do not count.
+  const DISCLOSES = /\b(removed|deleted|no longer\b|never existed)\b/i;
+  const paras = [];
+  {
+    let start = 0;
+    let line = 1;
+    for (const block of text.split('\n\n')) {
+      paras.push({ start, end: start + block.length, line, text: block });
+      start += block.length + 2;
+      line += block.split('\n').length + 1;
+    }
+  }
+  const paraAt = (idx) => paras.find((p) => idx >= p.start && idx <= p.end);
+  refBareHook.lastIndex = 0;
+  while ((m = refBareHook.exec(text))) {
+    if (anyMjsBasename.has(m[1])) continue;
+    const para = paraAt(m.index);
+    if (para && DISCLOSES.test(para.text)) continue;
+    const lineNo = text.slice(0, m.index).split('\n').length;
+    fail(
+      `file ${path.relative(repoRoot, f)}:${lineNo} references ${m[1]}, which does not exist ` +
+        'anywhere in this repository. If it was removed, say so in the same paragraph — a record ' +
+        'may name a deleted file, a live instruction may not.',
+    );
   }
 }
 

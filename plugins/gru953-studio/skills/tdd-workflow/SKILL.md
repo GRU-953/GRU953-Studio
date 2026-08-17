@@ -128,8 +128,9 @@ object with the same fields in a different order or key-quoting style would
 not match) — and accepts it as valid evidence alongside the legacy `verified:`
 format. This is a **manual pre-Publish check, not a `PreToolUse` hook**
 (2026-07-26 correction: this section previously mislabelled it "(PreToolUse)"
-— `hooks/hooks.json`'s `PreToolUse` array wires only `scan.mjs` and
-`gate.mjs`; `verify-progress.mjs`'s own header states it is deliberately not
+— `hooks/hooks.json`'s `PreToolUse` array wires only `scan.mjs`, since
+`gate.mjs` was removed on 2026-08-16 by finding X214;
+`verify-progress.mjs`'s own header states it is deliberately not
 wired there, because whether a task's evidence is well-formed "cannot be
 judged reliably from a single Bash call," and it is instead run manually
 before Publish — see `publish-github`, which already

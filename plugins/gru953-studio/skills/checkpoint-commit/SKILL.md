@@ -58,9 +58,13 @@ intact. Plain-English rule is as set in the
    push). The token is TTL-bounded and private-only.
 4. Commit with a clear per-phase message and push to the **private working
    `development` branch** (never `main`, which carries only released versions —
-   see "Two branches, always" below). `scan.mjs` +
-   `gate.mjs` allow it because the tree is clean and the checkpoint token is
-   present; anything unclean fails closed.
+   see "Two branches, always" below). `scan.mjs` raises no objection because
+   the tree is clean; anything unclean fails closed. **Corrected 2026-08-17
+   (X219):** this read "`scan.mjs` + `gate.mjs` allow it ... and the checkpoint
+   token is present". `gate.mjs` and the checkpoint token were removed on
+   2026-08-16 by finding X214, so neither is consulted. Note also that
+   `scan.mjs` never *allows* anything — finding no secrets is an absence of
+   objection, not an approval (X1), and it is the only push-safety hook left.
 5. Record the checkpoint in `Dev-Memory/SESSION-LOG.md` and the recall index.
 
 ## Reused machinery (no duplication)
@@ -69,8 +73,9 @@ intact. Plain-English rule is as set in the
   sat beside it was removed on 2026-08-16 (X214) — extended in v3.8.0 only to accept the distinct
   checkpoint token for a private push, leaving the go-public gate untouched.
 - Licence safety: the existing `hooks/licence-scan.mjs`.
-- Confirmation: `confirm-checkpoint.mjs` (removed 2026-08-16, finding X214), a sibling of `confirm-publish.mjs`
-  / `confirm-go-public.mjs`.
+- Confirmation: `confirm-checkpoint.mjs`, a sibling of `confirm-publish.mjs`
+  and `confirm-go-public.mjs` — all four minters removed on 2026-08-16, finding
+  X214. A checkpoint now needs no token: ask the user, and wait.
 
 ## Who applies this
 

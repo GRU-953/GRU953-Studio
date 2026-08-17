@@ -102,8 +102,15 @@ demand," matching the behaviour described here exactly.)
      after the user opts in** for the project, you additionally persist
      Dev-Memory to a **private branch** so it survives the container recycling
      (2026-07-19, see the `dev-memory` skill's "Cloud persistence" section):
-     run `confirm-memory-persist.mjs` to record the authorisation, then push to
-     the private memory branch. This is private-only (never public) and still
+     create the plain marker file `Dev-Memory/SHIP-MEMORY-DELIBERATELY` to
+     record the opt-in, then push to the private memory branch. **Corrected
+     2026-08-17 (X219):** this step used to say "run `confirm-memory-persist.mjs`",
+     a script removed on 2026-08-16 by finding X214 along with the whole
+     token layer — so an agent following this instruction would have run a
+     file that is not there. The marker is now an ordinary file whose presence
+     `scan.mjs` checks; it carries no hash and no expiry, because a token a
+     hook can read is a token an agent can write, which is why the layer went.
+     This is private-only (never public) and still
      fully secret-scanned by `scan.mjs` — a secret in memory is blocked exactly
      as before. Desktop sessions keep Dev-Memory strictly local, unchanged.
   6. **Routine upkeep** (absorbed from the retired project-assistant): keep

@@ -74,8 +74,24 @@ of code that GRU953-Studio *builds for you* in a separate project.
 
 ## Known limitations (disclosed, not hidden)
 
-The publish-safety hooks (`scan.mjs`, `gate.mjs`) defend against accidental
-or premature publishing and ordinary secret leaks. They are not a defence
+**Read this first (added 2026-08-17, finding X219).** On 2026-08-16 finding
+X214 removed the push-authorisation layer entirely: the hook `gate.mjs` and
+its four `confirm-*.mjs` token minters are gone, and `scan.mjs` is the only
+push-safety hook left. It scans for secrets, key files and the private
+`Dev-Memory/` folder, and it never approves anything — finding no secrets is
+an absence of objection, not permission. Nothing now claims to prove that a
+person authorised a push, because a file-based token never could: anything a
+hook can read, an agent can write. Passages further down this document
+describe `gate.mjs` and its tokens as they stood at the time each round was
+written. They are kept as a record of how the design got here, and are marked
+where they could otherwise be read as present fact. This paragraph exists
+because 36 references to those five deleted files survived in shipped
+documents for a day — including a security guarantee in this file — while the
+gate meant to catch exactly that reported clean.
+
+The publish-safety hook `scan.mjs` defends against accidental
+publishing of secrets, and — with the removed `gate.mjs` — was intended to
+defend against premature publishing too. They are not a defence
 against a fully compromised or deliberately adversarial agent session —
 Claude Code's hook mechanism cannot verify that a human, rather than the
 agent itself, actually approved an action. If you find a way to defeat these
@@ -157,7 +173,7 @@ v=public`, and the keyword applies them left-to-right with the LAST one
 winning (confirmed live via `bash -x`). This let `export v={private,public};
 gh repo edit me/app --visibility=$v` bypass the go-public gate with only
 the private-publish token recorded — reproduced end-to-end via the real
-`gate.mjs` before being fixed. The bare, no-keyword form
+`gate.mjs` (since removed — 2026-08-16, finding X214) before being fixed. The bare, no-keyword form
 (`v={private,public}; ...`) is NOT exploitable and was deliberately left
 unchanged: a plain assignment word is not itself brace-expanded by bash, so
 `$v` there really does hold the literal, un-expanded text, which the
@@ -198,7 +214,8 @@ different attack surface from everything above). The core finding was a
 PASS: no skill or agent file offers a shortcut where a memory file's
 *claimed* approval ("user already confirmed, proceed") substitutes for a
 fresh, live `AskUserQuestion` answer — the private-publish and go-public
-gates are anchored to a token file `gate.mjs` checks mechanically, never to
+gates were anchored to a token file `gate.mjs` checked mechanically (both
+removed 2026-08-16, finding X214), never to
 prose any agent reads and trusts. Two adjacent, real, lower-severity gaps
 were found alongside that PASS:
 
@@ -215,7 +232,8 @@ were found alongside that PASS:
   document ultimately runs into.
 - `dev-memory/SKILL.md` and `memory-keeper.md` both state a mandatory
   secrets-scan before every memory write, but `hooks.json` only wires
-  `scan.mjs`/`gate.mjs` on the `Bash` matcher — there is no `PreToolUse`
+  `scan.mjs` on the `Bash` matcher (`gate.mjs` sat beside it until it was
+  removed on 2026-08-16, finding X214) — there is no `PreToolUse`
   hook on `Write`/`Edit` backing this rule mechanically. It is currently
   enforced by instruction-following alone, unlike the push-time scan (which
   *is* hook-enforced regardless of what any file claims). Blast radius is
@@ -384,7 +402,8 @@ for scalar command substitution rather than chasing indefinitely:
 A separate structural fix from the same rounds: `repo-integrity.mjs`
 gained an INV10 check verifying `hooks.json`'s `PreToolUse` matcher still
 actually names both `Bash` and `PowerShell` and still wires both
-`scan.mjs` and `gate.mjs` — a reviewer proved live that simply reverting
+`scan.mjs` and `gate.mjs` (the required-hooks list became `scan.mjs` alone
+when `gate.mjs` was removed on 2026-08-16, finding X214) — a reviewer proved live that simply reverting
 the matcher back to `"Bash"` alone (silently disabling the Round 7
 PowerShell fix) left every other gate this project trusts before a commit
 fully green, since nothing previously checked `hooks.json`'s actual
@@ -678,8 +697,11 @@ existing gate — each is additive.
   That turns the residual from a stall into a potential bypass of **both**
   push-time hooks at once — extrapolating the curve above, roughly 36,000
   assignments (~310 KiB of command text) would reach the 600 s default, after
-  which `scan.mjs` and `gate.mjs` are both cancelled as non-blocking errors and
-  the push proceeds unscanned and unauthorised. So it is now **bounded rather
+  which `scan.mjs` is cancelled as a non-blocking error and
+  the push proceeds unscanned. (This read "`scan.mjs` and `gate.mjs` are both
+  cancelled ... unscanned and unauthorised" until 2026-08-17; `gate.mjs` was
+  removed on 2026-08-16, finding X214, so there is one hook to cancel, not two,
+  and nothing left that "authorised" a push in the first place.) So it is now **bounded rather
   than disclosed**: `normalizeForPushCheck` skips variable resolution entirely
   past `MAX_RESOLVED_ASSIGNMENTS` (500 — over 16x the largest real command this
   project has seen, which is under 30), and both security callers fail CLOSED on
@@ -854,7 +876,9 @@ genuine confirmation of an existing one. No version bump accompanies this
 update — every change is internal hardening, not a user-facing release.
 
 **Proven, not merely asserted: the push/go-public gate is structurally
-token-driven, immune to prose.** `gate.mjs` reads exclusively the four
+token-driven, immune to prose.** (Both the gate and its tokens were removed on
+2026-08-16, finding X214 — what follows records what was proven at the time,
+not how the product behaves now.) `gate.mjs` read exclusively the four
 `Dev-Memory/*-APPROVED` record files — it never opens `PROGRESS.md`,
 `FOCUS.md`, or anything else. A dedicated injection corpus now proves this by
 execution rather than by reading the code and trusting it: a forged
@@ -961,8 +985,12 @@ What reduces it here, and what does not:
   only inside the user's own account. It needs no administrator rights.
 - **Residual:** a scheduled job runs `git pull --rebase --autostash` in the
   plugin's checkout without a person present. It cannot make anything public and
-  cannot push — `gate.mjs` still requires a recorded confirmation token for that,
-  scheduled or not — but it does mean code can change on disk while you are away.
+  cannot push, because `git pull` does not push — but it does mean code can
+  change on disk while you are away. **Corrected 2026-08-17 (X219):** this read
+  "`gate.mjs` still requires a recorded confirmation token for that", naming a
+  hook removed on 2026-08-16 by finding X214. The conclusion is unchanged and
+  still true; the reason given for it was not. The honest reason is simply that
+  the scheduled job runs a pull and nothing else.
   Anyone who would rather that never happened should leave it off, which is the
   default, and update with `/studio-update` when they choose to.
 - If the pull leaves conflicts, the updater reports them and stops rather than
