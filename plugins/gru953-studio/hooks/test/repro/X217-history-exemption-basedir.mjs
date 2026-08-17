@@ -60,39 +60,71 @@ function die(msg) {
   process.exit(1);
 }
 
-/** Run scan.mjs as if the push were issued from `cwd`. */
+/**
+ * Run scan.mjs as if the push were issued from `cwd`, returning the decision AND the reason.
+ *
+ * The reason is not decoration. `scan.mjs` has two quite different ways to refuse a push — a
+ * secret/key-file finding in the would-ship set, and "Dev-Memory/ is not excluded by .gitignore" —
+ * and they are worded distinctly. A control that reads only `deny` cannot tell which one fired, so
+ * it proves whichever thing the author already believed. That is the X188 defect (a check that
+ * cannot distinguish two causes reports the wrong one) reappearing inside a control, and the first
+ * version of controls C and D below had exactly it: their repository carried a TRACKED Dev-Memory,
+ * so both refused for that reason and neither said anything about secret detection at all. Measured
+ * and corrected the same day.
+ */
 function decide(cwd) {
   const v = refuseCrash(
-    readDecision(NODE, join(HOOKS, 'scan.mjs'), { tool_name: 'Bash', tool_input: { command: PUSH }, cwd }),
+    readDecision(NODE, join(HOOKS, 'scan.mjs'), {
+      tool_name: 'Bash',
+      tool_input: { command: PUSH },
+      cwd,
+    }),
     'X217',
     die,
   );
-  return v.kind === 'silent' ? 'none' : v.decision;
+  return {
+    decision: v.kind === 'silent' ? 'none' : v.decision,
+    reason: (v.reason || '').replace(/\s+/g, ' '),
+  };
 }
+
+// The two refusal wordings, so a control can say WHICH rule fired rather than merely that one did.
+const SECRET_REASON = /secrets, key files/i;
+const GITIGNORE_REASON = /not excluded by \.gitignore/i;
 
 // ---- A, B: this plugin's own tree, from two directories -------------------------
 const A = decide(REPO_ROOT);
-if (A === 'deny') {
+if (A.decision === 'deny') {
   die(
     'control A failed: a push from the repository ROOT is refused. That worked before this finding ' +
       `existed, so either the fixture exemption has broken entirely or this tree carries a real ` +
-      'secret — check which before reading anything into case B.',
+      `secret — check which before reading anything into case B. Reason given: ${A.reason}`,
   );
 }
-console.log(`  A  from the repository root ..................... ${A}   (control)`);
+console.log(`  A  from the repository root ..................... ${A.decision}   (control)`);
 
 const B = decide(HOOKS);
-const bRefused = B === 'deny';
-console.log(`  B  from a subdirectory (hooks/) ................. ${bRefused ? 'deny' : B}${bRefused ? '   <- X217' : ''}`);
+const bRefused = B.decision === 'deny';
+console.log(
+  `  B  from a subdirectory (hooks/) ................. ${B.decision}${bRefused ? '   <- X217' : ''}`,
+);
 
 // ---- C, D: the scan must still refuse what it should, from that same subdirectory --
-function foreignProject(build) {
+//
+// `scan.mjs` stands aside entirely outside a studio project ("Not a studio project: never
+// interfere"), so a probe repository must have a Dev-Memory/ folder or nothing is measured at all —
+// which is how the first version of these controls came to prove nothing. Whether that folder is
+// GITIGNORED is then the switch that separates the two refusal causes:
+//   ignored -> the project is a studio project, the gitignore rule is satisfied, and the only thing
+//              left to refuse is the secret. Used by control C.
+//   tracked -> the gitignore rule fires on its own, with no secret needed. Used by control D.
+function studioProject({ ignoreDevMemory, secret }) {
   const dir = mkdtempSync(join(tmpdir(), 'x217-'));
   mkdirSync(join(dir, 'Dev-Memory'), { recursive: true });
   writeFileSync(join(dir, 'Dev-Memory', 'FOCUS.md'), '**Objective:** test\n');
-  writeFileSync(join(dir, '.gitignore'), 'nothing-ignored\n');
+  writeFileSync(join(dir, '.gitignore'), ignoreDevMemory ? '/Dev-Memory/\n' : 'nothing-ignored\n');
   writeFileSync(join(dir, 'app.txt'), 'hello\n');
-  build(dir);
+  if (secret) writeFileSync(join(dir, 'creds.txt'), `aws_key = '${'AKIA' + 'IOSFODNN7EXAMPLE'}'\n`);
   const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
   git('init', '-q', '-b', 'main', '.');
   git('add', '-A');
@@ -101,49 +133,65 @@ function foreignProject(build) {
   return dir;
 }
 
-{
-  const dir = foreignProject((d) =>
-    writeFileSync(join(d, 'creds.txt'), 'aws_key = AKIA' + 'IOSFODNN7EXAMPLE\n'),
-  );
+function control(label, opts, wantReason, whyItMatters) {
+  const dir = studioProject(opts);
+  let got;
   try {
-    if (decide(join(dir, 'src', 'deep')) !== 'deny') {
-      die('control C failed: a real secret must still be refused when the push comes from a subdirectory.');
-    }
+    got = decide(join(dir, 'src', 'deep'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-  console.log('  C  a real secret, from a subdirectory ........... deny (control)');
+  if (got.decision !== 'deny') {
+    die(`${label} failed: expected deny, got ${got.decision}. ${whyItMatters}`);
+  }
+  if (!wantReason.test(got.reason)) {
+    die(
+      `${label} refused, but for the WRONG REASON — so it does not test what it claims. Wanted a ` +
+        `reason matching ${wantReason}, got: ${got.reason.slice(0, 200)}`,
+    );
+  }
+  return got;
 }
 
-{
-  const dir = foreignProject(() => {});
-  try {
-    if (decide(join(dir, 'src', 'deep')) !== 'deny') {
-      die(
-        "control D failed: another project's tracked Dev-Memory must still be refused. The exemption " +
-          'is for THIS plugin\'s committed fixture only; one that resolved loosely enough to exempt ' +
-          "any repository's private memory would be the hole X22's control B guards.",
-      );
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-  console.log('  D  a foreign tracked Dev-Memory ................ deny (control)');
-}
+control(
+  '  control C',
+  { ignoreDevMemory: true, secret: true },
+  SECRET_REASON,
+  'A real secret must still be refused when the push comes from a subdirectory; without this, case B ' +
+    'could be produced by a scan that refuses nothing at all.',
+);
+console.log('  C  a real secret, from a subdirectory ........... deny, for the secret (control)');
+
+control(
+  '  control D',
+  { ignoreDevMemory: false, secret: false },
+  GITIGNORE_REASON,
+  "Another project's private memory must still be refused. The exemption is for THIS plugin's " +
+    "committed fixture only; one resolved loosely enough to exempt any repository's Dev-Memory would " +
+    "be the hole X22's own control B guards.",
+);
+console.log('  D  a foreign, unignored Dev-Memory ............. deny, for Dev-Memory (control)');
 
 if (expectBug) {
-  if (!bRefused) die('expected the X217 defect and did not find it. If it was fixed, delete this --expect-bug branch deliberately.');
-  console.log('\nX217 REPRODUCED: a push from a subdirectory is refused because of this plugin\'s own committed fixture.');
+  if (!bRefused)
+    die(
+      'expected the X217 defect and did not find it. If it was fixed, delete this --expect-bug branch deliberately.',
+    );
+  console.log(
+    "\nX217 REPRODUCED: a push from a subdirectory is refused because of this plugin's own committed fixture.",
+  );
   process.exit(0);
 }
 
 if (!bRefused) {
-  console.log("\nPASS: the fixture exemption holds from any directory, and a foreign project's memory is still refused.");
+  console.log(
+    "\nPASS: the fixture exemption holds from any directory, and a foreign project's memory is still refused.",
+  );
   process.exit(0);
 }
 
 die(
-  'X217 is OPEN: a push from a subdirectory is refused over this plugin\'s own test fixture. The ' +
+  "X217 is OPEN: a push from a subdirectory is refused over this plugin's own test fixture. The " +
     'history scan takes REPO-RELATIVE paths from `git diff` but the exemption resolves them against ' +
     'SESSION_DIR, which is only the same thing when the command is issued from the repository root. ' +
     '`repoToplevelForDiff` is already computed just above the history scan.',

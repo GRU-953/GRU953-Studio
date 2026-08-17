@@ -7693,6 +7693,11 @@ for (const script of [
   // fixture was refused. Latent until X86's commit put a Dev-Memory path into history for the
   // first time - which is why the base is now a REQUIRED argument at both call sites.
   'X217-history-exemption-basedir.mjs',
+  // 2026-08-17, X218 (the code half of X205): the scan-suppression marker was honoured ANYWHERE on a
+  // line while scan.mjs's own comment said only a line ENDING in it is exempt, so a secret sharing a
+  // line with a mid-line marker went unreported. Ten enforcement sites each asked the question
+  // separately - the register said six - so the fix is one named helper, not ten corrections.
+  'X218-scan-allow-marker-position.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',

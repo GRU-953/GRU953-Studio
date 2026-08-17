@@ -729,6 +729,25 @@ function main() {
   // explicit marker `// scan-allow: known test fixture` is exempt — this
   // marks ONE deliberately-annotated source line, not the string itself.
   const SCAN_ALLOW_MARKER = '// scan-allow: known test fixture';
+  // 2026-08-17 X218 fix (the code half of X205): ten enforcement sites each asked
+  // whether the line merely CONTAINED the marker, which is not the question the
+  // comment above states. Containment honours the marker ANYWHERE on the line — inside a JSON
+  // string value, inside a `/* */` block, or with further code after it — so a real
+  // secret sharing such a line went unreported. Now one named helper asks the
+  // documented question, in one place, for all ten: is the marker the LAST thing on
+  // the line?
+  //
+  // Measured before tightening, because a fix that withdraws a real exemption is
+  // worse than the loose test it replaces: 16 lines in this repository carry the
+  // marker, 12 as a trailing comment (the genuine exemptions, all in test files) and
+  // 4 inside scan.mjs's own definition and comments — and those four carry no
+  // secret, so they never needed exempting. The tightening therefore costs nothing
+  // real. X218 control A pins the trailing case and control D pins the whole tree.
+  //
+  // The register recorded SIX sites; there are ten. That miscount is precisely why
+  // this is a helper and not ten corrected call sites (L14): sites that each carry
+  // their own copy of a rule are sites that drift.
+  const isScanAllowed = (ln) => String(ln).trimEnd().endsWith(SCAN_ALLOW_MARKER);
   // Widened variable-name class to [A-Z0-9_-] so hyphenated header/field
   // names like "x-api-key" are also caught, not just underscore_case.
   // 2026-07-10 Round 2 fix: also allow an optional closing quote between the
@@ -884,8 +903,7 @@ function main() {
       if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
-          addFinding('secret', file, String(i + 1));
+        if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(i + 1));
         // 2026-08-13, found while fixing X22. The SCAN_ALLOW_MARKER check was
         // applied to SECRET_RE but NOT to SECRETVAR_RE, so the project's own
         // documented escape hatch — "only a line ending in the explicit marker
@@ -895,7 +913,7 @@ function main() {
         // deliberate test vector had no way to tell which half of the scanner
         // would honour the annotation. Reproduced: line 6167 of hooks.test.mjs
         // carried the marker and was still reported. Both halves now honour it.
-        if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
           addFinding('secret-var', file, String(i + 1));
       }
     }
@@ -926,9 +944,8 @@ function main() {
       let n;
       const scanLine = (ln) => {
         lineNo++;
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
-          addFinding('secret', file, String(lineNo));
-        if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+        if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(lineNo));
+        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
           addFinding('secret-var', file, String(lineNo));
       };
       while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
@@ -1060,9 +1077,8 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(content, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split(String.fromCharCode(0)).join('\n').split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
-            addFinding('secret-history', file, '0');
-          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret-history', file, '0');
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
             addFinding('secret-var-history', file, '0');
         }
       }
@@ -1147,9 +1163,9 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(message, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (SECRET_RE.test(ln) && !isScanAllowed(ln))
             addFinding('secret-commit-message', sha, '0');
-          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
             addFinding('secret-var-commit-message', sha, '0');
         }
       }
@@ -1189,9 +1205,8 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(msg.stdout, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
-            addFinding('secret-tag-message', tag, '0');
-          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret-tag-message', tag, '0');
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
             addFinding('secret-var-tag-message', tag, '0');
         }
       }
