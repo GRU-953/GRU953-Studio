@@ -840,13 +840,28 @@ function main() {
   const OWN_FIXTURE_DIR = samePathCase(
     path.resolve(HOOKS_DIR, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory') + path.sep,
   );
-  const isOwnTestFixture = (f) => {
+  // 2026-08-17 X217 fix (HIGH): `base` is a REQUIRED argument, because the two callers
+  // below hold paths measured from DIFFERENT directories and this helper cannot tell
+  // which it was handed. It previously resolved everything against REPO — the directory
+  // the command was issued from — which is right for the working-tree scan and wrong for
+  // the history scan, whose paths `git diff` prints relative to the repository TOPLEVEL.
+  // From the repo root the two coincide, so the exemption worked; from a subdirectory they
+  // do not, and this plugin's own committed fixture was refused. Naming the base at each
+  // call site is what stops that being assumed again. Omitting it makes `path.resolve`
+  // throw, which lands in the `catch` and refuses — the safe direction, never a silent
+  // exemption.
+  const isOwnTestFixture = (f, base) => {
     try {
-      return samePathCase(path.resolve(REPO, String(f)) + path.sep).startsWith(OWN_FIXTURE_DIR);
+      return samePathCase(path.resolve(base, String(f)) + path.sep).startsWith(OWN_FIXTURE_DIR);
     } catch {
       return false; // unresolvable path is never exempt
     }
   };
+  // Where a HISTORY path is measured from. `git diff` prints paths relative to the
+  // repository toplevel regardless of cwd. If the toplevel cannot be read the fallback is
+  // REPO, which is exactly the old behaviour: correct from the root, over-strict from a
+  // subdirectory — so an unreadable toplevel costs an exemption, never a missed secret.
+  const HISTORY_PATH_BASE = repoToplevelForDiff.ok ? repoToplevelForDiff.stdout.trim() : REPO;
 
   // Opt-in cloud memory persistence: with a valid token, a Dev-Memory path is
   // no longer an automatic finding — but the secret/key-file scan below still
@@ -1080,7 +1095,11 @@ function main() {
           // file or Dev-Memory path committed then removed is still caught in history.
           if (file !== '/dev/null') {
             if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
-            if (DEVMEMORY_RE.test(file) && !allowDevMemory && !isOwnTestFixture(file))
+            if (
+              DEVMEMORY_RE.test(file) &&
+              !allowDevMemory &&
+              !isOwnTestFixture(file, HISTORY_PATH_BASE)
+            )
               addFinding('dev-memory-history', file, '0');
           }
           continue;
@@ -1184,7 +1203,8 @@ function main() {
     if (KEYFILE_RE.test(f)) {
       addFinding('key-file', f, '0');
     }
-    if (DEVMEMORY_RE.test(f) && !allowDevMemory && !isOwnTestFixture(f)) {
+    // FILES entries are REPO-relative — proved by `path.join(REPO, f)` four lines below.
+    if (DEVMEMORY_RE.test(f) && !allowDevMemory && !isOwnTestFixture(f, REPO)) {
       addFinding('dev-memory', f, '0');
     }
     const abs = path.join(REPO, f);

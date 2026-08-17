@@ -7687,6 +7687,12 @@ for (const script of [
   'X214-push-safety-narrowed.mjs',
   // INV4 could not tell a live reference from a record of a deleted one
   'X215-live-versus-historical-reference.mjs',
+  // 2026-08-17, X217: the fixture exemption resolved history paths against the directory the
+  // push was ISSUED from, not the repository toplevel `git diff` measures them against. From
+  // the root the two coincide; from a subdirectory they do not, so this plugin's own committed
+  // fixture was refused. Latent until X86's commit put a Dev-Memory path into history for the
+  // first time - which is why the base is now a REQUIRED argument at both call sites.
+  'X217-history-exemption-basedir.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',
