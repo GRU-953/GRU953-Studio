@@ -368,6 +368,114 @@ function main() {
   }
   const CMD = extractCommand(INPUT);
 
+  // ---- X39: refuse the irreversible ------------------------------------------------
+  //
+  // 2026-08-17. Until now nothing in this product refused `rm -rf /`, a raw write to a whole
+  // disk, `mkfs` over a partition, or a history rewrite. Measured at the parent commit: all nine
+  // such commands reached the machine with no decision from anything.
+  //
+  // WHY THIS IS NOT THE LAYER X214 REMOVED, because that distinction is the whole design. The
+  // token layer was authorisation theatre — it tried to establish that a person had agreed, from
+  // a file an agent could write, and X91 proved that cannot work. Here the evidence is IN THE
+  // COMMAND TEXT: `rm -rf /` says what it does. Nothing is inferred about intent, nothing is
+  // trusted, and there is no token to forge. Same basis as the secret scan that was kept: refuse
+  // on evidence, never on a claim.
+  //
+  // WHY IT IS WORTH HAVING when Claude Code already prompts: the prompt protects an ATTENDED
+  // session. In auto-accept it is absent, which is precisely when an inexperienced user — this
+  // product's stated audience — is least able to catch `rm -rf /` scrolling past.
+  //
+  // WHY NAMED RULES AND NOT ONE REGEX. Four fixes this week over-reached by widening a pattern
+  // past the case in front of it (L15: enumerate, never sweep). Each rule below is a named
+  // predicate over TOKENS, so it can be read, and its reason is reported to the user rather than
+  // a pattern being quoted at them. `rm -rf ./build` and `rm -rf node_modules` are among the most
+  // common commands in software work; a block that caught either would be switched off and take
+  // the real protection with it (L5). X39's reproduction holds 14 such commands as controls.
+  // Each shell segment is judged on its OWN command position. Tokenising the whole line and
+  // asking "does `mkfs` appear anywhere" cannot tell a command from a quotation: the hunt for
+  // false alarms caught `echo "do not run mkfs.ext4 /dev/sda1"` and `echo rm -rf / > notes.txt`,
+  // both of which only TALK about the danger. Same confusion as X206 (prose about the guardrail
+  // satisfying the check for the guardrail) and X207 (commentary read as data).
+  const PREFIXES = new Set(['sudo', 'env', 'time', 'nice', 'ionice', 'command', 'exec', 'xargs']);
+  const segments = String(CMD || '')
+    .split(/(?:&&|\|\||[;|\n])/)
+    .map((seg) => seg.trim().split(/\s+/).filter(Boolean))
+    .filter((t) => t.length > 0);
+  // The tokens of every segment whose command position is one we care about; a segment led by
+  // `echo`, `grep` or `man` contributes nothing.
+  const commandSegments = segments.map((t) => {
+    let i = 0;
+    while (i < t.length && (PREFIXES.has(t[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i]))) i += 1;
+    return t.slice(i);
+  });
+  const leads = (re) => commandSegments.filter((t) => t.length && re.test(t[0]));
+  const tokens = commandSegments.flat();
+  const has = (t) => tokens.includes(t);
+  const CATASTROPHIC_RULES = [
+    {
+      why: 'this deletes the entire filesystem, not a directory in your project',
+      hit: () => {
+        const seg = leads(/^(.*\/)?rm$/)[0];
+        if (!seg) return false;
+        const f = seg.filter((t) => /^-[a-zA-Z]+$/.test(t)).join('');
+        const recursive = /r/i.test(f) || seg.includes('--recursive');
+        const forced = /f/.test(f) || seg.includes('--force');
+        const targets = seg.slice(1).filter((t) => !t.startsWith('-'));
+        // The ROOT itself, or the root glob — never /tmp/x, ./build or node_modules.
+        const root = targets.some((t) => t === '/' || t === '/*' || t === '"/"' || t === "'/'");
+        return recursive && (forced || seg.includes('--no-preserve-root')) && root;
+      },
+    },
+    {
+      why: 'this writes raw bytes over a whole disk device, destroying every partition on it',
+      hit: () => {
+        const seg = leads(/^(.*\/)?dd$/)[0];
+        if (!seg) return false;
+        // of=/dev/<device>. The pseudo-devices are ordinary and stay allowed.
+        const SAFE = /^\/dev\/(null|zero|random|urandom|stdout|stderr|tty|fd\/\d+)$/;
+        return seg.some((t) => {
+          const m = t.match(/^of=(.+)$/);
+          return m && m[1].startsWith('/dev/') && !SAFE.test(m[1]);
+        });
+      },
+    },
+    {
+      why: 'this formats a disk device, erasing everything already on it',
+      hit: () => {
+        const seg = leads(/^(.*\/)?mkfs(\.[a-z0-9]+)?$/)[0];
+        if (!seg) return false;
+        if (seg.includes('--help') || seg.includes('-h')) return false;
+        return seg.some((t) => t.startsWith('/dev/'));
+      },
+    },
+    {
+      why: 'this rewrites the whole history of the repository and cannot be undone',
+      hit: () => {
+        const seg = leads(/^(.*\/)?git$/)[0];
+        if (!seg || !seg.includes('filter-branch')) return false;
+        return !(seg.includes('--help') || seg.includes('-h'));
+      },
+    },
+  ];
+
+  for (const rule of CATASTROPHIC_RULES) {
+    let fired = false;
+    try {
+      fired = rule.hit();
+    } catch {
+      fired = false; // a rule that throws must never become a denial of ordinary work
+    }
+    if (fired) {
+      deny(
+        `studio: refusing to run this — ${rule.why}.\n\n` +
+          `    ${CMD}\n\n` +
+          'This is one of a very short list of commands the studio will not run, because they ' +
+          'destroy work irreversibly and no confirmation can undo them. If you genuinely intend ' +
+          'it, run it yourself in a terminal outside this session.',
+      );
+    }
+  }
+
   if (!isPushCapable(CMD)) {
     // Not push-capable: nothing to scan. Emit NO decision (X1).
     stepAside();
