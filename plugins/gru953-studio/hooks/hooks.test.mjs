@@ -7627,6 +7627,10 @@ test('X1: no hook auto-approves a dangerous non-push command — the permission 
 // no-op that passes whatever it is pointed at.
 // ---------------------------------------------------------------------------
 for (const script of [
+  // 2026-08-17, X206: INV14 was satisfied by prose ABOUT the guardrail, so deleting the
+  // guardrail itself still passed. Control D holds a REWORDED but intact clause, because the
+  // wording varies in 13 measured forms across the 46 files.
+  'X206-guardrail-satisfied-by-prose.mjs',
   // ---- 2026-08-17, finding X207 -------------------------------------------------
   // These seven were on disk and run by NOBODY, including every reproduction written
   // that week. A file the harness does not name is a test that cannot fail - the same

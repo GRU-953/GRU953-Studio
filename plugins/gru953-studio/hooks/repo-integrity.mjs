@@ -702,7 +702,22 @@ if (ciYmlText === null) {
 // same "close the found case, not a general grammar engine" reasoning
 // docs-consistency.mjs's own header comment already states for this
 // project's other checks applies here too.
-const DATA_NEVER_INSTRUCTION_RE = /DATA[^.]{0,60}never|never[^.]{0,80}instruction/is;
+// 2026-08-17, finding X206. This had two alternatives, and the FIRST one was satisfiable by
+// prose that merely talks ABOUT the guardrail. `agents/data-engineer.md` contains the sentence
+// "data - one of the safety floors that is never ...", which matches `DATA[^.]{0,60}never`
+// while saying nothing about instructions. Delete that file's real guardrail and INV14 still
+// passed - the regression detector for the one event this invariant exists to catch was gone.
+//
+// The fix is to DROP the weak alternative, not to write a cleverer pattern. The surviving
+// alternative requires the word `instruction`, which is what makes the clause a rule about
+// instructions rather than a sentence containing the word `data`.
+//
+// Measured before and after across all 46 guardrail files: 0 failed under the old pattern, 0
+// fail under this one - so no honest file is newly blocked - and deleting a real guardrail now
+// fails where it previously passed. X206's control D holds a REWORDED but intact guardrail,
+// because the clause is written differently in 13 measured forms across those 46 files and a
+// fix demanding one exact sentence would be reverted within a week.
+const DATA_NEVER_INSTRUCTION_RE = /never[^.]{0,80}instruction/is;
 const GUARDRAIL_FILES = [
   'agents/accessibility-specialist.md',
   'agents/ai-developer.md',
