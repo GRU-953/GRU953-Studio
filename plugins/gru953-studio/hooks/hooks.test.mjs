@@ -2836,10 +2836,19 @@ test('dashboard.mjs: an unrecognised status column or status word still shows in
   // so EVERY row falls into 'other' — this used to render the summary as
   // just the empty-board fallback pill while the table below still listed
   // real tasks.
+  //
+  // 2026-08-18, X230: this fixture used to head the column `State`, which was a genuinely
+  // unrecognised name when the test was written and is NOT one any more — dashboard.mjs held the
+  // pre-X143 spelling `/^status$/i` while quality-gate.mjs had already been widened to accept
+  // `state`, and X230 brought the two into line. So the fixture had quietly stopped representing
+  // the case it was written for, and once the sibling spellings agreed it began asserting the OLD
+  // behaviour. Changed to `Condition`, a word no consumer recognises, which is what the test
+  // actually needs. The test's purpose is unchanged: an unrecognised column must still be counted
+  // and shown, never rendered as an empty board.
   const dir1 = mkTmp('gru-db-otherpill-nocol-');
   fs.mkdirSync(path.join(dir1, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir1, 'Dev-Memory', 'PROGRESS.md'),
-    '| ID | Task | State | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | a | Doing | x |\n| T2 | b | Done | x |\n');
+    '| ID | Task | Condition | Notes |\n| :-- | :-- | :-- | :-- |\n| T1 | a | Doing | x |\n| T2 | b | Done | x |\n');
   const r1 = runScript('dashboard.mjs', dir1);
   assert.equal(r1.json.status, 'written');
   const html1 = fs.readFileSync(path.join(dir1, 'Dev-Memory', 'dashboard.html'), 'utf8');
