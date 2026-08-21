@@ -74,7 +74,11 @@ function decide(cmd) {
     mkdirSync(join(dir, 'Dev-Memory'), { recursive: true });
     writeFileSync(join(dir, 'Dev-Memory', 'FOCUS.md'), '**Objective:** test\n');
     const v = refuseCrash(
-      readDecision(NODE, join(HOOKS, 'scan.mjs'), { tool_name: 'Bash', tool_input: { command: cmd }, cwd: dir }),
+      readDecision(NODE, join(HOOKS, 'scan.mjs'), {
+        tool_name: 'Bash',
+        tool_input: { command: cmd },
+        cwd: dir,
+      }),
       'X39-catastrophic-commands.mjs',
       die,
     );
@@ -94,6 +98,24 @@ const CATASTROPHIC = [
   ['mkfs.ext4 /dev/sda1', 'making a filesystem over a partition'],
   ['mkfs /dev/disk2', 'the same, bare mkfs'],
   ['git filter-branch --force --all', 'rewriting all history irreversibly'],
+];
+
+// 2026-08-18: the same commands, NOT IN FIRST POSITION. Every entry above starts its line, and
+// every rule resolved its segment with `leads(re)[0]` - the first segment led by that binary, with
+// every later one discarded. The controls and the defect therefore occupied complementary halves of
+// the input space: nine of nine green while `rm -rf ./build && rm -rf /` passed in SILENCE, no
+// decision of any kind, on the only guard that exists to stop a machine being destroyed.
+//
+// The separators are varied deliberately - `&&`, `;`, a newline - because the splitter handles all
+// three and a control that used only one would repeat the mistake it is here to catch.
+const COMPOUND = [
+  ['rm -rf ./build && rm -rf /', 'root delete second, after an ordinary one'],
+  ['rm -rf node_modules; rm -rf --no-preserve-root /', 'root delete after a semicolon'],
+  ['rm -rf dist/\nrm -rf /', 'root delete on a second line'],
+  ['npm run build && sudo rm -rf /*', 'root glob delete after a build step'],
+  ['dd if=a of=out.img && dd if=/dev/zero of=/dev/disk2', 'disk overwrite second'],
+  ['mkfs.ext4 --help && mkfs.ext4 /dev/sda1', 'format second, after the help form'],
+  ['git status && git filter-branch --all', 'history rewrite after an ordinary git command'],
 ];
 
 // Every one of these is ordinary software work. A block that catches any of them will be
@@ -128,7 +150,20 @@ let missed = [];
 for (const [cmd, what] of CATASTROPHIC) {
   const d = decide(cmd);
   const refused = d === 'deny';
-  console.log(`  ${refused ? 'ok  ' : 'BAD '} ${refused ? 'deny       ' : String(d).padEnd(11)} ${cmd.padEnd(34)} ${what}`);
+  console.log(
+    `  ${refused ? 'ok  ' : 'BAD '} ${refused ? 'deny       ' : String(d).padEnd(11)} ${cmd.padEnd(34)} ${what}`,
+  );
+  if (!refused) missed.push(cmd);
+}
+
+// The same nine, off first position. Reported separately so the output says WHICH axis failed.
+for (const [cmd, what] of COMPOUND) {
+  const d = decide(cmd);
+  const refused = d === 'deny';
+  const shown = cmd.replace(/\n/g, '\\n');
+  console.log(
+    `  ${refused ? 'ok  ' : 'BAD '} ${refused ? 'deny       ' : String(d).padEnd(11)} ${shown.padEnd(50)} ${what}`,
+  );
   if (!refused) missed.push(cmd);
 }
 
@@ -152,13 +187,20 @@ if (falseAlarms.length > 0) {
 }
 
 if (expectBug) {
-  if (missed.length === 0) die('expected catastrophic commands to pass unrefused and found none. If this was fixed, delete this --expect-bug branch deliberately.');
-  console.log(`\nX39 REPRODUCED: ${missed.length} of ${CATASTROPHIC.length} catastrophic commands are not refused by anything.`);
+  if (missed.length === 0)
+    die(
+      'expected catastrophic commands to pass unrefused and found none. If this was fixed, delete this --expect-bug branch deliberately.',
+    );
+  console.log(
+    `\nX39 REPRODUCED: ${missed.length} of ${CATASTROPHIC.length} catastrophic commands are not refused by anything.`,
+  );
   process.exit(0);
 }
 
 if (missed.length === 0) {
-  console.log(`\nPASS: every catastrophic command is refused, and all ${ORDINARY.length} ordinary ones are untouched.`);
+  console.log(
+    `\nPASS: every catastrophic command is refused, and all ${ORDINARY.length} ordinary ones are untouched.`,
+  );
   process.exit(0);
 }
 

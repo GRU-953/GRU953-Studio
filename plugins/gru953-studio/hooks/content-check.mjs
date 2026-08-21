@@ -361,9 +361,11 @@ function main() {
       if (row.idx.medium !== -1 && TEXT_ONLY_RE.test(med)) textNoPathRows += 1;
       else unresolvableRows += 1;
     }
-    const checkedRows = resolvedRows;
+    // `checkedRows` and `unchecked` stood here as aliases kept while the reason strings were
+    // rewritten, and nothing consumed them afterwards — eslint duly reported both as unused. Removed
+    // rather than left: a variable named `checkedRows` beside a field named assetsExistenceChecked is
+    // exactly the kind of near-duplicate that gets read as the authority and drifts from it.
     const assetExistenceChecked = rows.length > 0 && resolvedRows > 0 && unresolvableRows === 0;
-    const unchecked = rows.length - resolvedRows;
     console.log(
       JSON.stringify(
         {

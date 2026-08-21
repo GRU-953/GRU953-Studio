@@ -409,14 +409,16 @@ function main() {
     return t.slice(i);
   });
   const leads = (re) => commandSegments.filter((t) => t.length && re.test(t[0]));
-  const tokens = commandSegments.flat();
-  const has = (t) => tokens.includes(t);
+  // 2026-08-18, X223: `const tokens = commandSegments.flat()` and `const has = (t) =>
+  // tokens.includes(t)` stood here, computed for exactly the job below and never consumed once —
+  // eslint had been reporting "'has' is assigned a value but never used" throughout. Removed rather
+  // than wired in: a variable that LOOKS like it inspects the whole command, sitting beside code that
+  // inspects one segment of it, is how a reader concludes the compound case is covered.
   const CATASTROPHIC_RULES = [
     {
       why: 'this deletes the entire filesystem, not a directory in your project',
-      hit: () => {
-        const seg = leads(/^(.*\/)?rm$/)[0];
-        if (!seg) return false;
+      lead: /^(.*\/)?rm$/,
+      judge: (seg) => {
         const f = seg.filter((t) => /^-[a-zA-Z]+$/.test(t)).join('');
         const recursive = /r/i.test(f) || seg.includes('--recursive');
         const forced = /f/.test(f) || seg.includes('--force');
@@ -428,9 +430,8 @@ function main() {
     },
     {
       why: 'this writes raw bytes over a whole disk device, destroying every partition on it',
-      hit: () => {
-        const seg = leads(/^(.*\/)?dd$/)[0];
-        if (!seg) return false;
+      lead: /^(.*\/)?dd$/,
+      judge: (seg) => {
         // of=/dev/<device>. The pseudo-devices are ordinary and stay allowed.
         const SAFE = /^\/dev\/(null|zero|random|urandom|stdout|stderr|tty|fd\/\d+)$/;
         return seg.some((t) => {
@@ -441,18 +442,17 @@ function main() {
     },
     {
       why: 'this formats a disk device, erasing everything already on it',
-      hit: () => {
-        const seg = leads(/^(.*\/)?mkfs(\.[a-z0-9]+)?$/)[0];
-        if (!seg) return false;
+      lead: /^(.*\/)?mkfs(\.[a-z0-9]+)?$/,
+      judge: (seg) => {
         if (seg.includes('--help') || seg.includes('-h')) return false;
         return seg.some((t) => t.startsWith('/dev/'));
       },
     },
     {
       why: 'this rewrites the whole history of the repository and cannot be undone',
-      hit: () => {
-        const seg = leads(/^(.*\/)?git$/)[0];
-        if (!seg || !seg.includes('filter-branch')) return false;
+      lead: /^(.*\/)?git$/,
+      judge: (seg) => {
+        if (!seg.includes('filter-branch')) return false;
         return !(seg.includes('--help') || seg.includes('-h'));
       },
     },
@@ -461,7 +461,15 @@ function main() {
   for (const rule of CATASTROPHIC_RULES) {
     let fired = false;
     try {
-      fired = rule.hit();
+      // 2026-08-18, X223: this was `rule.hit()`, and each rule resolved its own segment with
+      // `leads(re)[0]` — the FIRST segment led by that binary, every later one discarded. So
+      // `rm -rf ./build && rm -rf /` produced NO DECISION AT ALL while `rm -rf /` alone was
+      // refused, and the same held for dd, mkfs and filter-branch: six holes, verified. The
+      // splitter above was written precisely to handle compounds, and then the enumeration stopped
+      // at index 0 — L15 in its purest form, and L14 because all four rules carried it.
+      //
+      // Every matching segment is now judged, in ONE place, so the four rules cannot drift apart.
+      fired = leads(rule.lead).some((seg) => rule.judge(seg));
     } catch {
       fired = false; // a rule that throws must never become a denial of ordinary work
     }
