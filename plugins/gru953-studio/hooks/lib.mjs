@@ -2021,6 +2021,20 @@ function isConfirmScriptOnly(c) {
   // filename contains no push keyword, but it is exempted here for the same
   // reason (it only writes a local marker file, never pushes), so running it to
   // RECORD a checkpoint authorisation is never itself mistaken for a push.
+  //
+  // **2026-08-18 (X229): ALL FOUR OF THESE FILES ARE GONE.** X214 deleted them on
+  // 2026-08-16, so this exemption now names nothing that exists — dead code in a
+  // security decision path, which is worth saying out loud rather than leaving to
+  // be rediscovered. Kept rather than removed because two committed unit tests
+  // (hooks.test.mjs, the 2026-07-11 Round 3 and Round 4 audit fixes) pin its exact
+  // matching behaviour, and deleting a security function plus its tests is a wider
+  // change than this finding warrants.
+  //
+  // NO BYPASS IS REACHABLE, verified rather than assumed: the regex above is
+  // anchored to end-of-string and admits at most ONE further token, so a command
+  // that also pushes can never match it. `node confirm-publish.mjs & git push …`
+  // fails the anchor; `node confirm-publish.mjs &` matches but runs a file that
+  // does not exist. Recorded as a disclosed residual in RESIDUALS.md.
   return (
     base === 'confirm-publish.mjs' ||
     base === 'confirm-go-public.mjs' ||
@@ -2034,8 +2048,11 @@ export function isPushCapable(rawC) {
   // is skipped (see normalizeForPushCheck), so any `$VAR` in this command is
   // unresolved text and this matcher cannot prove the command is NOT a push.
   // This function's own stated rule is "prove non-push or treat as push", so
-  // the answer here is true — which routes the command to gate.mjs's
-  // authorisation check rather than allowing it outright.
+  // the answer here is true. **Corrected 2026-08-18 (X229):** this said the answer
+  // "routes the command to gate.mjs's authorisation check rather than allowing it
+  // outright" — a present-tense claim about a hook X214 removed on 2026-08-16.
+  // There is no authorisation check; `true` routes it to `scan.mjs`'s secret and
+  // private-memory scan, which is the whole of push safety now.
   if (exceedsAssignmentBound(rawC)) return true;
   const c = normalizeForPushCheck(rawC);
   if (isConfirmScriptOnly(c)) return false;
