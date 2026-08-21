@@ -105,7 +105,11 @@ const allFiles = walk(repoRoot);
 // Same categories as X215, stated once rather than exempted file by file: records, test material
 // and build output. Everything a user actually reads stays covered — X216's reproduction holds a
 // live README with a wrong count and requires it to BLOCK.
-const RECORD_OR_FIXTURE_RE = /(^|\/)(CHANGELOG\.md|AUDIT-[^/]*\.md)|(^|\/)Dev-Memory\//i;
+// 2026-08-18, X225: the trailing `i` made `Dev-Memory/` also match the live shipped skill
+// directory `skills/dev-memory/`, so this gate skipped it too. Case-sensitive now, matching
+// scan.mjs's DEVMEMORY_RE. Exactly five files lose the exemption and all five are live product
+// files, measured before the change.
+const RECORD_OR_FIXTURE_RE = /(^|\/)(CHANGELOG\.md|AUDIT-[^/]*\.md)|(^|\/)Dev-Memory\//;
 const allMd = allFiles.filter(
   (f) => f.endsWith('.md') && !RECORD_OR_FIXTURE_RE.test(path.relative(repoRoot, f)),
 );

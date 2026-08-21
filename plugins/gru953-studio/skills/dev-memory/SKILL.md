@@ -115,8 +115,14 @@ memory changes:
    performs this write, already read it as gated — this section is now
    corrected to match that, not the other way round).
 4. On Standard/Complex Tier, major memory changes (Tier changes, architecture
-   decisions) additionally open a PR-like review via `confirm-memory-persist.mjs`
-   before any push (opt-in projects only, per point 3).
+   decisions) are worth putting to the owner before any push (opt-in projects
+   only, per point 3). **Corrected 2026-08-18 (X225):** this step used to say
+   "open a PR-like review via `confirm-memory-persist.mjs`" — a script removed on
+   2026-08-16 by finding X214 along with the whole token layer, so an agent
+   following this instruction ran a file that is not there. There is no review
+   script now, and adding one would recreate what X91 disproved: a file a hook
+   can read is a file an agent can write, so it never evidenced human intent.
+   Ask the owner and wait for the answer.
 
 This per-session branch is separate from `memory/cloud-persist` (which holds
 the whole Dev-Memory folder as one restorable snapshot — see "One named
@@ -298,15 +304,27 @@ says yes for that project (`project-lead` asks once, plainly, on a cloud
 session; the answer is recorded). The safety envelope is deliberately narrow
 (2026-07-19):
 
-- **Private only, never public.** Authorised by a distinct, project-bound
-  `Dev-Memory/SHIP-MEMORY-DELIBERATELY` file the owner creates on purpose
-  (until 2026-08-16 this was a `MEMORY-PERSIST-APPROVED` token minted by a
-  script; X91 established that such a token proves nothing about human intent,
-  so it was replaced by something the owner can see and delete) that
-  `gate.mjs` accepts for an ordinary (private) push only — checked *after* the
-  go-public gate, which it never satisfies. Persisted memory can never reach a
-  public repository.
-- **Still fully secret-scanned.** The token tells `scan.mjs` not to block purely
+- **Intended for a private branch — and read the correction below before
+  relying on that.** Opted into by a `Dev-Memory/SHIP-MEMORY-DELIBERATELY` file
+  the owner creates on purpose (until 2026-08-16 this was a
+  `MEMORY-PERSIST-APPROVED` token minted by a script; X91 established that such
+  a token proves nothing about human intent, so it was replaced by something the
+  owner can see and delete).
+
+  **Corrected 2026-08-18 (X225). This paragraph used to end: "that `gate.mjs`
+  accepts for an ordinary (private) push only — checked *after* the go-public
+  gate, which it never satisfies. Persisted memory can never reach a public
+  repository." That was a false safety guarantee.** `gate.mjs` and the
+  go-public gate were both removed on 2026-08-16 by finding X214, so no
+  mechanism enforces private-only for a memory push. What the marker file
+  actually does is narrow: it stops `scan.mjs` objecting *purely because* a
+  `Dev-Memory/` path is in the would-ship set. It says nothing about which
+  remote or which visibility, and nothing checks either. **Whether the branch is
+  private is the operator's choice, and it is the only thing keeping persisted
+  memory off a public repository.** Stated plainly here rather than left implied,
+  because this sentence survived in a shipped skill for two days behind a check
+  that could not read the file.
+- **Still fully secret-scanned.** The marker file tells `scan.mjs` not to block purely
   because a `Dev-Memory/` path is present — but `scan.mjs` still runs its full
   secret/key-file scan on those files, so Dev-Memory persists only if it carries
   no password, key or token. A secret in memory is blocked exactly as before.

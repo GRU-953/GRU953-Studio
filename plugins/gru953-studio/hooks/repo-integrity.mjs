@@ -210,6 +210,18 @@ if (fs.existsSync(studioSkillFile)) {
 //
 // Everything else — skills, agents, commands, hooks, README, SECURITY.md, the manifests — is a
 // live instruction and stays covered. That boundary is what controls A, B and C pin.
+// 2026-08-18, X225: this was compiled with the 'i' flag, which made the `Dev-Memory/`
+// alternative also match the LIVE shipped skill directory `skills/dev-memory/` — so one of the
+// most-read files in the product was treated as a historical record and skipped by BOTH halves of
+// INV4. Two real falsehoods lived behind it: a live instruction at SKILL.md:118 to run a script
+// X214 deleted, and a present-tense SAFETY guarantee at :306 resting on the deleted gate.mjs.
+// The comment above states the opposite in as many words.
+//
+// Case-SENSITIVE now, matching scan.mjs's security-relevant sibling `DEVMEMORY_RE`, which had it
+// right all along — the same shape was right in one place and wrong in two (L14). Measured over the
+// tracked tree before changing it: exactly five files lose their exemption, and all five are live
+// product files in that skill directory. No record loses anything, which is the line X215 drew and
+// X225's control B holds.
 const EXEMPT_FROM_INV4_RE = new RegExp(
   [
     '(^|/)(CHANGELOG\\.md|AUDIT-[^/]*\\.md)', // records
@@ -219,7 +231,6 @@ const EXEMPT_FROM_INV4_RE = new RegExp(
     '(^|/)hooks/test/', // test material
     '(^|/)clients/cli/plugin/', // build output
   ].join('|'),
-  'i',
 );
 const isHistoricalRecord = (f) => EXEMPT_FROM_INV4_RE.test(path.relative(repoRoot, f));
 // The packaging copy, named once so the two places that care cannot drift apart: it is exempt as a

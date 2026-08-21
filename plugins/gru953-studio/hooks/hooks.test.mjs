@@ -7735,6 +7735,12 @@ for (const script of [
   // file. Control B holds the ESCAPE form and requires silence - the NUL separator is a deliberate
   // choice from the X193 fix, and banning the value would force that fix to be undone.
   'X222-raw-control-byte-in-source.mjs',
+  // 2026-08-18, X225: the record-folder exemption was compiled case-INSENSITIVELY, so `Dev-Memory/`
+  // also matched the live shipped skill directory `skills/dev-memory/` - invisible to BOTH halves of
+  // INV4 and to docs-consistency. Two falsehoods lived behind it: a live instruction to run a script
+  // X214 deleted, and a present-tense SAFETY guarantee resting on the deleted gate.mjs. Control B
+  // holds the real records folder and requires it to stay exempt, which is X215's line.
+  'X225-record-exemption-case-collision.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',
