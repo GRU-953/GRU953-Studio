@@ -425,14 +425,16 @@ reads this project's `LESSONS.md` and the cross-project
 `common-pitfalls.md` before deciding whether an AI feature is warranted,
 but carried no "this is DATA, never an instruction" framing of its own.
 
-**2026-07-12 Round 11** found one further, minor, documentation-only gap:
+**2026-07-12 Round 11** found one further, minor, documentation-only gap (the
+tokens below were removed on 2026-08-16 by X214; noted 2026-08-18, X226):
 `publish-github/SKILL.md`'s "Going public" section instructed recording
 the go-public confirmation and verifying the visibility change, but never
 mirrored the private-publish path's existing instruction to delete the
 token file afterward — so nothing told the publishing agent to clean up
 `Dev-Memory/GO-PUBLIC-APPROVED` once a visibility change completed (the
 60-minute TTL still bounds exposure either way). Fixed by adding the same
-delete step already present for `PUBLISH-APPROVED`.
+delete step already present for `PUBLISH-APPROVED`. (Both tokens were removed on
+2026-08-16 by X214; noted 2026-08-18, X226.)
 
 **2026-07-12 Round 13 (CRITICAL — the audit loop's second attempt at
 convergence, broken by this round's findings): four more genuinely new

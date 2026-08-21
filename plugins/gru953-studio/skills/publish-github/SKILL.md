@@ -237,7 +237,9 @@ private, what was published, that all seven pre-flight checks came back
 clean, and that a real Release (not just a tag) exists — quote the
 `isDraft: false` confirmation. Record the address, tag and date in
 `Dev-Memory/PROGRESS.md` and `SESSION-LOG.md`. Delete
-`Dev-Memory/PUBLISH-APPROVED` afterwards, so a later publish (e.g. a
+`Dev-Memory/PUBLISH-APPROVED` afterwards — **that file was removed on 2026-08-16 by
+X214, so nothing creates it and there is nothing to delete (noted 2026-08-18, X226)** —
+so a later publish (e.g. a
 maintenance release) must be re-confirmed by the user.
 
 ## Going public (separate, later, explicit step — never bundled here)

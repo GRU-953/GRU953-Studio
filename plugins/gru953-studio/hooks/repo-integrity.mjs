@@ -1131,6 +1131,59 @@ if (ciYmlText === null) {
   }
 }
 
+// ---- INV 21: no live document asserts a removed non-file identifier ----------
+//
+// 2026-08-18, finding X226. INV4's bare-name rule (X219) asks whether a referenced .mjs FILE exists.
+// The four confirmation-token names X214 deleted are IDENTIFIERS, not filenames, so that rule was
+// blind to the whole class - and X226 is its third instance: X219 found one in SECURITY.md, X225 one
+// in the dev-memory skill, and X226 a false safety guarantee inside a section headed "The guarantees
+// it keeps (nothing is weakened)", asserting that going public "still requires the separate
+// GO-PUBLIC-APPROVED token, checked first". Nothing checks it; nothing has since 2026-08-16.
+//
+// A NAMED LIST, not a pattern. These four were deleted on one known date by one known finding, so
+// they can be enumerated; there is no way to tell a live identifier from a dead one without a list
+// (L15 - enumerate, never sweep). Adding to this list is how a future removal gets covered.
+//
+// PARAGRAPH scope, chosen by measurement over every live mention in the tree rather than by
+// preference. Paragraph scope leaves 4 undisclosed, all real and all fixed in this commit. SENTENCE
+// scope would newly flag 38, nearly all honest dated history - distorting the record to satisfy a
+// checker, which is X215's anti-pattern. A present-tense-claim-verb rule flags 27, of which about 7
+// are past-tense narrative containing a word like "checks" - not precise enough to block on.
+//
+// DISCLOSED RESIDUAL: paragraph scope means one disclosure excuses every OTHER removed identifier in
+// that paragraph, which is precisely how X226 survived. This does not close that. Recorded in
+// RESIDUALS.md rather than left implied.
+{
+  const REMOVED_IDENTIFIERS = [
+    ['PUBLISH-APPROVED', /(?<![A-Z-])PUBLISH-APPROVED/],
+    ['GO-PUBLIC-APPROVED', /(?<![A-Z-])GO-PUBLIC-APPROVED/],
+    ['CHECKPOINT-APPROVED', /(?<![A-Z-])CHECKPOINT-APPROVED/],
+    ['MEMORY-PERSIST-APPROVED', /(?<![A-Z-])MEMORY-PERSIST-APPROVED/],
+  ];
+  const DISCLOSES_REMOVAL = /\b(removed|deleted|no longer\b|never existed)\b/i;
+  for (const f of allFiles.filter((x) => x.endsWith('.md'))) {
+    if (isHistoricalRecord(f) || isBuildOutput(f)) continue;
+    const text = read(f) || '';
+    let offset = 0;
+    for (const para of text.split('\n\n')) {
+      const discloses = DISCLOSES_REMOVAL.test(para);
+      if (!discloses) {
+        for (const [label, re] of REMOVED_IDENTIFIERS) {
+          if (!re.test(para)) continue;
+          const line = text.slice(0, offset + para.search(re)).split('\n').length;
+          fail(
+            `INV21: ${path.relative(repoRoot, f)}:${line} asserts ${label}, an authorisation token ` +
+              'removed on 2026-08-16 by finding X214. No such file is created and no hook reads one, ' +
+              'so a document presenting it as a live check states a guarantee the product does not ' +
+              'keep. If the mention is historical, say so in the same paragraph.',
+          );
+        }
+      }
+      offset += para.length + 2;
+    }
+  }
+}
+
 // ---- INV 20: no source file carries a raw control byte -------------------------
 //
 // 2026-08-18, finding X222 (the systemic half of X204). A single raw control byte makes a file

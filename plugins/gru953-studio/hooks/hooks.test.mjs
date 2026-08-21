@@ -7741,6 +7741,12 @@ for (const script of [
   // X214 deleted, and a present-tense SAFETY guarantee resting on the deleted gate.mjs. Control B
   // holds the real records folder and requires it to stay exempt, which is X215's line.
   'X225-record-exemption-case-collision.mjs',
+  // 2026-08-18, X226 (INV21): a live skill asserted a deleted authorisation token as a working check,
+  // inside a section headed "The guarantees it keeps". X219's rule could not see it - that asks whether
+  // a referenced .mjs FILE exists, and these are identifiers. Third instance of the class. Control D
+  // holds a token that STILL exists and requires silence, which is why the list is named rather than
+  // pattern-matched: nothing can tell a live identifier from a dead one without one.
+  'X226-removed-token-asserted-live.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',

@@ -47,7 +47,7 @@ All live under `Dev-Memory/` in the project's working directory:
 | `GRAPH.md` | (2026-07-19, Standard/Complex Tier, see the `memory-graph` skill) The plain-text knowledge graph — nodes (requirements, tasks, decisions, files, lessons) and typed links (`implements`/`depends-on`/`relates-to`/`supersedes`/`caused-by`/`blocks`) — expanded on demand so a session recalls only what the current task needs. Links are checked for dangling nodes by `hooks/memory-integrity.mjs`. |
 | `decisions/*.md` | One small dated note per load-bearing decision (stack choices, Tier changes, the roster baseline — `*roster*.md` — and anything a future session must not re-litigate). |
 | `UNBUILT.md` | The append-only ledger of things deliberately **not** built (owned by `scope-guardian`), so a cut idea is never silently re-proposed. |
-| `PUBLISH-APPROVED` | Written by `confirm-publish.mjs` only after the user confirms publishing; read by `gate.mjs`. Deleted after a successful publish. Valid for 60 minutes from the moment it's written (2026-07-12 Round 7 audit fix — the deletion above is a prose instruction the agent must remember, not something any code enforces, so `gate.mjs` also checks a written-in timestamp and stops honouring the record on its own once the window passes, rather than relying solely on the delete step happening). |
+| `PUBLISH-APPROVED` | **All four rows below describe machinery REMOVED on 2026-08-16 by X214 (noted 2026-08-18, X226). No such file is written, and no hook reads any of them. The rows are kept because the file names still appear in older projects' Dev-Memory folders.** Was: written by `confirm-publish.mjs` after the user confirms publishing; read by `gate.mjs`. Deleted after a successful publish. Valid for 60 minutes from the moment it's written (2026-07-12 Round 7 audit fix — the deletion above is a prose instruction the agent must remember, not something any code enforces, so `gate.mjs` also checks a written-in timestamp and stops honouring the record on its own once the window passes, rather than relying solely on the delete step happening). |
 | `GO-PUBLIC-APPROVED` | Written by `confirm-go-public.mjs` only after the separate "go public" confirmation; read by `gate.mjs`. Also valid for 60 minutes from being written, enforced the same way — this file was never deleted by anything until the 2026-07-12 Round 7 fix added the time-bound check, so a single confirmation would otherwise have authorised every later visibility-changing command in the project, indefinitely. |
 | `CHECKPOINT-APPROVED` | (2026-07-19, see `checkpoint-commit` skill) Written by `confirm-checkpoint.mjs` to authorise a per-phase backup — an ordinary (private) push only; read by `gate.mjs`, TTL-bounded the same 60 minutes. A distinct, project-bound token that can never satisfy the go-public gate, so a checkpoint can never make anything public. |
 | `MEMORY-PERSIST-APPROVED` | (2026-07-19, see "Cloud persistence" below; row added 2026-07-26 — this table never listed it despite the file existing and being discussed in detail further down) Written by `confirm-memory-persist.mjs` to authorise cloud persistence of Dev-Memory — an ordinary (private) push only; read by `gate.mjs`, TTL-bounded the same 60 minutes. Like `CHECKPOINT-APPROVED`, it can never satisfy the go-public gate. |
@@ -307,9 +307,10 @@ session; the answer is recorded). The safety envelope is deliberately narrow
 - **Intended for a private branch — and read the correction below before
   relying on that.** Opted into by a `Dev-Memory/SHIP-MEMORY-DELIBERATELY` file
   the owner creates on purpose (until 2026-08-16 this was a
-  `MEMORY-PERSIST-APPROVED` token minted by a script; X91 established that such
-  a token proves nothing about human intent, so it was replaced by something the
-  owner can see and delete).
+  `MEMORY-PERSIST-APPROVED` token minted by a script; that token and its minter were
+  **removed** on 2026-08-16 by finding X214, because X91 established that such a
+  token proves nothing about human intent — it was replaced by something the owner
+  can see and delete).
 
   **Corrected 2026-08-18 (X225). This paragraph used to end: "that `gate.mjs`
   accepts for an ordinary (private) push only — checked *after* the go-public

@@ -36,9 +36,15 @@ intact. Plain-English rule is as set in the
    It used to require a project-bound token; that layer was removed on
    2026-08-16 (X214) because a file-based token cannot establish that a person
    agreed — anything the hook can read, an agent can write.  Authorisation is
-   now Claude Code's own permission prompt. Going public
-   still requires the separate `GO-PUBLIC-APPROVED` token, checked first — a
-   checkpoint can never change visibility to public.
+   now Claude Code's own permission prompt. **Corrected 2026-08-18 (X226): the
+   rest of this guarantee was false.** It read "Going public still requires the
+   separate `GO-PUBLIC-APPROVED` token, checked first — a checkpoint can never
+   change visibility to public." That token and the go-public gate were removed
+   on 2026-08-16 by X214 along with everything else in this layer, so **nothing
+   mechanical stops a visibility change**; the only thing in the way is Claude
+   Code's own permission prompt, the same as for any other command. A checkpoint
+   is still an ordinary private push because that is what the protocol below
+   does — not because anything checks it.
 4. **Quality first.** A checkpoint is taken only after the phase's `quality-gate`
    (Definition of Done) is clean and the `security-compliance-auditor`'s
    secret/vulnerability/**licence** scans pass — a broken phase is never backed
@@ -55,7 +61,7 @@ intact. Plain-English rule is as set in the
    prompt. From the project
    root (the user enables per-phase backup once, at the phased-plan/warframe
    approval — see `warframe-prototype`; this records that consent for the phase's
-   push). The token is TTL-bounded and private-only.
+   push). **Corrected 2026-08-18 (X226):** this read "The token is TTL-bounded and private-only" — an orphaned tail of the removed layer. There is no token.
 4. Commit with a clear per-phase message and push to the **private working
    `development` branch** (never `main`, which carries only released versions —
    see "Two branches, always" below). `scan.mjs` raises no objection because
@@ -69,9 +75,13 @@ intact. Plain-English rule is as set in the
 
 ## Reused machinery (no duplication)
 
-- Push safety: `hooks/scan.mjs` (secret/Dev-Memory block). The token gate that
-  sat beside it was removed on 2026-08-16 (X214) — extended in v3.8.0 only to accept the distinct
-  checkpoint token for a private push, leaving the go-public gate untouched.
+- Push safety: `hooks/scan.mjs` (secret/Dev-Memory block) is now the whole of it.
+  The token gate that sat beside it was removed on 2026-08-16 (X214). **Corrected
+  2026-08-18 (X226):** the rest of this bullet dangled after that removal, still
+  describing the gate being "extended in v3.8.0 only to accept the distinct
+  checkpoint token for a private push, leaving the go-public gate untouched" — a
+  clause about a gate that no longer exists, left attached to the sentence saying
+  it was deleted.
 - Licence safety: the existing `hooks/licence-scan.mjs`.
 - Confirmation: `confirm-checkpoint.mjs`, a sibling of `confirm-publish.mjs`
   and `confirm-go-public.mjs` — all four minters removed on 2026-08-16, finding
@@ -111,8 +121,11 @@ Practical consequences, so this is a rule with teeth rather than a preference:
 4. **Push safety is now the secret scan alone.** `gate.mjs` (removed 2026-08-16, finding X214) authorised a push by
    the recorded confirmation token, not by which branch is being pushed —
    verified, not assumed, when this rule was written. So a checkpoint to
-   `development` needs the same `CHECKPOINT-APPROVED` token it always did, and
-   going public still needs its own separate `GO-PUBLIC-APPROVED` token. This
+   `development` needs no token at all, and neither does going public — the
+   `CHECKPOINT-APPROVED` and `GO-PUBLIC-APPROVED` tokens were both removed on
+   2026-08-16 by X214 (corrected 2026-08-18, X226; this sentence restated the
+   false version a second time, 74 lines after the file itself said the layer
+   was gone). This
    rule organises the work; it does not loosen a single gate.
 5. **If the user prefers different names**, say so plainly and use theirs — this
    is the owner's default for their own projects, not a law about git.
