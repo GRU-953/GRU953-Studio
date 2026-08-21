@@ -36,9 +36,21 @@ test('off by default: status reports not scheduled, and explains what happens in
     const home = mkTmp('gru-au-status-');
     const s = autoupdate.status({ platform: 'darwin', homeDir: home, runner: fakeRunner(), env: {} });
     assert.equal(s.enabled, false);
-    // The important half of the message: a user told "not scheduled" needs to know
-    // updates still reach them, or they will assume they are stuck on old code.
-    assert.match(s.message, /first time you use it each day/);
+    // 2026-08-22, X233. This asserted /first time you use it each day/ — and that daily default
+    // check DOES NOT EXIST. Only two call sites invoke auto-update.mjs and both pass --force; it is
+    // not in hooks.json; session-start.mjs stopped running it, its own comment recording the removal.
+    // So the 24-hour .last-update-check window inside auto-update.mjs is unreachable, and this test
+    // was PINNING THE FALSE WORDING — the reason nothing could tell, in four shipped statements.
+    //
+    // The comment it replaced had the right instinct and the wrong fact: a user told "not scheduled"
+    // does need to know what happens instead. What happens instead is nothing, so that is what the
+    // message must say, and this test now holds that.
+    assert.match(s.message, /nothing checks on its own/i);
+    assert.doesNotMatch(
+        s.message,
+        /first time you use it each day/,
+        'the daily default check does not exist; a message promising one is a false claim (X233)',
+    );
     fs.rmSync(home, RM);
 });
 

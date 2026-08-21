@@ -275,7 +275,12 @@ function cmdAutoupdate(argv) {
     if (sub === 'off') {
         const r = autoupdate.disable();
         console.log(`  ${r.message}`);
-        console.log('  GRU953-Studio will still check for an update the first time you use it each day.');
+        // 2026-08-22, X233: this promised a daily default check that NO code performs. Only two
+        // call sites invoke auto-update.mjs and both pass --force (index.js cmdUpdate and
+        // studio-update.md); it is not in hooks.json, and session-start.mjs stopped running it
+        // (its own comment records that removal). The 24-hour .last-update-check window inside
+        // auto-update.mjs is therefore unreachable.
+        console.log('  Nothing will check on its own. Run `gru953-studio update` when you want one.');
         return;
     }
     console.log(`  ${autoupdate.status().message}`);

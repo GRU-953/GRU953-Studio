@@ -996,5 +996,31 @@ What reduces it here, and what does not:
   Anyone who would rather that never happened should leave it off, which is the
   default, and update with `/studio-update` when they choose to.
 - If the pull leaves conflicts, the updater reports them and stops rather than
-  attempting a second unconfirmed change on top of the first. That behaviour is
-  unchanged from v5.
+  attempting a second unconfirmed change on top of the first. **Corrected
+  2026-08-22 (X231): that is true only when a person is watching.** The report is
+  four `console.error` lines and a non-zero exit code (`auto-update.mjs:181-192`).
+  On the cron fallback the scheduler itself writes `>/dev/null 2>&1` into the
+  crontab line (`clients/cli/src/autoupdate.js:135`), so stdout, stderr and the
+  exit code all go nowhere: the user's tracked files are left holding literal
+  conflict markers, their uncommitted work sits un-popped in a stash, and nothing
+  tells them. On macOS the output goes to `~/.gru953-studio-update.log`, a path no
+  message in the product ever names. **This paragraph was already corrected once,
+  on 2026-08-17 by X219, for a different falsehood — and this one survived that
+  visit.**
+
+- **Disclosed plainly, because no document said it before (X231, 2026-08-22): an
+  update fetches code from the internet and then runs it.** The plugin's checks
+  are programs, so after a pull the next command is judged by the version that
+  just arrived. **Nothing is verified first** — no signature, no signed tag, no
+  pinned hash, no checksum; verified by grep over `auto-update.mjs` and
+  `clients/cli/src/`, which returns nothing. What is pulled is whatever `@{u}`
+  resolves to for the current branch: no URL and no ref is pinned in the code.
+  Trust in an update therefore rests entirely on the GitHub repository and the
+  account that controls it.
+
+- **A correction to the sentence above about which checkout is touched.** It says
+  the scheduled job runs "in the plugin's checkout". `findGitRoot`
+  (`auto-update.mjs:28-37`) walks UP from the hooks directory to the FIRST
+  ancestor containing a `.git`, which is the plugin's checkout only when the
+  plugin is not nested inside another repository. If it is, that outer repository
+  is what gets rebased and autostashed.

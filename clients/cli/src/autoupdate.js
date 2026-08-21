@@ -81,8 +81,8 @@ function launchAgentPlist(nodePath, cliPath) {
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>17</integer></dict>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>${path.join(os.homedir(), '.gru953-studio-update.log')}</string>
-  <key>StandardErrorPath</key><string>${path.join(os.homedir(), '.gru953-studio-update.log')}</string>
+  <key>StandardOutPath</key><string>${updateLogPath()}</string>
+  <key>StandardErrorPath</key><string>${updateLogPath()}</string>
 </dict>
 </plist>
 `;
@@ -131,8 +131,26 @@ function writeCrontab(run, text) {
     return r;
 }
 
+// 2026-08-22, X232: ONE definition of where a scheduled run's output goes, because the launchd
+// plist and the crontab line each used to decide for themselves — the plist named
+// `~/.gru953-studio-update.log` and cron named /dev/null. Two mechanisms holding different answers to
+// the same question is the L14 shape, and here one of the answers was "throw it away".
+function updateLogPath() {
+  return path.join(os.homedir(), '.gru953-studio-update.log');
+}
+
 function cronLineFor(nodePath, cliPath) {
-    return `17 4 * * * "${nodePath}" "${cliPath}" update >/dev/null 2>&1 ${CRON_MARKER}`;
+    // 2026-08-22, X232: this ended `>/dev/null 2>&1`, which discarded the updater's ONLY failure
+    // report — four console.error lines and a non-zero exit code — on the one path where nobody is
+    // watching. SECURITY.md promised "if the pull leaves conflicts, the updater reports them and
+    // stops"; on this path it stopped and reported to nothing, leaving literal conflict markers in
+    // the user's tracked files and their uncommitted work un-popped in a stash, with nothing said.
+    //
+    // Output now goes to a log the user can be pointed at, and stderr is merged into it rather than
+    // thrown away. cron also mails a job's output to the local user by default, and dropping the
+    // redirect entirely would resurrect that noise every night for the ordinary no-op case — so the
+    // output is kept, in a named file, rather than either discarded or mailed.
+    return `17 4 * * * "${nodePath}" "${cliPath}" update >> "${updateLogPath()}" 2>&1 ${CRON_MARKER}`;
 }
 
 /**
@@ -165,8 +183,8 @@ function enable(options = {}) {
             ok: true, // the plist is written; launchd picks it up at next login regardless
             mechanism: 'launchd',
             message: r.ok
-                ? 'A daily update check is now scheduled (macOS launchd), and is active straight away.'
-                : 'A daily update check is now scheduled (macOS launchd). It becomes active the next time you log in.',
+                ? `A daily update check is now scheduled (macOS launchd), and is active straight away. It pulls new code from GitHub and that code then runs; its output, including any failure, is written to ${updateLogPath()}.`
+                : `A daily update check is now scheduled (macOS launchd). It becomes active the next time you log in. It pulls new code from GitHub and that code then runs; its output, including any failure, is written to ${updateLogPath()}.`,
         };
     }
 
@@ -180,7 +198,7 @@ function enable(options = {}) {
             '/TR', `"${nodePath}" "${cliPath}" update`,
         ], { shell: true });
         return r.ok
-            ? { ok: true, mechanism: 'schtasks', message: 'A daily update check is now scheduled (Windows Task Scheduler).' }
+            ? { ok: true, mechanism: 'schtasks', message: 'A daily update check is now scheduled (Windows Task Scheduler). It pulls new code from GitHub and that code then runs. NOTE: this mechanism does not capture the updater output, so a failed update reports to nothing — run `gru953-studio update` by hand if you want to see the result.' }
             : { ok: false, mechanism: 'schtasks', message: `Could not create the scheduled task. ${r.stderr.trim() || r.stdout.trim()}` };
     }
 
@@ -194,7 +212,7 @@ function enable(options = {}) {
         run('systemctl', ['--user', 'daemon-reload']);
         const r = run('systemctl', ['--user', 'enable', '--now', p.systemdTimer]);
         return r.ok
-            ? { ok: true, mechanism: 'systemd', message: 'A daily update check is now scheduled (systemd user timer).' }
+            ? { ok: true, mechanism: 'systemd', message: 'A daily update check is now scheduled (systemd user timer). It pulls new code from GitHub and that code then runs; its output goes to the systemd journal — see it with `journalctl --user -u gru953-studio-update`.' }
             : { ok: false, mechanism: 'systemd', message: `The timer files were written but could not be started. ${r.stderr.trim()}` };
     }
 
@@ -205,7 +223,7 @@ function enable(options = {}) {
     }
     const r = writeCrontab(run, `${existing.trimEnd()}\n${cronLineFor(nodePath, cliPath)}`.trimStart());
     return r.ok
-        ? { ok: true, mechanism: 'cron', message: 'A daily update check is now scheduled (cron).' }
+        ? { ok: true, mechanism: 'cron', message: `A daily update check is now scheduled (cron). It pulls new code from GitHub and that code then runs; its output, including any failure, is written to ${updateLogPath()}.` }
         : { ok: false, mechanism: 'cron', message: `Could not update your crontab. ${r.stderr.trim()}` };
 }
 
@@ -262,16 +280,16 @@ function status(options = {}) {
     const p = jobPaths({ platform, homeDir, env });
     if (platform === 'darwin') {
         const on = fs.existsSync(p.launchAgent);
-        return { enabled: on, mechanism: 'launchd', message: on ? `Scheduled daily (macOS launchd). Definition: ${p.launchAgent}` : 'Not scheduled. GRU953-Studio checks for an update the first time you use it each day.' };
+        return { enabled: on, mechanism: 'launchd', message: on ? `Scheduled daily (macOS launchd). Definition: ${p.launchAgent}` : 'Not scheduled, and nothing checks on its own. GRU953-Studio updates only when you ask it to — run `gru953-studio update`, or `/studio-update` inside a session.' };
     }
     if (platform === 'win32') {
         const on = run('schtasks', ['/Query', '/TN', 'GRU953-Studio Update'], { shell: true }).ok;
-        return { enabled: on, mechanism: 'schtasks', message: on ? 'Scheduled daily (Windows Task Scheduler).' : 'Not scheduled. GRU953-Studio checks for an update the first time you use it each day.' };
+        return { enabled: on, mechanism: 'schtasks', message: on ? 'Scheduled daily (Windows Task Scheduler).' : 'Not scheduled, and nothing checks on its own. GRU953-Studio updates only when you ask it to — run `gru953-studio update`, or `/studio-update` inside a session.' };
     }
     const timerFile = path.join(p.systemdDir, p.systemdTimer);
     if (fs.existsSync(timerFile)) return { enabled: true, mechanism: 'systemd', message: `Scheduled daily (systemd user timer). Definition: ${timerFile}` };
     if (readCrontab(run).includes(CRON_MARKER)) return { enabled: true, mechanism: 'cron', message: 'Scheduled daily (cron).' };
-    return { enabled: false, mechanism: hasSystemd(run) ? 'systemd' : 'cron', message: 'Not scheduled. GRU953-Studio checks for an update the first time you use it each day.' };
+    return { enabled: false, mechanism: hasSystemd(run) ? 'systemd' : 'cron', message: 'Not scheduled, and nothing checks on its own. GRU953-Studio updates only when you ask it to — run `gru953-studio update`, or `/studio-update` inside a session.' };
 }
 
 module.exports = {
