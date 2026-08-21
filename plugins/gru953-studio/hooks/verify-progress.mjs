@@ -663,11 +663,39 @@ function main() {
       // but a sentence. The status-cell reading is deliberately untouched: widening it was
       // X139, and narrowing it here would undo that fix where it was actually needed (X194's
       // control F pins a Status cell reading "shipped").
-      const segs = l.split(/[|:—-]/);
-      const isClaim = segs.some((seg, si) => {
-        if (seg.trim() === '') return false;
+      // 2026-08-18, X194 SECOND repair. The version above declared the right discriminator in
+      // this comment and implemented a different one in the code: it required `si > 0`, a
+      // POSITIONAL test, while claiming the segment must BE a completion value. Every prose
+      // control in the reproduction puts the completion word at position 0 — the one position
+      // that guard excludes — so the stated rule was never applied and no control could tell.
+      // Measured on the golden fixture, five for five still blocked: "Re-done work is tracked in
+      // the table above.", "Half-finished features are parked in the backlog.", "See the
+      // well-shipped orders report for last quarter.", "Status: Delivered to staging on
+      // Tuesday.", "Note: completed work is described in the release notes."
+      //
+      // The stated rule is ALSO wrong, and control B2 already proves it: X196 found that
+      // requiring the segment to be exactly a completion value silences every real claim with a
+      // qualifier ("T9: completed on Tuesday"), which is a false clean — the worse direction.
+      // Both candidate discriminators are refuted by controls already in the file.
+      //
+      // TWO causes, fixed separately.
+      //
+      // (1) The split class held a bare hyphen, so it cut INSIDE ordinary hyphenated words:
+      // "Re-done" became ["Re","done"]. A hyphen is only a separator with space around it, or
+      // leading a bullet. Intra-word hyphens are now left alone, which fixes three of the five
+      // above without touching any control.
+      //
+      // (2) For a real separator, beginning with a completion word is not evidence of a claim.
+      // The discriminator that survives BOTH control sets is that a done claim outside a table
+      // NAMES A TASK: every control that must block names one, every sentence that must stay
+      // clean names none. A bare `done` line names nothing, so that case is kept explicitly.
+      const SEPARATORS = /\||:|\s[—-]\s|^\s*[—-]\s/;
+      const segs = l.split(SEPARATORS);
+      const namesATask = /\b[A-Z]{1,4}-?\d{1,4}\b/.test(l);
+      const isClaim = segs.some((seg) => {
+        if (!seg || seg.trim() === '') return false;
         if (isDoneClaimValue(seg)) return true; // a bare `done`, wherever it sits
-        return si > 0 && isDoneValue(seg); // `<thing> — done (2026-08-16)`
+        return namesATask && isDoneValue(seg); // `T9 — done (2026-08-16)`
       });
       if (isClaim) claims.push(l);
     }

@@ -52,7 +52,15 @@
 //   node X194-done-claim-prose.mjs                # asserts the FIXED state
 //   node X194-done-claim-prose.mjs --expect-bug   # asserts the DEFECT is present
 
-import { mkdtempSync, mkdirSync, cpSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  cpSync,
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  rmSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -93,7 +101,10 @@ const swept = (v) => v.messages.some((m) => String(m).includes(SWEEP_SAYS));
 
 // ---- A: baseline ---------------------------------------------------------------
 const A = verdict(null);
-if (A.status !== 'clean') die(`control A failed: the golden fixture must be clean at baseline, got ${A.status}: ${A.messages[0] || ''}`);
+if (A.status !== 'clean')
+  die(
+    `control A failed: the golden fixture must be clean at baseline, got ${A.status}: ${A.messages[0] || ''}`,
+  );
 console.log('  A  the golden fixture, untouched ............... clean   (control)');
 
 // ---- B, C, D: the sweep must keep doing its job --------------------------------
@@ -134,6 +145,46 @@ for (const [line, why] of [
   console.log(`  B2 ${line.padEnd(31)} .... BLOCKED (control: X196)`);
 }
 
+// ---- G: X194 RE-OPENED 2026-08-18 — the axis case E could not reach -------------
+//
+// Case E's five sentences all put the completion word at position 0. The repair of 2026-08-16
+// guarded on `si > 0`, which excludes exactly that position — so case E passed whether or not
+// the fix it was written for had been implemented, and it had not been. All five sentences
+// below still blocked the phase checkpoint on 2026-08-18, four months of green suite later.
+//
+// Two causes, neither addressed by that repair. Three of these hide the completion word inside
+// an ordinary hyphenated word, which the split class cut open: "Re-done" became ["Re","done"].
+// The other two put it after a real colon, where beginning with a completion word is not
+// evidence of a claim.
+//
+// This case exists to hold the DIMENSION, not the sentences: position and word-internal
+// separators, not "more sentences starting with done". A control that varies only the dimension
+// its author already had in mind inherits their blind spot — which is what happened here.
+const PROSE_OFF_POSITION_ZERO = [
+  'Re-done work is tracked in the table above.',
+  'Half-finished features are parked in the backlog.',
+  'See the well-shipped orders report for last quarter.',
+  'Status: Delivered to staging on Tuesday.',
+  'Note: completed work is described in the release notes.',
+  'Phase 1 - Shipped items are listed in the release notes.',
+  'Nothing here is done - Done deals are recorded elsewhere.',
+];
+const offPositionAlarms = [];
+for (const line of PROSE_OFF_POSITION_ZERO) {
+  if (swept(verdict(append(line)))) offPositionAlarms.push(line);
+}
+console.log(
+  `  G  ${PROSE_OFF_POSITION_ZERO.length} sentences, done-word NOT at position 0 ... ${offPositionAlarms.length ? `${offPositionAlarms.length} FLAGGED  <- X194` : 'clean  '}`,
+);
+if (offPositionAlarms.length > 0 && !expectBug) {
+  die(
+    `case G: ${offPositionAlarms.length} ordinary sentence(s) still block the phase checkpoint. ` +
+      `First: "${offPositionAlarms[0]}". A hyphen inside a word is not a separator, and a segment ` +
+      'that merely begins with a completion word is not a claim — the discriminator is whether the ' +
+      'line NAMES A TASK, which is what controls B, C, D and B2 all do and none of these does.',
+  );
+}
+
 // ---- E: X194 --------------------------------------------------------------------
 const PROSE = [
   'Shipped items are listed in the release notes.',
@@ -171,13 +222,20 @@ for (const f of falseAlarms) console.log(`         flagged: "${f}"`);
 }
 
 if (expectBug) {
-  if (falseAlarms.length === 0) die('expected the X194 false alarms and found none. If it was fixed, delete this --expect-bug branch deliberately.');
-  console.log(`\nX194 REPRODUCED: ${falseAlarms.length} ordinary sentence(s) reported as unverifiable done claims.`);
+  if (falseAlarms.length === 0)
+    die(
+      'expected the X194 false alarms and found none. If it was fixed, delete this --expect-bug branch deliberately.',
+    );
+  console.log(
+    `\nX194 REPRODUCED: ${falseAlarms.length} ordinary sentence(s) reported as unverifiable done claims.`,
+  );
   process.exit(0);
 }
 
 if (falseAlarms.length === 0) {
-  console.log('\nPASS: a done claim outside a table is still reported; an English sentence that merely begins with a completion word is not.');
+  console.log(
+    '\nPASS: a done claim outside a table is still reported; an English sentence that merely begins with a completion word is not.',
+  );
   process.exit(0);
 }
 
