@@ -327,7 +327,7 @@ function parseTable(text, wantHeaderRe) {
   // would swap a false alarm for a false clean, which is the worse trade — X193's control H
   // pins that line. The NUL separator stays: it keeps ['a b','c'] distinct from ['a','b c'].
   const headerKey = (cells) =>
-    cells.map((c) => deEmphasise(String(c)).trim().toLowerCase()).join(' ');
+    cells.map((c) => deEmphasise(String(c)).trim().toLowerCase()).join('\u0000');
   const firstKey = headerKey(headers);
   const mismatched = fragments
     .slice(1)

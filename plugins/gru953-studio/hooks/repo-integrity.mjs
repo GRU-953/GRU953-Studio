@@ -1120,6 +1120,55 @@ if (ciYmlText === null) {
   }
 }
 
+// ---- INV 20: no source file carries a raw control byte -------------------------
+//
+// 2026-08-18, finding X222 (the systemic half of X204). A single raw control byte makes a file
+// "binary data" to file(1) and makes a default grep return NOTHING AT ALL - not an error, not a
+// warning, an empty result indistinguishable from "no matches". That is L13 at the level of the
+// toolchain: an instrument that cannot tell a broken read from a negative result reports the broken
+// read as a negative result.
+//
+// Not theoretical. traceability-check.mjs carried exactly one such byte from the X193 fix - a NUL
+// separator typed as a literal character instead of the six-character escape sequence - and on
+// 2026-08-18 it silently blinded two greps of that file DURING AN AUDIT OF THAT FILE. It was noticed
+// only because a second empty result was implausible. X204 had recorded it as Low, as hygiene; it sits
+// in the file with the most open findings against it, so anyone auditing that file saw an empty one.
+//
+// The mistake is easy to make and easy to miss: while writing this very invariant I typed a literal
+// NUL into two of my own helper scripts, and only a compiler error caught the second. Nothing in the
+// toolchain catches the first kind.
+//
+// The check bans the raw BYTE, never the VALUE. A NUL separator is a deliberate and needed choice -
+// it keeps ['a b','c'] distinct from ['a','b c'] - and a check that forbade the value would force a
+// real fix to be undone to satisfy a check about encoding. X222's control B pins that distinction, and
+// control C pins that tabs and CRLF are ordinary whitespace, which matters because this project has a
+// CRLF CI leg. Build output is exempt for the reason INV18 gives: it is a copy, not a source.
+{
+  const TEXTUAL = /\.(mjs|js|md|json|ya?ml|txt)$/i;
+  // Everything below 0x20 except tab (0x09), newline (0x0a) and carriage return (0x0d), plus DEL.
+  const isForbidden = (b) => (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d) || b === 0x7f;
+  for (const f of allFiles.filter((x) => TEXTUAL.test(x) && !isBuildOutput(x))) {
+    let buf;
+    try {
+      buf = fs.readFileSync(f);
+    } catch {
+      continue;
+    }
+    const at = buf.findIndex(isForbidden);
+    if (at === -1) continue;
+    const line = buf.subarray(0, at).toString('utf8').split('\n').length;
+    const code = buf[at].toString(16).padStart(2, '0');
+    const total = buf.reduce((n, b) => n + (isForbidden(b) ? 1 : 0), 0);
+    fail(
+      `INV20: ${path.relative(repoRoot, f)}:${line} contains a raw control byte 0x${code}` +
+        `${total > 1 ? ` (${total} in the file)` : ''}, which makes file(1) report binary data and a ` +
+        'default grep return nothing at all - so this file is invisible to every text tool and to ' +
+        'anyone auditing it. Write the character as an escape sequence instead; the runtime value is ' +
+        'identical and only the source encoding changes.',
+    );
+  }
+}
+
 // ---- INV 19: no command and skill share a name --------------------------------
 //
 // 2026-08-17, finding X221 (the mechanical half of X35). Commands are declared as

@@ -7729,6 +7729,12 @@ for (const script of [
   // `studio-start` against the skill `studio` and requires SILENCE, because that is the shape the owner
   // chose to resolve X35 and a loose check would fail its own repair.
   'X221-command-skill-name-collision.mjs',
+  // 2026-08-18, X222 (the systemic half of X204): a single raw control byte makes file(1) report binary
+  // data and a default grep return NOTHING, so a source file can be invisible to every text tool while
+  // every gate reports clean. It blinded two greps of traceability-check.mjs during an audit OF that
+  // file. Control B holds the ESCAPE form and requires silence - the NUL separator is a deliberate
+  // choice from the X193 fix, and banning the value would force that fix to be undone.
+  'X222-raw-control-byte-in-source.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',
