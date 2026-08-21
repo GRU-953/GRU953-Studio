@@ -334,21 +334,50 @@ function main() {
     // It deliberately does not start BLOCKING. The Path column is optional by design, and
     // failing a partial register would break every register written before X121 landed — which
     // is what the optionality was for. X195's controls A and E hold both halves of that.
-    const checkedRows = rows.filter((row) => row.idx.path !== -1).length;
-    const assetExistenceChecked = rows.length > 0 && checkedRows === rows.length;
-    const unchecked = rows.length - checkedRows;
+    // 2026-08-18, X195 SECOND repair. The count above was the right move applied to the wrong
+    // quantity: `row.idx.path !== -1` asks whether the row's TABLE carries a Path column, not
+    // whether the row's Path CELL holds anything. A register whose every Path cell was empty
+    // therefore reported assetExistenceChecked: true, assetsExistenceChecked: 2 and "a file where
+    // it says it is" after ZERO filesystem checks — the original defect verbatim, and L16 besides:
+    // a count no independent count supports.
+    //
+    // There are genuinely three outcomes, so three are counted. An in-app text asset with no path
+    // is not a gap — text is copy, not a file — but it is not a check either, and the difference
+    // is exactly what this field exists to report.
+    let resolvedRows = 0; // the Path cell held a value and a real check ran
+    let textNoPathRows = 0; // in-app copy: nothing to resolve, legitimately
+    let unresolvableRows = 0; // no Path column, or media with no path (a problem already raised)
+    for (const row of rows) {
+      if (row.idx.path === -1) {
+        unresolvableRows += 1;
+        continue;
+      }
+      const cell = deEmphasise(String(row.cells[row.idx.path] || '')).trim();
+      if (!ph(cell)) {
+        resolvedRows += 1;
+        continue;
+      }
+      const med = row.idx.medium !== -1 ? deEmphasise(String(row.cells[row.idx.medium] || '')) : '';
+      if (row.idx.medium !== -1 && TEXT_ONLY_RE.test(med)) textNoPathRows += 1;
+      else unresolvableRows += 1;
+    }
+    const checkedRows = resolvedRows;
+    const assetExistenceChecked = rows.length > 0 && resolvedRows > 0 && unresolvableRows === 0;
+    const unchecked = rows.length - resolvedRows;
     console.log(
       JSON.stringify(
         {
           status: 'clean',
           reason: assetExistenceChecked
-            ? 'every recorded content asset has approval, provenance, rights, (for media) alt-text, and a file where it says it is'
-            : checkedRows === 0
-              ? 'every recorded content asset has approval, provenance, rights and (for media) alt-text. Whether each asset EXISTS was NOT verified: this register has no Path column, so nothing resolves an asset name to a file (finding X121)'
-              : `every recorded content asset has approval, provenance, rights and (for media) alt-text. Existence was verified for ${checkedRows} of ${rows.length}: the other ${unchecked} sit in a table with no Path column, so nothing resolves them to a file (finding X195)`,
+            ? `every recorded content asset has approval, provenance, rights, (for media) alt-text, and a file where it says it is${textNoPathRows > 0 ? ` (${textNoPathRows} of ${rows.length} ${textNoPathRows === 1 ? 'is in-app copy with no file to resolve' : 'are in-app copy with no file to resolve'})` : ''}`
+            : resolvedRows === 0
+              ? `every recorded content asset has approval, provenance, rights and (for media) alt-text. Whether any asset EXISTS was NOT verified: ${textNoPathRows === rows.length ? 'every row is in-app copy with no path, so there was no file to resolve' : 'no row names a path that could be resolved to a file'} — so no existence check was performed at all (findings X121, X195)`
+              : `every recorded content asset has approval, provenance, rights and (for media) alt-text. Existence was verified for ${resolvedRows} of ${rows.length}: ${unresolvableRows} could not be resolved (no Path column, or a media asset with no path)${textNoPathRows > 0 ? `, and ${textNoPathRows} is in-app copy with no file` : ''} (finding X195)`,
           assets: rows.length,
           assetExistenceChecked,
-          assetsExistenceChecked: checkedRows,
+          assetsExistenceChecked: resolvedRows,
+          assetsInAppCopyNoFile: textNoPathRows,
+          assetsUnresolvable: unresolvableRows,
         },
         null,
         2,

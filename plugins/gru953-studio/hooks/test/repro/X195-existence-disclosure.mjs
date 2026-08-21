@@ -85,7 +85,12 @@ function verdict(contentMd, realFiles = []) {
       writeFileSync(join(dir, rel), 'x');
     }
     const v = refuseCrash(readGate(NODE, join(HOOKS, 'content-check.mjs'), [dir]), 'X195', die);
-    return { status: v.status, checked: v.json.assetExistenceChecked, reason: String(v.json.reason || ''), problems: v.problems };
+    return {
+      status: v.status,
+      checked: v.json.assetExistenceChecked,
+      reason: String(v.json.reason || ''),
+      problems: v.problems,
+    };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -96,7 +101,9 @@ const ASSET = 'assets/banner.png';
 // ---- A: no Path column anywhere ------------------------------------------------
 const A = verdict(`# Content\n\n${NO_PATH}`);
 if (A.status !== 'clean' || A.checked !== false) {
-  die(`control A failed: a register with no Path column must be clean and admit it checked nothing, got ${A.status}/checked=${A.checked}`);
+  die(
+    `control A failed: a register with no Path column must be clean and admit it checked nothing, got ${A.status}/checked=${A.checked}`,
+  );
 }
 console.log('  A  no Path column anywhere ..................... clean, checked=false  (control)');
 
@@ -111,6 +118,38 @@ if (B.status !== 'clean' || B.checked !== true) {
 }
 console.log('  B  a Path column on every row, file present .... clean, checked=true   (control)');
 
+// ---- F: X195 RE-OPENED 2026-08-18 — the column is present, the CELLS are empty ----
+//
+// Every control above varies whether the COLUMN exists. None varies whether the CELL holds
+// anything. So the repair of 2026-08-16 could count rows whose TABLE carries a Path column —
+// `row.idx.path !== -1` — rather than rows actually resolved to a file, and every control still
+// passed. Measured on 2026-08-18: a register of two text assets, Path column present on both
+// rows, both cells empty, reported assetExistenceChecked: true, assetsExistenceChecked: 2 and
+// "a file where it says it is" after ZERO filesystem checks.
+//
+// That is the original X195 defect verbatim, and L16 besides: a count no independent count
+// supports. An in-app text asset with no path is legitimately unresolvable — text is copy, not a
+// file — but it is not a CHECK either, and reporting it as one is the whole thing this field
+// exists to prevent.
+const F_TABLE = [
+  '| Asset | Medium | Provenance | Approval | Rights | Alt-text | Path |',
+  '| :-- | :-- | :-- | :-- | :-- | :-- | :-- |',
+  '| onboarding-copy | text | Claude 2026-07-19 | approved | original | \u2014 | \u2014 |',
+  '| menu-label | text | Claude 2026-07-19 | approved | original | \u2014 | \u2014 |',
+].join('\n');
+const F = verdict(`# Content\n\n${F_TABLE}\n`);
+const fWrong = F.checked === true;
+console.log(
+  `  F  a Path column with EMPTY cells ............. ${F.status}, checked=${F.checked}${fWrong ? '   <- X195' : ''}`,
+);
+if (fWrong && !expectBug) {
+  die(
+    'case F: every Path CELL is empty and the gate still claims assetExistenceChecked=true, so it ' +
+      'reports a check it never made. Count rows actually RESOLVED to a file, not rows whose table ' +
+      'happens to carry a Path column.',
+  );
+}
+
 // ---- C: X195 --------------------------------------------------------------------
 const C = verdict(`# Content\n\n${NO_PATH}\n## Later additions\n\n${WITH_PATH(ASSET)}`, [ASSET]);
 const cOverclaims = C.checked === true;
@@ -122,7 +161,9 @@ if (cOverclaims) console.log(`         it says: "${C.reason.slice(0, 120)}..."`)
 // ---- D: the existence check itself still fires ---------------------------------
 const D = verdict(`# Content\n\n${WITH_PATH('assets/GONE.png')}`);
 if (D.status === 'clean') {
-  die('control D failed: a Path naming a file that does not exist must still block — if it does not, the existence check is gone and case C would pass for the wrong reason.');
+  die(
+    'control D failed: a Path naming a file that does not exist must still block — if it does not, the existence check is gone and case C would pass for the wrong reason.',
+  );
 }
 console.log('  D  a Path naming a missing file ................ BLOCKED (control)');
 
@@ -134,16 +175,25 @@ if (C.status !== 'clean') {
       `the defect here is the gate's honesty, not its strictness: ${C.problems[0] || ''}`,
   );
 }
-console.log('  E  the mixed register is still clean ........... clean   (control: not a new block)');
+console.log(
+  '  E  the mixed register is still clean ........... clean   (control: not a new block)',
+);
 
 if (expectBug) {
-  if (!cOverclaims) die('expected the X195 over-claim and did not find it. If it was fixed, delete this --expect-bug branch deliberately.');
-  console.log('\nX195 REPRODUCED: the gate reported assetExistenceChecked=true for a register whose sound assets were never resolved to a file.');
+  if (!cOverclaims)
+    die(
+      'expected the X195 over-claim and did not find it. If it was fixed, delete this --expect-bug branch deliberately.',
+    );
+  console.log(
+    '\nX195 REPRODUCED: the gate reported assetExistenceChecked=true for a register whose sound assets were never resolved to a file.',
+  );
   process.exit(0);
 }
 
 if (!cOverclaims) {
-  console.log('\nPASS: the gate claims an existence check only when it actually made one, and still says so when it did.');
+  console.log(
+    '\nPASS: the gate claims an existence check only when it actually made one, and still says so when it did.',
+  );
   process.exit(0);
 }
 
