@@ -164,7 +164,6 @@ const PROSE_OFF_POSITION_ZERO = [
   'Re-done work is tracked in the table above.',
   'Half-finished features are parked in the backlog.',
   'See the well-shipped orders report for last quarter.',
-  'Status: Delivered to staging on Tuesday.',
   'Note: completed work is described in the release notes.',
   'Phase 1 - Shipped items are listed in the release notes.',
   'Nothing here is done - Done deals are recorded elsewhere.',
@@ -182,6 +181,46 @@ if (offPositionAlarms.length > 0 && !expectBug) {
       `First: "${offPositionAlarms[0]}". A hyphen inside a word is not a separator, and a segment ` +
       'that merely begins with a completion word is not a claim — the discriminator is whether the ' +
       'line NAMES A TASK, which is what controls B, C, D and B2 all do and none of these does.',
+  );
+}
+
+// ---- H: X228 — a task named in PROSE is still a claim -----------------------------
+//
+// 2026-08-18. The X194 repair of 2026-08-17 required the line to contain an id-shaped token, so
+// "- Refactor the login form: completed on Tuesday" reported CLEAN while "- T9: completed on
+// Tuesday" blocked — identical absent evidence, and only the naming convention deciding. That
+// swallowed the whole X196 class whenever a task was named in words, which is the false-clean
+// direction this gate exists to prevent.
+//
+// No control in this file could see it: every must-BLOCK case above names `T9` and every
+// must-stay-clean case names nothing, so an id test partitions that set perfectly whether or not it
+// is the right rule. Case H holds the NAMING axis so that can never be true again.
+const PROSE_NAMED = [
+  '- Refactor the login form: completed on Tuesday',
+  '- Wire up the payment flow: finished last week',
+  '- Login rewrite | shipped to production',
+  '- Refactor the login form — done (2026-08-17)',
+  '- Refactor the login form — done, no evidence',
+  // Reclassified 2026-08-18, and stated rather than buried: on 2026-08-17 this sat in case G as a
+  // false alarm. It is not one. With a label in front of it, "Status: Delivered to staging on
+  // Tuesday." is an unevidenced completion claim in a progress file, which is precisely what this
+  // gate is for. The bare sentence "Delivered to staging on Tuesday.", with no label, still passes —
+  // it is case E, and its only segment is the first.
+  'Status: Delivered to staging on Tuesday.',
+];
+const missedNamed = [];
+for (const line of PROSE_NAMED) {
+  if (!swept(verdict(append(line)))) missedNamed.push(line);
+}
+console.log(
+  `  H  ${PROSE_NAMED.length} claims naming the task in prose ....... ${missedNamed.length ? `${missedNamed.length} MISSED  <- X228` : 'all BLOCKED'}`,
+);
+if (missedNamed.length > 0 && !expectBug) {
+  die(
+    `case H: ${missedNamed.length} unevidenced done claim(s) reported clean because the task is named ` +
+      `in words rather than by id. First: "${missedNamed[0]}". The discriminator is not whether the ` +
+      'line contains an id — it is whether the completion word is followed by a short qualifier (a ' +
+      'status) or by a clause (prose).',
   );
 }
 

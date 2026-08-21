@@ -689,13 +689,44 @@ function main() {
       // The discriminator that survives BOTH control sets is that a done claim outside a table
       // NAMES A TASK: every control that must block names one, every sentence that must stay
       // clean names none. A bare `done` line names nothing, so that case is kept explicitly.
+      // 2026-08-18, X228: the line above required an id-shaped token, so a task named in PROSE was
+      // never a claim — "- Refactor the login form: completed on Tuesday" reported clean while
+      // "- T9: completed on Tuesday" blocked, on identical absent evidence. That swallowed the whole
+      // X196 class, which is the false-clean direction this gate exists to prevent. No control could
+      // see it: in the reproduction every must-BLOCK case names `T9` and every must-stay-clean case
+      // names nothing, so an id test partitions that set perfectly whether or not it is the right rule.
+      //
+      // The POSITIONAL test is viable again because of the separator repair in the same commit: an
+      // intra-word hyphen no longer splits, so "Re-done" is one segment at position 0. The hyphen was
+      // what killed position, not position itself.
+      //
+      // The missing piece is what FOLLOWS the completion word. A status is followed by a short
+      // qualifier; prose continues into a clause. "completed on Tuesday" is a status; "completed work
+      // is described in the release notes" is a sentence about where things are written down. No
+      // amount of position or whole-value testing can tell those apart, which is why both earlier
+      // attempts failed.
       const SEPARATORS = /\||:|\s[—-]\s|^\s*[—-]\s/;
+      const AUXILIARY =
+        /\b(is|are|was|were|be|been|being|has|have|had|will|would|can|could|should|may|might|do|does|did|remains?|stays?)\b/i;
+      const isStatusShaped = (c) => {
+        const raw = deEmphasise(String(c == null ? '' : c))
+          .trim()
+          .replace(/^[^A-Za-z0-9]+/, '');
+        const m = raw.match(DONE_WORDS);
+        if (!m) return false;
+        const rest = raw
+          .slice(m[0].length)
+          .replace(/^[\s:,—-]+/, '')
+          .trim();
+        if (rest === '') return true;
+        if (AUXILIARY.test(rest)) return false; // a clause, not a status
+        return rest.split(/\s+/).filter(Boolean).length <= 6;
+      };
       const segs = l.split(SEPARATORS);
-      const namesATask = /\b[A-Z]{1,4}-?\d{1,4}\b/.test(l);
-      const isClaim = segs.some((seg) => {
+      const isClaim = segs.some((seg, si) => {
         if (!seg || seg.trim() === '') return false;
         if (isDoneClaimValue(seg)) return true; // a bare `done`, wherever it sits
-        return namesATask && isDoneValue(seg); // `T9 — done (2026-08-16)`
+        return si > 0 && isDoneValue(seg) && isStatusShaped(seg);
       });
       if (isClaim) claims.push(l);
     }
