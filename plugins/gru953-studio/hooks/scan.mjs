@@ -397,7 +397,11 @@ function main() {
   // both of which only TALK about the danger. Same confusion as X206 (prose about the guardrail
   // satisfying the check for the guardrail) and X207 (commentary read as data).
   const PREFIXES = new Set(['sudo', 'env', 'time', 'nice', 'ionice', 'command', 'exec', 'xargs']);
-  const segments = String(CMD || '')
+  // 2026-08-18, X224: this split the RAW command text, so every bypass the canonicaliser exists to
+  // close was open here — `r""m -rf /` and `\rm -rf /` both reached the machine with no decision at
+  // all. normalizeForPushCheck is imported by this very file and relied on by its two other security
+  // callers since July; the catastrophic rules were simply never routed through it.
+  const segments = String(normalizeForPushCheck(String(CMD || '')) || '')
     .split(/(?:&&|\|\||[;|\n])/)
     .map((seg) => seg.trim().split(/\s+/).filter(Boolean))
     .filter((t) => t.length > 0);
@@ -408,7 +412,14 @@ function main() {
     while (i < t.length && (PREFIXES.has(t[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i]))) i += 1;
     return t.slice(i);
   });
-  const leads = (re) => commandSegments.filter((t) => t.length && re.test(t[0]));
+  // 2026-08-18, X224: the command word is stripped of surrounding quotes before matching, because
+  // `"rm" -rf /` and `'rm' -rf /` are the same command to a shell and were silent here. The
+  // canonicaliser above resolves splicing and escapes but leaves a wholly quoted word intact.
+  const cmdWord = (t) =>
+    String(t[0] || '')
+      .replace(/^['"]+/, '')
+      .replace(/['"]+$/, '');
+  const leads = (re) => commandSegments.filter((t) => t.length && re.test(cmdWord(t)));
   // 2026-08-18, X223: `const tokens = commandSegments.flat()` and `const has = (t) =>
   // tokens.includes(t)` stood here, computed for exactly the job below and never consumed once —
   // eslint had been reporting "'has' is assigned a value but never used" throughout. Removed rather
@@ -417,11 +428,13 @@ function main() {
   const CATASTROPHIC_RULES = [
     {
       why: 'this deletes the entire filesystem, not a directory in your project',
-      lead: /^(.*\/)?rm$/,
+      lead: /^(.*\/)?rm$/i,
       judge: (seg) => {
         const f = seg.filter((t) => /^-[a-zA-Z]+$/.test(t)).join('');
         const recursive = /r/i.test(f) || seg.includes('--recursive');
-        const forced = /f/.test(f) || seg.includes('--force');
+        // 2026-08-18, X224: `-RF` is the same flag set as `-rf` to rm, and the recursive test was
+        // already case-insensitive while the force test was not — so the pair disagreed with itself.
+        const forced = /f/i.test(f) || seg.includes('--force');
         const targets = seg.slice(1).filter((t) => !t.startsWith('-'));
         // The ROOT itself, or the root glob — never /tmp/x, ./build or node_modules.
         const root = targets.some((t) => t === '/' || t === '/*' || t === '"/"' || t === "'/'");
@@ -430,7 +443,7 @@ function main() {
     },
     {
       why: 'this writes raw bytes over a whole disk device, destroying every partition on it',
-      lead: /^(.*\/)?dd$/,
+      lead: /^(.*\/)?dd$/i,
       judge: (seg) => {
         // of=/dev/<device>. The pseudo-devices are ordinary and stay allowed.
         const SAFE = /^\/dev\/(null|zero|random|urandom|stdout|stderr|tty|fd\/\d+)$/;
@@ -442,7 +455,7 @@ function main() {
     },
     {
       why: 'this formats a disk device, erasing everything already on it',
-      lead: /^(.*\/)?mkfs(\.[a-z0-9]+)?$/,
+      lead: /^(.*\/)?mkfs(\.[a-z0-9]+)?$/i,
       judge: (seg) => {
         if (seg.includes('--help') || seg.includes('-h')) return false;
         return seg.some((t) => t.startsWith('/dev/'));
@@ -450,7 +463,7 @@ function main() {
     },
     {
       why: 'this rewrites the whole history of the repository and cannot be undone',
-      lead: /^(.*\/)?git$/,
+      lead: /^(.*\/)?git$/i,
       judge: (seg) => {
         if (!seg.includes('filter-branch')) return false;
         return !(seg.includes('--help') || seg.includes('-h'));

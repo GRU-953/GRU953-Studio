@@ -118,6 +118,26 @@ const COMPOUND = [
   ['git status && git filter-branch --all', 'history rewrite after an ordinary git command'],
 ];
 
+// 2026-08-18, X224: the same commands SPELLED DIFFERENTLY. The binary was matched
+// case-sensitively, on raw un-canonicalised text, so nine spellings reached the machine with no
+// decision at all. Upper case is not hypothetical: macOS (APFS) and Windows both resolve RM to the
+// same executable as rm, and SECURITY.md already states this project's convention that every git/gh
+// match is case-insensitive for exactly that reason. These rules were the one place it was never
+// applied. The canonicaliser that resolves splicing and escapes was imported by this very file and
+// relied on by its two other security callers since July.
+const SPELLINGS = [
+  ['RM -rf /', 'upper-case binary'],
+  ['Rm -rf /', 'mixed-case binary'],
+  ['rm -RF /', 'upper-case flags'],
+  ['DD if=/dev/zero of=/dev/disk2', 'upper-case dd'],
+  ['MKFS.ext4 /dev/sda1', 'upper-case mkfs'],
+  ['GIT filter-branch --all', 'upper-case git'],
+  ['"rm" -rf /', 'quoted binary'],
+  ["'rm' -rf /", 'single-quoted binary'],
+  ['r""m -rf /', 'quote-spliced binary'],
+  ['\\rm -rf /', 'backslash-escaped binary'],
+];
+
 // Every one of these is ordinary software work. A block that catches any of them will be
 // switched off, and take the real protection with it.
 const ORDINARY = [
@@ -163,6 +183,16 @@ for (const [cmd, what] of COMPOUND) {
   const shown = cmd.replace(/\n/g, '\\n');
   console.log(
     `  ${refused ? 'ok  ' : 'BAD '} ${refused ? 'deny       ' : String(d).padEnd(11)} ${shown.padEnd(50)} ${what}`,
+  );
+  if (!refused) missed.push(cmd);
+}
+
+// The same commands, spelled to evade a case-sensitive match on raw text.
+for (const [cmd, what] of SPELLINGS) {
+  const d = decide(cmd);
+  const refused = d === 'deny';
+  console.log(
+    `  ${refused ? 'ok  ' : 'BAD '} ${refused ? 'deny       ' : String(d).padEnd(11)} ${cmd.padEnd(50)} ${what}`,
   );
   if (!refused) missed.push(cmd);
 }
