@@ -7756,6 +7756,13 @@ for (const script of [
   // holds a token that STILL exists and requires silence, which is why the list is named rather than
   // pattern-matched: nothing can tell a live identifier from a dead one without one.
   'X226-removed-token-asserted-live.mjs',
+  // 2026-08-22: X35-name-collision.mjs REJOINS this list. It was excluded below on the grounds that
+  // "its defect is OPEN", and that stopped being true on 2026-08-17 when the owner's decision renamed
+  // the command to /studio-start. Verified before moving it: the plain run exits 0 ("no name is
+  // declared as both a command and a skill", 48 namespace entries, 0 collisions) and --expect-bug
+  // exits 1, so it satisfies the two-direction contract in full. It had been run by NOBODY for five
+  // days — X207's shape, surfaced while closing a different gap.
+  'X35-name-collision.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
   'review-findings.mjs',
@@ -7934,6 +7941,19 @@ for (const script of [
   });
 }
 
+// 2026-08-22, X234: the enumerator reconciliation runs here rather than through the two-direction
+// wrapper, because it checks an agreement rather than reproducing a defect. Excluded from that
+// contract above, with the reason; run in full here, so it is not excluded from being run.
+test('X234: every counting tool agrees with an independent count', () => {
+  const p = path.join(HERE, 'test', 'repro', 'X234-enumerator-reconciliation.mjs');
+  const r = spawnSync(NODE, [p], { encoding: 'utf8' });
+  assert.equal(
+    r.status,
+    0,
+    `a tool that counts now disagrees with an independent count of the same thing:\n${r.stdout}${r.stderr}`,
+  );
+});
+
 // ---- 2026-08-17, finding X207, the durable half ------------------------------
 // Adding the seven missing reproductions fixed the instances. This fixes the CAUSE: the list
 // above is hand-maintained, so the next reproduction written can be forgotten exactly as those
@@ -7969,9 +7989,20 @@ test('X207: every reproduction on disk is run by this harness, or excluded by na
   // Excluded BY NAME with a reason, never simply absent — an unexplained absence is
   // indistinguishable from the oversight this test exists to catch.
   const EXCLUDED = new Map([
+    // 2026-08-22, X234. Excluded from the TWO-DIRECTION contract, not from being run — a dedicated
+    // test below runs it in the fixed direction. It is a CHECK rather than a reproduction of a defect:
+    // it reconciles every counting tool against an independent count, and that agreement has always
+    // held, so there is no commit at which --expect-bug could legitimately fail. Making it exit
+    // non-zero to satisfy the wrapper would be asserting a defect that never existed, which is worse
+    // than an honest exclusion.
+    //
+    // X35-name-collision.mjs is NO LONGER excluded. Its reason — "its defect is OPEN" — stopped being
+    // true on 2026-08-17 when the command was renamed to /studio-start, and nobody noticed for five
+    // days, so it ran nowhere. That is exactly X207. An exclusion needs re-reading whenever the thing
+    // it excuses changes, which is why this map now carries dates.
     [
-      'X35-name-collision.mjs',
-      'its defect is OPEN — `studio` is still declared as both a command and a skill — so it fails by design',
+      'X234-enumerator-reconciliation.mjs',
+      'a reconciliation check, not a defect reproduction: its --expect-bug direction has no legitimate failing state, and it is run by its own test below',
     ],
   ]);
 

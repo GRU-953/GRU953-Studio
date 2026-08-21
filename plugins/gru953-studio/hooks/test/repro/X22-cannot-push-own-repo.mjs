@@ -1,5 +1,20 @@
 #!/usr/bin/env node
 //
+// A NOTE ON THIS FILENAME, added 2026-08-22 after the Layer 2 completeness critic raised it as "the
+// naming half of L13": a filename that states the opposite of what the file tests. Checked, and
+// REFUTED — with the reason recorded here so the question is not reopened from the name alone.
+//
+// Every reproduction in this directory is named after its FINDING, never after the fixed state:
+// X106-disarmable-dependency-gate, X122-mistyped-content-table, X142-torn-progress-table,
+// X194-done-claim-prose, X219-bare-hook-reference. Forty-one siblings follow that convention. So
+// "X22-cannot-push-own-repo" names the DEFECT — the product could not push its own repository — and
+// the file asserts the FIXED state, in which it can. That is the convention working, not a contradiction.
+//
+// What the critic was right about is that a reader who greps the name alone could infer a live
+// guarantee that no longer exists. Hence this note rather than a rename: renaming would stale the
+// re-check cell in the register and the entry in the harness, which is the very defect X107 was
+// corrected for on 2026-08-17.
+//
 // Reproduction for finding X22 — 2026-08-13.
 //
 // THE DEFECT. With GRU953-Studio installed, its own secret scanner refuses to let
@@ -57,11 +72,17 @@ function die(msg) {
 // so a crash read as a pass. readDecision() names the crash instead.
 function decisionFor(cwd) {
   const v = refuseCrash(
-    readDecision(NODE, path.join(HOOKS, 'scan.mjs'), { tool_name: 'Bash', tool_input: { command: PUSH }, cwd }),
+    readDecision(NODE, path.join(HOOKS, 'scan.mjs'), {
+      tool_name: 'Bash',
+      tool_input: { command: PUSH },
+      cwd,
+    }),
     'X22-cannot-push-own-repo.mjs',
     die,
   );
-  return v.kind === 'silent' ? { decision: null, reason: '' } : { decision: v.decision, reason: v.reason };
+  return v.kind === 'silent'
+    ? { decision: null, reason: '' }
+    : { decision: v.decision, reason: v.reason };
 }
 
 let failures = 0;
