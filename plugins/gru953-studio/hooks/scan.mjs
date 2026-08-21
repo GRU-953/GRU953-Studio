@@ -401,8 +401,48 @@ function main() {
   // close was open here — `r""m -rf /` and `\rm -rf /` both reached the machine with no decision at
   // all. normalizeForPushCheck is imported by this very file and relied on by its two other security
   // callers since July; the catastrophic rules were simply never routed through it.
-  const segments = String(normalizeForPushCheck(String(CMD || '')) || '')
-    .split(/(?:&&|\|\||[;|\n])/)
+  // 2026-08-18, X227: the SEPARATOR SET was incomplete and shell wrappers were absent entirely.
+  // X223 varied POSITION and X224 varied SPELLING; neither varied the separator, so a lone
+  // background `&`, a command substitution, and a `bash -c` / `sh -c` / `eval` wrapper were not
+  // separators to this splitter at all. Six forms reached the machine with NO decision, and
+  // `bash -c "rm -rf /"` defeated all four rules at once because the dangerous text was never a
+  // segment.
+  //
+  // The correct set was already written down. X107's requirement, verbatim in the register: "a
+  // separator, a pipe, a background `&`, a newline, or a substitution". X107 went `not-applicable`
+  // when X214 deleted gate.mjs — the file that requirement lived in — so the knowledge was retired
+  // with the file and this guard was never re-asked. L15 compounding L14.
+  //
+  // `&&` precedes `&` in the alternation so a logical-and is never split into two backgrounds.
+  const SEGMENT_SEPARATORS = /(?:&&|\|\||[;|\n&])/;
+  // Text inside a substitution or a shell wrapper is a command in its own right. Bounded at three
+  // levels so a pathological nesting cannot spin; the bound is a real limit, not a claim of
+  // completeness, and is disclosed in X227's reproduction.
+  const unwrapShellText = (text, depth = 0) => {
+    const out = [text];
+    if (depth >= 3) return out;
+    for (const m of String(text).matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)) {
+      const inner = m[1] ?? m[2];
+      if (inner && inner.trim()) out.push(...unwrapShellText(inner, depth + 1));
+    }
+    // `bash -c "..."`, `sh -c '...'`, and `eval "..."`. The wrapper binary is matched at a command
+    // position, so prose merely mentioning it contributes nothing (the X39 false-alarm lesson).
+    for (const m of String(text).matchAll(
+      /(?:^|[\s;&|(])(?:(?:ba|z|k|da)?sh\s+(?:-[A-Za-z]+\s+)*-c|eval)\s+(['"])([\s\S]*?)\1/g,
+    )) {
+      const inner = m[2];
+      if (inner && inner.trim()) out.push(...unwrapShellText(inner, depth + 1));
+    }
+    return out;
+  };
+  // Each unwrapped payload is canonicalised in its own right, not just the outer command. Found by
+  // testing the CROSS PRODUCT of the four axes rather than each alone: `bash -c "\rm -rf /"` slipped
+  // through because the outer normalisation does not reach an escape inside quotes, so the payload had
+  // to be normalised after unwrapping. 54 cross cases now hold; three did not before this line.
+  const segments = unwrapShellText(String(normalizeForPushCheck(String(CMD || '')) || ''))
+    .flatMap((text) =>
+      String(normalizeForPushCheck(String(text)) || text).split(SEGMENT_SEPARATORS),
+    )
     .map((seg) => seg.trim().split(/\s+/).filter(Boolean))
     .filter((t) => t.length > 0);
   // The tokens of every segment whose command position is one we care about; a segment led by

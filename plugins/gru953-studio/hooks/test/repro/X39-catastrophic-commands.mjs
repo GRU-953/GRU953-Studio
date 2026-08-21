@@ -138,9 +138,37 @@ const SPELLINGS = [
   ['\\rm -rf /', 'backslash-escaped binary'],
 ];
 
+// 2026-08-18, X227: the SEPARATOR itself, never varied by X223 or X224. X223 varied POSITION over
+// `&&`, `;` and a newline; X224 varied SPELLING; their cross product holds. But scan.mjs split on
+// /(?:&&|\|\||[;|\n])/ — so a lone background `&`, a command substitution, and a shell WRAPPER were
+// not separators to it at all, and six more forms reached the machine with no decision.
+//
+// The register had already written the correct set down. X107's requirement, quoted verbatim at
+// FINDINGS.md:805: "a separator, a pipe, a background `&`, a newline, or a substitution". X107 was
+// marked `not-applicable` when X214 deleted gate.mjs, so the knowledge was retired with the file and
+// the surviving guard in scan.mjs was never re-asked. That is L14 and L15 in one move.
+//
+// `bash -c` and `eval` are the worst of them: they wrap the ENTIRE rule set, not one binary.
+const SEPARATORS_AND_WRAPPERS = [
+  ['true & rm -rf /', 'a lone background ampersand'],
+  ['$(rm -rf /)', 'command substitution'],
+  ['`' + 'rm -rf /' + '`', 'backtick substitution'],
+  ['bash -c "rm -rf /"', 'a bash -c wrapper'],
+  ["sh -c 'rm -rf /'", 'an sh -c wrapper'],
+  ['eval "rm -rf /"', 'an eval wrapper'],
+  ['bash -c "mkfs.ext4 /dev/sda1"', 'a wrapper around a different rule'],
+  ['npm run build & dd if=/dev/zero of=/dev/disk2', 'background then a disk overwrite'],
+];
+
 // Every one of these is ordinary software work. A block that catches any of them will be
 // switched off, and take the real protection with it.
 const ORDINARY = [
+  'npm run build &',
+  '$(git rev-parse HEAD)',
+  'bash -c "npm test"',
+  "sh -c 'ls -la'",
+  'eval "echo hello"',
+
   'rm -rf ./build',
   'rm -rf node_modules',
   'rm -rf dist/',
@@ -193,6 +221,17 @@ for (const [cmd, what] of SPELLINGS) {
   const refused = d === 'deny';
   console.log(
     `  ${refused ? 'ok  ' : 'BAD '} ${refused ? 'deny       ' : String(d).padEnd(11)} ${cmd.padEnd(50)} ${what}`,
+  );
+  if (!refused) missed.push(cmd);
+}
+
+// The separator/wrapper axis, reported separately so the output names which axis failed.
+for (const [cmd, what] of SEPARATORS_AND_WRAPPERS) {
+  const d = decide(cmd);
+  const refused = d === 'deny';
+  const shown = cmd.replace(/\n/g, '\\n');
+  console.log(
+    `  ${refused ? 'ok  ' : 'BAD '} ${refused ? 'deny       ' : String(d).padEnd(11)} ${shown.padEnd(50)} ${what}`,
   );
   if (!refused) missed.push(cmd);
 }
