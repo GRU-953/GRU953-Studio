@@ -326,13 +326,54 @@ function parseTable(text, wantHeaderRe) {
   // reordered or renamed header still differs and is still reported. Widening it past styling
   // would swap a false alarm for a false clean, which is the worse trade — X193's control H
   // pins that line. The NUL separator stays: it keeps ['a b','c'] distinct from ['a','b c'].
-  const headerKey = (cells) =>
-    cells.map((c) => deEmphasise(String(c)).trim().toLowerCase()).join('\u0000');
+  //
+  // 2026-08-18, X193 SECOND repair. The comment above says this normalises "exactly as the reader
+  // does". It did not. The reader resolves a header through col(), which is a case-insensitive
+  // regex ALTERNATION - /^(tasks?|task ?ids?|task ?refs?)$/i and friends - while this compared
+  // normalised TEXT for equality. So a later section headed `Task` where the first said `Tasks`
+  // was reported as columns that "would be read against the WRONG columns", when both resolve to
+  // the very same index and every row is read identically. A false alarm in a blocking check.
+  //
+  // Now each header cell is reduced to the ROLE it resolves to, using the same patterns the
+  // consumers use. A cell matching no role compares by name, so a genuine rename or reorder still
+  // differs and is still reported - which is what X193's control H pins.
+  const ROLES = [
+    ['id', /^(id|ref|task ?id)$/i],
+    ['req', /^(requirement|req|need|criterion)$/i],
+    ['tasks', /^(tasks?|task ?ids?|task ?refs?)$/i],
+    ['status', /^status$/i],
+    ['verif', /^(verification|verify|evidence|proof)$/i],
+  ];
+  const roleOf = (c) => {
+    const t = deEmphasise(String(c)).trim();
+    for (const [name, re] of ROLES) if (re.test(t)) return name;
+    return `~${t.toLowerCase()}`; // no role: fall back to the name, so a rename still differs
+  };
+  const headerKey = (cells) => cells.map(roleOf).join('\u0000');
   const firstKey = headerKey(headers);
-  const mismatched = fragments
+  //
+  // 2026-08-18, X192 SECOND repair. A later table that MATCHED the register's id test but FAILED
+  // belongsToThisRegister fell through both nets: filtered out of `fragments`, so its rows were
+  // never read, and excluded from `orphaned`, which only collects tables NOT in `matching`. It
+  // vanished with nothing said. Measured: a section headed `Task ID | Description | State |
+  // Comment` carrying two `done` rows traceable to no requirement returned clean and 0 problems,
+  // while the same rows under `ID | Task | Status | Notes` blocked with both.
+  //
+  // Reported only at the SAME WIDTH as the first table. That is deliberate and it is X197's line:
+  // X197 fixed a real regression where a `## Notes | Task | Owner | Note |` aside beside a
+  // four-column task table was merged and blocked a healthy file. A different width is a different
+  // table, and reporting it would reopen X197.
+  const rejectedSameWidth = matching
     .slice(1)
-    .filter((t) => headerKey(t.headerCells) !== firstKey)
+    .filter((t) => !belongsToThisRegister(t) && t.headerCells.length === width)
     .map((t) => t.headerCells.join(' | '));
+  const mismatched = [
+    ...fragments
+      .slice(1)
+      .filter((t) => headerKey(t.headerCells) !== firstKey)
+      .map((t) => t.headerCells.join(' | ')),
+    ...rejectedSameWidth,
+  ];
   return { headers, rows, mismatchedFragments: mismatched, orphanedFragments: orphaned };
 }
 function col(headers, re) {
