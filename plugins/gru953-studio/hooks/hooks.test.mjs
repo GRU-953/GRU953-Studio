@@ -8057,6 +8057,15 @@ for (const script of [
   // Case A is a PREMISE check that fails loudly if the updater ever runs without --force, rather
   // than quietly asserting a rule that has gone stale - which is the mistake X248 itself is.
   'X247-stale-mechanism-claims.mjs',
+  // 2026-08-22, X249: the statusline relabelled OTHER plugins' subagents as this plugin's own.
+  // `shortRoleName` did split(':').pop() and matched the bare tail against our agents/ filenames,
+  // so `theirplugin:reviewer` became "GRU953-Studio — reviewer (working)". EIGHT of this plugin's
+  // 38 role names are ordinary words another plugin could use - architect, builder, fixer,
+  // interviewer, publisher, researcher, reviewer, tester - so the collision is not contrived. The
+  // file's own header promised the opposite in so many words. Control F is the one that will age
+  // best: the owning-plugin name is read from the manifest, because a hardcoded name becomes a
+  // check for nothing the day the plugin is renamed, and nothing would fail.
+  'X249-statusline-claims-other-plugins.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
