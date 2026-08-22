@@ -6,7 +6,14 @@ installer puts the right files in the right places, and they do — but they can
 open Claude Desktop, VS Code or Antigravity and confirm those apps actually load
 what was installed. Only a person sitting at the computer can do that.
 
-Nothing here changes anything. Every step only looks.
+**Corrected 2026-08-22 (finding X257): this page used to say "Nothing here
+changes anything. Every step only looks." That was not true.** The CHECKS only
+look and change nothing — but where a check finds something missing, the step
+that follows it installs something. Every such step is marked
+**INSTALLS SOMETHING** below: Steps 13-16 add a marketplace and install the
+plugin, Part 4's `--install-extension` command installs the editor extension, and
+Part 5's `gru953-studio install` writes configuration into the editors on this
+computer. You can stop before any of them if you only wanted to look.
 
 **How long:** about ten minutes for all of it. You can stop after Part 1 if you
 only use Claude Code.
@@ -101,6 +108,10 @@ one.
   is a pass — stop here.
 - **If it is not there:** it has not been installed yet. Continue to Step 13.
 
+> **INSTALLS SOMETHING — Steps 13 to 16.** These add a marketplace to Claude Code
+> and install the plugin from it. Stop here if you only wanted to check what is
+> already on your computer.
+
 **Step 13.** Click **Add marketplace**.
 
 **Step 14.** Type exactly this, then press Enter:
@@ -142,6 +153,8 @@ If nothing named GRU953 appears, the extension is not installed. Download
 [the releases page](https://github.com/GRU-953/GRU953-Studio/releases), then in
 your terminal type:
 
+> **INSTALLS SOMETHING.** The command below installs the editor extension.
+
 ```
 code --install-extension the-file-you-downloaded.vsix
 ```
@@ -166,6 +179,9 @@ What is the GRU953-Studio protocol, and how many specialists does it have?
 specialist roles. That means it has read the installed rules and skills. If it
 does not know what you are talking about, the plugin has not been installed —
 run `gru953-studio install` in your terminal, then restart Antigravity.
+**INSTALLS SOMETHING:** that command writes configuration files into the editors
+it finds on this computer, and re-running it replaces ones you may have edited by
+hand.
 
 **Two things to expect in Antigravity, which are limitations rather than faults:**
 
@@ -179,7 +195,11 @@ run `gru953-studio install` in your terminal, then restart Antigravity.
 
 ## If something did not pass
 
-Nothing here can break your computer, and none of these checks changes anything.
+None of these CHECKS changes anything, and nothing here can break your computer.
+The steps marked **INSTALLS SOMETHING** do change your setup — that is what they
+are for — and they are the only ones that do. (Corrected 2026-08-22, X257: this
+sentence used to claim nothing on the page changed anything, while the same page
+instructed three separate installs.)
 If a step did not do what it says:
 
 1. Note which step number it was.

@@ -164,6 +164,19 @@ if (isGitRepo) {
       10,
     );
 
+    // 2026-08-22, X256: recorded before the pull so the success message can name what actually
+    // arrived. Until now a successful update printed "update applied successfully." and nothing else
+    // unless git happened to write to stdout — no version, no commit range, no changelog pointer. A
+    // user had no way to tell what had changed in code that was about to judge their next command.
+    let beforeRef = null;
+    try {
+      beforeRef = execSync('git rev-parse --short HEAD', {
+        cwd: studioRoot,
+        encoding: 'utf8',
+      }).trim();
+    } catch {
+      /* cosmetic: a missing before-ref must never stop an update */
+    }
     if (Number.isFinite(behindCount) && behindCount > 0) {
       console.log('GRU953-Studio: Update available. Applying now...');
       // 2026-07-26, found during a further pass. Two distinct bugs here,
@@ -263,12 +276,63 @@ if (isGitRepo) {
           process.exitCode = 1;
         } else {
           console.log('GRU953-Studio: update applied successfully.');
+          // X256: say WHAT changed, not merely that something did. Each part is best-effort and
+          // wrapped, because a cosmetic reporting failure must never turn a successful update into a
+          // reported failure.
+          try {
+            const afterRef = execSync('git rev-parse --short HEAD', {
+              cwd: studioRoot,
+              encoding: 'utf8',
+            }).trim();
+            if (beforeRef && afterRef && beforeRef !== afterRef) {
+              const subjects = execSync(
+                `git log --no-merges --format=%s ${beforeRef}..${afterRef}`,
+                { cwd: studioRoot, encoding: 'utf8' },
+              )
+                .split('\n')
+                .map((l) => l.trim())
+                .filter(Boolean);
+              console.log(`Updated ${beforeRef} -> ${afterRef} (${subjects.length} change(s)).`);
+              for (const line of subjects.slice(0, 5)) console.log(`  - ${line}`);
+              if (subjects.length > 5) {
+                console.log(
+                  `  … and ${subjects.length - 5} more. See them with: git log ${beforeRef}..${afterRef}`,
+                );
+              }
+            }
+          } catch {
+            /* reporting only; the update itself already succeeded */
+          }
           if (pullOutput.trim()) console.log(pullOutput.trim());
         }
       } catch (pullError) {
-        const rebaseInProgress =
-          fs.existsSync(path.join(studioRoot, '.git', 'rebase-merge')) ||
-          fs.existsSync(path.join(studioRoot, '.git', 'rebase-apply'));
+        // 2026-08-22, X255: this used to test `<studioRoot>/.git/rebase-merge` and
+        // `/rebase-apply` directly. When `.git` is a FILE rather than a directory - a linked
+        // worktree, or a submodule - those paths cannot exist, so the check was structurally
+        // incapable of being true and an interrupted rebase was reported as an ordinary failure with
+        // no mention of the half-finished state the user was left in. **This very checkout is that
+        // case**: `sandbox/.git` is a file containing `gitdir: …/worktrees/sandbox`, so the check has
+        // been dead here the whole time. Reproduced end to end with a real interrupted rebase in a
+        // linked worktree.
+        //
+        // Asking git where its own state lives answers correctly in every layout, which is the same
+        // move that fixed the locale-dependent "behind" detection above: stop guessing at git's
+        // internals and ask git.
+        const rebaseStatePath = (name) => {
+          try {
+            return execSync(`git rev-parse --git-path ${name}`, {
+              cwd: studioRoot,
+              encoding: 'utf8',
+            }).trim();
+          } catch {
+            return null;
+          }
+        };
+        const rebaseInProgress = ['rebase-merge', 'rebase-apply'].some((n) => {
+          const rel = rebaseStatePath(n);
+          if (!rel) return false;
+          return fs.existsSync(path.isAbsolute(rel) ? rel : path.join(studioRoot, rel));
+        });
         console.error('GRU953-Studio: the update did NOT apply cleanly.');
         if (rebaseInProgress) {
           console.error(

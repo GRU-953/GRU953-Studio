@@ -143,9 +143,24 @@ say ""
 #      captured BOTH outputs. NPM_BIN became a four-line string ending `/opt/homebrew/bin`, so
 #      `[ -x "$NPM_BIN/gru953-studio" ]` could never be true and only the `elif` ever worked. The
 #      dead call is gone rather than kept as decoration.
+# CORRECTED 2026-08-22, X258: this resolved the command by PATH only, so it ran whatever
+# `gru953-studio` happened to be first there — never the build `npm install -g` had just written.
+# On the machine where this was found, PATH resolves to /opt/homebrew/bin/gru953-studio, a Homebrew
+# symlink into Cellar/gru953-studio/6.0.3, while the copy just installed was 6.1.0. So the installer
+# could report success having configured the machine with an older build, and it printed no version
+# at all, leaving nothing to notice it by. The just-installed shim is now preferred, and whichever
+# one is about to run is named out loud.
 INSTALL_STATUS=0
-if command -v gru953-studio >/dev/null 2>&1; then
-    gru953-studio install || INSTALL_STATUS=$?
+NPM_PREFIX_FOR_RUN="$(npm prefix -g 2>/dev/null || true)"
+CLI=""
+if [ -n "$NPM_PREFIX_FOR_RUN" ] && [ -x "$NPM_PREFIX_FOR_RUN/bin/gru953-studio" ]; then
+    CLI="$NPM_PREFIX_FOR_RUN/bin/gru953-studio"
+elif command -v gru953-studio >/dev/null 2>&1; then
+    CLI="$(command -v gru953-studio)"
+fi
+if [ -n "$CLI" ]; then
+    say "Using $CLI (version $("$CLI" --version 2>/dev/null || echo 'unknown'))"
+    "$CLI" install || INSTALL_STATUS=$?
 else
     # Installed, but its folder is not on PATH yet — common with a fresh npm
     # prefix. Run it by its real path so the setup still completes, and let the
