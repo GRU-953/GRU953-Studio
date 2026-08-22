@@ -64,6 +64,8 @@
 // error). Exit 1 = could not reach or read the catalogue.
 
 import process from 'node:process';
+import { realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 export const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
@@ -136,7 +138,18 @@ export function matchesSearch(model, term) {
  * (an unstable list looks like the catalogue changed when it did not).
  */
 export function selectModels(models, { search = '', all = false, limit = 0 } = {}) {
-  let out = Array.isArray(models) ? models.slice() : [];
+  // 2026-08-22, X250: catalogue entries are third-party DATA and were passed straight into the
+  // sort comparator, so a single `null` in `data` produced a raw Node stack trace —
+  // "TypeError: Cannot read properties of null (reading 'context_length')" — two lines below a
+  // docstring promising "Never a raw stack trace: this output reaches a non-technical user".
+  // Filtered at the source rather than wrapped in another try/catch, so every consumer of
+  // selectModels benefits and the fix cannot be bypassed by a new call path.
+  // `!Array.isArray(m)` is not decoration: `typeof [] === 'object'`, so the first version of this
+  // filter let a bare array through and it reached the renderer as a model with no id. Caught by
+  // this fix's own reproduction on the very first run.
+  let out = (Array.isArray(models) ? models : []).filter(
+    (m) => m && typeof m === 'object' && !Array.isArray(m),
+  );
   if (!all) out = out.filter(isFreeModel);
   if (search) out = out.filter((m) => matchesSearch(m, search));
   out.sort(
@@ -209,7 +222,22 @@ export async function fetchModels({
   }
   let response;
   try {
-    response = await fetchImpl(url, { headers: { accept: 'application/json' } });
+    // 2026-08-22, X250: this had no timeout and no redirect guard. It is the plugin's ONLY outbound
+    // call, and nothing above it supplies either: this file is not a registered hook, so it gets none
+    // of hooks.json's `timeout: 20`; `commands/studio-models.md` runs a bare `node …`; and
+    // `clients/cli/src/index.js` awaits `mod.main(argv)` with no timer. So a stalled connection hung
+    // the command with no output and nothing to interrupt but Ctrl-C.
+    //
+    // `redirect: 'error'` because the catalogue URL is fixed and public: a redirect away from it
+    // means something between the user and OpenRouter has replaced the response, which is precisely
+    // the captive-portal case the JSON-parse error below already warns about. Failing is the right
+    // answer, and the existing catch turns both into the plain-English "Could not reach OpenRouter …
+    // nothing was changed" message, so no new user-facing text is needed.
+    response = await fetchImpl(url, {
+      headers: { accept: 'application/json' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000),
+    });
   } catch (e) {
     throw new Error(
       `Could not reach OpenRouter to look up its models (${e && e.message ? e.message : String(e)}). Check your internet connection and try again — nothing was changed.`,
@@ -277,14 +305,22 @@ export async function main(argv = process.argv.slice(2), { fetchImpl } = {}) {
     console.error(`GRU953-Studio: ${e.message}`);
     return 1;
   }
-  const selected = selectModels(models, opts);
+  // 2026-08-22, X250: the counts below used `models.length` — the raw length of whatever `data`
+  // contained. With a malformed entry in it, the summary said "OpenRouter currently lists 4 models"
+  // when three of the four were `null`, `42` and a bare string. Since selectModels now discards
+  // non-objects, counting the same way keeps the summary and the table talking about the same
+  // things. Found while testing the malformed-entry fix, not reported by anyone.
+  const valid = (Array.isArray(models) ? models : []).filter(
+    (m) => m && typeof m === 'object' && !Array.isArray(m),
+  );
+  const selected = selectModels(valid, opts);
   if (opts.json) {
     console.log(
       JSON.stringify(
         {
           status: 'ok',
-          totalInCatalogue: models.length,
-          freeInCatalogue: models.filter(isFreeModel).length,
+          totalInCatalogue: valid.length,
+          freeInCatalogue: valid.filter(isFreeModel).length,
           shown: selected.length,
           freeOnly: !opts.all,
           models: selected.map((m) => ({
@@ -306,10 +342,10 @@ export async function main(argv = process.argv.slice(2), { fetchImpl } = {}) {
     return 0;
   }
   console.log(formatTable(selected, opts));
-  const freeCount = models.filter(isFreeModel).length;
+  const freeCount = valid.filter(isFreeModel).length;
   console.log('');
   console.log(
-    `OpenRouter currently lists ${models.length} models, ${freeCount} of them free to use.` +
+    `OpenRouter currently lists ${valid.length} models, ${freeCount} of them free to use.` +
       (opts.all
         ? ' Models marked "paid" charge real money per use — GRU953-Studio always asks before choosing one.'
         : ' Only the free ones are shown. Pass --all to see paid models too.'),
@@ -317,11 +353,25 @@ export async function main(argv = process.argv.slice(2), { fetchImpl } = {}) {
   return 0;
 }
 
-// Run only when invoked directly, so the functions above stay importable by
-// the offline test suite. Compared on the resolved script path rather than with
-// import.meta.main, which is newer than the Node floor this repo supports.
-const invokedDirectly =
-  process.argv[1] && import.meta.url.endsWith(process.argv[1].split(/[/\\]/).pop());
+// Run only when invoked directly, so the functions above stay importable by the offline test suite.
+// `import.meta.main` is newer than the Node floor this repo supports, so it is not used.
+//
+// 2026-08-22, X250: this compared a BASENAME SUFFIX —
+// `import.meta.url.endsWith(process.argv[1].split(/[/\\]/).pop())` — which is true for any entry
+// point whose whole filename is a suffix of "openrouter-models.mjs": models.mjs, r-models.mjs, s.mjs,
+// els.mjs. Demonstrated with a stubbed fetch: a file named `models.mjs` that merely imported this
+// module fired the request and printed an entire model listing nobody asked for. For the plugin's one
+// network call, "am I the entry point" has to be answered by comparing the RESOLVED FULL PATH.
+const invokedDirectly = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    // argv[1] unreadable (deleted, or a virtual entry point): treat as not-direct. Standing aside is
+    // the safe default for a module whose direct-run branch makes a network request.
+    return false;
+  }
+})();
 if (invokedDirectly) {
   process.exitCode = await main();
 }

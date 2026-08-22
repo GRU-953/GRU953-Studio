@@ -32,6 +32,13 @@ export default [
         globalThis: 'readonly',
         fetch: 'readonly',
         structuredClone: 'readonly',
+        // 2026-08-22, X250: added when the one outbound `fetch` gained a timeout. `fetch` was
+        // already listed and its companions were not, so `AbortSignal.timeout(...)` was a no-undef
+        // error — correctly, because this list is a deliberate allow-list rather than an oversight
+        // (see the header note on CommonJS globals). Both are Node globals from v15, well below this
+        // project's Node 22 floor, and adding them is the fix rather than suppressing the rule.
+        AbortSignal: 'readonly',
+        AbortController: 'readonly',
       },
     },
     rules: {

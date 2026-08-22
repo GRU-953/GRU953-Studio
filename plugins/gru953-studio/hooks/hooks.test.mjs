@@ -8066,6 +8066,15 @@ for (const script of [
   // best: the owning-plugin name is read from the manifest, because a hardcoded name becomes a
   // check for nothing the day the plugin is renamed, and nothing would fail.
   'X249-statusline-claims-other-plugins.mjs',
+  // 2026-08-22, X250: four defects around the plugin's ONLY outbound call. No timeout and no
+  // redirect guard, and nothing above it supplies either - not a registered hook, so no
+  // hooks.json timeout; a bare `node` in the command; `await mod.main(argv)` in the CLI. One null
+  // in `data` produced a raw stack trace two lines under a docstring promising never to. And
+  // merely IMPORTING it fired the request, because "am I the entry point" was a basename SUFFIX
+  // test - true for any importer named models.mjs, r-models.mjs, s.mjs. The fix's own controls
+  // earned their place twice: case B caught the filter letting a bare ARRAY through (typeof [] is
+  // 'object'), and case D had to be taught to REPORT a throw rather than die on it.
+  'X250-outbound-call-hardening.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
