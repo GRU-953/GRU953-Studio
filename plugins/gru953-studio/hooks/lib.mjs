@@ -2187,6 +2187,31 @@ export function isPushCapable(rawC) {
   )
     return true;
   // git plumbing command that performs a push without the word "push".
+  // 2026-08-22, X179: git's DASHED BUILTIN form. `git-push` and `git-send-pack` are real
+  // executables in `$(git --exec-path)` — on the machine this was found on both are symlinks to
+  // `git` — and they perform the push without the words `git push` ever appearing. So
+  // `isPushCapable` returned FALSE and the secret scan was skipped ENTIRELY, not downgraded: a
+  // fixture carrying a tracked `AKIA…`-shaped key and a non-gitignored `Dev-Memory/` got `deny` for
+  // `git push origin main` and NO DECISION for the absolute libexec path, `$(git --exec-path)/git-push`,
+  // a PATH-prefix form, `git-send-pack`, `--force`, and the bare name.
+  //
+  // This is NOT the text-obfuscation class disclosed in SECURITY.md. The command literally reads
+  // `git-push`; nothing is hidden or encoded. It is a documented invocation form the classifier had
+  // never modelled.
+  //
+  // The boundary matters: a longer hyphenated name like `git-push-helper` is a DIFFERENT program and
+  // must stay uncaught, or an ordinary install script gets swept up and the guard becomes the L5
+  // kind that gets switched off. Verified both ways.
+  //
+  // `(?![A-Za-z0-9_-])` rather than LEXICAL_BOUNDARY, because LEXICAL_BOUNDARY permits a following
+  // HYPHEN — so `git-push-helper` matched on the first run of this rule's own control. A hyphen
+  // continues the program name, so it has to end the match.
+  const DASHED_END = '(?![A-Za-z0-9_-])';
+  if (
+    new RegExp(`(^|[^A-Za-z0-9_./\\\\-])git-(push|send-pack)${DASHED_END}`, 'i').test(c) ||
+    new RegExp(`[/\\\\]git-(push|send-pack)${DASHED_END}`, 'i').test(c)
+  )
+    return true;
   if (new RegExp(`(^|[^A-Za-z0-9_])git[ \\t]+send-pack${LEXICAL_BOUNDARY}`, 'i').test(c))
     return true;
   // gh's own alias mechanism, same shape of risk as git aliases.

@@ -8083,6 +8083,16 @@ for (const script of [
   // Control E stops the fix being a deletion; control F fails loudly if the rule it contradicted
   // is ever withdrawn, rather than asserting a rule that no longer exists.
   'X14-first-run-autonomous-publish.mjs',
+  // 2026-08-22, X179: git's DASHED BUILTINS. `git-push` and `git-send-pack` are real executables
+  // in $(git --exec-path) - symlinks to `git` on this machine - and they push without the words
+  // `git push` ever appearing. `isPushCapable` modelled only the spaced forms, so a fixture
+  // carrying a tracked AKIA-shaped key got `deny` for `git push` and NO DECISION for every dashed
+  // form: the scan is GATED on that predicate, so the secret was never looked for. Not the
+  // obfuscation class SECURITY.md discloses - nothing is hidden, the command literally reads
+  // `git-push`. Controls E and F stop the over-fix: a hyphen CONTINUES a program name, and the
+  // first version of this rule caught `git-push-helper` because the shared LEXICAL_BOUNDARY
+  // permits a following hyphen.
+  'X179-dashed-git-builtins.mjs',
   // 2026-08-22, X250: four defects around the plugin's ONLY outbound call. No timeout and no
   // redirect guard, and nothing above it supplies either - not a registered hook, so no
   // hooks.json timeout; a bare `node` in the command; `await mod.main(argv)` in the CLI. One null
