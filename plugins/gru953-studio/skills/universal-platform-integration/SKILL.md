@@ -1,13 +1,41 @@
 ---
 name: universal-platform-integration
-description: The Universal Agentic Protocol for running GRU953-Studio across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q) — mapping the full specialist roster, the whole skill set, and the memory system to IDEs, CLI agents, and cloud swarms. Google Antigravity is covered by its own dedicated `google-antigravity-integration` skill, not this one.
+description: How GRU953-Studio projects itself into other AI coding tools by writing rules files those tools read on their own. It is NOT native support and the coverage is uneven — see the honest per-tool table below before promising anything to a user. Google Antigravity is covered by its own dedicated `google-antigravity-integration` skill, not this one.
 ---
 
 # Universal Platform Integration
 
 ## Overview
 
-While originally built as a Claude Code plugin, GRU953-Studio natively supports the full 2026 agentic coding ecosystem through this protocol.
+GRU953-Studio is a Claude Code plugin. In any other tool it works by ONE mechanism:
+`gru953-studio init` writes rules files into the project, and the other tool reads
+them itself if it happens to read files of that name. Nothing is executed there,
+no agent is dispatched there, and there is no integration in either product.
+
+**Corrected 2026-08-22 (finding X45, extending the owner's decision of 17 August
+to the four places it had not reached).** This paragraph said the studio
+"natively supports the full 2026 agentic coding ecosystem", the front matter named
+twelve platforms, and section 1 said "The studio operates natively." All of that
+overstated a rules file. Here is what is actually written, and what actually
+reaches each tool:
+
+| Tool | File written | Does it reach the tool? |
+| :-- | :-- | :-- |
+| GitHub Copilot | `.github/copilot-instructions.md` | Yes |
+| Aider | `.aider.conf.yml` | Yes — unless the user already sets `read:`, in which case the file is left alone and they are told what to add (X244) |
+| Cursor | `.cursorrules` | Yes for now. Cursor has moved to `.cursor/rules/*.mdc`; the old file is still read but is deprecated (X44) |
+| Windsurf | `.windsurfrules` | Yes for now. The product has been renamed Devin Desktop (X44) |
+| Cline | `.clinerules` | **Probably not.** Written as a FILE; current Cline expects a DIRECTORY of that name (X44) |
+| Roo Code | `.roomodes` | **No.** Prose is written into a slot Roo reads as structured data, so it is ignored (X41) |
+| Devin, Replit, OpenHands, Augment Code, Tabnine, JetBrains AI, Amazon Q | none | **No file is written for any of these seven.** |
+
+`.agents/AGENTS.md` is also written, but the AGENTS.md convention reads a file at
+the project ROOT, so it does not reach tools that follow that convention (X42).
+
+The behaviour fixes — a YAML `.roomodes`, a root `AGENTS.md`, `.cursor/rules/*.mdc`,
+and whatever is decided about `.clinerules` being a file or a directory — each
+change what `init` writes into somebody's project, so they are the owner's calls
+and are recorded as open findings rather than made quietly here.
 
 This skill governs how the studio coordinator (`project-lead`) and the AI developer (`ai-developer`) project the studio's architecture into other platforms, and how the studio operates when hosted inside them.
 
@@ -23,7 +51,7 @@ When operating inside an AI-native IDE:
 ## 2. CLI and Terminal Agents (Aider, Claude Code)
 
 When operating in terminal-first environments:
-- **Direct Invocation**: The studio operates natively. The coordinator (`project-lead`) orchestrates the sub-agents using standard tool calling and CLI dispatch.
+- **Direct Invocation**: nothing of the studio RUNS in these tools. The rules file asks the host's own model to follow the studio's protocol and to act as `project-lead`; whether it does so is up to that tool, and there is no dispatch, no sub-agent and no orchestration outside Claude Code (corrected 2026-08-22, X45).
 - **Edit-Apply Loops**: For tools like Aider that excel at the "edit-apply-commit" loop, the studio delegates the mechanical application of the `micro-task-planning` skill to the host CLI agent.
 
 ## 3. Autonomous Cloud & Sandbox Agents (Devin, OpenHands, Replit)

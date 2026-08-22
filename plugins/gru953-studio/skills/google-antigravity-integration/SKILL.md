@@ -7,7 +7,17 @@ description: The protocol for operating GRU953-Studio inside Google Antigravity 
 
 ## Overview
 
-GRU953-Studio natively supports **Google Antigravity** (Google Antigravity SDK and Gemini Antigravity IDE) as a tier-1 runtime environment alongside Claude Code.
+GRU953-Studio installs into **Google Antigravity** (Google Antigravity SDK and Gemini
+Antigravity IDE) as a real plugin — a `plugin.json` marker, the skills, and two
+generated rules files — which is a genuinely different mechanism from the rules-file
+projection used for Cursor and the rest.
+
+**Two honest qualifications, added 2026-08-22.** "Tier-1 runtime environment alongside
+Claude Code" overstates it on today's evidence: the hooks do not run there, so none of
+the safety gates apply, and the published `@gru953/studio-antigravity` package cannot
+currently install at all — its tarball ships no copy of the studio to install from
+(finding X254, open, and the fix changes what is published so it is the owner's call).
+Installing from a checkout works.
 
 This skill governs how the studio coordinator (`project-lead`), memory keeper (`memory-keeper`), AI developer (`ai-developer`), and specialist subagents execute when hosted inside or interfacing with Google Antigravity.
 

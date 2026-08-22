@@ -4,13 +4,13 @@
     "name": "Aninda Sundar Howlader"
   },
   "metadata": {
-    "description": "A marketplace for GRU953-Studio: a Tier-sized team of specialised autonomous AI software developers, led by an AI project lead, that turns a plain-English idea and a short pop-up interview into a working, tested, privately-published app. Supports Cursor, Windsurf, Devin, and all major 2026 platforms.",
+    "description": "A marketplace for GRU953-Studio: a Tier-sized team of specialised autonomous AI software developers, led by an AI project lead, that turns a plain-English idea and a short pop-up interview into a working, tested, privately-published app. A native Claude Code plugin. For other AI coding tools it writes rules files they read on their own; support is best-effort, uneven, and checked per release.",
     "version": "6.1.0"
   },
   "plugins": [
     {
       "name": "gru953-studio",
-      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 38 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub \u2014 under your name, as sole author. Built for non-technical users, in plain UK English. A native Claude Code plugin. For other AI coding tools — Cursor, Cline, Windsurf, GitHub Copilot and anything reading an AGENTS.md — it writes that tool's own instructions file, so the same working rules follow you across editors. Those file conventions change often; support is best-effort and checked per release.",
+      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 38 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub \u2014 under your name, as sole author. Built for non-technical users, in plain UK English. A native Claude Code plugin. For other AI coding tools \u2014 Cursor, Cline, Windsurf, GitHub Copilot and anything reading an AGENTS.md \u2014 it writes that tool's own instructions file, so the same working rules follow you across editors. Those file conventions change often; support is best-effort and checked per release.",
       "author": {
         "name": "Aninda Sundar Howlader"
       },

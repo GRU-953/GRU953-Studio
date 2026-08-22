@@ -151,10 +151,17 @@ that floor — cost stays a decision, now per task, not only per role.
 
 ## v4.5.0 update (2026-07-26): Universal Agentic Protocol
 
-Added `skills/universal-platform-integration/SKILL.md`, enabling deployment
+Added `skills/universal-platform-integration/SKILL.md`, which writes rules files
+that some other AI coding tools read on their own.
+Baseline role count stands at 38 roles (role count: 38).
+
+(2026-08-22 correction, X45: this entry used to say the skill enabled "deployment
 across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin,
-Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q).
-Baseline role count stands at 38 roles (role count: 38). (2026-07-27 fix: this
+Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI, Amazon Q)".
+Writing a file another tool may or may not read is not deployment, and of those
+twelve, five had no file written for them at all. The corrected per-tool table
+lives in that skill. The date and the fact of the addition are unchanged — only
+the claim about its reach.) (2026-07-27 fix: this
 entry and the two below used to each state a running "total skills" figure —
 33, then 34, then a same-day "correction" to 34/35. Both original figures were
 historically accurate for the moment each was written; the correction was

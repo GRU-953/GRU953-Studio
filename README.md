@@ -37,9 +37,16 @@ published safely to your own GitHub account, under your name.<br>
 ## What is GRU953-Studio?
 
 You talk to GRU953-Studio in plain English inside **Claude Code**, **Claude
-Desktop** or **Google Antigravity** — and you can project it into any major 2026
-AI coding platform (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands,
-Cline, Augment Code, Tabnine, JetBrains AI).
+Desktop** or **Google Antigravity**. It can also write rules files that some other
+AI coding tools read on their own — today that reaches GitHub Copilot, Aider,
+Cursor and Windsurf, and `skills/universal-platform-integration/SKILL.md` carries
+the honest per-tool table, including the two it does not currently reach and the
+seven for which no file is written at all.
+
+> **Corrected 2026-08-22 (X45).** This paragraph used to say you "can project it
+> into any major 2026 AI coding platform" and name eleven. Writing a file another
+> tool may or may not read is not the same as working there, and five of the
+> eleven had no file written for them.
 
 You tell it what you want — "a habit tracker for my phone", "a page that lists my
 recipes". It asks a few multiple-choice questions to understand exactly what you

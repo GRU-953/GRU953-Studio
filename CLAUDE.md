@@ -23,7 +23,14 @@ node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 node plugins/gru953-studio/hooks/licence-scan.mjs .
 node plugins/gru953-studio/hooks/docs-consistency.mjs .
 node plugins/gru953-studio/hooks/charter-check.mjs .
+npm run lint
+npm run format:check
 ```
+
+(2026-08-22, X178: `npm run lint` and `npm run format:check` were missing from this
+block although CI runs both — so a contributor following these instructions would
+not have run the two steps that were, at the time X178 was raised, the failing
+ones. Both pass now; the omission was that nothing here told you to check.)
 
 **If `repo-integrity.mjs` reports INV18, you have DELETED a file from
 `plugins/gru953-studio/` without rebundling.** Run this and re-run the gate; it
