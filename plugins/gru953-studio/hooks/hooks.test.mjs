@@ -8016,6 +8016,17 @@ for (const script of [
   // a linked worktree whose `.git` is a FILE, so a guard written only for the directory case would
   // have silently stopped the project updating itself.
   'X241-foreign-repo-rebase.mjs',
+  // 2026-08-22, X242: four ways the OpenRouter catalogue's own content was presented as if the
+  // plugin had checked it. `parseFloat` is a PREFIX parser, so "0,000003" - three millionths in
+  // the ordinary European spelling - read as FREE, as did "0x5", "0 dollars" and [0], while the
+  // docstring two lines above claimed a non-numeric value is treated as not-free. The same
+  // docstring's "checking the whole map fails safe" was also untrue: it checked only the keys an
+  // entry chose to DECLARE. A newline in an id forged a table row that could read "free" beside a
+  // paid model. And an empty or truncated catalogue was reported as status ok with exit 0,
+  // discarding the response's own contradicting count. The controls are the half that matters:
+  // genuine zero prices in all three spellings the API uses must STILL be free, or the fix would
+  // pass by calling nothing free at all.
+  'X242-catalogue-trust.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
