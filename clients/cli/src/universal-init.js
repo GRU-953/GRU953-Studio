@@ -147,11 +147,41 @@ read:
 // comment is inert) and REPLACING the marked region on every re-run instead
 // of appending a fresh copy — so three runs leave exactly one copy, and any
 // of the user's own content outside the markers is left untouched.
+//
+// CORRECTED 2026-08-22 (X244): that last clause is true of the BYTES and was not true of the
+// MEANING for a structured file. See the note above writeManagedBlock.
 function markers(commentStyle) {
     if (commentStyle === 'yaml') {
         return { begin: '# GRU953-STUDIO:BEGIN', end: '# GRU953-STUDIO:END' };
     }
     return { begin: '<!-- GRU953-STUDIO:BEGIN -->', end: '<!-- GRU953-STUDIO:END -->' };
+}
+
+// 2026-08-22, X244. The marked-region mechanism above is sound for free-form prose, and the
+// guarantee it claims — "any of the user's own content outside the markers is left untouched" — is
+// true of the BYTES. It is not true of the MEANING for a structured file, and `.aider.conf.yml` is
+// one. Appending a second `read:` key to a YAML file that already has one produces a document with
+// a duplicate top-level mapping key. That is invalid YAML: a parser either rejects the file
+// outright or takes the last occurrence, and the last occurrence is ours, because we append. Either
+// way the user's own `read:` list stops being used, while every byte of it is still visibly there
+// and the code's own comment promises it was left alone. Reproduced directly: a project whose
+// `.aider.conf.yml` listed MY-NOTES.md and docs/architecture.md came back with two `read:` keys.
+//
+// (The exact parser behaviour — reject versus last-wins — was NOT verified on this machine; PyYAML
+// was not available. The direction is certain either way, which is why this is fixed rather than
+// left as a lead.)
+//
+// So a structured target now declares which top-level keys its block defines, and if the user's own
+// file already declares one of them outside our markers we do not touch the file at all. Refusing
+// and saying so is the only honest option: silently merging someone's editor configuration is the
+// same class of act as silently replacing it.
+function yamlTopLevelKeys(text) {
+    const keys = new Set();
+    for (const line of String(text).split('\n')) {
+        const m = /^([A-Za-z0-9_.-]+):/.exec(line);
+        if (m) keys.add(m[1]);
+    }
+    return keys;
 }
 
 function writeManagedBlock(fullPath, content, commentStyle) {
@@ -170,6 +200,15 @@ function writeManagedBlock(fullPath, content, commentStyle) {
         if (replaced === existing) return 'SKIPPED';
         fs.writeFileSync(fullPath, replaced, 'utf8');
         return 'REPLACED';
+    }
+    // X244: appending would create a duplicate top-level key in a structured file. Checked against
+    // the user's content only — the marked region is stripped first, so our own previous block can
+    // never be mistaken for a conflict with itself (which would make a second run refuse for ever).
+    if (commentStyle === 'yaml') {
+        const theirs = yamlTopLevelKeys(existing.replace(regionRe, ''));
+        const ours = yamlTopLevelKeys(content);
+        const clash = [...ours].filter((k) => theirs.has(k));
+        if (clash.length) return { status: 'CONFLICT', keys: clash };
     }
     fs.appendFileSync(fullPath, '\n' + block + '\n', 'utf8');
     return 'APPENDED';
@@ -193,6 +232,7 @@ function initializeUniversalRules(projectRoot = process.cwd()) {
         { file: '.agents/OPERATING-CHARTER.md', content: CHARTER_FILE, commentStyle: 'html' }
     ];
 
+    const conflicts = [];
     for (const target of targets) {
         const fullPath = path.join(projectRoot, target.file);
 
@@ -203,7 +243,33 @@ function initializeUniversalRules(projectRoot = process.cwd()) {
         }
 
         const result = writeManagedBlock(fullPath, target.content, target.commentStyle);
-        console.log(`[${result}] ${target.file}`);
+        // X244: a CONFLICT is not a failure of this command and not a silent skip either — it is a
+        // file we deliberately did not touch, and the user is the only one who can decide what
+        // their own configuration should say. So it is named, the reason is given in plain words,
+        // and the exact lines they would need are printed for them to paste if they want them.
+        if (result && typeof result === 'object' && result.status === 'CONFLICT') {
+            conflicts.push({ file: target.file, keys: result.keys });
+            console.log(`[UNCHANGED] ${target.file} — left exactly as it was; see the note below`);
+        } else {
+            console.log(`[${result}] ${target.file}`);
+        }
+    }
+
+    if (conflicts.length) {
+        console.log('');
+        for (const c of conflicts) {
+            console.log(
+                `${c.file} already sets ${c.keys.map((k) => `"${k}"`).join(', ')}, so nothing was ` +
+                    'written to it. Adding a second copy of that setting would make the file invalid, ' +
+                    'and the copy that won would have been ours — your own setting would have stopped ' +
+                    'being used while still sitting there in the file.',
+            );
+            if (c.file === '.aider.conf.yml') {
+                console.log('To give GRU953-Studio its context in Aider, add these to your own `read:` list:');
+                for (const line of AIDER_CONFIG.trim().split('\n').slice(1)) console.log(line);
+            }
+        }
+        console.log('');
     }
 
     console.log('GRU953-Studio initialization complete.');
