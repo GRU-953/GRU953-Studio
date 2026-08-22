@@ -8066,6 +8066,22 @@ for (const script of [
   // best: the owning-plugin name is read from the manifest, because a hardcoded name becomes a
   // check for nothing the day the plugin is renamed, and nothing would fail.
   'X249-statusline-claims-other-plugins.mjs',
+  // 2026-08-22, X180: INV17 — the invariant whose stated purpose is to stop a hook granting a
+  // blanket approval — exempted `lib.mjs`, the one file every hook imports. The exemption existed
+  // to protect `authorise()`, which X91 and X110 deleted, so it survived its own reason. An
+  // approver appended to lib.mjs under a new name and called from scan.mjs left INV17 raising
+  // ZERO problems while the hook really did approve a push. Control C is the load-bearing one:
+  // lib.mjs still contains the words INV17 looks for, 3 + 4 times, all in comments recording the
+  // removal — a fix that flagged those would be an L5 false alarm.
+  'X180-inv17-exempted-the-one-file.mjs',
+  // 2026-08-22, X14: `first-run/SKILL.md` step 4 read "Auto-publish to user's GitHub … creates
+  // private repo, pushes, tags, creates Release" with no confirmation anywhere in it, while the
+  // operating charter demands a fresh yes "every time" and publish-github puts its pop-up BEFORE
+  // `gh repo create`. Reachable on the most ordinary path there is — studio/SKILL.md sends a new
+  // user to first-run "before anything else" — and since X214 nothing mechanical stops it either.
+  // Control E stops the fix being a deletion; control F fails loudly if the rule it contradicted
+  // is ever withdrawn, rather than asserting a rule that no longer exists.
+  'X14-first-run-autonomous-publish.mjs',
   // 2026-08-22, X250: four defects around the plugin's ONLY outbound call. No timeout and no
   // redirect guard, and nothing above it supplies either - not a registered hook, so no
   // hooks.json timeout; a bare `node` in the command; `await mod.main(argv)` in the CLI. One null

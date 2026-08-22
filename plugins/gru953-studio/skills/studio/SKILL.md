@@ -288,9 +288,16 @@ in a single gate, right before that phase is built — never per task
 **Per-phase backup (2026-07-19, `checkpoint-commit` skill).** At the end of each
 build phase, once its `quality-gate` is clean and the secret/licence scans pass,
 take a checkpoint: commit the app's code (never `Dev-Memory/`) to a **private**
-work branch and push. This is a progressive offsite backup, not the Publish —
-it is authorised by a distinct private-only checkpoint token and can never make
-anything public. The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
+work branch and push. This is a progressive offsite backup, not the Publish.
+(2026-08-22, X186-adjacent: this sentence used to end "it is authorised by a
+distinct private-only checkpoint token and can never make anything public".
+Both halves have been untrue since X214 removed the token layer on 2026-08-16 —
+there is no checkpoint token, and no code enforces private-only. What actually
+holds: `hooks/scan.mjs` refuses a push that would ship secrets or `Dev-Memory/`,
+Claude Code's own permission prompt is the authorisation, and changing a
+repository's visibility is a separate act nobody here performs. X226 corrected
+this exact wording inside `checkpoint-commit/SKILL.md` and did not reach this
+file.) The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
 fix: this was previously only stated in `builder.md`/`tester.md`, not here
 in the one file the coordinator itself follows) — the tester's own checks
 stand in for the Review stage, and there is no separate pre-Publish

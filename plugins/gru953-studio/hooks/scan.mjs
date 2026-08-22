@@ -4,7 +4,7 @@
 // Zero dependencies (Node stdlib only). Self-contained: no external state store.
 //
 // Internally gated twice: first to push-capable commands — matched by
-// isPushCapable(), shared with gate.mjs via lib.mjs so both hooks judge the
+// isPushCapable(), which lived in lib.mjs so that this hook and gate.mjs judged the
 // same command set — and then to an active studio run (a Dev-Memory folder
 // somewhere up the tree, also resolved via lib.mjs). When no studio project
 // is found the hook allows and stands down, so a user/global-scope install
@@ -23,7 +23,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import crypto from 'node:crypto';
 // 2026-07-26 audit finding 4: this was `require('node:zlib')` inside
 // decodeAndNormalize, which is a ReferenceError in an ESM module — so the
 // gzip-obfuscation defence had never run. A module-scope import is the only
@@ -46,7 +45,6 @@ import {
   findStudioRoot,
   isPushCapable,
   normalizeForPushCheck,
-  tokenConfirmedWithinTtl,
 } from './lib.mjs';
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
@@ -55,7 +53,7 @@ import {
 // the push — but the full secret/key-file scan below STILL runs on those files,
 // so Dev-Memory persists to a private branch only if it carries no secret. This
 // is the ONLY effect of the token here; it never relaxes the secret scan, and
-// gate.mjs still confines the token to a private (never public) push.
+// gate.mjs confined the token to a private (never public) push, until X214 deleted both.
 //
 // 2026-07-26 further-pass audit fix (confirmed by execution): this used to
 // carry its OWN independent copy of the token/TTL check — match the token
@@ -64,7 +62,7 @@ import {
 // gate.mjs, reintroduced here because scan.mjs never picked up that fix.
 // Reproduced: a record with an unrelated fresh `ISSUED:` line placed BEFORE
 // the real (expired) token+its own real issued line still returned allowed.
-// Now shares gate.mjs's already-fixed tokenConfirmedWithinTtl from lib.mjs,
+// Shared gate.mjs's tokenConfirmedWithinTtl from lib.mjs while both existed;
 // so there is exactly one implementation and the two hooks cannot drift
 // apart on this again.
 function memoryPersistAllowed(studioRoot) {
@@ -1482,7 +1480,9 @@ function main() {
   if (findings.length === 0) {
     // No secrets found. This scanner is VETO-ONLY: finding nothing means it has
     // no objection, which is not the same as approving the push. Authorisation
-    // is gate.mjs's job and requires a confirmed token (X1).
+    // was gate.mjs's job and required a confirmed token (X1). Both were deleted by X214 on
+    // 2026-08-16: there is no authorisation step any more, and this hook's refusal is the whole
+    // of push safety. Corrected 2026-08-22 — the same class as X229, which reached lib.mjs only.
     stepAside();
   }
   // 2026-07-19 audit fix (real gap, found by execution): `findings` was fully

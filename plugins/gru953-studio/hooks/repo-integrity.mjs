@@ -1044,7 +1044,9 @@ if (ciYmlText === null) {
   fail(`.github/workflows/ci.yml no longer runs charter-check.mjs (2026-08-10 wiring regressed)`);
 }
 
-// ---- INV 17: no hook grants a blanket approval; only gate.mjs may authorise ----
+// ---- INV 17: NO hook grants a blanket approval ------------------------------
+// (Heading corrected 2026-08-22, X180. It read "...; only gate.mjs may authorise", which named a
+//  file X214 deleted and an exemption this check no longer makes.)
 // 2026-08-13, finding X1 (CRITICAL, reproduced by execution — see
 // hooks/test/repro/X1-auto-approval.mjs). lib.mjs used to export a single
 // allow() that emitted `permissionDecision: "allow"` on every path where a hook
@@ -1080,14 +1082,25 @@ if (ciYmlText === null) {
     // Strip block and line comments so the historical explanations above (which
     // legitimately quote the defective JSON) are not mistaken for live code.
     const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    if (/permissionDecision['"]?\s*:\s*['"]allow['"]/.test(code) && f !== 'lib.mjs') {
+    // 2026-08-22, X180: this exempted `lib.mjs`, and the exemption was the hole. INV17's own
+    // comment claims it "is what stops a future edit undoing that split quietly", and CHANGELOG.md
+    // states as fact that it "fails the build if any hook emits a blanket approval". Neither was
+    // true: adding an exported approver to lib.mjs and calling it from scan.mjs left this gate
+    // reporting `"status": "clean"` at exit 0 while the hook really did approve a push — reproduced
+    // on a copied tree. The exemption existed to protect `authorise()`, which X91 and X110 deleted,
+    // so it now protects nothing and admits everything through the one file every hook imports.
+    //
+    // Safe to drop, measured rather than assumed: after the same comment-stripping this check does,
+    // lib.mjs has ZERO live-code hits for either pattern (3 and 4 raw hits respectively, every one
+    // of them inside a comment explaining why the capability was removed).
+    if (/permissionDecision['"]?\s*:\s*['"]allow['"]/.test(code)) {
       fail(
-        `INV17: ${f} emits permissionDecision "allow" directly. Only lib.mjs's authorise() may do that, and only gate.mjs may call it — a blanket approval suppresses the user's permission prompt (finding X1)`,
+        `INV17: ${f} emits permissionDecision "allow" directly. NO hook may — including lib.mjs, which is why this check no longer exempts it — because a blanket approval suppresses the user's permission prompt rather than adding to it (findings X1, X91, X110, X180). Use stepAside() for "no objection" or escalate(reason) to ask`,
       );
     }
     if (/\ballow\s*\(\s*\)/.test(code)) {
       fail(
-        `INV17: ${f} still calls the removed allow(). Use stepAside() for "no objection" or authorise(reason) for a confirmed authorisation (finding X1)`,
+        `INV17: ${f} still calls the removed allow(). Use stepAside() for "no objection" or escalate(reason) to ask the user (findings X1, X91, X110 — authorise() was deleted too, so it is not the answer here; corrected 2026-08-22, X180)`,
       );
     }
     // 2026-08-15, finding X110 (High, reproduced). This read `f === 'scan.mjs' && …`,
@@ -1098,7 +1111,9 @@ if (ciYmlText === null) {
     //
     // X91 then removed the last legitimate caller, so today NO hook may call it. The
     // capability itself is deleted from lib.mjs; this asserts it stays deleted.
-    if (/\bauthorise\s*\(/.test(code) && f !== 'lib.mjs') {
+    // X180, 2026-08-22: same exemption, same reasoning as above. lib.mjs's four `authorise(`
+    // occurrences are all comments recording the removal, so nothing legitimate is caught.
+    if (/\bauthorise\s*\(/.test(code)) {
       fail(
         `INV17: ${f} calls authorise(). No hook may emit "allow" — it suppresses the user's permission prompt, and a record on disk cannot prove a human agreed (findings X1, X91, X110). Use stepAside() for "no objection" or escalate(reason) to ask`,
       );
@@ -1114,7 +1129,7 @@ if (ciYmlText === null) {
     }
     if (/export function allow\s*\(/.test(lib)) {
       fail(
-        `INV17: lib.mjs exports allow() again. It was deliberately split into stepAside() and authorise(reason) so that every approval is explicit (finding X1)`,
+        `INV17: lib.mjs exports allow() again. It was deliberately split so that every approval is explicit (finding X1); authorise(reason) was then deleted as well (X91, X110), so the only exits are stepAside() and escalate(reason)`,
       );
     }
     // 2026-08-15, finding X110. authorise() emitted "allow" and was deleted once X91
@@ -1127,7 +1142,9 @@ if (ciYmlText === null) {
       );
     }
   } catch {
-    fail(`INV17: could not read lib.mjs to verify the stepAside()/authorise() split`);
+    fail(
+      `INV17: could not read lib.mjs to verify that stepAside() is exported and neither allow() nor authorise() has returned`,
+    );
   }
 }
 

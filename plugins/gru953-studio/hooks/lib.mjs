@@ -77,7 +77,7 @@ import process from 'node:process';
 //                  must NEVER authorise anything.
 //   authorise()  — emits "allow". Legitimate ONLY where the user has explicitly
 //                  confirmed this exact action moments ago and a project-bound,
-//                  expiring token proves it. Only gate.mjs's two confirmed-token
+//                  expiring token proved it. Only gate.mjs's two confirmed-token
 //                  paths may call it.
 //
 // There is deliberately no "defer" value here: a peer review recommended one,
