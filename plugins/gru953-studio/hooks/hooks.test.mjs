@@ -7759,7 +7759,8 @@ for (const script of [
   'X39-catastrophic-commands.mjs',
   // 2026-08-17, X206: INV14 was satisfied by prose ABOUT the guardrail, so deleting the
   // guardrail itself still passed. Control D holds a REWORDED but intact clause, because the
-  // wording varies in 13 measured forms across the 46 files.
+  // wording varies in 13 measured forms across the 47 files (46 until X211 added the omitted
+  // openrouter-integration skill on 2026-08-22).
   'X206-guardrail-satisfied-by-prose.mjs',
   // ---- 2026-08-17, finding X207 -------------------------------------------------
   // These seven were on disk and run by NOBODY, including every reproduction written

@@ -379,7 +379,7 @@ function main() {
             ? `every recorded content asset has approval, provenance, rights, (for media) alt-text, and a file where it says it is${textNoPathRows > 0 ? ` (${textNoPathRows} of ${rows.length} ${textNoPathRows === 1 ? 'is in-app copy with no file to resolve' : 'are in-app copy with no file to resolve'})` : ''}`
             : resolvedRows === 0
               ? `every recorded content asset has approval, provenance, rights and (for media) alt-text. Whether any asset EXISTS was NOT verified: ${textNoPathRows === rows.length ? 'every row is in-app copy with no path, so there was no file to resolve' : 'no row names a path that could be resolved to a file'} — so no existence check was performed at all (findings X121, X195)`
-              : `every recorded content asset has approval, provenance, rights and (for media) alt-text. Existence was verified for ${resolvedRows} of ${rows.length}: ${unresolvableRows} could not be resolved (no Path column, or a media asset with no path)${textNoPathRows > 0 ? `, and ${textNoPathRows} is in-app copy with no file` : ''} (finding X195)`,
+              : `every recorded content asset has approval, provenance, rights and (for media) alt-text. Existence was verified for ${resolvedRows} of ${rows.length}: ${unresolvableRows} could not be resolved (no Path column, or a media asset with no path)${textNoPathRows > 0 ? `, and ${textNoPathRows} ${textNoPathRows === 1 ? 'is' : 'are'} in-app copy with no file` : ''} (finding X195)`,
           assets: rows.length,
           assetExistenceChecked,
           assetsExistenceChecked: resolvedRows,
