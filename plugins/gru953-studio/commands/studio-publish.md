@@ -1,6 +1,14 @@
 ---
 description: Publish the current GRU953-Studio project privately to the user's GitHub, after one confirmation and its blocking pre-flight checks (seven blocking checks plus a roster check).
 argument-hint: (no arguments needed)
+# 2026-08-22, X270: this was missing while `skills/publish-github/SKILL.md` — the file this command
+# reads — has carried `disable-model-invocation: true` since it was written, for the reason stated in
+# its own description: "publishing is a side-effectful, GitHub-pushing action only the user's own
+# explicit trigger should start". The flag on the skill stops Claude invoking the SKILL; it does not
+# stop Claude invoking this COMMAND, which then reads the skill. So the protected door had an
+# unprotected one beside it. Same class as X14, and consistent with the operating charter's rule that
+# publishing needs the user's own fresh yes every time.
+disable-model-invocation: true
 ---
 
 Publish the current project's working app to a private GitHub repository.

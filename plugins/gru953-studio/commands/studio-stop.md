@@ -1,6 +1,7 @@
 ---
 description: Stop work now and set the GRU953-Studio project down cleanly, losing nothing.
 argument-hint: (no arguments needed)
+disable-model-invocation: true
 ---
 
 Stop the current project's work cleanly, following the `command-centre` skill.

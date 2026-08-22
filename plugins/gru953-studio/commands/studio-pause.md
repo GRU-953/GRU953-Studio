@@ -1,6 +1,7 @@
 ---
 description: Pause the current GRU953-Studio task so you can safely stop and come back later.
 argument-hint: (no arguments needed)
+disable-model-invocation: true
 ---
 
 Pause the current project's active work, following the `command-centre` skill.

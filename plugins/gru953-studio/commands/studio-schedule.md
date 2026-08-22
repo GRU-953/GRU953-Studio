@@ -1,6 +1,7 @@
 ---
 description: Schedule a GRU953-Studio task to resume later, at a time you choose.
 argument-hint: a time or delay, e.g. "tomorrow 9am" or "in 2 hours"
+disable-model-invocation: true
 ---
 
 Schedule work to resume later, following the `command-centre` skill. Speak

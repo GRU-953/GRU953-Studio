@@ -1,6 +1,7 @@
 ---
 description: Resume a paused or scheduled GRU953-Studio task and carry on where you left off.
 argument-hint: (no arguments needed)
+disable-model-invocation: true
 ---
 
 Resume the current project's work, following the `command-centre` skill.

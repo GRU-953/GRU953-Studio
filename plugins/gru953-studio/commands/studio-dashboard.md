@@ -1,6 +1,7 @@
 ---
 description: Open a visual dashboard of your GRU953-Studio project's tasks and progress.
 argument-hint: (no arguments needed)
+disable-model-invocation: true
 ---
 
 Generate the project's command-centre dashboard, following the

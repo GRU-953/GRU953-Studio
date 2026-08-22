@@ -1,6 +1,7 @@
 ---
 description: Give a plain-English progress report on the current GRU953-Studio project.
 argument-hint: (no arguments needed)
+disable-model-invocation: true
 ---
 
 Report the current project's progress in plain, simple UK English with no

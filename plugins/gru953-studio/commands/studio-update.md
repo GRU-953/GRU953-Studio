@@ -1,5 +1,6 @@
 ---
 description: Manually check whether a newer version of GRU953-Studio is available, and update to it.
+disable-model-invocation: true
 ---
 
 Check for and apply a GRU953-Studio update, following the `auto-update.mjs`
