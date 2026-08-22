@@ -272,11 +272,20 @@ than overclaiming. There is no "100% secure" here — the exact protections and
 their honestly-disclosed limits are written up in full in
 [SECURITY.md](SECURITY.md), with nothing glossed over.
 
-**What has actually been tested, and what has not.** Every automatic check runs
-on macOS, Windows and Linux before anything ships: the installer runs end to
-end into a throwaway folder on all three, every downloadable package is opened
-and inspected, and the packaging is proved to produce identical files from
-identical source. What no automatic test can do is open Claude Desktop, VS Code
+**What has actually been tested, and what has not.** The automatic checks run on
+macOS, Windows and Linux before anything ships: the installer runs end to end into
+a throwaway folder, every downloadable **archive** is opened and checked for the
+files that make it work, and every archive is rebuilt from the same source and
+compared byte for byte.
+
+**The VS Code `.vsix` is the one exception, and this section exists to say so.**
+The checks confirm it was built; they do not open it and they do not rebuild it —
+the reproducibility comparison runs with `--skip-vsix` because packaging it shells
+out to another tool. (Corrected 2026-08-22, X184: this used to say "every
+downloadable package is opened and inspected, and the packaging is proved to
+produce identical files from identical source", and neither half covered the
+`.vsix`. In the one section whose stated purpose is to say how much is actually
+proven, an unqualified "every" was the wrong word.) What no automatic test can do is open Claude Desktop, VS Code
 or Antigravity and confirm they load what was installed — so
 [docs/INSTALL-VERIFY.md](docs/INSTALL-VERIFY.md) is a ten-minute set of steps you
 can follow yourself, and it says plainly which parts still need a person.

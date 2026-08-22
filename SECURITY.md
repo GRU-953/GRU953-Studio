@@ -325,10 +325,17 @@ undisclosed findings, all confirmed by direct execution before being fixed:
   (`"Bash|PowerShell|Monitor"`) and extending `repo-integrity.mjs`'s INV10
   check (which already guarded the PowerShell fix against silent reversion)
   to require Monitor coverage too, with a matching regression test.
-- **Verified as a genuine PASS, not re-reported as new:** the plugin has
-  zero third-party dependencies anywhere in the repo (no `package.json`,
-  lockfile, or `node_modules`), so there is currently nothing for a
-  Dependabot/CVE-scanning gap to expose; `licence-scan.mjs` is honest about
+- **Verified as a genuine PASS, not re-reported as new:** the *plugin*
+  (`plugins/gru953-studio/`) has zero third-party dependencies — nothing under it
+  declares, vendors or installs one, and `docs-consistency.mjs` fails closed if
+  that changes. **Corrected 2026-08-22 (X183): this used to say "zero third-party
+  dependencies anywhere in the repo (no `package.json`, lockfile, or
+  `node_modules`)", and the repository has EIGHT tracked manifests** —
+  `package.json` and `package-lock.json` at the root and in each of
+  `clients/cli`, `clients/antigravity` and `clients/vscode`. So a
+  Dependabot/CVE-scanning gap does have something to expose; what it cannot
+  expose is anything reaching the plugin, because the plugin has none.
+  `licence-scan.mjs` is honest about `licence-scan.mjs` is honest about
   covering licence text only, not vulnerability data. Worth re-assessing
   if a dependency is ever added.
 
