@@ -46,6 +46,20 @@ const studioRoot = findGitRoot(__dirname) || path.resolve(__dirname, '..', '..',
 // X229: removing a code path is a wider change than a false comment warrants, and it becomes live
 // again the moment anything calls this script without `--force`. What is fixed here is the claim.
 const force = process.argv.includes('--force');
+
+// 2026-08-22, X266: every git call below ran with no timeout and no environment, and the two that
+// touch a remote could therefore block indefinitely — waiting on a stalled connection, or on a
+// credential prompt nobody is there to answer. There is no outer bound either: this file is not a
+// registered hook, so it gets none of hooks.json's `timeout: 20`; the command runs a bare `node`;
+// and the CLI spawns it without a timer. On the scheduled path nobody is watching at all.
+//
+// GIT_TERMINAL_PROMPT=0 makes git fail rather than ask, and GIT_ASKPASS='' stops it reaching for a
+// graphical helper instead. Sixty seconds is generous for a fetch of this size and still finite.
+const GIT_OPTS = {
+  cwd: studioRoot,
+  timeout: 60_000,
+  env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '' },
+};
 const checkFile = path.join(studioRoot, '.last-update-check');
 
 // 2026-07-29 maintenance fix (audit finding 3): this used to be two separate,
@@ -137,7 +151,7 @@ if (!rootIsOurs && fs.existsSync(path.join(studioRoot, '.git')) && force) {
 if (isGitRepo) {
   try {
     // Check if there are updates available on the remote
-    execSync('git remote update', { cwd: studioRoot, stdio: 'ignore' });
+    execSync('git remote update', { ...GIT_OPTS, stdio: 'ignore' });
     // 2026-07-26 Stage 3 fix (audit finding 23, second half). This used to
     // parse `git status -uno`'s human-facing text for the literal English
     // phrase "Your branch is behind" — git translates that phrase (and
@@ -160,7 +174,7 @@ if (isGitRepo) {
     // choice this file already makes for a genuine network/remote error
     // just below.
     const behindCount = parseInt(
-      execSync('git rev-list --count HEAD..@{u}', { cwd: studioRoot, encoding: 'utf8' }).trim(),
+      execSync('git rev-list --count HEAD..@{u}', { ...GIT_OPTS, encoding: 'utf8' }).trim(),
       10,
     );
 
@@ -170,10 +184,7 @@ if (isGitRepo) {
     // user had no way to tell what had changed in code that was about to judge their next command.
     let beforeRef = null;
     try {
-      beforeRef = execSync('git rev-parse --short HEAD', {
-        cwd: studioRoot,
-        encoding: 'utf8',
-      }).trim();
+      beforeRef = execSync('git rev-parse --short HEAD', { ...GIT_OPTS, encoding: 'utf8' }).trim();
     } catch {
       /* cosmetic: a missing before-ref must never stop an update */
     }
@@ -243,12 +254,12 @@ if (isGitRepo) {
       // the truth.
       try {
         const pullOutput = execSync('git pull --rebase --autostash', {
-          cwd: studioRoot,
+          ...GIT_OPTS,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
         });
         const conflicted = execSync('git diff --name-only --diff-filter=U', {
-          cwd: studioRoot,
+          ...GIT_OPTS,
           encoding: 'utf8',
         })
           .split('\n')
@@ -300,13 +311,13 @@ if (isGitRepo) {
           // reported failure.
           try {
             const afterRef = execSync('git rev-parse --short HEAD', {
-              cwd: studioRoot,
+              ...GIT_OPTS,
               encoding: 'utf8',
             }).trim();
             if (beforeRef && afterRef && beforeRef !== afterRef) {
               const subjects = execSync(
                 `git log --no-merges --format=%s ${beforeRef}..${afterRef}`,
-                { cwd: studioRoot, encoding: 'utf8' },
+                { ...GIT_OPTS, encoding: 'utf8' },
               )
                 .split('\n')
                 .map((l) => l.trim())
@@ -340,7 +351,7 @@ if (isGitRepo) {
         const rebaseStatePath = (name) => {
           try {
             return execSync(`git rev-parse --git-path ${name}`, {
-              cwd: studioRoot,
+              ...GIT_OPTS,
               encoding: 'utf8',
             }).trim();
           } catch {
@@ -369,8 +380,16 @@ if (isGitRepo) {
       console.log('GRU953-Studio is up to date.');
     }
   } catch (e) {
-    // Network/remote errors reaching `git remote update` or `git status`
-    // itself (before any pull was attempted) — nothing was changed locally.
+    // 2026-08-22, X265: this used to say "`git remote update` or `git status`". This file has not
+    // run `git status` since the Stage 3 fix recorded 120 lines above — that locale-dependent
+    // text-parsing check was replaced by `git rev-list --count HEAD..@{u}`. A catch block that names
+    // the wrong command is a false map of where a failure came from, in the one place a reader goes
+    // when something has already gone wrong.
+    //
+    // Network/remote errors reaching `git remote update`, or a failure of
+    // `git rev-list --count HEAD..@{u}` — which is what replaced the old `git status` check, and
+    // which throws when no upstream is configured — before any pull was attempted. Nothing was
+    // changed locally.
     if (force) console.error('Update check failed:', e.message);
   }
 } else {
