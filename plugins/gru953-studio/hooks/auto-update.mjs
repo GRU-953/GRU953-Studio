@@ -89,7 +89,42 @@ try {
   }
 }
 
-const isGitRepo = fs.existsSync(path.join(studioRoot, '.git'));
+// 2026-08-22: findGitRoot walks UP until it finds ANY `.git`, and whatever it lands on used to be
+// rebased and autostashed. That is not a hypothetical. On the machine this was found on, a Homebrew
+// install of the CLI puts the shipped hooks at
+//   /opt/homebrew/Cellar/gru953-studio/<v>/libexec/lib/node_modules/@gru953/studio-cli/plugin/hooks
+// and `/opt/homebrew/.git` exists — so the walk returned `/opt/homebrew` and `gru953-studio update`
+// would have run `git remote update` and `git pull --rebase --autostash` inside the user's Homebrew
+// prefix, then printed "update applied successfully." With `autoupdate on`, nightly, unattended.
+//
+// Two independent tests, and BOTH must pass before anything is fetched or rebased.
+//
+// 1. No `node_modules` between the hook and the root. Crossing one means this is an INSTALLED copy
+//    sitting inside somebody else's tree; the enclosing repository is then definitively not ours, and
+//    no marker check is needed to know it. This alone catches every npm and Homebrew layout.
+// 2. The root must actually carry this plugin — its own manifest, or the source checkout's copy of
+//    it. A `.git` plus the right manifest is the only positive evidence that this IS the repository
+//    the updater exists to update.
+//
+// Failing either is NOT an error: an installed copy has no repository to update, which is ordinary
+// and expected, and the CLI already prints the correct npm and Homebrew commands for that case. So
+// the updater stands aside quietly unless `--force` asked for an answer.
+const relFromRoot = path.relative(studioRoot, __dirname);
+const crossesNodeModules = relFromRoot.split(path.sep).some((seg) => seg === 'node_modules');
+const carriesThisPlugin =
+  fs.existsSync(path.join(studioRoot, '.claude-plugin', 'plugin.json')) ||
+  fs.existsSync(path.join(studioRoot, 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'));
+const rootIsOurs = !crossesNodeModules && carriesThisPlugin;
+
+const isGitRepo = fs.existsSync(path.join(studioRoot, '.git')) && rootIsOurs;
+if (!rootIsOurs && fs.existsSync(path.join(studioRoot, '.git')) && force) {
+  console.error(
+    `GRU953-Studio: not updating. The nearest git repository above this plugin is ${studioRoot}, ` +
+      'which is not a GRU953-Studio checkout — updating would have rebased it and stashed any ' +
+      'uncommitted work in it. This is the normal state for an installed copy; update the package ' +
+      'instead (`npm update -g @gru953/studio-cli`, or `brew upgrade gru953-studio`).',
+  );
+}
 if (isGitRepo) {
   try {
     // Check if there are updates available on the remote

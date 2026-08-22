@@ -2541,6 +2541,21 @@ test('session-start.mjs: a literal "false" string value no longer falsely trigge
 function addAutoUpdateScaffolding(top, relativeDepth = ['plugins', 'gru953-studio', 'hooks']) {
   const hooksDir = path.join(top, ...relativeDepth);
   fs.mkdirSync(hooksDir, { recursive: true });
+  // 2026-08-22, X241: these fixtures used to be a git repository with a hooks directory in it and
+  // NOTHING ELSE — no plugin manifest anywhere. That was fine while the updater rebased whatever
+  // `.git` it found, and it is exactly the finding the audit raised about this block: all four
+  // controls encoded the single case their author had in mind, so none of them would have noticed
+  // the updater rebasing a repository that is not the plugin's. The updater now requires positive
+  // evidence that the root IS a GRU953-Studio checkout, so a fixture that intends to be updatable
+  // has to look like one. The refusing direction is covered by X241's own cases A, B and C, and by
+  // the foreign-repository test immediately after this block.
+  const manifestDir = path.join(top, 'plugins', 'gru953-studio', '.claude-plugin');
+  fs.mkdirSync(manifestDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(manifestDir, 'plugin.json'),
+    JSON.stringify({ name: 'gru953-studio', version: '0.0.0-fixture' }),
+    'utf8',
+  );
   const scriptPath = path.join(hooksDir, 'auto-update.mjs');
   fs.copyFileSync(path.join(HERE, 'auto-update.mjs'), scriptPath);
   // 2026-07-29 maintenance fix: auto-update.mjs now imports './lib.mjs'
@@ -2706,6 +2721,64 @@ test('auto-update.mjs: an available update is still detected with LC_ALL set to 
   assert.equal(r.code, 0, `an available update must still be detected and applied under a non-English locale: ${r.stdout} ${r.stderr}`);
   assert.match(r.stdout, /applied successfully/i);
   assert.equal(fs.readFileSync(path.join(top, 'file.txt'), 'utf8'), 'hello\nupdate\n');
+  fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
+});
+
+// 2026-08-22, X241: the control the four tests above never had. Every one of them scaffolds a
+// repository that IS the plugin's, so between them they could not tell whether the updater would
+// happily rebase one that is not — and it would have. This drives the REAL script, so unlike X241's
+// own cases (which re-implement the predicate to avoid importing a module that would pull this very
+// checkout) it proves the refusal end to end: no fetch, no rebase, a non-destructive exit, and a
+// message that tells the user what to do instead.
+test('auto-update.mjs: refuses to touch a git repository that is not a GRU953-Studio checkout (X241)', () => {
+  const bareDir = mkTmp('gru-au-foreign-bare-');
+  spawnSync('git', ['init', '--bare', bareDir], { encoding: 'utf8' });
+  const seedDir = mkTmp('gru-au-foreign-seed-');
+  spawnSync('git', ['init', seedDir], { encoding: 'utf8' });
+  fs.writeFileSync(path.join(seedDir, 'file.txt'), 'hello\n');
+  spawnSync('git', ['add', '-A'], { cwd: seedDir, encoding: 'utf8' });
+  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'one'], { cwd: seedDir, encoding: 'utf8' });
+  spawnSync('git', ['push', bareDir, 'HEAD:refs/heads/main'], { cwd: seedDir, encoding: 'utf8' });
+  fs.appendFileSync(path.join(seedDir, 'file.txt'), 'update\n');
+  spawnSync('git', ['add', '-A'], { cwd: seedDir, encoding: 'utf8' });
+  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'two'], { cwd: seedDir, encoding: 'utf8' });
+  spawnSync('git', ['push', bareDir, 'HEAD:refs/heads/main'], { cwd: seedDir, encoding: 'utf8' });
+
+  // A repository the user owns, with an update genuinely waiting on its remote, and the plugin
+  // sitting inside it as an installed package. This is the Homebrew and npm-global shape.
+  const top = mkTmp('gru-au-foreign-top-');
+  // `-b main` explicitly: a bare repo's HEAD follows init.defaultBranch, which need not be the
+  // branch that was pushed, and a clone that finds no matching branch checks out nothing at all.
+  spawnSync('git', ['clone', '-b', 'main', bareDir, top], { encoding: 'utf8' });
+  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'reset', '--hard', 'HEAD~1'], { cwd: top, encoding: 'utf8' });
+  spawnSync('git', ['branch', '--set-upstream-to=origin/main'], { cwd: top, encoding: 'utf8' });
+  assert.ok(fs.existsSync(path.join(top, 'file.txt')), 'fixture check: the clone must have a working tree');
+  const before = fs.readFileSync(path.join(top, 'file.txt'), 'utf8');
+  assert.equal(before, 'hello\n', 'fixture check: it must be one commit BEHIND, so an update is genuinely waiting');
+
+  const hooksDir = path.join(top, 'node_modules', '@gru953', 'studio-cli', 'plugin', 'hooks');
+  fs.mkdirSync(hooksDir, { recursive: true });
+  const scriptPath = path.join(hooksDir, 'auto-update.mjs');
+  fs.copyFileSync(path.join(HERE, 'auto-update.mjs'), scriptPath);
+  fs.copyFileSync(path.join(HERE, 'lib.mjs'), path.join(hooksDir, 'lib.mjs'));
+  // The installed package ships its own manifest, so the manifest test alone would pass here. That
+  // is deliberate: it is what makes the node_modules boundary load-bearing rather than decorative.
+  const own = path.join(top, 'node_modules', '@gru953', 'studio-cli', 'plugin', '.claude-plugin');
+  fs.mkdirSync(own, { recursive: true });
+  fs.writeFileSync(path.join(own, 'plugin.json'), JSON.stringify({ name: 'gru953-studio' }), 'utf8');
+
+  const r = runAutoUpdate(scriptPath);
+  assert.equal(
+    fs.readFileSync(path.join(top, 'file.txt'), 'utf8'),
+    before,
+    "the user's repository must be byte-identical: no rebase, no autostash, nothing fetched into it",
+  );
+  assert.doesNotMatch(r.stdout, /applied successfully/i, 'it must not claim to have updated anything');
+  assert.match(
+    `${r.stdout}${r.stderr}`,
+    /not updating|not a GRU953-Studio checkout/i,
+    'and with --force it must say why, and name the package route instead',
+  );
   fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
 });
 
@@ -7933,6 +8006,16 @@ for (const script of [
   // place during authoring — the first detector accepted a `/plugin > Discover` mention twelve
   // lines away, which is there for an unrelated reason, and graded that coincidence as compliance.
   'X236-cli-not-on-path.mjs',
+  // 2026-08-22, X241: `findGitRoot` walked up to ANY `.git` and the updater rebased and
+  // autostashed whatever it landed on. Verified live on the machine where it was found: a
+  // Homebrew install puts the shipped hooks under /opt/homebrew/Cellar/..., `/opt/homebrew/.git`
+  // exists, so `gru953-studio update` would have rebased the user's Homebrew prefix and then
+  // printed "update applied successfully" - nightly and unattended with `autoupdate on`. Critical
+  // rather than High because `--autostash` also takes their uncommitted work in that repository.
+  // Controls D and E are what stop the guard being a no-op, and E is specific: this repository is
+  // a linked worktree whose `.git` is a FILE, so a guard written only for the directory case would
+  // have silently stopped the project updating itself.
+  'X241-foreign-repo-rebase.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

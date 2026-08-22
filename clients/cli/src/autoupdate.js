@@ -115,12 +115,25 @@ WantedBy=timers.target
     };
 }
 
+// 2026-08-22: this used to `return r.ok ? r.stdout : ''` — an empty string for ANY non-zero exit.
+// The comment justified that for one case, an empty crontab, and it was right about that case. But
+// `writeCrontab` runs `crontab <file>`, which REPLACES THE WHOLE TABLE, so on a machine where the
+// READ failed while entries existed — a permissions problem, a missing spool directory, a cron
+// daemon that is not there — enabling a daily update check would have deleted every other cron job
+// the user had, and then reported "A daily update check is now scheduled".
+//
+// So the two cases are now separated and the caller is required to look. An empty crontab really
+// does exit non-zero, with "no crontab for <user>" on stderr and nothing on stdout; a genuine
+// failure says something else. Where the answer is not clearly "empty", the only safe action is to
+// refuse to write, and both callers below do.
 function readCrontab(run) {
     const r = run('crontab', ['-l']);
-    // An empty crontab exits non-zero with "no crontab for <user>", which is not
-    // an error condition — treating it as one would make the first-ever enable
-    // fail on a machine that simply has no cron entries yet.
-    return r.ok ? r.stdout : '';
+    if (r.ok) return { text: r.stdout, readable: true };
+    const err = String(r.stderr || '').trim();
+    // "no crontab for sam" — and the empty-stderr case, which is what a fake runner in the tests
+    // produces and what some cron implementations do for the same condition.
+    if (err === '' || /no crontab/i.test(err)) return { text: '', readable: true };
+    return { text: '', readable: false, error: err };
 }
 
 function writeCrontab(run, text) {
@@ -217,11 +230,39 @@ function enable(options = {}) {
     }
 
     if (dryRun) return { ok: true, mechanism: 'cron', message: 'would add a crontab line', detail: cronLineFor(nodePath, cliPath) };
-    const existing = readCrontab(run);
-    if (existing.includes(CRON_MARKER)) {
-        return { ok: true, mechanism: 'cron', message: 'A daily update check was already scheduled (cron). Nothing changed.' };
+    const read = readCrontab(run);
+    if (!read.readable) {
+        return {
+            ok: false,
+            mechanism: 'cron',
+            message: `Could not read your crontab, so nothing was changed. Writing one would have replaced every entry in it. ${read.error || ''}`.trim(),
+        };
     }
-    const r = writeCrontab(run, `${existing.trimEnd()}\n${cronLineFor(nodePath, cliPath)}`.trimStart());
+    const existing = read.text;
+    const wanted = cronLineFor(nodePath, cliPath);
+    // 2026-08-22: X232 gave the cron line a real log path instead of `>/dev/null 2>&1`, and this
+    // early return meant no machine that had already enabled the job ever received that fix — the
+    // nightly run kept discarding its only failure report, and re-running the documented remedy
+    // reported success while changing nothing. The macOS path rewrites its plist unconditionally, so
+    // one mechanism self-healed and the other did not: the same L14 asymmetry X232 set out to remove.
+    // Our own line is therefore compared, not merely detected, and replaced when it is out of date.
+    if (existing.includes(CRON_MARKER)) {
+        const lines = existing.split('\n');
+        const mine = lines.filter((l) => l.includes(CRON_MARKER));
+        if (mine.length === 1 && mine[0].trim() === wanted.trim()) {
+            return { ok: true, mechanism: 'cron', message: 'A daily update check was already scheduled (cron). Nothing changed.' };
+        }
+        const migrated = lines.filter((l) => !l.includes(CRON_MARKER)).join('\n');
+        const rm = writeCrontab(run, `${migrated.trimEnd()}\n${wanted}`.trimStart());
+        return rm.ok
+            ? {
+                  ok: true,
+                  mechanism: 'cron',
+                  message: `An out-of-date daily update check was already scheduled (cron); its line has been rewritten. Older versions sent the updater's output to /dev/null, so a failed update reported to nothing. Its output, including any failure, now goes to ${updateLogPath()}.`,
+              }
+            : { ok: false, mechanism: 'cron', message: `Could not rewrite the out-of-date crontab line. ${rm.stderr.trim()}` };
+    }
+    const r = writeCrontab(run, `${existing.trimEnd()}\n${wanted}`.trimStart());
     return r.ok
         ? { ok: true, mechanism: 'cron', message: `A daily update check is now scheduled (cron). It pulls new code from GitHub and that code then runs; its output, including any failure, is written to ${updateLogPath()}.` }
         : { ok: false, mechanism: 'cron', message: `Could not update your crontab. ${r.stderr.trim()}` };
@@ -246,11 +287,20 @@ function disable(options = {}) {
 
     if (platform === 'win32') {
         const r = run('schtasks', ['/Delete', '/F', '/TN', 'GRU953-Studio Update'], { shell: true });
-        return {
-            ok: true,
-            mechanism: 'schtasks',
-            message: r.ok ? 'The daily update check has been removed.' : 'There was no daily update check to remove.',
-        };
+        if (r.ok) return { ok: true, mechanism: 'schtasks', message: 'The daily update check has been removed.' };
+        // 2026-08-22: every failure used to report "There was no daily update check to remove."
+        // Access denied, a Task Scheduler service that is not running and a task that genuinely is
+        // not there all produced the same sentence, so the one case where the user needed to act
+        // read exactly like the case where nothing was needed. Only absence is absence.
+        const err = `${r.stderr || ''} ${r.stdout || ''}`.trim();
+        const absent = /cannot find|does not exist|no such|not exist/i.test(err);
+        return absent
+            ? { ok: true, mechanism: 'schtasks', message: 'There was no daily update check to remove.' }
+            : {
+                  ok: false,
+                  mechanism: 'schtasks',
+                  message: `The daily update check may STILL be scheduled — the task could not be deleted. ${err}`,
+              };
     }
 
     let removedAnything = false;
@@ -261,9 +311,28 @@ function disable(options = {}) {
         run('systemctl', ['--user', 'daemon-reload']);
         removedAnything = true;
     }
-    const existing = readCrontab(run);
-    if (existing.includes(CRON_MARKER)) {
-        writeCrontab(run, existing.split('\n').filter((l) => !l.includes(CRON_MARKER)).join('\n'));
+    // 2026-08-22: this called writeCrontab and DISCARDED its result, then set removedAnything
+    // unconditionally — so a failed write reported "The daily update check has been removed." while
+    // the job stayed scheduled and kept running every night. Throwing away the only signal that says
+    // whether the thing you promised actually happened is the same shape as the /dev/null redirect
+    // this file was already corrected for.
+    const read = readCrontab(run);
+    if (!read.readable) {
+        return {
+            ok: false,
+            mechanism: 'cron',
+            message: `Could not read your crontab, so a scheduled update check may still be there. ${read.error || ''} Check it with \`crontab -l\`.`.trim(),
+        };
+    }
+    if (read.text.includes(CRON_MARKER)) {
+        const rm = writeCrontab(run, read.text.split('\n').filter((l) => !l.includes(CRON_MARKER)).join('\n'));
+        if (!rm.ok) {
+            return {
+                ok: false,
+                mechanism: 'cron',
+                message: `The daily update check is STILL SCHEDULED — your crontab could not be rewritten. ${rm.stderr.trim()}`,
+            };
+        }
         removedAnything = true;
     }
     return {

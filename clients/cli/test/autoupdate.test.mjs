@@ -134,11 +134,19 @@ test('cron: an empty crontab is not treated as an error (the first-ever enable m
     fs.rmSync(home, RM);
 });
 
+// 2026-08-22: this test's FIXTURE was corrected, not its purpose. It built `existing` out of the
+// literal pre-X232 cron line ending `>/dev/null 2>&1` and then asserted `nothing should be written`
+// — so it pinned the very defect X232 was meant to remove, and no machine that had already enabled
+// the job could ever be migrated to a line that keeps its failure report. The fixture now uses the
+// CURRENT line, which is what "already scheduled, nothing to do" actually means. The stale-line case
+// it used to occupy is asserted the other way round in scheduler-honesty.test.mjs, where a write MUST
+// happen. Same repair X230 needed: a fixture had quietly stopped representing its own case.
 test('cron: enabling twice does not add a second line', () => {
     const home = mkTmp('gru-au-cron-twice-');
-    const existing = `0 9 * * * /usr/bin/backup\n17 4 * * * "/usr/bin/node" "/x/index.js" update >/dev/null 2>&1 ${autoupdate.CRON_MARKER}`;
+    const current = autoupdate.cronLineFor('/usr/bin/node', '/x/index.js');
+    const existing = `0 9 * * * /usr/bin/backup\n${current}`;
     const runner = fakeRunner({ systemd: false, stdout: existing });
-    const r = autoupdate.enable({ platform: 'linux', homeDir: home, runner, env: {} });
+    const r = autoupdate.enable({ platform: 'linux', homeDir: home, runner, nodePath: '/usr/bin/node', cliPath: '/x/index.js', env: {} });
     assert.equal(r.ok, true);
     assert.match(r.message, /already scheduled/);
     assert.equal(runner.calls.filter((c) => c.cmd === 'crontab' && c.args[0] !== '-l').length, 0, 'nothing should be written');

@@ -999,14 +999,28 @@ What reduces it here, and what does not:
   attempting a second unconfirmed change on top of the first. **Corrected
   2026-08-22 (X231): that is true only when a person is watching.** The report is
   four `console.error` lines and a non-zero exit code (`auto-update.mjs:181-192`).
-  On the cron fallback the scheduler itself writes `>/dev/null 2>&1` into the
-  crontab line (`clients/cli/src/autoupdate.js:135`), so stdout, stderr and the
-  exit code all go nowhere: the user's tracked files are left holding literal
-  conflict markers, their uncommitted work sits un-popped in a stash, and nothing
-  tells them. On macOS the output goes to `~/.gru953-studio-update.log`, a path no
-  message in the product ever names. **This paragraph was already corrected once,
-  on 2026-08-17 by X219, for a different falsehood — and this one survived that
-  visit.**
+  **That was the defect X232 recorded, and it is now fixed — this paragraph is the
+  description of it, corrected on 2026-08-22 because the code changed and the prose
+  did not.** It used to say, in the present tense, that "the cron fallback the
+  scheduler itself writes `>/dev/null 2>&1` into the crontab line
+  (`clients/cli/src/autoupdate.js:135`)". That line now ends
+  `>> "$HOME/.gru953-studio-update.log" 2>&1`, one definition shared with the
+  launchd plist, and every "now scheduled" message names the log. So the security
+  document was overstating a defect that had been repaired, and citing a line number
+  that no longer held that text — the mirror image of the usual failure, and just as
+  much a false statement about the product.
+
+  **One real residual, and it is worth stating precisely.** Fixing the line only
+  changed what a NEW enable writes. Until 2026-08-22 `enable()` returned as soon as
+  it saw its own marker, so a machine where `autoupdate on` had been run earlier kept
+  the old `/dev/null` line for ever, and re-running the remedy reported success while
+  changing nothing. That is now repaired too: the existing line is compared against
+  the current one and rewritten when it differs. A machine that has not run
+  `gru953-studio autoupdate on` since 2026-08-22 still carries the old line until it
+  does. **This paragraph was already corrected once, on 2026-08-17 by X219, for a
+  different falsehood, and again on 2026-08-22 by X231 — so this is its third visit,
+  which is itself the argument for checking a paragraph as a whole rather than the
+  sentence someone came for.**
 
 - **Disclosed plainly, because no document said it before (X231, 2026-08-22): an
   update fetches code from the internet and then runs it.** The plugin's checks
