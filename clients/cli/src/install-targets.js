@@ -163,6 +163,21 @@ function installVscodeFamily(host, { vsixPath, platform = process.platform }) {
             message: `No .vsix file was found to install. Download "gru953-studio-<version>.vsix" from https://github.com/GRU-953/GRU953-Studio/releases and run: ${host.command} --install-extension <the file you downloaded>`,
         };
     }
+    // 2026-08-22, X246: `shell: true` is needed on Windows because these hosts ship a `.cmd`
+    // launcher, and Node's own documentation warns that it does NOT escape arguments in that mode —
+    // so the path went to cmd.exe raw. A `.vsix` path containing a shell metacharacter would break
+    // the command, and `&` in particular would end it and start another. Rather than attempt
+    // cmd.exe quoting, which is a well-known source of its own bugs, a path that cannot be passed
+    // safely is not passed at all: the user is told the exact command to run themselves. Refusing
+    // to build a command we cannot build correctly is the only honest option here.
+    const UNSAFE_FOR_CMD = /["%&|<>^]/;
+    if (platform === 'win32' && UNSAFE_FOR_CMD.test(vsixPath)) {
+        return {
+            ok: false,
+            changed: false,
+            message: `The extension file's location contains a character Windows treats specially, so it cannot be installed automatically without risk: ${vsixPath}. Install it by hand with this command, or move the file to a folder whose name has only letters, numbers, spaces, dashes and underscores: ${host.command} --install-extension "${vsixPath}"`,
+        };
+    }
     const r = spawnSync(host.command, ['--install-extension', vsixPath, '--force'], {
         encoding: 'utf8',
         shell: platform === 'win32',

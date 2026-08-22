@@ -218,11 +218,38 @@ if (isGitRepo) {
           console.error(
             `Your own uncommitted changes conflicted with the update in: ${conflicted.join(', ')}`,
           );
+          // 2026-08-22, X245: this used to end "…to pick a side, then `git stash drop`." Two things
+          // were wrong with that, and both are aimed at a non-technical owner.
+          //
+          // `git stash drop` PERMANENTLY DELETES the stash entry - the very thing the line above it
+          // has just described as holding their original changes. So the instruction was: discard
+          // one side of your work, then destroy the only remaining copy of it. There is no undo.
+          //
+          // And `--ours` / `--theirs` were offered without saying which is which. During a rebase
+          // they are the opposite way round from what almost everyone expects: "ours" is the
+          // incoming updated code and "theirs" is the user's own stashed work. Someone following
+          // that advice to keep their own changes would have discarded them.
           console.error(
-            'Those files now contain conflict markers (<<<<<<< / ======= / >>>>>>>) and your original changes are also saved in the stash.',
+            'Those files now contain conflict markers (<<<<<<< / ======= / >>>>>>>). Nothing of yours has been lost: your original changes are still saved in the stash, and they stay there until you remove them yourself.',
+          );
+          console.error('What to do, in order:');
+          console.error(
+            '  1. Look at what is still safely stored, so you can see nothing is gone:  git stash list   then   git stash show -p',
           );
           console.error(
-            'Resolve the conflicts in the listed files, or run `git checkout --theirs -- <file>` / `--ours` to pick a side, then `git stash drop`. Do not leave the conflict markers in place.',
+            '  2. Open each file listed above and delete the conflict-marker lines, keeping the text you want. This is the option that loses nothing.',
+          );
+          console.error(
+            '  3. If you would rather not merge by hand, you can take one whole side of a file instead. During an update these two names are the opposite way round from what most people expect:',
+          );
+          console.error(
+            '       git checkout --ours -- <file>     keeps the NEW updated version, discarding your change to that file',
+          );
+          console.error(
+            '       git checkout --theirs -- <file>   keeps YOUR version, discarding the update to that file',
+          );
+          console.error(
+            '  4. Only once you have checked your work is safely back in the files should you clear the stash, and you never have to:  git stash drop  deletes it permanently and cannot be undone. Leaving it there costs nothing.',
           );
           process.exitCode = 1;
         } else {

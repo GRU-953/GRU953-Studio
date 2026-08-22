@@ -8037,6 +8037,15 @@ for (const script of [
   // WRAPS across comment lines, and a code search matched the comment explaining the removal. A
   // check that cannot see what it looks for always reports clean.
   'X243-installer-truthfulness.mjs',
+  // 2026-08-22, X245: when an update left conflicts, the recovery advice told a non-technical
+  // owner to pick a side with --ours/--theirs and "then `git stash drop`". Both halves lose work.
+  // `git stash drop` permanently deletes the stash - the thing the line above it had just called
+  // the copy of their original changes - and --ours/--theirs were offered with no word on which
+  // is which, when during a rebase they are the reverse of what nearly everyone expects: "ours"
+  // is the incoming update, "theirs" is the user's own work. Someone following it to keep their
+  // changes would have discarded them. Control E is what stops this being "fixed" by deleting
+  // the advice: the message must still name the files and the markers.
+  'X245-conflict-advice-destroys-work.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

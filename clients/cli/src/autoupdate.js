@@ -62,6 +62,25 @@ function hasSystemd(run) {
     return run('systemctl', ['--user', '--version']).ok;
 }
 
+// 2026-08-22, X246: every value below is interpolated into XML, and none of it was escaped. A path
+// containing an XML metacharacter therefore produced a plist Apple's own validator rejects — proven,
+// not reasoned: `plutil -lint` on a plist built with a cliPath under "/Users/ben & co/…" returns
+// "Encountered unknown ampersand-escape sequence at line 9", exit 1, while the ordinary case returns
+// OK. launchd then has nothing loadable, and `enable()` still reports "A daily update check is now
+// scheduled".
+//
+// A macOS short username cannot contain `&`, which is why this is narrow rather than common — but a
+// path can, because the CLI can be installed anywhere and `updateLogPath()` is built from
+// `os.homedir()`. Narrow is not the same as impossible, and the fix costs five lines.
+function xmlEscape(v) {
+    return String(v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
 function launchAgentPlist(nodePath, cliPath) {
     // A fixed hour rather than a repeating interval: StartInterval fires
     // relative to load time, so on a laptop that sleeps and wakes it drifts and
@@ -71,18 +90,18 @@ function launchAgentPlist(nodePath, cliPath) {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>${LABEL}</string>
+  <key>Label</key><string>${xmlEscape(LABEL)}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${nodePath}</string>
-    <string>${cliPath}</string>
+    <string>${xmlEscape(nodePath)}</string>
+    <string>${xmlEscape(cliPath)}</string>
     <string>update</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>17</integer></dict>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>${updateLogPath()}</string>
-  <key>StandardErrorPath</key><string>${updateLogPath()}</string>
+  <key>StandardOutPath</key><string>${xmlEscape(updateLogPath())}</string>
+  <key>StandardErrorPath</key><string>${xmlEscape(updateLogPath())}</string>
 </dict>
 </plist>
 `;
