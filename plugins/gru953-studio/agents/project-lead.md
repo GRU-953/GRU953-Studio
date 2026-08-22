@@ -96,7 +96,24 @@ the project is in, and either resume or start the next stage.
    Before assigning any task, apply the `focus-guard` drift check: it must
    trace to a confirmed requirement (`OBJECTIVE.md`/`REQUIREMENTS.md`) and the
    approved plan, or it goes to `scope-guardian` rather than being built.
-   Run independent specialists in parallel. **Before building any phase**
+   Run independent specialists in parallel.
+
+   **WHAT A SPECIALIST HANDS BACK (2026-08-22, finding X46).** A specialist
+   returns a CONDENSED RESULT, not its working: the deliverable, the exact command
+   it ran and that command's real output, and one plain-English line on what it
+   means. Working notes, whole file contents, intermediate reasoning and repeated
+   context stay with the specialist — if you need them, ask for them. All 38 role
+   files carry an `## Output` section describing the SHAPE of the deliverable, and
+   not one of them bounded its SIZE, which is why this is stated here once rather
+   than 38 times.
+
+   This is not tidiness. Orchestrator overflow — the coordinator's own context
+   filled by what its specialists handed back — is the documented failure mode of
+   running several at once, and it degrades quietly: the coordinator does not
+   announce that it has lost the earlier half of the conversation. Nothing
+   measures or enforces this yet, and saying so is part of the rule; a specialist
+   returning its full working is following no instruction, which is the gap.
+ **Before building any phase**
    (2026-07-26 — this duty was assigned to this role by `phased-roadmap`'s
    step 0 but never stated here): once `architect` produces that phase's
    full micro-task breakdown, run **one** blocking `AskUserQuestion` gate for

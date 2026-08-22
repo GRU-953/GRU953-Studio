@@ -7839,7 +7839,6 @@ for (const script of [
   'X35-name-collision.mjs',
   'phase1-gate-honesty.mjs',
   'X22-cannot-push-own-repo.mjs',
-  'review-findings.mjs',
   // 2026-08-15: no hook may emit a permissionDecision outside the documented set
   // {allow, deny, ask, defer}. escalate() shipped 'escalate' — which is not a value —
   // from 2026-08-13 until this fix, so the F4 path rendered no decision at all.
@@ -8123,6 +8122,19 @@ for (const script of [
 // 2026-08-22, X234: the enumerator reconciliation runs here rather than through the two-direction
 // wrapper, because it checks an agreement rather than reproducing a defect. Excluded from that
 // contract above, with the reason; run in full here, so it is not excluded from being run.
+// 2026-08-22, X187: excluded from the two-direction wrapper above, so it is run HERE instead —
+// excluded from a CONTRACT is not excluded from being RUN, and X207 was exactly the failure of
+// letting an exclusion quietly mean the latter.
+test('review-findings.mjs: all eleven review cases are in their expected state', () => {
+  const p = path.join(HERE, 'test', 'repro', 'review-findings.mjs');
+  const r = spawnSync(NODE, [p], { encoding: 'utf8', cwd: path.dirname(p) });
+  assert.equal(
+    r.status,
+    0,
+    `a review case has drifted from its expected state:\n${r.stdout}${r.stderr}`,
+  );
+});
+
 test('X234: every counting tool agrees with an independent count', () => {
   const p = path.join(HERE, 'test', 'repro', 'X234-enumerator-reconciliation.mjs');
   const r = spawnSync(NODE, [p], { encoding: 'utf8' });
@@ -8182,6 +8194,18 @@ test('X207: every reproduction on disk is run by this harness, or excluded by na
     [
       'X234-enumerator-reconciliation.mjs',
       'a reconciliation check, not a defect reproduction: its --expect-bug direction has no legitimate failing state, and it is run by its own test below',
+    ],
+    // 2026-08-22, X187. Excluded from the TWO-DIRECTION contract, not from being run — it is run in
+    // full by its own test below. Its eleven cases demand INCOMPATIBLE COMMIT ERAS at once: some are
+    // buggy only before one commit, another's buggy state was introduced after it, and one cannot be
+    // produced at all any more because the fixture it needed has changed. So no single tree can put
+    // all eleven in the "expected bug" state, and `--expect-bug` currently reports MISMATCH on ten
+    // of them. The harness's stated contract for this loop is that the second direction "proves the
+    // reproduction is still capable of detecting the bug rather than having quietly become a no-op"
+    // — a claim it could not make about this file, which is the finding.
+    [
+      'review-findings.mjs',
+      'a multi-case review harness spanning several commit eras, not one defect reproduction: no single tree can put all eleven cases in the buggy state at once, so its --expect-bug direction has no satisfiable state. Run in full by its own test below (X187)',
     ],
   ]);
 

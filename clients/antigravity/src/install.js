@@ -15,7 +15,9 @@
 //     Note `.agents/PLUGINS/`, not `.agents/skills/` — the old target was one
 //     level and one concept off, with no plugin.json anywhere, so nothing
 //     identified it as a plugin.
-//   * There is NO `agents/` or `commands/` component. The 38 specialists
+//   * Antigravity DOES have a separate-agent concept — corrected 2026-08-22, finding X43. This project's own primary-source dossier (`sandbox-tools/research/06-peers-ide-agents.md`, fetched 2026-08-15 from the vendor's docs) records that custom subagents are user-definable Markdown files with YAML frontmatter, introduced in CLI v1.1.6 on 2026-07-24 — BEFORE the 2026-08-10 rewrite that asserted the opposite — and that a bundled plugin's subagents are discovered at `plugins/<plugin_name>/agents/`, which is exactly the shape this installer creates. So the roster COULD be installed as real subagents. It is not, today, because nobody has built that — not because the platform lacks the concept. Installing 38 subagents into someone's Antigravity is a behaviour change and the owner's call; stating the truth is not. (Dossier is 7 days old and this machine has no network, so it is cited as of its fetch date rather than as today's vendor state.)
+//
+//   * No `agents/` or `commands/` component is installed TODAY. The 38 specialists
 //     therefore cannot be installed here as separate subagents; they are
 //     projected into a generated `rules/` file (see buildRosterRule) that tells
 //     Antigravity to adopt each role itself. Shipping an `agents/` directory

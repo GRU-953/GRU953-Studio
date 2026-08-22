@@ -285,6 +285,13 @@ phase's own detailed micro-task breakdown is planned in full and approved once,
 in a single gate, right before that phase is built — never per task
 (2026-07-26).
 
+**What a specialist hands back (2026-08-22, X46).** A condensed result — the
+deliverable, the exact command run and its real output, one plain-English line —
+never the working that produced it. See `agents/project-lead.md` for why: filling
+the coordinator's own context with what its specialists returned is the documented
+failure mode of running several at once, and it degrades silently. Nothing
+measures this yet; the convention did not exist at all before this date.
+
 **Per-phase backup (2026-07-19, `checkpoint-commit` skill).** At the end of each
 build phase, once its `quality-gate` is clean and the secret/licence scans pass,
 take a checkpoint: commit the app's code (never `Dev-Memory/`) to a **private**

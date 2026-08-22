@@ -129,7 +129,7 @@ function installAntigravity(host, { pluginSourceDir, platform = process.platform
     return {
         ok: true,
         changed: true,
-        message: `Installed at ${target} (${steps.join(', ')}). Antigravity has no place for separate specialist agents, so the roster is provided as a rules file it follows itself.`,
+        message: `Installed at ${target} (${steps.join(', ')}). the roster is provided as a rules file Antigravity follows itself (it does support separate subagents since CLI v1.1.6; installing the 38 as real subagents is not done yet - X43), so the roster is provided as a rules file it follows itself.`,
     };
 }
 
