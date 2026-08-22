@@ -77,13 +77,23 @@ function installAntigravity(host, { pluginSourceDir, platform = process.platform
     } catch {
         /* cosmetic only; a missing version must not stop the install */
     }
+    // 2026-08-22, X253: the same correction as clients/antigravity/src/install.js, applied here
+    // because the two carry this layout logic on purpose (see the header note) and fixing one twin
+    // while leaving the other is the mistake this project calls L14. These three writes are
+    // unconditional and reported the same word whether the file was new or replaced, while `skills/`
+    // beside them is guarded — so one run could report skills "already present" in the same breath
+    // as silently replacing a rules file the user had edited. The writes are unchanged: these are
+    // generated projections of the plugin, and a stale copy is worse than a replaced one. What
+    // changes is that a replacement now says so.
     try {
+        const pluginJsonPath = path.join(target, 'plugin.json');
+        const replacing = fs.existsSync(pluginJsonPath);
         fs.writeFileSync(
-            path.join(target, 'plugin.json'),
+            pluginJsonPath,
             JSON.stringify({ name: 'gru953-studio', version }, null, 2) + '\n',
             'utf8',
         );
-        steps.push('plugin.json');
+        steps.push(replacing ? 'plugin.json (replaced)' : 'plugin.json');
     } catch (e) {
         return { ok: false, message: `Could not write plugin.json: ${e.message}` };
     }
@@ -98,12 +108,20 @@ function installAntigravity(host, { pluginSourceDir, platform = process.platform
     const rulesTarget = path.join(target, 'rules');
     try {
         fs.mkdirSync(rulesTarget, { recursive: true });
-        fs.writeFileSync(path.join(rulesTarget, 'gru953-roster.md'), buildRosterRule(pluginSourceDir), 'utf8');
-        steps.push('rules/gru953-roster.md');
+        const rosterPath = path.join(rulesTarget, 'gru953-roster.md');
+        const replacingRoster = fs.existsSync(rosterPath);
+        fs.writeFileSync(rosterPath, buildRosterRule(pluginSourceDir), 'utf8');
+        steps.push(replacingRoster ? 'rules/gru953-roster.md (replaced)' : 'rules/gru953-roster.md');
         const charter = path.join(pluginSourceDir, 'skills', 'operating-charter', 'SKILL.md');
         if (!fs.existsSync(charter)) return { ok: false, message: `Could not find the operating charter at ${charter}.` };
-        fs.copyFileSync(charter, path.join(rulesTarget, 'gru953-operating-charter.md'));
-        steps.push('rules/gru953-operating-charter.md');
+        const charterPath = path.join(rulesTarget, 'gru953-operating-charter.md');
+        const replacingCharter = fs.existsSync(charterPath);
+        fs.copyFileSync(charter, charterPath);
+        steps.push(
+            replacingCharter
+                ? 'rules/gru953-operating-charter.md (replaced)'
+                : 'rules/gru953-operating-charter.md',
+        );
     } catch (e) {
         return { ok: false, message: `Could not write the rules: ${e.message}` };
     }

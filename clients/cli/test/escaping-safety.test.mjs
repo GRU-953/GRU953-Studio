@@ -121,10 +121,10 @@ test('a .vsix path containing a cmd.exe metacharacter is refused, with the manua
 test('the source refuses unsafe Windows paths before spawning', () => {
   // A source-level assertion, so this holds whether or not the function is exported. It checks the
   // ORDER that matters: the guard has to sit above the spawnSync call, not below it.
-  const src = fs.readFileSync(
-    new URL('../src/install-targets.js', import.meta.url),
-    'utf8',
-  );
+  // `import.meta.dirname` rather than `new URL(...)`: this package's eslint config does not list
+  // URL as a global (deliberately — its globals are an allow-list), and Node 20.11+ provides
+  // dirname directly, well below this project's Node 22 floor.
+  const src = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'install-targets.js'), 'utf8');
   const guard = src.indexOf('UNSAFE_FOR_CMD');
   const spawn = src.indexOf("spawnSync(host.command, ['--install-extension'");
   assert.ok(guard > -1, 'there must be a guard on characters cmd.exe treats specially');

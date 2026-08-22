@@ -129,13 +129,22 @@ function installForAntigravity(options = {}) {
     } catch {
         /* version is cosmetic here; a missing one must not stop the install */
     }
+    // 2026-08-22, X253: these three writes are unconditional, and the message said only
+    // "wrote …" whether the file was new or replaced — while `skills/` beside them printed
+    // "already present … left as they are". So one run could tell the user its skills had been
+    // left alone in the same breath as silently replacing a rules file they had edited. The
+    // writes are UNCHANGED: nothing that is written today stops being written, because these
+    // three are generated projections of the plugin and a stale copy is worse than a replaced
+    // one. What changes is that a replacement now says it is a replacement.
     try {
+        const pluginJsonPath = path.join(target, 'plugin.json');
+        const replacing = fs.existsSync(pluginJsonPath);
         fs.writeFileSync(
-            path.join(target, 'plugin.json'),
+            pluginJsonPath,
             JSON.stringify({ name: PLUGIN_DIR_NAME, version }, null, 2) + '\n',
             'utf8',
         );
-        steps.push('wrote plugin.json');
+        steps.push(replacing ? 'replaced plugin.json' : 'wrote plugin.json');
     } catch (e) {
         errors.push(`Could not write plugin.json: ${e.message}`);
     }
@@ -158,15 +167,25 @@ function installForAntigravity(options = {}) {
         fs.mkdirSync(rulesTarget, { recursive: true });
         const roster = buildRosterRule(pluginSourceDir);
         if (roster) {
-            fs.writeFileSync(path.join(rulesTarget, 'gru953-roster.md'), roster, 'utf8');
-            steps.push('wrote rules/gru953-roster.md');
+            const rosterPath = path.join(rulesTarget, 'gru953-roster.md');
+            const replacingRoster = fs.existsSync(rosterPath);
+            fs.writeFileSync(rosterPath, roster, 'utf8');
+            steps.push(
+                replacingRoster ? 'replaced rules/gru953-roster.md' : 'wrote rules/gru953-roster.md',
+            );
         } else {
             errors.push("Could not read the specialist roster from the plugin's agents/ directory.");
         }
         const charterSource = path.join(pluginSourceDir, 'skills', 'operating-charter', 'SKILL.md');
         if (fs.existsSync(charterSource)) {
-            fs.copyFileSync(charterSource, path.join(rulesTarget, 'gru953-operating-charter.md'));
-            steps.push('wrote rules/gru953-operating-charter.md');
+            const charterPath = path.join(rulesTarget, 'gru953-operating-charter.md');
+            const replacingCharter = fs.existsSync(charterPath);
+            fs.copyFileSync(charterSource, charterPath);
+            steps.push(
+                replacingCharter
+                    ? 'replaced rules/gru953-operating-charter.md'
+                    : 'wrote rules/gru953-operating-charter.md',
+            );
         } else {
             errors.push(`Could not find the operating charter at ${charterSource}.`);
         }
