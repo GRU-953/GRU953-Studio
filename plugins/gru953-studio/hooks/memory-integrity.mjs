@@ -326,9 +326,24 @@ function checkIndex(root, devMemory, problems) {
       // a word — the gate reporting the index consistent about a row it could not read.
       // Reported instead, in the same words traceability-check.mjs already uses for its own
       // tables, because a row that cannot be read is never evidence of health.
-      if (row.ragged) {
+      // 2026-08-22, X201, in two halves.
+      //
+      // FIRST, the message. `ragged` conflates a row with too MANY cells (a literal pipe shifted the
+      // values - untrustworthy, and "escape it as \\|" is the right advice) with one that has too FEW
+      // (legal GitHub-flavoured markdown, which fills the missing trailing cells as empty - nothing is
+      // shifted). Both got the pipe message, so half the time the user was sent looking for a defect
+      // that was not there, by something that had just blocked their Publish.
+      //
+      // SECOND, and this is the part that matters: a short row whose NEEDED column is present is not a
+      // problem at all and must not be blocked. Reproduced on this project’s own golden fixture -
+      // deleting one trailing Tags cell from a healthy INDEX.md row failed the gate, although the Where
+      // column it actually reads was sitting right there.
+      const shortButReadable = row.short && whereCol < row.cells.length;
+      if (row.ragged && !shortButReadable) {
         problems.push(
-          `INDEX.md row "${row.raw}" has a different number of cells than the header, so its values line up against the WRONG columns and its target is never checked. Escape any literal pipe as \\| (finding X191).`,
+          row.short
+            ? `INDEX.md row "${row.raw}" is missing the "${table.headerCells[whereCol] || 'target'}" column (${row.cells.length} cells against a ${table.headerCells.length}-column header). A short row is legal markdown, but this gate needs that column to check the row’s target. Add the missing cell, or a trailing "|" for each empty one (X191, corrected X201).`
+            : `INDEX.md row "${row.raw}" has MORE cells than the header (${row.cells.length} of ${table.headerCells.length}), so its values line up against the WRONG columns and its target is never checked. A literal pipe inside a cell is the usual cause - write it as \\| (finding X191).`,
         );
         continue;
       }

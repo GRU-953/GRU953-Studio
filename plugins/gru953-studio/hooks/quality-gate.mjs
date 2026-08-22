@@ -243,7 +243,8 @@ function parseRows(text) {
   for (const { tableIndex, table, idx } of candidates) {
     for (const r of table.rows) {
       if (r.ragged) {
-        if (r.cells.some((c) => c !== '')) ragged.push(r.raw.trim());
+        // X201: carry WHICH kind of raggedness, so the message below can be true.
+        if (r.cells.some((c) => c !== '')) ragged.push({ raw: r.raw.trim(), short: r.short });
         continue;
       }
       const item = r.cells[idx.item] || '';
@@ -356,9 +357,12 @@ function main() {
   // rather than skip it — an unescaped `|` inside an Evidence cell is the
   // common cause, and it hid a recorded test failure (finding P11). Escape it
   // as `\|`, per GitHub-flavoured markdown, and this clears.
-  for (const raw of ragged) {
+  for (const r of ragged) {
+    // X201: two opposite problems had one message, and half the time it was wrong.
     problems.push(
-      `a row's columns do not line up with its header, so its status cannot be verified → "${raw}" (an unescaped "|" inside a cell is the usual cause — write it as \\|)`,
+      r.short
+        ? `a row has FEWER cells than its header, so a trailing column is absent and this row's status cannot be read -> "${r.raw}" (a short row is legal markdown - add the missing cell, or a trailing "|" for each empty one)`
+        : `a row has MORE cells than its header, so its values line up against the wrong columns and its status cannot be verified -> "${r.raw}" (an unescaped "|" inside a cell is the usual cause - write it as \\|)`,
     );
   }
   for (const dim of REQUIRED) {

@@ -219,7 +219,8 @@ function main() {
     sawContentTable = true;
     for (const r of table.rows) {
       if (r.ragged) {
-        if (r.cells.some((c) => c !== '')) ragged.push(r.raw.trim());
+        // X201: carry WHICH kind of raggedness, so the message below can be true.
+        if (r.cells.some((c) => c !== '')) ragged.push({ raw: r.raw.trim(), short: r.short });
         continue;
       }
       rows.push({ cells: r.cells, idx: found });
@@ -244,9 +245,13 @@ function main() {
       'CONTENT.md has a content table with no rows — an empty register is not the same as having no content. Either record the assets, or delete CONTENT.md if this project genuinely ships no generated content.',
     );
   }
-  for (const raw of ragged) {
+  for (const r of ragged) {
+    // X201: a SHORT row is legal markdown and nothing is shifted; telling the user to escape a
+    // pipe that is not there sends them hunting a defect that does not exist.
     problems.push(
-      `a content row's columns do not line up with its header, so its approval and rights cannot be verified → "${raw}" (an unescaped "|" inside a cell is the usual cause — write it as \\|)`,
+      r.short
+        ? `a content row has FEWER cells than its header, so a trailing column is absent and this row's approval or rights cannot be read -> "${r.raw}" (a short row is legal markdown - add the missing cell, or a trailing "|" for each empty one)`
+        : `a content row has MORE cells than its header, so its values line up against the wrong columns and its approval and rights cannot be verified -> "${r.raw}" (an unescaped "|" inside a cell is the usual cause - write it as \\|)`,
     );
   }
   for (const row of rows) {

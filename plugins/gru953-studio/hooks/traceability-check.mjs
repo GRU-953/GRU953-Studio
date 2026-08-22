@@ -310,7 +310,15 @@ function parseTable(text, wantHeaderRe) {
   const rows = [];
   for (const t of fragments) {
     for (const r of t.rows) {
-      rows.push({ cells: r.cells, raw: String(r.raw).trim(), ragged: r.ragged });
+      // X201: `short` must be carried through, or the message below reports the opposite of what
+      // happened — this rebuild dropped it and a FEWER-cells row was told it had MORE.
+      rows.push({
+        cells: r.cells,
+        raw: String(r.raw).trim(),
+        ragged: r.ragged,
+        short: r.short,
+        overlong: r.overlong,
+      });
     }
   }
   // The first matching table names the columns. A later fragment with different columns
@@ -488,7 +496,9 @@ function main() {
   for (const r of reqTable.rows) {
     if (r.ragged)
       problems.push(
-        `REQUIREMENTS.md row "${r.raw}" has a different number of cells than the header, so its values line up against the WRONG columns. Escape any literal pipe as \\| (finding X138 / D9).`,
+        r.short
+          ? `REQUIREMENTS.md row "${r.raw}" has FEWER cells than the header. That is legal markdown - the missing trailing cells count as empty - but a trailing column is absent for this row, so anything it should say cannot be read. Add the missing cell, or a trailing "|" for each empty one (X138 / D9, message corrected X201).`
+          : `REQUIREMENTS.md row "${r.raw}" has MORE cells than the header, so its values line up against the WRONG columns. A literal pipe inside a cell is the usual cause - write it as \\| (finding X138 / D9).`,
       );
   }
 
@@ -578,7 +588,9 @@ function main() {
       for (const r of progTable.rows) {
         if (r.ragged)
           problems.push(
-            `PROGRESS.md row "${r.raw}" has a different number of cells than the header, so its values line up against the WRONG columns. Escape any literal pipe as \\| (finding X192).`,
+            r.short
+              ? `PROGRESS.md row "${r.raw}" has FEWER cells than the header. That is legal markdown - the missing trailing cells count as empty - but a trailing column is absent for this row, so anything it should say cannot be read. Add the missing cell, or a trailing "|" for each empty one (X192, message corrected X201).`
+              : `PROGRESS.md row "${r.raw}" has MORE cells than the header, so its values line up against the WRONG columns. A literal pipe inside a cell is the usual cause - write it as \\| (finding X192).`,
           );
       }
     }

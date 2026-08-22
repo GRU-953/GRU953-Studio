@@ -105,7 +105,15 @@ function verdict(mutate) {
 }
 
 const MISMATCH_SAYS = 'columns differ';
-const RAGGED_SAYS = 'different number of cells';
+const RAGGED_SAYS =
+  // 2026-08-22, X201: this pinned the single old wording, "has a different number of cells than the
+  // header". That message conflated a row with too MANY cells (a literal pipe shifted the values)
+  // with one that has too FEW (legal GFM, nothing shifted), and told both to escape a pipe. The two
+  // now get different, true messages — so this matches the part that is invariant: the file, that it
+  // is a row, and that its cell count disagrees with the header. The test's PURPOSE is unchanged: a
+  // ragged PROGRESS row must be REPORTED, whichever direction it is ragged in. Same repair X230
+  // needed when a fixture quietly stopped representing its own case.
+  /PROGRESS\.md row .* (?:FEWER|MORE) cells than the header/;
 
 const goldenReq = readFileSync(join(GOLDEN, 'REQUIREMENTS.md'), 'utf8');
 const goldenProg = readFileSync(join(GOLDEN, 'PROGRESS.md'), 'utf8');
@@ -167,7 +175,7 @@ console.log(
 const D = verdict((dm) =>
   appendFileSync(join(dm, 'PROGRESS.md'), `| ${firstTaskId} | a short row |\n`),
 );
-const dCaught = D.problems.some((p) => String(p).includes(RAGGED_SAYS));
+const dCaught = D.problems.some((p) => RAGGED_SAYS.test(String(p)));
 console.log(
   `  D  a ragged PROGRESS row whose id DOES trace ... ${dCaught ? 'BLOCKED' : 'clean  '}${dCaught ? '' : '  <- X192'}`,
 );

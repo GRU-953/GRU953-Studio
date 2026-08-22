@@ -514,7 +514,16 @@ function main() {
       // header (a ragged/ambiguous row). If such a row makes a "done" claim we
       // record it as unverifiable rather than silently skipping it. A row with no
       // "done" claim is left alone (no false block).
-      if (effectiveStatusIndex === -1 || cells.length !== effectiveHeaderCells.length) {
+      // 2026-08-22, X201: this treated a SHORT row - legal GitHub-flavoured markdown, which fills the
+      // missing trailing cells as empty - exactly like an overlong one, whose values really are
+      // shifted. If the row is merely short and the status column is still within it, the status IS
+      // readable and there is nothing to fail closed about.
+      const shortButStatusReadable =
+        cells.length < effectiveHeaderCells.length && effectiveStatusIndex < cells.length;
+      if (
+        effectiveStatusIndex === -1 ||
+        (cells.length !== effectiveHeaderCells.length && !shortButStatusReadable)
+      ) {
         if (cells.some(isDoneValue)) sawDoneUnknown = true;
         continue;
       }

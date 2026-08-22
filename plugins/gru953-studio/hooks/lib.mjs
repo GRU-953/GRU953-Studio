@@ -820,7 +820,9 @@ export function readOrBlock(p) {
 // claimed as done here.
 //
 // Returns: [{ headerCells, rows: [{ raw, cells, ragged }] }]
-//   ragged === true means the row's column count disagrees with the header, so
+//   ragged === true means the row's column count disagrees with the header, in EITHER direction.
+//   Prefer `overlong` (a literal pipe shifted the values — untrustworthy) or `short` (legal GFM, a
+//   trailing column is merely absent) when wording a message; see the note at the push site. So
 //   its cells cannot be trusted positionally. A caller must fail closed on a
 //   ragged row that makes any claim, never skip it silently.
 export function parseTables(text) {
@@ -897,7 +899,27 @@ export function parseTables(text) {
       if (!looksLikeRow(row)) break; // this line is not part of THIS table
       if (SEPARATOR_ROW_RE.test(row)) continue; // the `| :-- | :-- |` divider
       const cells = normCells(row);
-      rows.push({ raw: row, cells, ragged: cells.length !== headerCells.length });
+      // 2026-08-22, X201: `ragged` alone conflates two opposite problems, and every consumer
+      // reported the wrong one for half its inputs.
+      //
+      //   overlong (cells > header) — usually a literal `|` inside a cell. The values really are
+      //     shifted, so "escape it as \|" is correct advice and the row cannot be trusted.
+      //   short (cells < header)    — LEGAL GitHub-flavoured markdown. GFM fills the missing
+      //     trailing cells as empty. Nothing is shifted; a trailing column is simply absent. Telling
+      //     the user to escape a pipe that is not there sends them looking for a defect that does
+      //     not exist, in a message that blocks their Publish.
+      //
+      // `ragged` keeps its exact old meaning so no consumer's BEHAVIOUR changes by accident; the two
+      // new flags let each one say the true thing. Reproduced on this project's own golden fixture:
+      // deleting one trailing cell from an INDEX.md row blocked memory-integrity, and the same
+      // deletion in PROGRESS.md blocked three gates at once, each with a different wrong explanation.
+      rows.push({
+        raw: row,
+        cells,
+        ragged: cells.length !== headerCells.length,
+        overlong: cells.length > headerCells.length,
+        short: cells.length < headerCells.length,
+      });
     }
     // headerLine lets a caller inspect the lines ABOVE a table — needed for
     // quality-gate.mjs's explicit opt-out marker (finding F1).
