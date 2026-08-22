@@ -201,7 +201,13 @@ function cmdInstall(argv) {
     console.log('');
     if (failures === 0) {
         console.log('Finished. In Claude Code, type /studio-start to begin.');
-        console.log('Updates: GRU953-Studio checks once a day, the first time you use it.');
+        // 2026-08-22, X247: this said "GRU953-Studio checks once a day, the first time you use
+        // it." No code does that. X233 corrected the same falsehood in four places on 2026-08-18
+        // and missed this one — which is the line printed at the END of `install`, so it was the
+        // first thing a new user was told about updates. The same binary already says the opposite
+        // 75 lines further down (`autoupdate` prints "nothing checks on its own"), so it
+        // contradicted itself.
+        console.log('Updates: nothing checks on its own. Run `gru953-studio update` when you want one.');
         console.log('For a scheduled daily check instead, run: gru953-studio autoupdate on');
     } else {
         console.log(`Finished, but ${failures} of the tools above did not install. See the messages for what to do.`);

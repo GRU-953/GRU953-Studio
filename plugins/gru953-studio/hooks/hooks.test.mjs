@@ -8046,6 +8046,17 @@ for (const script of [
   // changes would have discarded them. Control E is what stops this being "fixed" by deleting
   // the advice: the message must still name the files and the markers.
   'X245-conflict-advice-destroys-work.mjs',
+  // 2026-08-22, X247/X248: two claims about the product's own update mechanism that the product
+  // contradicts, both of which had been "fixed" before and survived by sitting one file away from
+  // where somebody looked. X233 corrected the "checks once a day" falsehood in four places on
+  // 2026-08-18 and left four standing - including the line printed at the END of `install`, so one
+  // binary said "checks once a day" there and "nothing checks on its own" 75 lines later. And a
+  // 2026-07-29 comment asserting "no publish step anywhere in .github/workflows/" was still there
+  // after publish.yml gained a job literally named "Publish @gru953/studio-cli to npm" - so the
+  // message it justified told package users to RE-CLONE, worse advice than the CLI beside it gave.
+  // Case A is a PREMISE check that fails loudly if the updater ever runs without --force, rather
+  // than quietly asserting a rule that has gone stale - which is the mistake X248 itself is.
+  'X247-stale-mechanism-claims.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);

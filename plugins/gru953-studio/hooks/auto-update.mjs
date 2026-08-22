@@ -36,7 +36,15 @@ function findGitRoot(start) {
 }
 const studioRoot = findGitRoot(__dirname) || path.resolve(__dirname, '..', '..', '..');
 
-// Only check once a day automatically. For manual checks, pass '--force'
+// 2026-08-22, X247: this said "Only check once a day automatically", which described a behaviour
+// that does not happen. NOTHING invokes this script without `--force`: the only two callers are
+// `clients/cli/src/index.js:320` and `commands/studio-update.md:16`, it is absent from
+// `hooks/hooks.json`, and `session-start.mjs` stopped running it (its own comment records why). So
+// the 24-hour window below is currently UNREACHABLE, and every check is a manual one.
+//
+// The window is kept rather than deleted, for the same reason `isConfirmScriptOnly` was kept under
+// X229: removing a code path is a wider change than a false comment warrants, and it becomes live
+// again the moment anything calls this script without `--force`. What is fixed here is the claim.
 const force = process.argv.includes('--force');
 const checkFile = path.join(studioRoot, '.last-update-check');
 
@@ -75,7 +83,8 @@ if (!force) {
 // fs.writeFileSync — the same "never show a raw stack trace" gap lib.mjs's
 // formatFsError()/writeConfirmationRecordOrExit() already closed elsewhere
 // (see dashboard.mjs's write, wrapped the same way). Not fatal: losing this
-// bookkeeping write only means the check runs more than once a day, so it is
+// bookkeeping write only means the check would run more than once a day IF anything ever ran it
+// without `--force` — which nothing currently does (X247) — so it is
 // reported (when running with --force, matching this file's own existing
 // convention for non-fatal check failures below) rather than aborting the
 // update check that follows.
@@ -282,24 +291,35 @@ if (isGitRepo) {
     if (force) console.error('Update check failed:', e.message);
   }
 } else {
-  // 2026-07-29 maintenance fix (audit finding 1): `@gru953/studio-cli` has
-  // never been published to npm (confirmed 404 from the registry) and there
-  // is no publish step anywhere in .github/workflows/, so `npm install -g
-  // @gru953/studio-cli@latest` can never succeed — this used to tell users
-  // to run a command that always fails. This branch only runs when no `.git`
-  // was found anywhere above this file (see findGitRoot above), so the
-  // git-based update path above cannot apply either: the honest answer is
-  // that there is currently no automatic update mechanism for this kind of
-  // installation.
+  // 2026-08-22, X248: THE PREMISE OF THIS BRANCH WENT STALE AND TOOK THE ADVICE WITH IT.
+  //
+  // It used to read: "`@gru953/studio-cli` has never been published to npm (confirmed 404 from the
+  // registry) and there is no publish step anywhere in .github/workflows/, so `npm install -g
+  // @gru953/studio-cli@latest` can never succeed". Both halves are now false.
+  // `.github/workflows/publish.yml:43` is a job named "Publish @gru953/studio-cli to npm" and
+  // `:98` runs `npm publish --access public`; `:101`/`:156` do the same for the antigravity package
+  // and `:222` publishes the VS Code extension.
+  //
+  // Because the premise said no package could exist, the message told the user to RE-CLONE the
+  // repository — the one thing a package-installed user should not do. `clients/cli/src/index.js`
+  // has had the right answer for the same situation all along (`cmdUpdate`, the no-checkout
+  // branch): update through whichever tool installed it. So this hook was giving worse advice than
+  // the CLI beside it, purely because a comment written on 2026-07-29 was never revisited.
+  //
+  // The branch condition itself is unchanged and still correct: it runs only when no usable
+  // GRU953-Studio checkout was found above this file, so the git path cannot apply. What changes is
+  // that the user is now pointed at the mechanism that actually installed them.
   // 2026-07-29 maintenance fix (audit finding 10): the try/catch around this
   // single console.log with an empty catch block was dead code — nothing
   // here can throw — so it is removed along with the fix above rather than
   // kept for a single non-throwing call.
   if (force) {
     console.log(
-      'No automatic update is available for this installation (it is not a git checkout). ' +
-        'Re-clone https://github.com/GRU-953/GRU953-Studio.git to get the latest version.',
+      'This copy was installed as a package rather than as a git checkout, so it updates through ' +
+        'whichever tool installed it:',
     );
+    console.log('    npm:      npm install -g @gru953/studio-cli@latest');
+    console.log('    Homebrew: brew update && brew upgrade gru953-studio');
   }
 }
 

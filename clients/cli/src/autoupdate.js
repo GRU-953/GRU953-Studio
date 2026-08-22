@@ -1,6 +1,9 @@
 // autoupdate.js — the OPT-IN daily update job.
 //
-// The default, which needs nothing here, is a check on first use each day: the
+// 2026-08-22, X247: this used to describe "a check on first use each day" as the default. There is
+// no such default — see the note in `enable()` and the correction in SECURITY.md. The default is
+// that nothing checks at all until the user runs `gru953-studio update` or turns this scheduler on.
+// Left in place rather than deleted because the sentence that followed it is still true and useful:
 // plugin's own hooks/auto-update.mjs already does that with a `.last-update-check`
 // file and a 24-hour window. Nothing runs in the background, and nothing runs
 // when the user is not there.

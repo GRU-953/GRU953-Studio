@@ -980,8 +980,16 @@ What reduces it here, and what does not:
 
 ### The scheduled daily update
 
-- Off unless explicitly enabled with `gru953-studio autoupdate on`. The default
-  remains a check on first use each day, which starts nothing in the background.
+- Off unless explicitly enabled with `gru953-studio autoupdate on`. **Corrected
+  2026-08-22 (X247): the default is that NOTHING checks.** This said "the default
+  remains a check on first use each day", and no code performs it — verified three
+  ways: only two call sites invoke `auto-update.mjs` and both pass `--force`
+  (`clients/cli/src/index.js:320` and `commands/studio-update.md:16`); it appears
+  nowhere in `hooks/hooks.json`; and `session-start.mjs` stopped running it, its
+  own comment recording the removal. The 24-hour `.last-update-check` window
+  inside `auto-update.mjs` is therefore unreachable. Nothing starts in the
+  background either way, which was the load-bearing half of the original sentence
+  and remains true.
 - When enabled it registers a job with the operating system's own scheduler
   (launchd, Task Scheduler, or a systemd user timer falling back to cron), writing
   only inside the user's own account. It needs no administrator rights.
