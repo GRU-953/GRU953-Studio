@@ -13,12 +13,8 @@ UK English.
 1. Tell the user in one line what is about to happen: checking whether a
    newer version of GRU953-Studio (the skills, safety rules, and specialist
    roles this plugin ships) is available, and updating to it if so.
-2. Run `node "${CLAUDE_PLUGIN_ROOT}/hooks/auto-update.mjs" --force` and report
-   its result plainly.
-3. If an update was applied, tell the user they may need to restart their
-   current session to see the change take effect. If none was needed, say so
-   plainly — this is not a failure.
-4. **Tell the user what an update actually does, before applying one.** In
+
+2. **Tell the user what an update actually does — BEFORE running step 3.** In
    plain words, and without softening it:
    - It downloads the newest version of this plugin from the internet
      (`git pull` from the project's GitHub repository) and **that new code then
@@ -32,9 +28,24 @@ UK English.
    - **Unsaved work is set aside and put back automatically** (`--autostash`).
      If the new version changed the same lines the user did, putting it back can
      fail; the file is then left with conflict markers in it and the user's own
-     version is kept in a `git stash`. Say this before updating, not after.
+     version is kept in a `git stash`, which is not deleted.
    - If the user would rather read the changes first, they can decline and
-     update by hand instead.
+     update by hand instead. Wait for them before going on.
+
+   > **Reordered 2026-08-22 (finding X259).** This disclosure was added by X231
+   > as step 4 — AFTER the step that runs the updater — while its own heading
+   > said "before applying one". An assistant following this file in order
+   > therefore pulled first and disclosed second, so the disclosure could not do
+   > the job it was written for. It is step 2 now. Adding a warning at the end of
+   > a numbered list does not make it a warning.
+
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/hooks/auto-update.mjs" --force` and report
+   its result plainly. It prints which version it moved from and to, and what
+   changed; pass that on rather than only saying it worked.
+
+4. If an update was applied, tell the user they may need to restart their
+   current session to see the change take effect. If none was needed, say so
+   plainly — this is not a failure.
 
 5. **Corrected 2026-08-22 (X231): this file used to end with a promise it could
    not keep** — "This command never runs on its own; the studio never fetches,

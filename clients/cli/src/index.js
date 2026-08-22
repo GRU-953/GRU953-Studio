@@ -59,11 +59,26 @@ function findPluginSource() {
 }
 
 /** A downloaded .vsix sitting next to the checkout's dist/, if one was built. */
+// 2026-08-22, X261: this took the LAST entry of a plain alphabetical sort, which is not the newest
+// version — "gru953-studio-10.0.0.vsix" sorts before "gru953-studio-9.0.0.vsix", so the first time a
+// major version reaches double digits the installer would silently pick the older file. It is
+// installed with `--force`, so nothing downstream would object. Sorted by parsed version now, with
+// the alphabetical order kept only as the tie-break for names that carry no version at all.
 function findVsix() {
     const distDir = path.join(__dirname, '..', '..', '..', 'dist');
+    const versionKey = (name) => {
+        const m = /(\d+)\.(\d+)\.(\d+)/.exec(name);
+        return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [-1, -1, -1];
+    };
     try {
-        const vsix = fs.readdirSync(distDir).filter((f) => f.endsWith('.vsix')).sort();
-        return vsix.length ? path.join(distDir, vsix[vsix.length - 1]) : null;
+        const vsix = fs.readdirSync(distDir).filter((f) => f.endsWith('.vsix'));
+        if (!vsix.length) return null;
+        vsix.sort((a, b) => {
+            const [aM, aN, aP] = versionKey(a);
+            const [bM, bN, bP] = versionKey(b);
+            return aM - bM || aN - bN || aP - bP || a.localeCompare(b);
+        });
+        return path.join(distDir, vsix[vsix.length - 1]);
     } catch {
         return null;
     }

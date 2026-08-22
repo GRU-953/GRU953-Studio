@@ -159,10 +159,18 @@ function readCrontab(run) {
 }
 
 function writeCrontab(run, text) {
-    const tmp = path.join(os.tmpdir(), `gru953-cron-${process.pid}`);
+    // 2026-08-22, X260: this was `path.join(os.tmpdir(), 'gru953-cron-' + process.pid)` — a
+    // PREDICTABLE name in a world-writable directory. A local process that guessed it could
+    // pre-create a symlink there and have this function's write follow it, or swap the file between
+    // our write and cron reading it. `mkdtempSync` returns a fresh directory with a random name and
+    // owner-only permissions, which removes both. The crontab we are about to install is the one
+    // thing here that the operating system will later execute, so the temporary file it comes from
+    // is worth the two extra lines.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gru953-cron-'));
+    const tmp = path.join(tmpDir, 'crontab');
     fs.writeFileSync(tmp, text.endsWith('\n') ? text : text + '\n', 'utf8');
     const r = run('crontab', [tmp]);
-    fs.rmSync(tmp, { force: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
     return r;
 }
 

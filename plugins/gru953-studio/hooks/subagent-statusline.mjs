@@ -108,4 +108,13 @@ for (const t of tasks) {
   if (line.length > columns) line = line.slice(0, Math.max(0, columns - 1)) + '…';
   process.stdout.write(JSON.stringify({ id: t.id, content: line }) + '\n');
 }
-process.exit(0);
+// 2026-08-22, X263: this ended `process.exit(0)`, which terminates immediately and DISCARDS anything
+// still buffered in stdout. Node's own documentation warns about exactly that. On this machine, with
+// this hook's small payload and a pipe, nothing was lost — which is why an adjudicator reasonably
+// graded the claim not-a-defect. But that reasoning rests on the consumer draining a pipe promptly,
+// which is the platform behaviour the very next finding in the same block was graded
+// CANNOT-DETERMINE for want of; and the product ships Windows and Linux installers, where the
+// buffering is not the same. Letting the process end naturally flushes, costs nothing, and removes
+// the question rather than answering it from one platform. The earlier `process.exit(0)` for
+// unparseable input is left alone: it has written nothing, so it has nothing to lose.
+process.exitCode = 0;

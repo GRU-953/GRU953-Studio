@@ -177,7 +177,26 @@ if (isGitRepo) {
     } catch {
       /* cosmetic: a missing before-ref must never stop an update */
     }
-    if (Number.isFinite(behindCount) && behindCount > 0) {
+    // 2026-08-22, X262: a one-line inconsistency, fixed rather than adjudicated. If `behindCount`
+    // were ever NaN this test failed and execution fell through to "GRU953-Studio is up to date." —
+    // the opposite of the fail-honest rule stated a few lines above, which says an unreadable answer
+    // is reported as unknown and never as "nothing to do".
+    //
+    // Nobody could produce a case where it fires: `git rev-list --count` either prints a bare
+    // integer on exit 0 or exits non-zero, and all three real failure modes (no upstream, detached
+    // HEAD, deleted upstream ref) were tested and all THROW, landing in the honest outer catch. So
+    // this is a latent inconsistency rather than a live defect — but the adjudicator's own words were
+    // that the guard "exists, and if it ever fired it would lie", and a lie that costs one line to
+    // remove is not worth carrying as an open question.
+    if (!Number.isFinite(behindCount)) {
+      if (force) {
+        console.error(
+          'GRU953-Studio: could not read how many updates are waiting (git gave an answer this ' +
+            'script could not parse). Nothing was changed. Try `git status` in the plugin folder.',
+        );
+        process.exitCode = 1;
+      }
+    } else if (behindCount > 0) {
       console.log('GRU953-Studio: Update available. Applying now...');
       // 2026-07-26, found during a further pass. Two distinct bugs here,
       // and the first fix attempt at this only caught the first one.
