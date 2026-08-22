@@ -7,9 +7,20 @@
 #      this project does. If Node is missing it tells you exactly where to get
 #      it and stops.
 #   2. Installs the GRU953-Studio command from npm.
-#   3. Runs "gru953-studio install", which finds every supported app on this
-#      machine and sets GRU953-Studio up in each one, asking before it changes
-#      anything.
+#   3. Runs "gru953-studio install", which finds the supported apps on this
+#      machine and sets GRU953-Studio up in the ones it can.
+#
+#      IT DOES NOT ASK YOU ANYTHING (corrected 2026-08-22, finding X243: this
+#      header used to claim it did). There is no prompt anywhere in
+#      "gru953-studio install" - no readline, no stdin read, nothing. Running
+#      this installer IS the consent; nothing further is requested. It writes
+#      configuration files into the editors it finds, and re-running it
+#      overwrites files you may have edited by hand.
+#
+#      It also used to say it sets the studio up "in each one", which overstated
+#      what happens: one supported host is skipped by design, and some cannot be
+#      reached from a shell installer at all. It configures what it can and
+#      reports the rest.
 #
 # ON PIPING THIS INTO A SHELL, honestly: running
 #   curl ... | sh
@@ -113,17 +124,35 @@ fi
 say ""
 say "Now setting GRU953-Studio up in the apps on this computer..."
 say ""
+# CORRECTED 2026-08-22, three defects in this block, all caused by `set -e` (line 26) doing
+# exactly what it is asked to do:
+#
+#   a. `gru953-studio install` returning non-zero aborted the whole script HERE, so the closing
+#      instructions below - the only place the user is told what to type next - were never printed.
+#      A partial setup therefore ended in silence. Its status is now captured, the failure is
+#      stated plainly, and the guidance is still printed.
+#
+#   b. `NPM_BIN="$(npm bin -g ... || npm prefix -g ...)/bin"` is an assignment whose exit status is
+#      the substitution's, so if BOTH npm calls failed the script aborted before reaching the
+#      carefully written "installed but cannot be found afterwards" message a few lines below.
+#      Verified in /bin/sh and in dash: both abort.
+#
+#   c. That expression was one branch pretending to be two. `npm bin -g` was removed in npm 9 and
+#      on npm 11.19.0 prints `Unknown command: "bin"` to STDOUT while exiting non-zero - so
+#      `2>/dev/null` did not suppress it, the `||` ran the second command, and the substitution
+#      captured BOTH outputs. NPM_BIN became a four-line string ending `/opt/homebrew/bin`, so
+#      `[ -x "$NPM_BIN/gru953-studio" ]` could never be true and only the `elif` ever worked. The
+#      dead call is gone rather than kept as decoration.
+INSTALL_STATUS=0
 if command -v gru953-studio >/dev/null 2>&1; then
-    gru953-studio install
+    gru953-studio install || INSTALL_STATUS=$?
 else
     # Installed, but its folder is not on PATH yet — common with a fresh npm
     # prefix. Run it by its real path so the setup still completes, and let the
     # CLI's own PATH step deal with the cause.
-    NPM_BIN="$(npm bin -g 2>/dev/null || npm prefix -g 2>/dev/null)/bin"
-    if [ -x "$NPM_BIN/gru953-studio" ]; then
-        "$NPM_BIN/gru953-studio" install
-    elif [ -x "$(npm prefix -g 2>/dev/null)/bin/gru953-studio" ]; then
-        "$(npm prefix -g)/bin/gru953-studio" install
+    NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
+    if [ -n "$NPM_PREFIX" ] && [ -x "$NPM_PREFIX/bin/gru953-studio" ]; then
+        "$NPM_PREFIX/bin/gru953-studio" install || INSTALL_STATUS=$?
     else
         die "The GRU953-Studio command was installed but cannot be found afterwards.
 
@@ -135,5 +164,15 @@ If that still does not find it, run this to see where npm put it:
 fi
 
 say ""
+if [ "$INSTALL_STATUS" -ne 0 ]; then
+    say "Setup did not finish cleanly (the setup step exited with status $INSTALL_STATUS)."
+    say "Some apps may not be configured. What to do next is below either way."
+    say ""
+fi
 say "Done. Type 'gru953-studio doctor' at any time to check everything is set up."
-say "In Claude Code, type /studio to begin."
+# CORRECTED 2026-08-22: this said /studio, a command renamed to /studio-start on 2026-08-17. A
+# brand-new user's very first instruction was a command that no longer exists. The same line in
+# install.ps1 was wrong in the same way and is corrected with it - fixing one instance of a shape
+# and leaving its twin is the mistake this project calls L14.
+say "In Claude Code, type /studio-start to begin."
+exit "$INSTALL_STATUS"

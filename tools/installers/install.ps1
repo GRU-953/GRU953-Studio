@@ -135,4 +135,5 @@ If that still does not find it, run this to see where npm put it:
 
 Say ''
 Say "Done. Type 'gru953-studio doctor' at any time to check everything is set up."
-Say 'In Claude Code, type /studio to begin.'
+# CORRECTED 2026-08-22: /studio was renamed to /studio-start on 2026-08-17 (see install.sh).
+Say 'In Claude Code, type /studio-start to begin.'

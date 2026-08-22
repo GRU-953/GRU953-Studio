@@ -8027,6 +8027,16 @@ for (const script of [
   // genuine zero prices in all three spellings the API uses must STILL be free, or the fix would
   // pass by calling nothing free at all.
   'X242-catalogue-trust.mjs',
+  // 2026-08-22, X243: five defects in the macOS/Linux one-line installer - the first thing a new
+  // user runs. Its header promised "asking before it changes anything" about a step with no prompt
+  // anywhere in it; `set -e` let a failing setup abort the script before the closing instructions,
+  // and let a failing assignment abort it before its own error message; `npm bin -g` was removed in
+  // npm 9 so one branch could never be taken; and the last line told the user to type /studio,
+  // renamed five days earlier - in BOTH installers. The reproduction itself needed two repairs
+  // while being written, and they are the same two mistakes: a flat search missed a claim that
+  // WRAPS across comment lines, and a code search matched the comment explaining the removal. A
+  // check that cannot see what it looks for always reports clean.
+  'X243-installer-truthfulness.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
