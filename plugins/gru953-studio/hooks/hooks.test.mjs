@@ -7923,6 +7923,16 @@ for (const script of [
   // cases. Control E holds five prose cells and control F the non-ASCII filename a 2026-07-19
   // fix added, so neither can be lost to a future widening.
   'X147-path-with-space.mjs',
+  // 2026-08-22, X236: four shipped instruction sites told `builder` to run `claude plugin ...`
+  // with nothing said about the command being absent. It is absent on a desktop-app install —
+  // the binary sits inside the application bundle, not on PATH — which is how the owner runs it,
+  // so `ecosystem-finder` could not perform its own Method step 1. Found because the owner hit
+  // `command not found: claude` in Terminal, and the same assumption turned out to be inside
+  // this programme's verification runner too (X235). Controls D and E bound the check both ways:
+  // D stops it flagging every file that mentions the CLI, E stops it being vacuous. E earned its
+  // place during authoring — the first detector accepted a `/plugin > Discover` mention twelve
+  // lines away, which is there for an unrelated reason, and graded that coincidence as compliance.
+  'X236-cli-not-on-path.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
