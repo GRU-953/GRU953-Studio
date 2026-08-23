@@ -1023,6 +1023,13 @@ export function deEmphasise(c) {
 }
 
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
+
+// 2026-08-23, X272. Hoisted to module scope from inside isPushCapable, where it was a local, so the
+// narrow consent predicate below and the wide classifier share ONE definition. A hyphen CONTINUES a
+// program name, so `git-push-helper` is a different program from `git-push` — the distinction X179's
+// controls exist to protect. Two hand-maintained copies of a regex constant is how this project's
+// SEPARATOR_ROW_RE drifted out of sync with its siblings; one definition cannot drift.
+export const DASHED_BOUNDARY = '(?![A-Za-z0-9_-])';
 // ---- bounded assignment resolution (2026-08-07 audit fix) --------------------
 // The scalar-assignment resolution below is superlinear in the NUMBER of
 // assignments in one command: each new assignment is re-resolved against every
@@ -2064,6 +2071,45 @@ function isConfirmScriptOnly(c) {
     base === 'confirm-memory-persist.mjs'
   );
 }
+// 2026-08-23, X272. A NARROW companion to isPushCapable below, for exactly one purpose: deciding
+// whether a command actually SENDS COMMITS TO A REMOTE, so scan.mjs can ask for the publishing
+// consent the operating charter requires.
+//
+// These have to be two separate predicates, and conflating them was a real defect — caught by
+// X214's own controls, not by review. `isPushCapable` answers a different question: "might this
+// touch publishing, so should I SCAN it?" It is deliberately WIDE, and returns true for
+// `gh repo clone` (read-only) and for `node scripts/build.mjs --outdir public`. Erring wide is
+// correct there: scan more, not less. It is badly wrong for consent. X272's first attempt escalated
+// on isPushCapable, so a read-only clone raised a prompt asserting "this command sends code out of
+// your machine" — false, on a command that publishes nothing. That is this project's L5: a gate that
+// cries wolf gets routed around, and a routed-around gate is worse than no gate.
+//
+// SCOPE, stated rather than left implicit. This covers pushing commits to a remote, in every form
+// the wide classifier already recognises (spaced, quoted, case-varied, send-pack, and the dashed
+// builtins X179 added). It deliberately does NOT cover the `gh` publishing family — `gh release
+// create`, `gh repo create`, `gh repo edit --visibility public`. Those genuinely do publish, and in
+// `auto` mode they still raise no prompt: that is a DISCLOSED GAP filed with this finding, not an
+// oversight. Inventing a gh subcommand taxonomy here would mean guessing which ones are outbound
+// with no reproduction to bound the guess, which is precisely how the clone and build-script cases
+// broke. It is a decision for the owner, with evidence, rather than a silent widening.
+export function sendsCommitsToRemote(rawC) {
+  if (!rawC) return true;
+  // Unanalysable, therefore unclassifiable. The ratified permission architecture is "fail closed to
+  // `ask` on anything the tool cannot classify" — and this predicate's only caller IS the ask.
+  if (exceedsAssignmentBound(rawC)) return true;
+  const c = normalizeForPushCheck(rawC);
+  if (isConfirmScriptOnly(c)) return false;
+  return (
+    new RegExp(
+      `(^|[^A-Za-z0-9_])['"]?git['"]?(?:[ \\t]+[^ \\t]+)*?[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`,
+      'i',
+    ).test(c) ||
+    new RegExp(`(^|[^A-Za-z0-9_])git[ \\t]+send-pack${LEXICAL_BOUNDARY}`, 'i').test(c) ||
+    new RegExp(`(^|[^A-Za-z0-9_./\\\\-])git-(push|send-pack)${DASHED_BOUNDARY}`, 'i').test(c) ||
+    new RegExp(`[/\\\\]git-(push|send-pack)${DASHED_BOUNDARY}`, 'i').test(c)
+  );
+}
+
 export function isPushCapable(rawC) {
   if (!rawC) return true;
   // 2026-08-07 audit fix. Past MAX_RESOLVED_ASSIGNMENTS the variable resolution
@@ -2206,7 +2252,7 @@ export function isPushCapable(rawC) {
   // `(?![A-Za-z0-9_-])` rather than LEXICAL_BOUNDARY, because LEXICAL_BOUNDARY permits a following
   // HYPHEN — so `git-push-helper` matched on the first run of this rule's own control. A hyphen
   // continues the program name, so it has to end the match.
-  const DASHED_END = '(?![A-Za-z0-9_-])';
+  const DASHED_END = DASHED_BOUNDARY; // X272: one definition, at module scope
   if (
     new RegExp(`(^|[^A-Za-z0-9_./\\\\-])git-(push|send-pack)${DASHED_END}`, 'i').test(c) ||
     new RegExp(`[/\\\\]git-(push|send-pack)${DASHED_END}`, 'i').test(c)

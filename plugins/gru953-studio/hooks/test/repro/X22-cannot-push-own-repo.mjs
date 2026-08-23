@@ -116,7 +116,17 @@ console.log(`X22 reproduction — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\
     .split('\n')
     .filter((l) => l.trim().startsWith('{'))
     .map((l) => l.trim());
-  const want = expectBug ? 'deny' : null;
+  // 2026-08-23, X272. The fixed state is no longer a single value, and the reason is the distinction
+  // X176 already drew above. X272 made a clean push in a STUDIO project return `ask`, the publishing
+  // consent the operating charter requires. This repository is a studio project when its gitignored
+  // `Dev-Memory/` is present — the real checkout — and is not one in CI, where scan stands aside and
+  // returns exactly null. `engaged` is already computed for precisely that difference, so it selects
+  // the expectation rather than the looser "not deny" that would have hidden both.
+  //
+  // What X22 is ABOUT is unchanged: the product repository must not be REFUSED permission to push
+  // itself. `ask` is not a refusal — it raises the owner's prompt and yes proceeds. A `deny` here
+  // still fails this case, in either environment.
+  const want = expectBug ? 'deny' : engaged ? 'ask' : null;
   const ok = decision === want;
   if (!ok && engaged) failures++;
   console.log(

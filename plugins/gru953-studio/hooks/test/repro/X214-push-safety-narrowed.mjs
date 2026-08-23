@@ -108,16 +108,35 @@ const withOptIn = (d) => {
   writeFileSync(join(d, 'Dev-Memory', 'SHIP-MEMORY-DELIBERATELY'), 'yes\n');
 };
 
+// 2026-08-23, X272 — cases C and J now expect `ask` rather than no decision, and this file is the
+// reason the fix is correct rather than merely passing.
+//
+// What X214 established is UNCHANGED and still asserted: push safety must not refuse ordinary work.
+// `ask` is not a refusal. It raises the owner's own prompt, and answering yes proceeds — so C and J
+// are still "not blocked", which is the property these two cases exist to protect. D, E, F and G
+// still require silence and still get it, and the four deny controls still deny.
+//
+// X272 added the consent prompt the operating charter requires on a real push, because the live
+// measurement of 2026-08-22 showed a silent hook produces NO prompt at all in `auto` mode — so after
+// X214 nothing whatever asked before code left the machine.
+//
+// THESE CONTROLS DID THEIR JOB. X272's first attempt gated that prompt on `isPushCapable`, the wide
+// classifier that decides whether to SCAN, and F and G went red immediately: `gh repo clone` is
+// read-only and `node scripts/build.mjs --outdir public` writes to a local directory, yet both were
+// being asked to confirm sending code off the machine — a false question, which is exactly how a
+// guard gets switched off (L5). The fix was a separate narrow predicate, `sendsCommitsToRemote`, not
+// a looser expectation here. If a future edit points the prompt back at the wide classifier, F and G
+// go red again, and that is deliberate.
 const CASES = [
   { id: 'A', cmd: PUSH, build: withSecret, want: 'deny', control: true, what: 'a real secret in the would-ship set' },
   { id: 'B', cmd: PUSH, build: withKeyFile, want: 'deny', control: true, what: 'a key-shaped filename' },
-  { id: 'C', cmd: PUSH, build: null, want: 'no decision', control: false, what: 'a clean project, ordinary push' },
+  { id: 'C', cmd: PUSH, build: null, want: 'ask', control: false, what: 'a clean project, ordinary push' },
   { id: 'D', cmd: 'npm run build', build: null, want: 'no decision', control: false, what: 'npm run build' },
   { id: 'E', cmd: 'npm test', build: null, want: 'no decision', control: false, what: 'npm test' },
   { id: 'F', cmd: 'gh repo clone me/app', build: null, want: 'no decision', control: false, what: 'gh repo clone (read-only)' },
   { id: 'G', cmd: 'node scripts/build.mjs --outdir public', build: null, want: 'no decision', control: false, what: 'a build script writing to public/' },
   { id: 'I', cmd: PUSH, build: withTrackedMemory, want: 'deny', control: true, what: 'private working memory would ship' },
-  { id: 'J', cmd: PUSH, build: withOptIn, want: 'no decision', control: false, what: '...with the documented opt-in present' },
+  { id: 'J', cmd: PUSH, build: withOptIn, want: 'ask', control: false, what: '...with the documented opt-in present' },
 ];
 
 let controlsOk = true;

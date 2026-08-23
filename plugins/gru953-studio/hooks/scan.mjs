@@ -39,6 +39,8 @@ const HOOKS_DIR = path.dirname(fileURLToPath(import.meta.url));
 import {
   stepAside,
   deny,
+  escalate,
+  sendsCommitsToRemote,
   readStdin,
   extractCommand,
   extractCwd,
@@ -1478,12 +1480,45 @@ function main() {
   scanTagMessages();
 
   if (findings.length === 0) {
-    // No secrets found. This scanner is VETO-ONLY: finding nothing means it has
-    // no objection, which is not the same as approving the push. Authorisation
-    // was gate.mjs's job and required a confirmed token (X1). Both were deleted by X214 on
-    // 2026-08-16: there is no authorisation step any more, and this hook's refusal is the whole
-    // of push safety. Corrected 2026-08-22 — the same class as X229, which reached lib.mjs only.
-    stepAside();
+    // No secrets found — so this scanner has no OBJECTION. That has never been the same thing as
+    // approving the push, and until now nothing filled the gap.
+    //
+    // 2026-08-23, X272. Authorisation was gate.mjs's job and required a confirmed token (X1). X214
+    // deleted both on 2026-08-16, and its own decision note gives the reason: "The token layer was
+    // reimplementing the permission prompt Claude Code" already provides. That premise has since
+    // been MEASURED, and it does not hold in the mode that is now the default.
+    //
+    // The live-runtime measurement of 2026-08-22 (RESIDUALS gap 9) established two things from a real
+    // session transcript: a `deny` from this hook genuinely blocks a tool call, AND the session ran
+    // in `auto` mode, where a hook that stays silent produces NO user prompt — auto mode makes its
+    // own risk assessment and may simply proceed. So after X214 a clean push had nothing asking
+    // anybody, in the default mode, which is precisely what X214 assumed the platform would do.
+    //
+    // `operating-charter/SKILL.md:133-135` is unambiguous that it must: "Publishing, going public, a
+    // per-phase checkpoint push … each still need their own explicit, fresh \"yes\" — every time."
+    // `escalate()` has existed in lib.mjs since that layer was removed and NO hook has ever called
+    // it, so the charter's rule has been enforced by nothing.
+    //
+    // This is NOT a return to the token layer. It records no state, proves nothing about a past
+    // answer, and cannot be satisfied by a file on disk — the three properties X91 and X110 deleted
+    // authorise() for. It asks the person, once, at the moment the charter names. And `ask` is not
+    // `deny`: a user who wants the push says yes and it proceeds, so this does not block honest work.
+    //
+    // Gated on `sendsCommitsToRemote`, NOT on the `isPushCapable` that decided whether to scan. The
+    // first version of this fix used the latter and X214's own controls caught it: `gh repo clone`
+    // (read-only) and `node scripts/build.mjs --outdir public` are both push-CAPABLE, because that
+    // classifier is deliberately wide so the scan errs on the side of looking. Neither publishes
+    // anything, and both were being handed a prompt whose text claims "this command sends code out
+    // of your machine". Asking a false question is not a small cosmetic fault — it is how a guard
+    // earns the reputation that gets it switched off (L5).
+    if (sendsCommitsToRemote(CMD)) {
+      escalate(
+        'studio scan: no secrets, keys or private Dev-Memory files were found in what this would ' +
+          'ship — so nothing here objects. But this command sends code out of your machine, and your ' +
+          'operating charter says publishing needs your own fresh "yes" every time. Say yes to go ahead.',
+      );
+    }
+    return stepAside();
   }
   // 2026-07-19 audit fix (real gap, found by execution): `findings` was fully
   // computed (each entry already redacted to {type,file,line} by redact() —

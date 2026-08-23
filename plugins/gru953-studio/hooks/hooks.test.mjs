@@ -27,6 +27,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import {
   isPushCapable,
+  sendsCommitsToRemote,
   normalizeForPushCheck,
   isDirectory,
   SEPARATOR_ROW_RE,
@@ -136,6 +137,101 @@ function assertStepAside(r, message) {
     r.stdout.trim(),
     '',
     `${message} — a hook that steps aside must write no stdout, never permissionDecision "allow"`,
+  );
+}
+
+// 2026-08-23, X272. `assertStepAside` above means one thing precisely: the hook wrote NOTHING. That
+// is still the right assertion for a non-push command and for a project that is not a studio
+// project, and it stays strict for them.
+//
+// But it was ALSO carrying a second, different meaning at 19 call sites: "the secret scan found
+// nothing to object to". Those were the same observable until X272, and they are not any more —
+// scan.mjs now returns `ask` on a clean push, because the operating charter requires the owner's own
+// fresh yes before anything is published and (measured, gap 9) a silent hook produces no prompt at
+// all in the `auto` permission mode that is now the default.
+//
+// So the no-false-positive controls need to assert what they were actually FOR, which is that the
+// clean input was not flagged as a secret — not the decision value that used to imply it. This
+// helper is deliberately NOT a relaxation:
+//
+//   * `allow` still fails, so X1 cannot regress through this door.
+//   * `deny` still fails, so a false positive still fails the control that exists to catch it.
+//   * an `ask` whose reason names a SECRET still fails — otherwise a false flag could pass simply
+//     by being phrased as a question, which would gut every control below.
+//
+// Only the consent prompt, or silence, passes.
+// 2026-08-23, X272. The separation between the two predicates, asserted DIRECTLY on the exports and
+// in both directions — because it is the whole content of the fix, and because the end-to-end cases
+// that caught the original defect (X214 F and G) would still pass if the two predicates happened to
+// agree on those two specific commands by accident.
+//
+// The rows that matter most are the ones where the two answers DIFFER. If a future edit "simplifies"
+// the consent gate back to isPushCapable, every one of those rows fails.
+test('X272: sendsCommitsToRemote is narrow where isPushCapable is deliberately wide', () => {
+  for (const c of [
+    'git push origin main',
+    'git push --tags',
+    'GIT push origin main',
+    'git "push" origin main',
+    'git send-pack origin',
+    'git-push origin main',
+    'git-send-pack origin',
+    '/opt/homebrew/libexec/git-core/git-push origin main',
+    'echo hi && git-push origin main',
+  ]) {
+    assert.equal(sendsCommitsToRemote(c), true, `${c} sends commits to a remote and must ask for consent`);
+  }
+
+  // Push-CAPABLE but not publishing: the wide classifier says yes so the scan runs, and the consent
+  // gate must say no. These two are the exact commands whose false prompt X214's controls caught.
+  for (const c of ['gh repo clone me/app', 'node scripts/build.mjs --outdir public']) {
+    assert.equal(isPushCapable(c), true, `control: ${c} must remain push-capable so it is still SCANNED`);
+    assert.equal(
+      sendsCommitsToRemote(c),
+      false,
+      `${c} publishes nothing, so telling the user it "sends code out of your machine" would be false`,
+    );
+  }
+
+  // Neither: ordinary work, and a longer hyphenated program name (X179's control — a hyphen
+  // CONTINUES a name, so git-push-helper is a different program).
+  for (const c of [
+    'git fetch origin',
+    'git pull',
+    'git status',
+    'npm run build',
+    'echo hello',
+    'git-push-helper origin main',
+    'npm run git-pusher',
+    'cat my-git-push-notes.md',
+  ]) {
+    assert.equal(sendsCommitsToRemote(c), false, `${c} must not raise a publishing prompt`);
+  }
+
+  // Unclassifiable fails closed to asking, which is the ratified permission architecture.
+  assert.equal(sendsCommitsToRemote(''), true, 'an empty command cannot be proven safe, so it asks');
+});
+
+function assertNotFlagged(r, message) {
+  if (r.decision === null) {
+    assert.equal(r.stdout.trim(), '', `${message} — a silent hook must write no stdout`);
+    return;
+  }
+  assert.equal(
+    r.decision,
+    'ask',
+    `${message} — a clean input may be silent or ASK for consent, never "${r.decision}"`,
+  );
+  let reason = '';
+  try {
+    reason = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason || '';
+  } catch {
+    reason = r.stdout;
+  }
+  assert.ok(
+    /no secrets, keys or private Dev-Memory files were found/.test(reason),
+    `${message} — the ask must be the publishing-consent prompt, not a secret finding rephrased as ` +
+      `a question: ${reason.slice(0, 200)}`,
   );
 }
 
@@ -259,7 +355,7 @@ test('scan.mjs: allows a push when the tree is clean', () => {
   fs.writeFileSync(path.join(dir, 'app.js'), 'console.log("hello");\n');
   git(['add', 'app.js'], dir);
   const r = runHook('scan.mjs', 'git push', dir);
-  assertStepAside(r, 'must step aside, not approve');
+  assertNotFlagged(r, 'must step aside, not approve');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -294,7 +390,7 @@ test('scan.mjs: does NOT flag ordinary code that merely contains the word token'
   fs.writeFileSync(path.join(dir, 'lib.js'), 'const token = crypto.createHash("sha256");\n');
   git(['add', 'lib.js'], dir);
   const r = runHook('scan.mjs', 'git push', dir);
-  assertStepAside(r, 'must step aside, not approve');
+  assertNotFlagged(r, 'must step aside, not approve');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -534,7 +630,7 @@ test('scan.mjs: does NOT mistake the plugin\'s own lowercase dev-memory SKILL fo
   fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: dev-memory\n---\n# the dev-memory skill\n');
   git(['add', '-f', 'plugins/gru953-studio/skills/dev-memory/SKILL.md'], dir);
   const ok = runHook('scan.mjs', 'git push', dir);
-  assertStepAside(ok, 'the lowercase dev-memory skill must not be treated as the private Dev-Memory folder');
+  assertNotFlagged(ok, 'the lowercase dev-memory skill must not be treated as the private Dev-Memory folder');
   // A REAL capital-D Dev-Memory tracked file must still be caught.
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), '# progress\n');
   git(['add', '-f', 'Dev-Memory/PROGRESS.md'], dir);
@@ -3103,7 +3199,7 @@ test('scan.mjs: with the deliberate opt-in, clean Dev-Memory may be pushed (X214
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'OBJECTIVE.md'), 'my private brief and decisions\n');
   git(['add', '-f', 'Dev-Memory/OBJECTIVE.md'], dir);
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'SHIP-MEMORY-DELIBERATELY'), 'yes\n'); // X214: the opt-in is a named file the owner creates, not a minted token
-  assertStepAside(runHook('scan.mjs', 'git push origin memory', dir), 'must step aside, not approve');
+  assertNotFlagged(runHook('scan.mjs', 'git push origin memory', dir), 'must step aside, not approve');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -5190,7 +5286,7 @@ test('scan.mjs: each secret format and key-file name is caught (2026-07-21 cover
   assert.ok(denies('app.key', 'x\n'), '*.key file');
   // a short AIza-like string is NOT a match (length bound holds)
   const d = mk(); fs.writeFileSync(path.join(d, 'ok.txt'), 'note = "' + 'AIza' + 'short"');
-  assertStepAside(runHook('scan.mjs', 'git push origin main', d), 'a too-short AIza string must not be flagged');
+  assertNotFlagged(runHook('scan.mjs', 'git push origin main', d), 'a too-short AIza string must not be flagged');
   fs.rmSync(d, RM_OPTS);
 });
 
@@ -5687,7 +5783,7 @@ test('scan.mjs: a genuine binary asset with no secret is NOT false-flagged (2026
   fs.writeFileSync(path.join(dir, 'asset.bin'), bytes);
   git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
-  assertStepAside(r, `a genuine binary asset with no secret must not be false-flagged: ${r.stdout}`);
+  assertNotFlagged(r, `a genuine binary asset with no secret must not be false-flagged: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -5807,7 +5903,7 @@ test('scan.mjs: a >4MB genuine binary asset with no secret is NOT false-flagged 
   fs.writeFileSync(path.join(dir, 'model.bin'), big);
   git(['add', '-A'], dir); git(['commit', '-qm', 'x'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
-  assertStepAside(r, `a large genuine binary with no secret must not be false-flagged: ${r.stdout}`);
+  assertNotFlagged(r, `a large genuine binary with no secret must not be false-flagged: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -5942,7 +6038,7 @@ test('scan.mjs: an ordinary binary with no secret is still allowed (no new false
   fs.writeFileSync(path.join(dir, 'img.png'), png);
   git(['add', '-A'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
-  assertStepAside(r, `an ordinary binary must not be flagged: ${r.stdout}`);
+  assertNotFlagged(r, `an ordinary binary must not be flagged: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -6017,7 +6113,7 @@ test('scan.mjs: an ordinary large real binary (>4MB) with no secret is still all
   fs.writeFileSync(path.join(dir, 'video.bin'), crypto.randomBytes(6 * 1024 * 1024));
   git(['add', '-A'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
-  assertStepAside(r, `an ordinary large binary must not be flagged: ${r.stdout}`);
+  assertNotFlagged(r, `an ordinary large binary must not be flagged: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -6252,7 +6348,7 @@ test('scan.mjs: a gitignored secret force-added in a compound command is caught;
   git(['add', '.gitignore'], d2); git(['commit', '-qm', 'ig'], d2);
   fs.writeFileSync(path.join(d2, 'prod.secret'), 'K="' + akia + '"\n'); // ignored, NOT shipped
   fs.writeFileSync(path.join(d2, 'app.js'), 'ok\n'); git(['add', 'app.js'], d2); git(['commit', '-qm', 'app'], d2);
-  assertStepAside(runHook('scan.mjs', 'git push origin main', d2), 'a normal push must not flag a gitignored file that is not being shipped');
+  assertNotFlagged(runHook('scan.mjs', 'git push origin main', d2), 'a normal push must not flag a gitignored file that is not being shipped');
   fs.rmSync(d2, RM_OPTS);
   // (c) scoping: force-adding one harmless file must not scan an unrelated ignored secret
   const d3 = mkTmp('gru-scan-r13-scope-');
@@ -6263,7 +6359,7 @@ test('scan.mjs: a gitignored secret force-added in a compound command is caught;
   fs.writeFileSync(path.join(d3, 'debug.log'), 'nothing secret here\n');
   fs.mkdirSync(path.join(d3, 'node_modules', 'pkg'), { recursive: true });
   fs.writeFileSync(path.join(d3, 'node_modules', 'pkg', 'leak.log'), 'K="' + akia + '"\n');
-  assertStepAside(runHook('scan.mjs', 'git add -f debug.log && git commit -m x && git push origin main', d3), 'force-adding one harmless file must not sweep in an unrelated ignored secret');
+  assertNotFlagged(runHook('scan.mjs', 'git add -f debug.log && git commit -m x && git push origin main', d3), 'force-adding one harmless file must not sweep in an unrelated ignored secret');
   fs.rmSync(d3, RM_OPTS);
 });
 
@@ -6323,7 +6419,7 @@ test('scan.mjs: a force-added gitignored secret whose filename contains a space 
   fs.writeFileSync(path.join(d3, 'debug output.log'), 'nothing secret\n');
   fs.mkdirSync(path.join(d3, 'node_modules', 'pkg'), { recursive: true });
   fs.writeFileSync(path.join(d3, 'node_modules', 'pkg', 'leak.log'), 'K="' + akia + '"\n');
-  assertStepAside(runHook('scan.mjs', 'git add -f "debug output.log" && git commit -m x && git push origin main', d3), 'a quoted force-add of one harmless file must not sweep in unrelated ignored trees');
+  assertNotFlagged(runHook('scan.mjs', 'git add -f "debug output.log" && git commit -m x && git push origin main', d3), 'a quoted force-add of one harmless file must not sweep in unrelated ignored trees');
   fs.rmSync(d3, RM_OPTS);
 });
 
@@ -6350,7 +6446,7 @@ test('scan.mjs: a secret on a non-HEAD local branch is caught for git push --all
   assert.equal(runHook('scan.mjs', 'git push origin side', d1).decision, 'deny', 'pushing a non-checked-out branch by name must scan it');
   fs.rmSync(d1, RM_OPTS);
   const d2 = mk(false);
-  assertStepAside(runHook('scan.mjs', 'git push --all', d2), 'a clean non-HEAD branch must not be false-blocked');
+  assertNotFlagged(runHook('scan.mjs', 'git push --all', d2), 'a clean non-HEAD branch must not be false-blocked');
   fs.rmSync(d2, RM_OPTS);
 });
 
@@ -6378,7 +6474,7 @@ test('scan.mjs: a secret in a commit message (clean file content) is caught (202
   initRepo(d2);
   fs.writeFileSync(path.join(d2, 'feature.txt'), 'clean code\n');
   git(['add', '-A'], d2); git(['commit', '-qm', 'add feature (nothing sensitive)'], d2);
-  assertStepAside(runHook('scan.mjs', 'git push origin main', d2), 'a clean commit message must not be false-flagged');
+  assertNotFlagged(runHook('scan.mjs', 'git push origin main', d2), 'a clean commit message must not be false-flagged');
   fs.rmSync(d2, RM_OPTS);
 });
 
@@ -6395,7 +6491,7 @@ test('scan.mjs: a secret in an annotated-tag message is caught only when the pus
   const d1 = mk();
   assert.equal(runHook('scan.mjs', 'git push origin --tags', d1).decision, 'deny', 'git push --tags must scan annotated-tag messages');
   assert.equal(runHook('scan.mjs', 'git push --follow-tags origin main', d1).decision, 'deny', 'git push --follow-tags must scan annotated-tag messages');
-  assertStepAside(runHook('scan.mjs', 'git push origin main', d1), 'a plain push (no tags shipped) must not scan tag messages');
+  assertNotFlagged(runHook('scan.mjs', 'git push origin main', d1), 'a plain push (no tags shipped) must not scan tag messages');
   fs.rmSync(d1, RM_OPTS);
   // control: a lightweight tag has no message, so --tags allows
   const d2 = mkTmp('gru-scan-r15-lwtag-');
@@ -6403,7 +6499,7 @@ test('scan.mjs: a secret in an annotated-tag message is caught only when the pus
   initRepo(d2);
   fs.writeFileSync(path.join(d2, 'x.txt'), 'clean\n'); git(['add', '-A'], d2); git(['commit', '-qm', 'x'], d2);
   git(['tag', 'v1.0'], d2);
-  assertStepAside(runHook('scan.mjs', 'git push origin --tags', d2), 'a lightweight tag (no message) must not be false-flagged');
+  assertNotFlagged(runHook('scan.mjs', 'git push origin --tags', d2), 'a lightweight tag (no message) must not be false-flagged');
   fs.rmSync(d2, RM_OPTS);
 });
 
@@ -6612,7 +6708,7 @@ test('scan.mjs: Dev-Memory present with real content and correctly gitignored st
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'notes.md'), 'private working notes\n'); // untracked, ignored, never staged
   const r = runHook('scan.mjs', 'git push origin main', dir);
-  assertStepAside(r, `a correctly gitignored Dev-Memory/ must not block the push: ${r.stdout}`);
+  assertNotFlagged(r, `a correctly gitignored Dev-Memory/ must not block the push: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -6675,7 +6771,7 @@ test('scan.mjs: an empty Dev-Memory/ (no files at all) never triggers the gitign
   git(['add', '-A'], dir);
   git(['commit', '-qm', 'init'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
-  assertStepAside(r, `an empty, content-free Dev-Memory/ can never be tracked or shipped by git, so it must not be denied: ${r.stdout}`);
+  assertNotFlagged(r, `an empty, content-free Dev-Memory/ can never be tracked or shipped by git, so it must not be denied: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -7053,7 +7149,7 @@ test('scan.mjs: an unrelated PARENT Dev-Memory/ with no .git of its own does not
   git(['add', '-A'], child);
   git(['commit', '-qm', 'init'], child);
   const r = runHook('scan.mjs', 'git push origin main', child);
-  assertStepAside(
+  assertNotFlagged(
     r,
     `a clean push from a separate child repo must not be denied over an unrelated parent Dev-Memory/ that isn't even a git repository: ${r.stdout}`,
   );
@@ -7546,7 +7642,7 @@ test('scan.mjs: public keys and ordinary files are not swept up by the modern SS
   }
   git(['add', '-A'], dir);
   const r = runHook('scan.mjs', 'git push origin main', dir);
-  assertStepAside(r, `public keys and ordinary files must not be flagged: ${r.stdout}`);
+  assertNotFlagged(r, `public keys and ordinary files must not be flagged: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -8288,11 +8384,31 @@ test('X16: every command hook declares an explicit timeout, and the hooks finish
 test('X1: scan.mjs is veto-only — it never emits an approval on any path', () => {
   // Asserts the DESIGN by reading the source, not one behaviour by probing it,
   // so a future path added to scan.mjs cannot start authorising unnoticed.
-  const src = fs.readFileSync(path.join(HERE, 'scan.mjs'), 'utf8');
+  //
+  // 2026-08-23, X272: this read the WHOLE file, so it matched `authorise(` inside a COMMENT and went
+  // red on a comment explaining why authorise() was deleted. That is the comment-versus-code
+  // blindness this project has found repeatedly — here inside the test guarding the design. Comments
+  // are stripped now: a comment may name a removed function, and code may not call it.
+  //
+  // And the assertion is widened while it is being fixed, because the original was narrower than its
+  // own title. "Never emits an approval" is about the DECISION VALUE, and the only value that
+  // approves is `allow`; `authorise()` was merely the function that used to emit it. `escalate()`
+  // emits `ask`, which prompts the user rather than approving anything, so it is legitimate here and
+  // is deliberately not caught.
+  const raw = fs.readFileSync(path.join(HERE, 'scan.mjs'), 'utf8');
+  const src = raw
+    .split('\n')
+    .filter((l) => !/^\s*(\/\/|\*)/.test(l))
+    .join('\n');
   assert.equal(
     /\bauthorise\s*\(/.test(src),
     false,
-    'scan.mjs must never call authorise(): finding no secrets means it has no objection, which is not the same as approving. Authorisation belongs to gate.mjs and requires a confirmed token.',
+    'scan.mjs must never call authorise(): finding no secrets means it has no objection, which is not the same as approving.',
+  );
+  assert.equal(
+    /permissionDecision['"]?\s*:\s*['"]allow['"]/.test(src),
+    false,
+    'scan.mjs must never emit permissionDecision "allow" by any route — that suppresses the user\'s prompt rather than adding to it (X1).',
   );
 });
 
