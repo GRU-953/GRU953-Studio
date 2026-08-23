@@ -295,7 +295,9 @@ measures this yet; the convention did not exist at all before this date.
 **Per-phase backup (2026-07-19, `checkpoint-commit` skill).** At the end of each
 build phase, once its `quality-gate` is clean and the secret/licence scans pass,
 take a checkpoint: commit the app's code (never `Dev-Memory/`) to a **private**
-work branch and push. This is a progressive offsite backup, not the Publish.
+work branch and push. This is a progressive offsite backup **of the app's code
+only, and only when the user enabled it at the warframe gate and GitHub is
+connected** — not the Publish. `Dev-Memory/` is never included (2026-08-23, X182).
 (2026-08-22, X186-adjacent: this sentence used to end "it is authorised by a
 distinct private-only checkpoint token and can never make anything public".
 Both halves have been untrue since X214 removed the token layer on 2026-08-16 —

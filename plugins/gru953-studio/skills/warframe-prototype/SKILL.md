@@ -62,6 +62,33 @@ Before Plan/Build, the Project Lead shows an `AskUserQuestion` pop-up asking the
 user to approve **both** the warframe and the phased plan together. This gate is
 **blocking**: no real implementation code is written until the user approves.
 
+**Also ask here whether to turn on stage-by-stage backup, and say plainly what it
+does and does not cover (2026-08-23, X182).** `checkpoint-commit`'s step 3 states
+that "the user enables per-phase backup once, at the phased-plan/warframe
+approval — see `warframe-prototype`", and until this paragraph existed **this
+skill never mentioned backup at all**, so the consent that skill relies on was
+collected nowhere. Ask it as its own option in this pop-up, in these terms:
+
+- **What it does:** at the end of each stage, the app's code is committed and
+  pushed to a **private** `development` branch on the user's own GitHub. Nothing
+  becomes public; going public stays a separate, explicit step.
+- **What it does NOT cover — say this, do not imply it:** `Dev-Memory/`, the
+  planning notebook holding every decision, plan and progress record, is
+  `.gitignore`d by design and is **never** copied anywhere. It exists on this
+  computer only. If the machine is lost, the code can be recovered from GitHub and
+  the planning notes cannot. `memory-keeper.md` rule 4 is explicit that an offsite
+  copy of Dev-Memory is "not something this tool does" — apart from rule 5's
+  opt-in cloud persistence, which exists only because a cloud session's local
+  files do not survive container recycling.
+- **If it needs GitHub and GitHub is not connected**, say so at this gate rather
+  than failing at the first phase boundary — with no repository there is no
+  backup, and the honest answer is that the work is on this computer only.
+- **Declining is a normal answer**, not a warning to talk the user out of. It
+  means each phase ends with a local commit and nothing leaves the machine.
+
+Record the answer in `Dev-Memory/decisions/` with the dated approval below, so a
+later phase can tell an unanswered question from a deliberate no.
+
 - Approve → record the approval in `Dev-Memory/decisions/` (dated), then proceed
   to Plan/Build of Phase 1.
 - Change requested → revise the warframe/plan and re-present; never start

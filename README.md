@@ -92,7 +92,10 @@ and how it was proved.
   AI model and effort for each step — spending more only where it genuinely
   matters — and pauses to ask before anything unusually expensive.
 - **🏗️ Grows in safe stages.** The smallest useful version first, then improvements
-  in order — with a private backup of your work after every stage.
+  in order. At the end of each stage, if you have turned the stage-by-stage backup
+  on and connected GitHub, your app's code is saved to your own private repository.
+  Your planning notes are deliberately never copied anywhere — they stay on this
+  computer only, so your own backups still matter for those.
 - **🔒 Safety built in, not bolted on.** Checks for leaked passwords, known
   weaknesses and licence problems run automatically before anything ships;
   publishing is private by default, with a separate, explicit step to make

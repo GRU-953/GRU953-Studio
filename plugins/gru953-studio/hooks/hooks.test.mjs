@@ -7877,6 +7877,12 @@ for (const script of [
   // the gate claimed an existence check it had not made
   'X195-existence-disclosure.mjs',
   // the push-authorisation token layer removed; the secret scan kept and proven still to refuse
+  // 2026-08-23, X182: the product told a non-technical owner "a private backup of your work after
+  // every stage" and "Nothing is lost if work stops here", when the backup is opt-in, needs a
+  // connected GitHub, covers the app's code only, and rested on a consent the warframe pop-up never
+  // actually asked for. Controls F and G stop it being fixed by deleting the feature, or by deleting
+  // the memory-keeper rule the new warnings depend on being true.
+  'X182-backup-claim-overstated.mjs',
   'X214-push-safety-narrowed.mjs',
   // INV4 could not tell a live reference from a record of a deleted one
   'X215-live-versus-historical-reference.mjs',

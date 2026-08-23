@@ -1,6 +1,6 @@
 ---
 name: checkpoint-commit
-description: The per-phase backup — at the end of each build phase, commit the app's code (never Dev-Memory) to the project's `development` branch and push, after the phase's quality gate, secret scan and licence scan pass. Keeps work backed up offsite progressively without weakening the security-first Publish gates or ever making anything public. Use at each phase boundary once the phase is green. The final Publish remains the separate, clean, confirmed release.
+description: The per-phase backup — at the end of each build phase, commit the app's code (never Dev-Memory) to the project's `development` branch and push, after the phase's quality gate, secret scan and licence scan pass. Keeps the app's code backed up offsite progressively — when the user has enabled stage-by-stage backup at the warframe gate and GitHub is connected — without weakening the security-first Publish gates or ever making anything public. Never covers `Dev-Memory/`, which by design never leaves the machine. Use at each phase boundary once the phase is green. The final Publish remains the separate, clean, confirmed release.
 ---
 
 # Checkpoint Commit
@@ -12,7 +12,11 @@ everything to GitHub so everything is properly backed up." Long builds shouldn't
 risk losing a phase of work to a lost machine or a recycled container. This skill
 adds a **per-phase offsite backup** — a commit and push of the app's code to a
 **`development` branch** — while keeping every existing safety guarantee
-intact. Plain-English rule is as set in the
+intact. **Two limits, stated here because the public wording used to omit both
+(2026-08-23, X182):** it happens only if the user turned it on at the warframe
+gate and GitHub is connected, and it covers the app's code only — `Dev-Memory/`
+is `.gitignore`d by design and is never pushed, so the planning notebook is not
+protected by this and never was. Plain-English rule is as set in the
 `operating-charter` skill.
 
 ## What a checkpoint is (and is not)
@@ -62,7 +66,17 @@ intact. Plain-English rule is as set in the
    root (the user enables per-phase backup once, at the phased-plan/warframe
    approval — see `warframe-prototype`; this records that consent for the phase's
    push). **Corrected 2026-08-18 (X226):** this read "The token is TTL-bounded and private-only" — an orphaned tail of the removed layer. There is no token.
-4. Commit with a clear per-phase message and push to the **private working
+4. **First check that there is somewhere to push to, and say so plainly if there
+   is not (2026-08-23, X182).** This skill described a "progressive offsite
+   backup" while never mentioning a remote at all — and nothing in the product
+   creates the project's GitHub repository outside Publish (`gh repo create`
+   appears only in `publish-github` and `first-run`). Publish is the LAST step, so
+   for the whole of a long build — exactly the case this skill exists for — the
+   push had nowhere to go. If no remote is configured, do not report a backup:
+   tell the user in one plain sentence that this phase is committed **on this
+   computer only**, and offer to set up the private repository now. A silent
+   local-only commit reported as a backup is the failure this finding is about.
+5. Commit with a clear per-phase message and push to the **private working
    `development` branch** (never `main`, which carries only released versions —
    see "Two branches, always" below). `scan.mjs` raises no objection because
    the tree is clean; anything unclean fails closed. **Corrected 2026-08-17
@@ -71,7 +85,7 @@ intact. Plain-English rule is as set in the
    2026-08-16 by finding X214, so neither is consulted. Note also that
    `scan.mjs` never *allows* anything — finding no secrets is an absence of
    objection, not an approval (X1), and it is the only push-safety hook left.
-5. Record the checkpoint in `Dev-Memory/SESSION-LOG.md` and the recall index.
+6. Record the checkpoint in `Dev-Memory/SESSION-LOG.md` and the recall index.
 
 ## Reused machinery (no duplication)
 
