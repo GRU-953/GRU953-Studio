@@ -44,7 +44,15 @@
 //   node X281-missing-recall-index.mjs                # asserts the fixed state
 //   node X281-missing-recall-index.mjs --expect-bug   # asserts the defect
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, existsSync, rmdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  cpSync,
+  existsSync,
+  rmdirSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -120,7 +128,9 @@ function fixture(withIndex) {
 {
   const v = verdict(GOLDEN);
   if (v.status !== 'clean') {
-    note(`control C: the golden fixture is no longer clean ("${v.status}") — the fix has a false positive`);
+    note(
+      `control C: the golden fixture is no longer clean ("${v.status}") — the fix has a false positive`,
+    );
   } else {
     console.log('  C  control: the golden fixture ............... clean');
   }
@@ -129,12 +139,16 @@ function fixture(withIndex) {
 // ---- D: control — X120's own half must still hold ------------------------------
 {
   const dir = fixture(true);
-  writeFileSync(join(dir, 'Dev-Memory', 'UNINDEXED-NOTES.md'), '# notes\n\nnot in the index\n', 'utf8');
+  writeFileSync(
+    join(dir, 'Dev-Memory', 'UNINDEXED-NOTES.md'),
+    '# notes\n\nnot in the index\n',
+    'utf8',
+  );
   const v = verdict(dir);
   if (v.status !== 'BLOCKED') {
     note(
       `control D: a file absent from an EXISTING INDEX.md no longer blocks ("${v.status}"). That is ` +
-        'X120\'s own half — the inverse-index check — and splitting the guard must not have cost it',
+        "X120's own half — the inverse-index check — and splitting the guard must not have cost it",
     );
   } else {
     console.log('  D  control: unindexed file, index present .... still BLOCKED');

@@ -41,6 +41,8 @@ import {
   deny,
   escalate,
   sendsCommitsToRemote,
+  resolveScriptIndirection,
+  pipesRemoteCodeIntoAnInterpreter,
   readStdin,
   extractCommand,
   extractCwd,
@@ -537,12 +539,43 @@ function main() {
     }
   }
 
-  if (!isPushCapable(CMD)) {
-    // Not push-capable: nothing to scan. Emit NO decision (X1).
-    stepAside();
-  }
-
+  // 2026-08-24, X5 / X6 / X15 — Phase 3, "escalate instead of guess". PROGRESS.md gated this on
+  // Phase 0's effect being measured first; that measurement was taken on 2026-08-22 (RESIDUALS gap 9).
+  //
+  // Before standing aside, RESOLVE the indirection rather than guessing at it from the command's
+  // wording. `isPushCapable` decides whether `npm run build` might publish by testing the string
+  // against six words (deploy|release|publish|ship|public|visibility), so `npm run deploy` was
+  // scanned and `npm run build` was not — on nothing but the name someone gave the script. Measured
+  // at HEAD before this change, the three commands X5 names — `bash build.sh`, `npm run build`,
+  // `make all` — reached the network with no scan whatever.
+  //
+  // Widening the word list is the move that has already failed eleven times, and X15 says why: you
+  // cannot enumerate what people call their scripts. So the script is READ instead. A resolved script
+  // that does not push stays silent, which is what makes this safe to turn on — it is not a new guess
+  // that can be wrong in a new direction, it is the same question asked of the real content.
   const SESSION_DIR = extractCwd(INPUT) || process.cwd();
+  let indirection = null;
+
+  if (!isPushCapable(CMD)) {
+    indirection = resolveScriptIndirection(CMD, SESSION_DIR);
+    if (indirection === null || !isPushCapable(indirection.text)) {
+      // X6's unresolvable half. `curl … | sh` runs code that does not exist on this machine until the
+      // moment it runs, so no amount of reading finds it, and the ratified architecture — fail closed
+      // to `ask` on anything that cannot be classified — is the only honest answer. Narrow on purpose:
+      // an ask on every pipeline would be the false alarm that gets a guard switched off.
+      if (pipesRemoteCodeIntoAnInterpreter(CMD) && findStudioRoot(SESSION_DIR) !== null) {
+        escalate(
+          'studio scan: this downloads a script from the internet and runs it straight away, so there ' +
+            'is no moment at which anyone — including me — can read what it will do. I cannot tell you ' +
+            'whether it publishes anything, changes your files or sends anything out. If you know and ' +
+            'trust the source, say yes. If you would rather look first, save it to a file, read it, ' +
+            'then run that file.',
+        );
+      }
+      // Not push-capable, and nothing resolvable says otherwise: nothing to scan. NO decision (X1).
+      stepAside();
+    }
+  }
   const STUDIO_ROOT = findStudioRoot(SESSION_DIR);
   if (STUDIO_ROOT === null) {
     // Not a studio project: never interfere.
@@ -1511,11 +1544,25 @@ function main() {
     // anything, and both were being handed a prompt whose text claims "this command sends code out
     // of your machine". Asking a false question is not a small cosmetic fault — it is how a guard
     // earns the reputation that gets it switched off (L5).
-    if (sendsCommitsToRemote(CMD)) {
+    //
+    // 2026-08-24, X5: the RESOLVED text counts as well as the command itself. Without this the hook
+    // was incoherent in a way a user would notice — `git push` asked for consent on a clean tree
+    // while `bash build.sh`, whose script does nothing but push, was silent. The charter's rule is
+    // about publishing, and a script that publishes is publishing.
+    const publishes = sendsCommitsToRemote(CMD)
+      ? null
+      : indirection && sendsCommitsToRemote(indirection.text)
+        ? indirection
+        : undefined;
+    if (publishes !== undefined) {
       escalate(
         'studio scan: no secrets, keys or private Dev-Memory files were found in what this would ' +
-          'ship — so nothing here objects. But this command sends code out of your machine, and your ' +
-          'operating charter says publishing needs your own fresh "yes" every time. Say yes to go ahead.',
+          'ship — so nothing here objects. But ' +
+          (publishes === null
+            ? 'this command sends code out of your machine'
+            : `this runs ${publishes.source}, which sends code out of your machine`) +
+          ', and your operating charter says publishing needs your own fresh "yes" every time. ' +
+          'Say yes to go ahead.',
       );
     }
     return stepAside();

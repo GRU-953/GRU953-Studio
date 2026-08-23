@@ -69,7 +69,9 @@ const problems = [];
 const note = (s) => problems.push(s);
 
 function verdict(root) {
-  const r = spawnSync(process.execPath, [join(HOOKS, 'quality-gate.mjs'), root], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [join(HOOKS, 'quality-gate.mjs'), root], {
+    encoding: 'utf8',
+  });
   try {
     return JSON.parse(r.stdout);
   } catch {
@@ -92,7 +94,9 @@ function fixture(mutate) {
   const v = verdict(GOLDEN);
   const sb = v.satisfiedBy;
   if (v.status !== 'clean') {
-    note(`case A: the golden fixture is not clean ("${v.status}"), so the mitigation cannot be judged here`);
+    note(
+      `case A: the golden fixture is not clean ("${v.status}"), so the mitigation cannot be judged here`,
+    );
   } else if (!sb || typeof sb !== 'object' || Array.isArray(sb)) {
     note(
       'case A: a clean verdict does NOT expose satisfiedBy, so a reader cannot see which row vouched ' +
@@ -101,7 +105,9 @@ function fixture(mutate) {
     );
   } else {
     console.log('  A  a clean verdict exposes satisfiedBy ....... present');
-    const empty = Object.entries(sb).filter(([, rowsFor]) => !Array.isArray(rowsFor) || !rowsFor.length);
+    const empty = Object.entries(sb).filter(
+      ([, rowsFor]) => !Array.isArray(rowsFor) || !rowsFor.length,
+    );
     if (empty.length) {
       note(
         `case B: satisfiedBy names no row for ${empty.map(([k]) => k).join(', ')}, so it reports the ` +
@@ -132,14 +138,18 @@ function fixture(mutate) {
   const reviewRows = sb.review || [];
   if (v.status === 'BLOCKED') {
     // Legitimate outcome IF a future change tightened the match. Say so rather than failing.
-    console.log('  C  the collision ............................. no longer possible (match tightened)');
+    console.log(
+      '  C  the collision ............................. no longer possible (match tightened)',
+    );
   } else if (!reviewRows.length) {
     note(
       'case C: the verdict is clean and satisfiedBy names NO row for the review dimension, so the ' +
         'dimension passed with nothing recorded as having satisfied it',
     );
   } else if (!reviewRows.some((r) => /accessibility/i.test(r))) {
-    console.log(`  C  the collision ............................. not reached (review <- ${JSON.stringify(reviewRows)})`);
+    console.log(
+      `  C  the collision ............................. not reached (review <- ${JSON.stringify(reviewRows)})`,
+    );
   } else {
     console.log(
       `  C  the collision is visible .................. review <- ${JSON.stringify(reviewRows)}`,

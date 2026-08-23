@@ -2071,6 +2071,137 @@ function isConfirmScriptOnly(c) {
     base === 'confirm-memory-persist.mjs'
   );
 }
+// 2026-08-24, X5 / X6 / X15 — Phase 3, "escalate instead of guess".
+//
+// X15 is the architectural finding and it is correct: deciding what a shell command does by
+// pattern-matching its TEXT cannot converge, and twelve audit rounds are the evidence. The proof sits
+// in this very file. `isPushCapable` decides whether `npm run build` might publish by testing the
+// command string against six words — SCRIPT_INDIRECTION_KEYWORDS = deploy|release|publish|ship|
+// public|visibility. So `npm run deploy` is scanned and `npm run build` is not, on nothing but the
+// name someone gave the script. Measured at HEAD: `bash build.sh`, `npm run build` and `make all` —
+// the three commands X5 names — reach the network with no scan at all.
+//
+// Widening the word list is the move that has failed eleven times. You cannot enumerate what people
+// call their scripts. THE ANSWER IS TO STOP GUESSING AND READ THE SCRIPT. That converges, because it
+// replaces an unbounded guess about naming with a bounded fact about content.
+//
+// resolveScriptIndirection() takes a command and a working directory and returns the TEXT the command
+// would actually run, for the three indirections that are resolvable from disk:
+//
+//   bash x.sh / sh x.sh / node x.mjs / python x.py / ./x.sh   ->  the file's contents
+//   npm|pnpm|yarn run <name>                                  ->  package.json scripts[<name>]
+//   make <target>                                             ->  that target's recipe lines
+//
+// The caller then applies the ordinary predicates to that text. A resolved script that does not push
+// is silent, exactly as before, so this adds NO false alarms — which is the property that makes it
+// safe to turn on. It is not a guess that might be wrong in either direction; it is the same question
+// asked of the real content.
+//
+// DELIBERATE LIMITS, disclosed rather than hidden:
+//   * ONE LEVEL. A script that runs another script is not followed. Recursion here would need a cycle
+//     guard and a depth budget inside a PreToolUse hook, and the honest first version is bounded.
+//   * Local files only, resolved against the command's own cwd, capped at MAX_RESOLVE_BYTES.
+//   * No shell semantics. Variables, globs and conditionals inside the script are not evaluated; the
+//     text is read, not interpreted. This finds a push that is written down. It does not find one
+//     assembled at run time — and nothing that reads text ever will, which is X15 restated rather
+//     than solved.
+const MAX_RESOLVE_BYTES = 256 * 1024;
+
+function readCapped(file) {
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile() || st.size > MAX_RESOLVE_BYTES) return null;
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+export function resolveScriptIndirection(rawC, cwd) {
+  if (!rawC || !cwd) return null;
+  const c = normalizeForPushCheck(rawC);
+  const base = String(cwd);
+
+  // ---- an interpreter, or ./, invoked on a path -----------------------------------
+  const direct = new RegExp(
+    `(?:^|[^A-Za-z0-9_])(?:\\.\\/|(?:ba|z)?sh[ \\t]+|node[ \\t]+|python3?[ \\t]+|ruby[ \\t]+|perl[ \\t]+)([^ \\t;&|'"]+\\.(?:sh|bash|zsh|mjs|cjs|js|py|rb|pl))${LEXICAL_BOUNDARY}`,
+    'i',
+  ).exec(c);
+  if (direct) {
+    const rel = direct[1].replace(/^\.\//, '');
+    const text = readCapped(path.resolve(base, rel));
+    if (text !== null) return { kind: 'script', source: rel, text };
+  }
+
+  // ---- a package.json script -----------------------------------------------------
+  const run = /(?:^|[^A-Za-z0-9_])(?:npm|pnpm|yarn)[ \t]+run[ \t]+([A-Za-z0-9_:.-]+)/i.exec(c);
+  if (run) {
+    const raw = readCapped(path.resolve(base, 'package.json'));
+    if (raw !== null) {
+      try {
+        const pkg = JSON.parse(raw);
+        const body = pkg && pkg.scripts && pkg.scripts[run[1]];
+        if (typeof body === 'string') {
+          return { kind: 'npm-script', source: `package.json scripts.${run[1]}`, text: body };
+        }
+      } catch {
+        /* an unparseable package.json resolves to nothing, and the caller stays as it was */
+      }
+    }
+  }
+
+  // ---- a Makefile target ---------------------------------------------------------
+  const mk = /(?:^|[^A-Za-z0-9_])make[ \t]+([A-Za-z0-9_.-]+)/i.exec(c);
+  if (mk) {
+    for (const name of ['Makefile', 'makefile', 'GNUmakefile']) {
+      const raw = readCapped(path.resolve(base, name));
+      if (raw === null) continue;
+      // The recipe is the indented block following "<target>:". Tabs are the real delimiter, but
+      // spaces are accepted too so a space-indented Makefile is not silently unresolvable.
+      const lines = raw.split(/\r?\n/);
+      const at = lines.findIndex((l) =>
+        new RegExp(`^${mk[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \t]*:`).test(l),
+      );
+      if (at < 0) continue;
+      const recipe = [];
+      for (let i = at + 1; i < lines.length; i += 1) {
+        if (/^[\t ]+\S/.test(lines[i])) recipe.push(lines[i].trim());
+        else if (lines[i].trim() === '') continue;
+        else break;
+      }
+      if (recipe.length)
+        return { kind: 'make', source: `${name} target ${mk[1]}`, text: recipe.join('\n') };
+    }
+  }
+
+  return null;
+}
+
+// 2026-08-24, X6. The half of X6 that CANNOT be resolved, and therefore the one place where the
+// ratified architecture — "fail closed to ask on anything the tool cannot classify" — is the only
+// honest answer.
+//
+// `curl https://… | sh` runs code that does not exist on this machine until the moment it runs. No
+// amount of reading finds it. Measured at HEAD, both `cat s.sh | bash` and `curl -s … | sh` are
+// classified non-push and reach the network with no scan: the pipe form was never modelled.
+//
+// The local pipe (`cat s.sh | bash`) IS resolvable in principle and is left to a later pass; this
+// covers the network form, where asking costs almost nothing because fetching a script and executing
+// it unread is both rare in ordinary work and the exact idiom that cannot be checked any other way.
+// Keeping the rule this narrow is deliberate: an ask on every pipeline would be the false alarm that
+// gets a guard switched off (L5), and there is no version of that which is worth having.
+export function pipesRemoteCodeIntoAnInterpreter(rawC) {
+  if (!rawC) return false;
+  const c = normalizeForPushCheck(rawC);
+  const FETCH = /(?:^|[^A-Za-z0-9_])(?:curl|wget|fetch|http|https)(?:[ \t]|$)/i;
+  const INTERP = /\|[ \t]*(?:sudo[ \t]+)?(?:(?:ba|z)?sh|node|python3?|ruby|perl)(?:[ \t]|;|$)/i;
+  if (!INTERP.test(c)) return false;
+  // The fetch must be on the LEFT of the pipe that feeds the interpreter, so `sh -c "curl …"` and a
+  // command that merely mentions curl after the pipe are not swept in.
+  const at = c.search(INTERP);
+  return FETCH.test(c.slice(0, at < 0 ? c.length : at));
+}
+
 // 2026-08-23, X272. A NARROW companion to isPushCapable below, for exactly one purpose: deciding
 // whether a command actually SENDS COMMITS TO A REMOTE, so scan.mjs can ask for the publishing
 // consent the operating charter requires.

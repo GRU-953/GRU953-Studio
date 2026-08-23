@@ -7825,9 +7825,26 @@ test('X1: no hook auto-approves a dangerous non-push command — the permission 
     'npm install -g typescript',
   ]) {
     for (const hook of ['scan.mjs']) {  // gate.mjs has not existed since X214
-      assertStepAside(
-        runHook(hook, cmd, dir),
-        `${hook} must not approve "${cmd}" — it has no basis to skip the permission prompt`,
+      // 2026-08-24, X6: this asserted literal SILENCE, and `curl … | sh` now returns `ask`.
+      //
+      // The repair is the one this test already made for `dd if=/dev/zero of=/dev/sda`, in its own
+      // comment a few lines above: "denying is not approving — this test is named for AUTO-APPROVAL,
+      // see its title." Asking is not approving either: `ask` does not skip the permission prompt,
+      // it FORCES one, which is the opposite of what this test exists to catch. So the assertion is
+      // now what the title always claimed — never `allow`.
+      //
+      // `deny` stays rejected here on purpose: every command in this list is ordinary non-push work
+      // the studio has no business blocking.
+      const r = runHook(hook, cmd, dir);
+      assert.ok(
+        r.decision === null || r.decision === 'ask',
+        `${hook} may stay silent or ask about "${cmd}", but it has no basis to skip the permission ` +
+          `prompt or to refuse. Got ${r.decision}: ${r.stdout}`,
+      );
+      assert.notEqual(
+        r.decision,
+        'allow',
+        `${hook} must never emit "allow" for "${cmd}" — that SUPPRESSES the user's prompt (X1)`,
       );
     }
   }
@@ -7921,6 +7938,12 @@ for (const script of [
   // memory files and no INDEX.md returned clean, because checkIndex and checkIndexCoversFiles each
   // skipped on the ground that the other reported it. X119 is a DISCLOSED residual, and its
   // reproduction asserts the mitigation that shipped rather than a fix that deliberately did not.
+  // 2026-08-24, Phase 3 — X5, X6 and X15 answered together, because they are one architecture.
+  // X15 says pattern-matching a command's text cannot converge; the six-keyword
+  // SCRIPT_INDIRECTION_KEYWORDS list was the proof. So the script is READ instead: bash x.sh ->
+  // the file, npm run x -> package.json scripts.x, make x -> the target's recipe. Controls D, E, F
+  // and H hold the no-false-alarm line, which is what makes it safe to switch on.
+  'X5-X6-X15-resolve-not-guess.mjs',
   'X281-missing-recall-index.mjs',
   'X119-dimension-evidence-binding.mjs',
   'X41-X42-X44-peer-tool-targets.mjs',
