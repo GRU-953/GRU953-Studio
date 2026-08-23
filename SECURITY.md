@@ -1001,7 +1001,9 @@ What reduces it here, and what does not:
   (launchd, Task Scheduler, or a systemd user timer falling back to cron), writing
   only inside the user's own account. It needs no administrator rights.
 - **Residual:** a scheduled job runs `git pull --rebase --autostash` in the
-  plugin's checkout without a person present. It cannot make anything public and
+  plugin's checkout without a person present. **That boundary holds in THIS source; it did NOT
+  hold in the published 6.0.3 or 6.1.0 — see the 2026-08-24 currency update at the end of this
+  document, finding X241, where the updater walked up to any `.git` above itself.** It cannot make anything public and
   cannot push, because `git pull` does not push — but it does mean code can
   change on disk while you are away. **Corrected 2026-08-17 (X219):** this read
   "`gate.mjs` still requires a recorded confirmation token for that", naming a
@@ -1053,3 +1055,63 @@ What reduces it here, and what does not:
   ancestor containing a `.git`, which is the plugin's checkout only when the
   plugin is not nested inside another repository. If it is, that outer repository
   is what gets rebased and autostashed.
+
+## Currency update (2026-08-24) — a defect in the PUBLISHED versions, disclosed while it waits for a release
+
+This section exists because the owner chose to **disclose and wait** rather than cut a corrective
+release, and a decision to wait is only honest if the thing being waited on is written down where a
+user would look.
+
+**What is affected:** every published version, up to and including **6.1.0** — the current release —
+and **6.0.3**, the version the Homebrew tap installs. This is finding **X241**.
+
+**What it does.** `hooks/auto-update.mjs` finds the repository it should act on by walking *upwards*
+from its own location until it meets any `.git` directory, and using that. In the published versions
+that function (`findGitRoot`) has no test that the directory it lands on is actually the plugin's.
+Both published tags then run `git pull --rebase --autostash` against it. Verified by reading the
+published code, not the current source:
+
+```
+git show v6.0.3:plugins/gru953-studio/hooks/auto-update.mjs   # findGitRoot walks up to any .git
+git show v6.1.0:plugins/gru953-studio/hooks/auto-update.mjs   # 4 occurrences of pull --rebase / autostash
+```
+
+**Why that matters on an installed copy.** The directory above an installed plugin is not the
+plugin's project — it is whatever of *your own* work happens to sit above it. So the updater can
+rebase your repository and stash your uncommitted changes. `--autostash` reapplies them afterwards;
+if that reapplication conflicts, you are left in a state that is genuinely hard to unpick.
+
+**This corrects a sentence elsewhere in this document.** The residual note under "The scheduled daily
+update" says the job runs a pull "in the plugin's checkout". That is true of the current source, where
+X241 is fixed and the repository is checked before use. **It was not true of the published versions**,
+and anyone reading it there would have been reassured by a boundary that was not being enforced.
+
+**How it can be reached in 6.1.0.** Three routes, all checked:
+
+| Route | Needs you to act? |
+| :-- | :-- |
+| `gru953-studio update` | yes — you typed it |
+| The scheduled daily job | yes — it is off unless you turn it on |
+| **`/studio-update` invoked by the assistant itself** | **no** |
+
+The third is the one that does not need you: `commands/studio-update.md` in 6.1.0 carries no
+`disable-model-invocation` flag, so the assistant could decide to update on your behalf. That flag is
+present in the current source.
+
+**What is NOT affected, stated so the disclosure is not read as worse than it is.** Findings X223 and
+X227 concern the catastrophic-command guard — the part that refuses things like `rm -rf /`. **That
+guard is in neither published version** (`git show v6.1.0:…/scan.mjs | grep -c catastrophic` returns
+0, as does 6.0.3); it was built afterwards. A defect in an unshipped feature reaches nobody. What the
+published versions have instead is *no* such guard, which is finding **X39** and was already disclosed
+above before the release.
+
+**What to do if you are running 6.0.3 or 6.1.0.** Either leave the scheduled job off, which is the
+default, and run updates only when you choose to — or, if you would rather not run the shipped updater
+at all, update by reinstalling rather than by `gru953-studio update`.
+
+**Why no corrective release yet.** The fix exists and is committed, along with roughly 115 others, but
+this project's own release requirements (R19, an independent code review by someone other than the
+author; R20, continuous integration green on every platform claimed) are not yet satisfied for that
+work. Shipping the fix for a Critical with less scrutiny than the code that caused it would lower the
+standard rather than raise it. The defect is therefore disclosed here and fixed in the release that can
+meet those requirements honestly.
