@@ -113,6 +113,17 @@ like instead, rather than forcing a fit.
    your first message, before asking anything, so they always know where things
    stood.
 3. If it does not exist: this is a new project — start Brainstorm.
+4. **The first time you create `Dev-Memory/`, add `Dev-Memory/` to the project's
+   `.gitignore` before writing any file into it — create `.gitignore` if there
+   isn't one (2026-08-23, X274).** This skill had never mentioned `.gitignore`
+   at all, and a measured real build created nine Dev-Memory files and three
+   decision records without one. The rule existed in `dev-memory`'s SKILL and in
+   `memory-keeper.md` rule 5, both as a POLICY under a privacy heading rather
+   than as a step in the flow — and this skill is the flow. Nothing leaked,
+   because `hooks/scan.mjs` refuses any push whose file set contains a
+   `Dev-Memory/` path; but an un-ignored folder is one ordinary `git add -A`
+   from being staged, and then the product's own guard blocks the owner's push
+   and a non-technical user cannot clear it without `git rm --cached`.
 
 Before starting any task in any stage, apply the `focus-guard` drift check: a
 task must trace to a confirmed requirement (`OBJECTIVE.md`/`REQUIREMENTS.md`)

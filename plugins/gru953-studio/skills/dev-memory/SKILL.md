@@ -30,7 +30,23 @@ silently drifted apart again after the Round 9 fix above.)
 
 ## The files
 
-All live under `Dev-Memory/` in the project's working directory:
+All live under `Dev-Memory/` in the project's working directory.
+
+**Before writing ANY of them, add `Dev-Memory/` to the project's `.gitignore` — create the file if
+there isn't one. This is step zero, not a tidy-up afterwards (2026-08-23, X274).**
+
+That rule already existed, further down this file under "Local-only, and never shipped", and
+`agents/memory-keeper.md` rule 5 says the same: `.gitignore` it "from the moment it is created". It
+was stated as a POLICY in a section about privacy, and not as an ACTION at the point the folder gets
+made — so it was skipped. Measured, not supposed: a real build on 2026-08-23 created all nine
+Dev-Memory files and three decision records, and wrote no `.gitignore` at all.
+
+Why it matters even though nothing leaked. `hooks/scan.mjs` still refuses any push whose file set
+contains a `Dev-Memory/` path, so the privacy guarantee held. But an un-ignored folder is one
+ordinary `git add -A` away from being staged, and at that point the product's own guard correctly
+blocks the user's push — leaving a non-technical owner stuck behind a refusal they cannot clear
+without `git rm --cached`. Skipping step zero manufactures the exact condition the guard exists to
+refuse, which is this project's L5 seen from the other side.
 
 | File | What it holds |
 | :-- | :-- |
