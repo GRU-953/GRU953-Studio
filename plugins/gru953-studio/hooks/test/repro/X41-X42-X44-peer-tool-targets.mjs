@@ -18,8 +18,12 @@
 //   X42  The AGENTS.md convention reads a **root** `AGENTS.md`. Measured: after init there is NO
 //        root `AGENTS.md`; the content is at `.agents/AGENTS.md`, which nothing reads.
 //
-//   X44  `.clinerules` is written as a 20-line FILE. Cline's current convention is a `.clinerules`
-//        DIRECTORY of rule files. `.cursorrules` is also written, and that form is deprecated.
+//   X44  `.clinerules` is written as a 20-line FILE where Cline's primary form is a `.clinerules`
+//        DIRECTORY. **Half-withdrawn 2026-08-23 on the primary source:** dossier 06 claim C21 says
+//        the legacy single file "still works but is converted into the directory on load", so this
+//        one is NOT broken — it is a legacy form that auto-migrates. And it could not be fixed
+//        additively regardless: a path cannot be both a file and a directory. `.cursorrules` is
+//        also still written in its deprecated form, which Cline itself auto-detects.
 //
 // WHY THIS IS THE SHAPE THAT MATTERS: every one of these fails SILENTLY and looks like success.
 // `init` prints `[CREATED]` for each, exits 0, and `doctor` reports everything in place. A user
@@ -30,7 +34,7 @@
 //   case                                                    required
 //   A  `.roomodes` is readable as structured data            parses as JSON (or YAML)
 //   B  a ROOT AGENTS.md exists                               the convention's own location
-//   C  `.clinerules` is a directory                          the current convention
+//   C  `.clinerules` is in a form Cline reads             file (legacy, migrated) or directory
 //   D  control: every other target is still written          not fixed by deletion
 //   E  control: re-running init does not duplicate content   the idempotence X-finding above it
 //
@@ -40,10 +44,10 @@
 // running it three times was reproduced as a defect, so any change to how these files are written
 // must not reintroduce that.
 //
-// STATUS: X41, X42 and X44 are OPEN. This reproduction therefore REPRODUCES on a plain run, and is
-// deliberately NOT in the harness list in hooks.test.mjs — the same treatment, for the same stated
-// reason, as X35-name-collision.mjs. Fixing any of these changes what the installer writes for
-// existing users, so it needs the owner's own yes first.
+// STATUS: fixed 2026-08-23 with the owner's yes ("fix all three, add-only"), so this now asserts the
+// FIXED state and is in the harness list. Nothing existing was removed: the `.roomodes` prose is
+// replaced only because nothing had ever read it, the root `AGENTS.md` is an addition alongside
+// `.agents/AGENTS.md`, and `.clinerules` is untouched for the reason given in case C.
 //
 // NOTHING IS INSTALLED AND NO TOOL IS RUN. The real init function is called with an explicit
 // throwaway projectRoot; no editor, no global state and no real project is touched.
@@ -129,19 +133,39 @@ try {
     }
   }
 
-  // ---- C: .clinerules should be a directory --------------------------------------
+  // ---- C: .clinerules must be in a form Cline actually reads ----------------------
+  //
+  // 2026-08-23, CORRECTED, and the correction is the point. This case originally REQUIRED a
+  // `.clinerules` directory, on the strength of X44's statement that the directory is the current
+  // convention. Re-reading the primary source behind that finding changed the answer: dossier 06
+  // claim C21, VERIFIED-PRIMARY from Cline's own rules documentation fetched 2026-08-15, says the
+  // directory is the primary form AND that a legacy single `.clinerules` file "still works but is
+  // converted into the directory on load".
+  //
+  // So the single file is NOT broken, unlike `.roomodes`. It works, by auto-migration. That makes
+  // this a modernisation rather than a defect — and it could not be done additively anyway, because
+  // a path cannot be both a file and a directory: `.clinerules` and `.clinerules/` are the same
+  // name. The instruction was to fix all three WITHOUT removing anything existing, and for this one
+  // those two requirements are mutually exclusive, so the working legacy file is kept.
+  //
+  // This case therefore asserts what actually matters — that `.clinerules` exists in one of the two
+  // forms Cline reads. If it is ever converted to a directory, this still passes.
   {
     const p = path_('.clinerules');
     if (!existsSync(p)) {
-      note('case C: `.clinerules` was not written at all');
-    } else if (!statSync(p).isDirectory()) {
-      const n = readFileSync(p, 'utf8').split('\n').length;
-      note(
-        `case C: \`.clinerules\` is a ${n}-line FILE. Cline's current convention is a \`.clinerules\` ` +
-          'DIRECTORY holding rule files',
-      );
+      note('case C: `.clinerules` was not written at all, so Cline gets nothing');
+    } else if (statSync(p).isDirectory()) {
+      const n = readdirSync(p).length;
+      console.log(`  C  .clinerules ............................... a directory (${n} file(s))`);
     } else {
-      console.log('  C  .clinerules ............................... a directory');
+      const n = readFileSync(p, 'utf8').split('\n').length;
+      if (n < 2) {
+        note(`case C: \`.clinerules\` is an empty or near-empty file (${n} line(s))`);
+      } else {
+        console.log(
+          `  C  .clinerules ............................... legacy file, ${n} lines — Cline migrates it`,
+        );
+      }
     }
   }
 

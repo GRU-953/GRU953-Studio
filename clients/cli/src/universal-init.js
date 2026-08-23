@@ -214,6 +214,76 @@ function writeManagedBlock(fullPath, content, commentStyle) {
     return 'APPENDED';
 }
 
+// 2026-08-23, X41. `.roomodes` was written as markdown prose behind `<!-- ... -->` markers, and Roo
+// Code parses it as STRUCTURED DATA (YAML first, JSON accepted) containing a `customModes` array.
+// Verified primary source, dossier 06 claim C26, from Roo Code's own custom-modes documentation
+// fetched 2026-08-15: "Edit the `.roomodes` file (which can be YAML or JSON) in your project root."
+// So the file had never defined a mode: `init` printed `[CREATED] .roomodes` and exited 0 while the
+// target did nothing at all. Measured on a stranger install 2026-08-23 — `JSON.parse` rejects the
+// old output with "Unexpected token '<'".
+//
+// JSON, not YAML, deliberately. Both are accepted by Roo Code, and JSON is the one this project can
+// VERIFY with no dependency: there is no YAML parser available here, so a YAML target could only be
+// eyeballed, and "it looks like valid YAML" is exactly the sort of unverifiable claim this programme
+// keeps finding. `JSON.parse` either succeeds or it does not.
+//
+// The consequence is that the marker mechanism cannot be used — JSON has no comments — so this
+// merges STRUCTURALLY instead, which is the same principle X244 applied to `.aider.conf.yml`: never
+// corrupt a structured file the user owns. A user's own custom modes are preserved and only the
+// entry carrying our own slug is replaced, so running init twice is a no-op.
+const ROOMODE_SLUG = 'gru953-studio';
+
+function roomodeEntry() {
+    return {
+        slug: ROOMODE_SLUG,
+        name: 'GRU953-Studio Project Lead',
+        roleDefinition: UNIVERSAL_PROMPT.trim(),
+        groups: ['read', 'edit', 'command'],
+    };
+}
+
+function writeRoomodes(fullPath) {
+    const entry = roomodeEntry();
+    const render = (doc) => JSON.stringify(doc, null, 2) + '\n';
+
+    if (!fs.existsSync(fullPath)) {
+        fs.writeFileSync(fullPath, render({ customModes: [entry] }), 'utf8');
+        return 'CREATED';
+    }
+
+    const raw = fs.readFileSync(fullPath, 'utf8');
+    let doc;
+    try {
+        doc = JSON.parse(raw);
+    } catch {
+        doc = null;
+    }
+
+    // Not JSON. If it is OUR OWN old prose output — it carries the marker and no customModes key —
+    // then replacing it loses nothing, because nothing has ever read it. Anything else is the user's
+    // (or valid YAML we must not clobber), so it is named and left exactly as it is.
+    if (doc === null) {
+        if (/GRU953-STUDIO:BEGIN/.test(raw) && !/customModes/.test(raw)) {
+            fs.writeFileSync(fullPath, render({ customModes: [entry] }), 'utf8');
+            return 'REPLACED';
+        }
+        return { status: 'CONFLICT', why: 'it is not readable as JSON, so it is either YAML or something hand-written' };
+    }
+    // `typeof [] === 'object'`, so the array check is not redundant.
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        return { status: 'CONFLICT', why: 'it is valid JSON but not an object, so there is nowhere to put a mode' };
+    }
+
+    const modes = Array.isArray(doc.customModes) ? doc.customModes : [];
+    const theirs = modes.filter(
+        (m) => !(m && typeof m === 'object' && !Array.isArray(m) && m.slug === ROOMODE_SLUG),
+    );
+    const out = render({ ...doc, customModes: [...theirs, entry] });
+    if (out === raw) return 'SKIPPED';
+    fs.writeFileSync(fullPath, out, 'utf8');
+    return theirs.length === modes.length ? 'APPENDED' : 'REPLACED';
+}
+
 function initializeUniversalRules(projectRoot = process.cwd()) {
     console.log('Initializing GRU953-Studio rules for all platforms...');
 
@@ -221,9 +291,15 @@ function initializeUniversalRules(projectRoot = process.cwd()) {
         { file: '.cursorrules', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
         { file: '.windsurfrules', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
         { file: '.clinerules', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
-        { file: '.roomodes', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
+        { file: '.roomodes', writer: writeRoomodes },
         { file: '.aider.conf.yml', content: AIDER_CONFIG, commentStyle: 'yaml' },
         { file: '.github/copilot-instructions.md', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
+        // 2026-08-23, X42. The AGENTS.md convention reads a file at the project ROOT. Only
+        // `.agents/AGENTS.md` was ever written, which nothing reads. Both are written now rather
+        // than moving it: `.aider.conf.yml`'s `read:` list and UNIVERSAL_PROMPT itself point at the
+        // `.agents/` path, so removing it would break two live references, and an existing project
+        // may reference it too.
+        { file: 'AGENTS.md', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
         { file: '.agents/AGENTS.md', content: UNIVERSAL_PROMPT, commentStyle: 'html' },
         // 2026-08-10 (operating charter). The unabridged charter, for any host
         // that reads project files but cannot load a Claude skill. Referenced by
@@ -242,13 +318,15 @@ function initializeUniversalRules(projectRoot = process.cwd()) {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        const result = writeManagedBlock(fullPath, target.content, target.commentStyle);
+        const result = target.writer
+            ? target.writer(fullPath)
+            : writeManagedBlock(fullPath, target.content, target.commentStyle);
         // X244: a CONFLICT is not a failure of this command and not a silent skip either — it is a
         // file we deliberately did not touch, and the user is the only one who can decide what
         // their own configuration should say. So it is named, the reason is given in plain words,
         // and the exact lines they would need are printed for them to paste if they want them.
         if (result && typeof result === 'object' && result.status === 'CONFLICT') {
-            conflicts.push({ file: target.file, keys: result.keys });
+            conflicts.push({ file: target.file, keys: result.keys, why: result.why });
             console.log(`[UNCHANGED] ${target.file} — left exactly as it was; see the note below`);
         } else {
             console.log(`[${result}] ${target.file}`);
@@ -258,6 +336,24 @@ function initializeUniversalRules(projectRoot = process.cwd()) {
     if (conflicts.length) {
         console.log('');
         for (const c of conflicts) {
+            // 2026-08-23, X41. The sentence below is written for a YAML key clash and is simply wrong
+            // for a structured file we could not read at all — it printed `.roomodes already sets
+            // "this file is not readable as JSON"`. A conflict that explains itself badly is a
+            // conflict the user cannot act on, so the two cases are now separate.
+            if (c.why) {
+                console.log(
+                    `${c.file} was left exactly as it was, because ${c.why}. GRU953-Studio only ` +
+                        'edits this file by adding or replacing its own entry inside a JSON ' +
+                        '`customModes` list, and it will not overwrite a file it cannot read — that ' +
+                        'would throw away modes you may have written yourself.',
+                );
+                console.log(
+                    'If you want the studio available as a Roo Code mode, add an entry with the slug ' +
+                        `"${ROOMODE_SLUG}" to your own customModes list, or move this file aside and ` +
+                        'run the command again.',
+                );
+                continue;
+            }
             console.log(
                 `${c.file} already sets ${c.keys.map((k) => `"${k}"`).join(', ')}, so nothing was ` +
                     'written to it. Adding a second copy of that setting would make the file invalid, ' +

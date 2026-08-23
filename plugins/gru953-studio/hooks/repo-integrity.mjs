@@ -965,6 +965,11 @@ async function checkHostRuleFiles() {
       '.roomodes',
       '.aider.conf.yml',
       '.github/copilot-instructions.md',
+      // 2026-08-23, X42: the AGENTS.md convention reads a ROOT file, and only `.agents/AGENTS.md`
+      // was ever written — so nothing consumed it. The generator now writes both, and the new one
+      // is listed here for the same reason as its siblings: a generated file with no committed
+      // reference copy is a generated file nothing watches for drift.
+      'AGENTS.md',
       '.agents/AGENTS.md',
       // 2026-08-10 (operating charter): the unabridged charter this generator
       // now also writes, for a host that reads project files but cannot load a

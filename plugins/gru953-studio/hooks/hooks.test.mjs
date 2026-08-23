@@ -7867,13 +7867,13 @@ for (const script of [
   // by design. That exclusion is recorded here rather than left as a silent gap, because
   // a silent gap is exactly how these seven went missing.
   //
-  // 2026-08-23: X41-X42-X44-peer-tool-targets.mjs is absent for the SAME reason. It measures
-  // three OPEN findings — `.roomodes` written as prose a tool reads as structured data, no root
-  // `AGENTS.md`, `.clinerules` written as a file where the convention is a directory — all three
-  // first measured on a stranger install (npm pack, clean prefix, `init` in an empty folder:
-  // eight files [CREATED], exit 0, three of them inert). Run it with `--expect-bug` and it
-  // passes today. Fixing any of the three changes what the installer writes for existing users,
-  // so it waits for the owner's own yes rather than being quietly changed.
+    // 2026-08-23: X41-X42-X44-peer-tool-targets.mjs measures the three peer-tool files that init
+    // reported as [CREATED] while the tools they target could not read them — `.roomodes` written
+    // as prose where Roo Code parses structured data, no root `AGENTS.md`, and `.clinerules` as a
+    // single file. All three were first measured on a stranger install. Fixed add-only the same
+    // day with the owner's yes, so it is in the list above and is no longer excluded. Its case C
+    // accepts EITHER `.clinerules` form: the primary source says the legacy file auto-migrates,
+    // and a path cannot be both a file and a directory.
   // a crash and a block were indistinguishable, so a shipped ReferenceError passed a green suite
   'X188-crash-is-not-a-verdict.mjs',
   // a graph section ended early; an index row missing a cell was skipped in silence
@@ -7890,6 +7890,7 @@ for (const script of [
   // connected GitHub, covers the app's code only, and rested on a consent the warframe pop-up never
   // actually asked for. Controls F and G stop it being fixed by deleting the feature, or by deleting
   // the memory-keeper rule the new warnings depend on being true.
+  'X41-X42-X44-peer-tool-targets.mjs',
   'X182-backup-claim-overstated.mjs',
   'X214-push-safety-narrowed.mjs',
   // INV4 could not tell a live reference from a record of a deleted one
@@ -8301,10 +8302,6 @@ test('X207: every reproduction on disk is run by this harness, or excluded by na
     // true on 2026-08-17 when the command was renamed to /studio-start, and nobody noticed for five
     // days, so it ran nowhere. That is exactly X207. An exclusion needs re-reading whenever the thing
     // it excuses changes, which is why this map now carries dates.
-    [
-      'X41-X42-X44-peer-tool-targets.mjs',
-      "2026-08-23: excluded from the TWO-DIRECTION contract because all three findings it measures are OPEN, so the fixed direction legitimately fails; it reproduces under --expect-bug, which is the direction that is true today. X41 `.roomodes` written as prose a tool reads as structured data, X42 no root `AGENTS.md`, X44 `.clinerules` written as a file where the convention is a directory -- all three first measured on a stranger install (npm pack, clean prefix, init in an empty folder: eight files CREATED, exit 0, three of them inert). Fixing any of them changes what the installer writes for existing users, so it waits for the owner's yes. RE-READ THIS the moment any one is fixed: X35's exclusion outlived its reason by five days and ran nowhere, which is X207 itself.",
-    ],
     [
       'X234-enumerator-reconciliation.mjs',
       'a reconciliation check, not a defect reproduction: its --expect-bug direction has no legitimate failing state, and it is run by its own test below',
