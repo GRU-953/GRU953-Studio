@@ -2278,7 +2278,7 @@ test('traceability-check.mjs: a bolded "**T1**" task-id reference in the Tasks c
 // ---------------------------------------------------------------------------
 test('memory-integrity.mjs: no Dev-Memory is a no-op, exit 0', () => {
   const dir = mkTmp('gru-mi-nostudio-');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.code, 0);
   assert.equal(r.json.status, 'not a studio project');
   fs.rmSync(dir, RM_OPTS);
@@ -2287,7 +2287,7 @@ test('memory-integrity.mjs: no Dev-Memory is a no-op, exit 0', () => {
 test('memory-integrity.mjs: absent INDEX/GRAPH is clean (nothing to validate)', () => {
   const dir = mkTmp('gru-mi-empty-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean');
   fs.rmSync(dir, RM_OPTS);
 });
@@ -2297,7 +2297,7 @@ test('memory-integrity.mjs: an INDEX row pointing at a missing file is a stale e
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Gone | src/gone.js | deleted | x |\n| Note | (conceptual, not a path) | y | z |\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED');
   assert.ok(r.json.problems.some((p) => /src\/gone\.js/.test(p)));
   assert.ok(!r.json.problems.some((p) => /conceptual/.test(p)), 'a non-path cell must not be treated as a stale file');
@@ -2309,7 +2309,7 @@ test('memory-integrity.mjs: a GRAPH link to an undefined node is dangling', () =
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] task: a {tags: x}\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n- T1 depends-on T9\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED');
   assert.ok(r.json.problems.some((p) => /undefined node "T9"/.test(p)));
   fs.rmSync(dir, RM_OPTS);
@@ -2323,7 +2323,7 @@ test('memory-integrity.mjs: a well-formed graph + index is clean', () => {
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Graph | Dev-Memory/GRAPH.md | recall graph | graph |\n| Tasks | Dev-Memory/PROGRESS.md | table | x |\n');
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] task: a\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', r.stdout);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -2337,7 +2337,7 @@ test('memory-integrity.mjs: a dangling link with a punctuated or Bangla node id 
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T2] task: a\n\n## Links\n- T1.a implements T2\n- ধারণা১ implements T2\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /undefined node "T1\.a"/.test(p)), 'a dotted composite id must still be caught as dangling');
   assert.ok(r.json.problems.some((p) => /undefined node "ধারণা১"/.test(p)), 'a Bangla node id must still be caught as dangling');
@@ -2359,7 +2359,7 @@ test('memory-integrity.mjs: a node id is only recognised inside a Nodes section,
     '## Nodes\n- [R1] requirement: users can log in {tags: auth}\n\n' +
     '## Links\n- T1 implements R1\n';
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), withStrayBullet);
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', `a stray prose bullet must not count as a node definition: ${r.stdout}`);
   assert.ok(r.json.problems.some((p) => /undefined node "T1"/.test(p)), 'T1 was never defined under ## Nodes and must be flagged as dangling');
   fs.rmSync(dir, RM_OPTS);
@@ -2372,7 +2372,7 @@ test('memory-integrity.mjs: control — the same graph WITH T1 properly defined 
     '## Nodes\n- [T1] task: a\n- [R1] requirement: users can log in {tags: auth}\n\n' +
     '## Links\n- T1 implements R1\n';
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), properlyDefined);
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', `T1 properly defined under ## Nodes must validate: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -2389,7 +2389,7 @@ test('memory-integrity.mjs: a stale non-ASCII or markdown-link INDEX cell is sti
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n' +
     '| Note | নথি.md | missing bangla file | x |\n' +
     '| Link | [Notes](does-not-exist.md) | missing md-link target | x |\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /নথি\.md/.test(p)), 'a bare non-ASCII stale filename must be caught');
   assert.ok(r.json.problems.some((p) => /does-not-exist\.md/.test(p)), 'a stale markdown-link target must be caught');
@@ -2408,7 +2408,7 @@ test('memory-integrity.mjs: a bolded "**Where**" header still catches a genuinel
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
     '| Entity | **Where** | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Gone | src/gone.js | deleted | x |\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /src\/gone\.js/.test(p)), 'a bolded Where header must still resolve the column and catch the dangling path');
   fs.rmSync(dir, RM_OPTS);
@@ -2426,7 +2426,7 @@ test('memory-integrity.mjs: a bolded existing path value must not BLOCK (2026-07
   fs.writeFileSync(path.join(dir, 'src', 'real.js'), '// real\n');
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Real | **src/real.js** | exists | x |\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', `a bolded path to a file that genuinely exists must not BLOCK: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -2444,7 +2444,7 @@ test('memory-integrity.mjs: an HTML "<b>tbd</b>" Where value is recognised as a 
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Note | <b>tbd</b> | not yet linked | x |\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', `an HTML-bold "tbd" placeholder must not be falsely reported as a stale path: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -2456,7 +2456,7 @@ test('memory-integrity.mjs: an HTML "<strong>tbd</strong>" Where value is recogn
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Note | <strong>tbd</strong> | not yet linked | x |\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', `an HTML-strong "tbd" placeholder must not be falsely reported as a stale path: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -2470,7 +2470,7 @@ test('memory-integrity.mjs: an unrecognised INDEX header column is reported once
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'INDEX.md'),
     '| Entity | Description | Tags |\n| :-- | :-- | :-- |\n| A | a | x |\n| B | b | y |\n| C | c | z |\n');
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   const occurrences = r.json.problems.filter((p) => /no recognisable file\/path\/where\/location header column/.test(p));
   assert.equal(occurrences.length, 1, `expected the unrecognised-header problem exactly once, not once per row: ${r.stdout}`);
@@ -3678,7 +3678,7 @@ test('memory-integrity.mjs: a dangling GRAPH link with a trailing annotation is 
     path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] task: a\n\n## Links\n- T1 depends-on R99 (the payment module, not yet defined)\n'
   );
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', r.stdout);
   assert.ok(r.json.problems.some((p) => /undefined node "R99"/.test(p)), 'a dangling link with a trailing note must still be caught');
   fs.rmSync(dir, RM_OPTS);
@@ -3697,7 +3697,7 @@ test('memory-integrity.mjs: a link line ending in ordinary sentence punctuation 
     path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] Task one\n- [R1] Requirement one\n\n## Links\n- T1 implements R1.\n'
   );
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', `a trailing full stop must not create a false dangling-reference block: ${r.stdout}`);
 
   // Control: a genuinely undefined node (also period-terminated) must still be caught.
@@ -3707,7 +3707,7 @@ test('memory-integrity.mjs: a link line ending in ordinary sentence punctuation 
     path.join(dir2, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] Task one\n\n## Links\n- T1 implements R99.\n'
   );
-  const r2 = runScript('memory-integrity.mjs', dir2);
+  const r2 = runMemoryIntegrity(dir2);
   assert.equal(r2.json.status, 'BLOCKED', `a genuinely undefined node must still be caught even period-terminated: ${r2.stdout}`);
   assert.ok(r2.json.problems.some((p) => /undefined node "R99"/.test(p)));
   fs.rmSync(dir, RM_OPTS);
@@ -3753,7 +3753,7 @@ test('memory-integrity.mjs: the link vocabulary is genuinely read from GRAPH.sch
       path.join(dir, 'Dev-Memory', 'GRAPH.md'),
       '## Nodes\n- [T1] task: a\n- [T2] task: b\n\n## Links\n- T1 made-up-verb-for-this-test T2\n',
     );
-    const withMadeUpVerb = runScript('memory-integrity.mjs', dir);
+    const withMadeUpVerb = runMemoryIntegrity(dir);
     assert.equal(withMadeUpVerb.json.status, 'clean', `a verb the mutated schema now allows must be accepted: ${withMadeUpVerb.stdout}`);
 
     // 'supersedes' was just removed from the schema — a link using it must
@@ -3764,7 +3764,7 @@ test('memory-integrity.mjs: the link vocabulary is genuinely read from GRAPH.sch
       path.join(dir, 'Dev-Memory', 'GRAPH.md'),
       '## Nodes\n- [T1] task: a\n\n## Links\n- T1 supersedes T99\n',
     );
-    const withRemovedVerb = runScript('memory-integrity.mjs', dir);
+    const withRemovedVerb = runMemoryIntegrity(dir);
     assert.equal(withRemovedVerb.json.status, 'clean', `a verb the mutated schema no longer lists must not be recognised as a link at all: ${withRemovedVerb.stdout}`);
   } finally {
     fs.writeFileSync(GRAPH_SCHEMA_PATH, original);
@@ -3779,7 +3779,7 @@ test('memory-integrity.mjs: the link vocabulary is genuinely read from GRAPH.sch
     path.join(dir2, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] task: a\n- [T2] task: b\n\n## Links\n- T1 supersedes T2\n',
   );
-  const restored = runScript('memory-integrity.mjs', dir2);
+  const restored = runMemoryIntegrity(dir2);
   assert.equal(restored.json.status, 'clean', `the real, restored schema must accept 'supersedes' again: ${restored.stdout}`);
   fs.rmSync(dir2, RM_OPTS);
 });
@@ -3797,7 +3797,7 @@ test('memory-integrity.mjs: a node declaring an unrecognised type is BLOCKED (20
     path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] milestone: a made-up kind\n\n## Links\n',
   );
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', `an undocumented node type must not be accepted: ${r.stdout}`);
   assert.ok(
     r.json.problems.some((p) => /"\[T1\]" declares type "milestone"/.test(p)),
@@ -3814,7 +3814,7 @@ test('memory-integrity.mjs: every documented node type is accepted (inverse of t
     const dir = mkTmp('gru-mi-goodtype-');
     fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), `## Nodes\n- [T1] ${kind}: a\n\n## Links\n`);
-    const r = runScript('memory-integrity.mjs', dir);
+    const r = runMemoryIntegrity(dir);
     assert.equal(r.json.status, 'clean', `documented type "${kind}" must be accepted: ${r.stdout}`);
     fs.rmSync(dir, RM_OPTS);
   }
@@ -3830,7 +3830,7 @@ test('memory-integrity.mjs: a node line with no type segment is unaffected by th
     path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] a label with no type colon at all\n\n## Links\n- T1 implements T1\n',
   );
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', `a node with no type segment must not be blocked by the new check: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -3851,13 +3851,13 @@ test('memory-integrity.mjs: the node-type vocabulary is genuinely read from GRAP
       path.join(dir, 'Dev-Memory', 'GRAPH.md'),
       '## Nodes\n- [T1] made-up-kind-for-this-test: a\n\n## Links\n',
     );
-    const withMadeUpKind = runScript('memory-integrity.mjs', dir);
+    const withMadeUpKind = runMemoryIntegrity(dir);
     assert.equal(withMadeUpKind.json.status, 'clean', `a kind the mutated schema now allows must be accepted: ${withMadeUpKind.stdout}`);
 
     // 'entity' was just removed from the schema — a node declaring it must
     // now be rejected as an unrecognised kind.
     fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), '## Nodes\n- [T1] entity: a\n\n## Links\n');
-    const withRemovedKind = runScript('memory-integrity.mjs', dir);
+    const withRemovedKind = runMemoryIntegrity(dir);
     assert.equal(withRemovedKind.json.status, 'BLOCKED', `a kind the mutated schema no longer lists must be rejected: ${withRemovedKind.stdout}`);
   } finally {
     fs.writeFileSync(GRAPH_SCHEMA_PATH, original);
@@ -3867,7 +3867,7 @@ test('memory-integrity.mjs: the node-type vocabulary is genuinely read from GRAP
   const dir2 = mkTmp('gru-mi-typeschemabinding-restored-');
   fs.mkdirSync(path.join(dir2, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(path.join(dir2, 'Dev-Memory', 'GRAPH.md'), '## Nodes\n- [T1] entity: a\n\n## Links\n');
-  const restored = runScript('memory-integrity.mjs', dir2);
+  const restored = runMemoryIntegrity(dir2);
   assert.equal(restored.json.status, 'clean', `the real, restored schema must accept 'entity' again: ${restored.stdout}`);
   fs.rmSync(dir2, RM_OPTS);
 });
@@ -3880,6 +3880,31 @@ test('memory-integrity.mjs: the node-type vocabulary is genuinely read from GRAP
 // literal on-disk shape (four bold-labelled lines); memory-integrity.mjs's
 // checkFocus() validates a real file against it.
 // ---------------------------------------------------------------------------
+// 2026-08-24, X281. A Dev-Memory holding memory files and no INDEX.md now BLOCKS, because the recall
+// index is what makes those files findable and without it the product cannot see its own memory.
+// These fixtures were written before that rule existed and most create a GRAPH.md or FOCUS.md alone,
+// so they would now fail for a reason none of them is about.
+//
+// The fix is to make each fixture a WELL-FORMED Dev-Memory rather than to weaken the assertions: a
+// test whose point is "a well-formed FOCUS.md is clean" should not be passing over a Dev-Memory that
+// is missing its index. Idempotent, so a fixture that writes its own INDEX.md is left alone, and it
+// names only the files actually present.
+function ensureIndex(dir) {
+  const dm = path.join(dir, 'Dev-Memory');
+  if (!fs.existsSync(dm)) return;
+  const idx = path.join(dm, 'INDEX.md');
+  if (fs.existsSync(idx)) return;
+  const files = fs.readdirSync(dm).filter((f) => f.endsWith('.md') && f !== 'INDEX.md');
+  if (!files.length) return;
+  const rows = files.map((f) => `| ${f.replace(/\.md$/, '')} | Dev-Memory/${f} | fixture |`).join('\n');
+  fs.writeFileSync(idx, `# Index\n\n| What | Where | Tags |\n| :-- | :-- | :-- |\n${rows}\n`, 'utf8');
+}
+
+function runMemoryIntegrity(dir) {
+  ensureIndex(dir);
+  return runScript('memory-integrity.mjs', dir);
+}
+
 function writeFocus(dir, overrides) {
   const lines = {
     objective: '**Objective:** Ship a working MVP that lets users book a table online.',
@@ -3898,7 +3923,7 @@ function writeFocus(dir, overrides) {
 test('memory-integrity.mjs: no FOCUS.md is a no-op (nothing to validate)', () => {
   const dir = mkTmp('gru-mi-focus-absent-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', r.stdout);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -3906,7 +3931,7 @@ test('memory-integrity.mjs: no FOCUS.md is a no-op (nothing to validate)', () =>
 test('memory-integrity.mjs: a well-formed FOCUS.md is clean', () => {
   const dir = mkTmp('gru-mi-focus-clean-');
   writeFocus(dir, {});
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', r.stdout);
   fs.rmSync(dir, RM_OPTS);
 });
@@ -3914,7 +3939,7 @@ test('memory-integrity.mjs: a well-formed FOCUS.md is clean', () => {
 test('memory-integrity.mjs: FOCUS.md with an unrecognised Active phase is BLOCKED (2026-07-27 Phase 1.3)', () => {
   const dir = mkTmp('gru-mi-focus-badphase-');
   writeFocus(dir, { activePhase: '**Active phase:** Launched' });
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', `an unrecognised Active phase must be caught: ${r.stdout}`);
   assert.ok(r.json.problems.some((p) => /Active phase "Launched"/.test(p)), JSON.stringify(r.json.problems));
   fs.rmSync(dir, RM_OPTS);
@@ -3926,7 +3951,7 @@ test('memory-integrity.mjs: every documented Active phase is accepted (inverse o
   for (const phase of phases) {
     const dir = mkTmp('gru-mi-focus-goodphase-');
     writeFocus(dir, { activePhase: `**Active phase:** ${phase}` });
-    const r = runScript('memory-integrity.mjs', dir);
+    const r = runMemoryIntegrity(dir);
     assert.equal(r.json.status, 'clean', `documented phase "${phase}" must be accepted: ${r.stdout}`);
     fs.rmSync(dir, RM_OPTS);
   }
@@ -3935,7 +3960,7 @@ test('memory-integrity.mjs: every documented Active phase is accepted (inverse o
 test('memory-integrity.mjs: FOCUS.md missing its Objective line is BLOCKED', () => {
   const dir = mkTmp('gru-mi-focus-noobjective-');
   writeFocus(dir, { objective: null });
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', `a missing Objective line must be caught: ${r.stdout}`);
   assert.ok(r.json.problems.some((p) => /"\*\*Objective:\*\*" line/.test(p)), JSON.stringify(r.json.problems));
   fs.rmSync(dir, RM_OPTS);
@@ -3944,7 +3969,7 @@ test('memory-integrity.mjs: FOCUS.md missing its Objective line is BLOCKED', () 
 test('memory-integrity.mjs: FOCUS.md missing its Top constraints line is BLOCKED', () => {
   const dir = mkTmp('gru-mi-focus-noconstraints-');
   writeFocus(dir, { topConstraints: null });
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', `a missing Top constraints line must be caught: ${r.stdout}`);
   assert.ok(r.json.problems.some((p) => /"\*\*Top constraints:\*\*" line/.test(p)), JSON.stringify(r.json.problems));
   fs.rmSync(dir, RM_OPTS);
@@ -3961,11 +3986,11 @@ test('memory-integrity.mjs: the Active-phase vocabulary is genuinely read from F
     fs.writeFileSync(FOCUS_SCHEMA_PATH, JSON.stringify(mutated, null, 2));
 
     writeFocus(dir, { activePhase: '**Active phase:** Launched' });
-    const withMadeUpPhase = runScript('memory-integrity.mjs', dir);
+    const withMadeUpPhase = runMemoryIntegrity(dir);
     assert.equal(withMadeUpPhase.json.status, 'clean', `a phase the mutated schema now allows must be accepted: ${withMadeUpPhase.stdout}`);
 
     writeFocus(dir, { activePhase: '**Active phase:** Maintain' });
-    const withRemovedPhase = runScript('memory-integrity.mjs', dir);
+    const withRemovedPhase = runMemoryIntegrity(dir);
     assert.equal(withRemovedPhase.json.status, 'BLOCKED', `a phase the mutated schema no longer lists must be rejected: ${withRemovedPhase.stdout}`);
   } finally {
     fs.writeFileSync(FOCUS_SCHEMA_PATH, original);
@@ -3974,7 +3999,7 @@ test('memory-integrity.mjs: the Active-phase vocabulary is genuinely read from F
 
   const dir2 = mkTmp('gru-mi-focusschemabinding-restored-');
   writeFocus(dir2, { activePhase: '**Active phase:** Maintain' });
-  const restored = runScript('memory-integrity.mjs', dir2);
+  const restored = runMemoryIntegrity(dir2);
   assert.equal(restored.json.status, 'clean', `the real, restored schema must accept 'Maintain' again: ${restored.stdout}`);
   fs.rmSync(dir2, RM_OPTS);
 });
@@ -5335,11 +5360,11 @@ test('memory-integrity.mjs: prose under a ## Links heading is not mis-parsed as 
     path.join(dir, 'Dev-Memory', 'GRAPH.md'),
     '## Nodes\n- [T1] task: a\n- [R1] requirement: b\n\n## Links\n- T1 implements R1\n- All links use present-tense verbs like implements and blocks.\n'
   );
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'clean', `a real link + a prose bullet must be clean, not a false BLOCK: ${r.stdout}`);
   // and a genuinely dangling documented link is still caught
   fs.writeFileSync(path.join(dir, 'Dev-Memory', 'GRAPH.md'), '## Nodes\n- [T1] task: a\n\n## Links\n- T1 depends-on R9\n');
-  assert.equal(runScript('memory-integrity.mjs', dir).json.status, 'BLOCKED', 'a dangling documented link must still be caught');
+  assert.equal(runMemoryIntegrity(dir).json.status, 'BLOCKED', 'a dangling documented link must still be caught');
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -5639,7 +5664,7 @@ test('memory-integrity.mjs: an escaped pipe in a cell left of Where does not hid
     path.join(dir, 'Dev-Memory', 'INDEX.md'),
     '| Entity | Where | Summary | Tags |\n| :-- | :-- | :-- | :-- |\n| Pause \\| resume | Dev-Memory/NONEXISTENT.md | task | tag |\n'
   );
-  const r = runScript('memory-integrity.mjs', dir);
+  const r = runMemoryIntegrity(dir);
   assert.equal(r.json.status, 'BLOCKED', `a stale INDEX path must be caught even with an escaped pipe in an earlier cell: ${r.stdout}`);
   assert.ok(r.json.problems.some((p) => /NONEXISTENT/.test(p)), 'the stale path must be reported');
   fs.rmSync(dir, RM_OPTS);
@@ -7890,6 +7915,14 @@ for (const script of [
   // connected GitHub, covers the app's code only, and rested on a consent the warframe pop-up never
   // actually asked for. Controls F and G stop it being fixed by deleting the feature, or by deleting
   // the memory-keeper rule the new warnings depend on being true.
+  // 2026-08-24, adjudicating X119 and X120 — the last two unadjudicated open High rows.
+  // X120's claim ("memory-integrity is purely one-directional") turned out to be FIXED, with a
+  // fourth instance of absent-input-reads-as-clean sitting underneath it: a Dev-Memory holding
+  // memory files and no INDEX.md returned clean, because checkIndex and checkIndexCoversFiles each
+  // skipped on the ground that the other reported it. X119 is a DISCLOSED residual, and its
+  // reproduction asserts the mitigation that shipped rather than a fix that deliberately did not.
+  'X281-missing-recall-index.mjs',
+  'X119-dimension-evidence-binding.mjs',
   'X41-X42-X44-peer-tool-targets.mjs',
   'X182-backup-claim-overstated.mjs',
   'X214-push-safety-narrowed.mjs',

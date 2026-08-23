@@ -587,13 +587,39 @@ function measureRecallCoverage(devMemory) {
 }
 
 function checkIndexCoversFiles(devMemory, problems) {
-  let index;
+  // 2026-08-24, X281. The catch below used to `return` on the stated ground that "a missing INDEX.md
+  // is already reported by checkIndex". IT IS NOT. `checkIndex` opens with
+  // `if (text === null) return; // no structured index yet — nothing to validate`, so BOTH functions
+  // skipped and each was deferring to the other. Measured: a Dev-Memory holding seven memory files
+  // and no INDEX.md returned `{"status":"clean"}` with zero problems and exit 0 — the recall index the
+  // product says a session reads FIRST was entirely absent and the gate reported nothing wrong.
+  //
+  // Fourth time this project has found the same shape: absent input reading as a clean pass, after
+  // X113 (verify-progress), X115 (licence-scan) and X118 (docs-consistency). It was fixed in three
+  // gates and missed in the fourth.
+  //
+  // Reported only when there is something to index. An empty `Dev-Memory/` with no index is a project
+  // that has not started writing memory yet, not a broken one, and blocking that would be a false
+  // alarm on the most ordinary first-run state there is — which is how a gate earns the reputation
+  // that gets it switched off.
   let onDisk;
   try {
-    index = fs.readFileSync(path.join(devMemory, 'INDEX.md'), 'utf8');
     onDisk = fs.readdirSync(devMemory).filter((f) => f.endsWith('.md') && f !== 'INDEX.md');
   } catch {
-    return; // a missing INDEX.md is already reported by checkIndex
+    return; // the directory itself is unreadable; main() already reports that
+  }
+  let index;
+  try {
+    index = fs.readFileSync(path.join(devMemory, 'INDEX.md'), 'utf8');
+  } catch {
+    if (onDisk.length) {
+      problems.push(
+        `Dev-Memory/ holds ${onDisk.length} memory file(s) and there is no INDEX.md, so none of them ` +
+          'can be recalled. INDEX.md is the recall index a session reads first (see the dev-memory ' +
+          'skill), and without it the product cannot see its own memory (findings X86, X281).',
+      );
+    }
+    return;
   }
   for (const f of onDisk) {
     if (!index.includes(f)) {
