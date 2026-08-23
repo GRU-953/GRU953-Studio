@@ -7943,6 +7943,11 @@ for (const script of [
   // SCRIPT_INDIRECTION_KEYWORDS list was the proof. So the script is READ instead: bash x.sh ->
   // the file, npm run x -> package.json scripts.x, make x -> the target's recipe. Controls D, E, F
   // and H hold the no-false-alarm line, which is what makes it safe to switch on.
+  // 2026-08-24, X7 and X8: "scan before every write" was documented and enforced by nothing, and no
+  // mcp__ tool was covered. Case K is the load-bearing control — measuring first showed that widening
+  // the matcher WITHOUT a content scan makes every write either ask for publishing consent (in a git
+  // repo) or be refused outright (outside one), because an empty command fails closed to push-capable.
+  'X7-X8-scan-before-every-write.mjs',
   'X5-X6-X15-resolve-not-guess.mjs',
   'X281-missing-recall-index.mjs',
   'X119-dimension-evidence-binding.mjs',

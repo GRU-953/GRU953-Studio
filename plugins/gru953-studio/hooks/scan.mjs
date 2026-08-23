@@ -324,6 +324,24 @@ function decodeAndNormalize(buf) {
   return [...new Set(results)];
 }
 
+// 2026-08-24, X8. These two patterns were declared inside main(), which was fine while the only
+// thing that scanned was a push. They are hoisted to module scope so the Write/Edit content scan
+// added below uses the SAME definitions. A second copy of a security regex is exactly how this
+// project's SEPARATOR_ROW_RE drifted out of sync with its siblings — one definition cannot drift.
+//
+// The reasoning behind each pattern is left in place at its original site inside main(), because it
+// is long, dated and worth reading where it was written.
+const SECRET_RE =
+  /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+const SECRETVAR_RE =
+  /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
+
+// Hoisted with the two patterns above, and for the same reason: the write-content scan must honour
+// the SAME opt-out marker as the push scan, or a line the project has deliberately exempted would
+// be exempt in one scan and flagged in the other.
+const SCAN_ALLOW_MARKER = '// scan-allow: known test fixture';
+const isScanAllowed = (ln) => String(ln).trimEnd().endsWith(SCAN_ALLOW_MARKER);
+
 function main() {
   // 2026-07-31 maintenance fix (F1): readStdin() now throws StdinReadFailure
   // rather than returning '' when it could not reliably read the tool-call
@@ -369,6 +387,95 @@ function main() {
     }
   }
   const CMD = extractCommand(INPUT);
+
+  // ---- X8 / X7: scan what is being WRITTEN, not only what is being pushed ---------
+  //
+  // `dev-memory/SKILL.md` carries a section headed "Scan before every write — never skip". Nothing
+  // enforced it. The only PreToolUse matcher was `Bash|PowerShell|Monitor|run_command`, so no
+  // `Write`, `Edit`, `MultiEdit` or `NotebookEdit` call ever reached this hook, and no `mcp__*` tool
+  // did either unless its name happened to contain one of those four words (X7).
+  //
+  // WIDENING THE MATCHER ALONE WOULD HAVE BEEN A DISASTER, and measuring before changing it is the
+  // only reason that is known rather than discovered afterwards. With the matcher widened and this
+  // branch absent, a `Write` falls straight through to the push path — `isPushCapable('')` fails
+  // closed to true on an empty command — and comes back `ask`. Measured: a Write of "hello world"
+  // returned the PUBLISHING-CONSENT prompt, and a Write whose content held an AWS-shaped key
+  // returned that same prompt saying "no secrets ... were found", because the scan had looked at the
+  // git tree and never at the content. A consent prompt on every file write is the false alarm that
+  // gets a plugin switched off within the hour.
+  //
+  // So a tool call that writes content is answered HERE and never reaches the push logic. It is
+  // silent unless it finds something, which is what makes scanning every write affordable.
+  if (!CMD) {
+    // readStdin() returns the raw payload as a STRING — every helper here parses it internally — so
+    // this parses it once rather than assuming an object. Getting that wrong cost a debugging pass:
+    // `INPUT.tool_input` was silently `{}`, the branch fell through, and a Write kept returning the
+    // publishing prompt.
+    let payload = {};
+    try {
+      const parsed = JSON.parse(String(INPUT));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed;
+    } catch {
+      /* an unparseable payload is left to the paths below, which already refuse on a bad read */
+    }
+    const ti =
+      payload.tool_input &&
+      typeof payload.tool_input === 'object' &&
+      !Array.isArray(payload.tool_input)
+        ? payload.tool_input
+        : {};
+    const toolName = String(payload.tool_name || '');
+    const parts = [];
+    const take = (v) => {
+      if (typeof v === 'string' && v.length) parts.push(v);
+    };
+    take(ti.content); // Write
+    take(ti.new_string); // Edit
+    take(ti.new_source); // NotebookEdit
+    if (Array.isArray(ti.edits)) {
+      // MultiEdit. `typeof [] === 'object'`, so the array check is not redundant.
+      for (const e of ti.edits) {
+        if (e && typeof e === 'object' && !Array.isArray(e)) take(e.new_string);
+      }
+    }
+    // An MCP tool has no schema this hook can rely on, so its whole input is searched as text. That
+    // is deliberately cruder than the named fields above, and it can only ever over-look rather than
+    // over-claim: a hit is still a real pattern match on text the tool was about to send.
+    if (!parts.length && /^mcp__/i.test(toolName)) {
+      try {
+        parts.push(JSON.stringify(ti));
+      } catch {
+        /* an input that will not serialise is left to the paths below */
+      }
+    }
+
+    if (parts.length) {
+      const WRITE_DIR = extractCwd(INPUT) || process.cwd();
+      if (findStudioRoot(WRITE_DIR) === null) stepAside(); // not a studio project: never interfere
+      const found = [];
+      parts
+        .join('\n')
+        .split(/\r?\n/)
+        .forEach((ln, n) => {
+          if (isScanAllowed(ln)) return;
+          if (SECRET_RE.test(ln)) found.push(`line ${n + 1}: a vendor-shaped key or token`);
+          else if (SECRETVAR_RE.test(ln)) found.push(`line ${n + 1}: a secret-looking assignment`);
+        });
+      if (found.length) {
+        // Names the LINE and the SHAPE, never the value — the same rule the push scan follows, so a
+        // refusal message can never itself leak the thing it refused.
+        deny(
+          `studio scan: refusing to write — this ${toolName || 'edit'} would put ` +
+            `${found.length === 1 ? 'a secret' : `${found.length} secrets`} into ` +
+            `${typeof ti.file_path === 'string' ? ti.file_path : 'a file'}. ${found.join('; ')}. ` +
+            'Nothing has been written. Put the value in an environment variable, or in a file your ' +
+            'project ignores, and reference it from the code instead. If it is a deliberate test ' +
+            'fixture, end the line with the scan-allow marker the dev-memory skill documents.',
+        );
+      }
+      stepAside();
+    }
+  }
 
   // ---- X39: refuse the irreversible ------------------------------------------------
   //
@@ -809,8 +916,10 @@ function main() {
   // 2026-07-10 audit fix (MINOR): sk-[A-Za-z0-9]{20,} required contiguous
   // alphanumerics right after "sk-", missing today's hyphenated key formats
   // (sk-ant-api03-..., sk-proj-...). Loosened to tolerate internal hyphens.
-  const SECRET_RE =
-    /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+  // SECRET_RE is now defined at module scope — see the note above main(). Moved
+  // 2026-08-24 (X8) so the write-content scan uses the SAME pattern rather than a
+  // second copy; a hand-maintained duplicate of a security regex is how this project
+  // found SEPARATOR_ROW_RE drifted out of sync with its siblings.
   // 2026-07-11 fix (found live, pushing this very repo): this project's own
   // test fixtures (hooks.test.mjs) deliberately embed a realistic-looking
   // fake secret (AWS's own reserved "EXAMPLE"-suffixed placeholder key) so
@@ -822,7 +931,7 @@ function main() {
   // break that real detection case too. Instead, only a line ending in the
   // explicit marker `// scan-allow: known test fixture` is exempt — this
   // marks ONE deliberately-annotated source line, not the string itself.
-  const SCAN_ALLOW_MARKER = '// scan-allow: known test fixture';
+  // SCAN_ALLOW_MARKER is now at module scope (X8, 2026-08-24) so the write-content scan shares it.
   // 2026-08-17 X218 fix (the code half of X205): ten enforcement sites each asked
   // whether the line merely CONTAINED the marker, which is not the question the
   // comment above states. Containment honours the marker ANYWHERE on the line — inside a JSON
@@ -841,7 +950,7 @@ function main() {
   // The register recorded SIX sites; there are ten. That miscount is precisely why
   // this is a helper and not ten corrected call sites (L14): sites that each carry
   // their own copy of a rule are sites that drift.
-  const isScanAllowed = (ln) => String(ln).trimEnd().endsWith(SCAN_ALLOW_MARKER);
+  // isScanAllowed is now at module scope (X8, 2026-08-24) so the write-content scan shares it.
   // Widened variable-name class to [A-Z0-9_-] so hyphenated header/field
   // names like "x-api-key" are also caught, not just underscore_case.
   // 2026-07-10 Round 2 fix: also allow an optional closing quote between the
@@ -858,8 +967,10 @@ function main() {
   // actually be quoted eliminates this whole class of false positive
   // without losing real detections (every example in this file's own
   // security review used a quoted literal).
-  const SECRETVAR_RE =
-    /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
+  // SECRETVAR_RE is now defined at module scope — see the note above main(). Moved
+  // 2026-08-24 (X8) so the write-content scan uses the SAME pattern rather than a
+  // second copy; a hand-maintained duplicate of a security regex is how this project
+  // found SEPARATOR_ROW_RE drifted out of sync with its siblings.
   // 2026-07-26 further-pass audit fix (false-allow, confirmed by execution):
   // no `/i` flag, and — unlike DEVMEMORY_RE just below, whose case
   // sensitivity is explained and deliberate — nothing here says this was on
