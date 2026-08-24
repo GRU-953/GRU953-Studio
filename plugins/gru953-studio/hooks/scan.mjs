@@ -406,7 +406,33 @@ function main() {
   //
   // So a tool call that writes content is answered HERE and never reaches the push logic. It is
   // silent unless it finds something, which is what makes scanning every write affordable.
-  if (!CMD) {
+  //
+  // 2026-08-24 — THIS BRANCH WAS GATED ON `if (!CMD)` AND THAT WAS WRONG THREE TIMES OVER. Found by
+  // an axis-enumeration lens, every case reproduced against this hook, and the mistake was a single
+  // false premise: that "carries a command" and "writes content" are mutually exclusive. They are
+  // not, and the gate turned that premise into a switch anyone could flip.
+  //
+  //   1. `extractCommand()` returns `tool_input.command`, else `.script`, else `.CommandLine`. So ANY
+  //      tool_input carrying one of those three field names made CMD truthy and skipped this entire
+  //      branch. Measured: a `Write` with `{command:"echo hi", content:"<AWS-shaped key>"}` was
+  //      SILENT, while the same payload without the command field denied. `command` is one of the
+  //      commonest MCP parameter names, and the mcp__ arm below exists precisely for tools whose
+  //      schema cannot be known — so the arm written to scan unknown tools was switched off by the
+  //      commonest field an unknown tool has.
+  //   2. Zero parts fell THROUGH to the push path, where `isPushCapable('')` fails closed to true.
+  //      Ordinary deletions — `new_string: ""`, `content: ""`, `edit_mode: "delete"` — drew the
+  //      publishing-consent prompt inside a git repo, and were DENIED outright in a studio project
+  //      that is not yet a git repository. My own commit message for this branch claimed cases B,
+  //      G1, G2, I and K locked exactly that out. They did not; see case K below.
+  //   3. The mcp__ whole-input scan was gated on `!parts.length`, so an unrelated `content` key
+  //      turned it off and a secret in any other field went unscanned.
+  //
+  // The shape of a call is now read from the TOOL, never from the absence of a command: the content
+  // scan always runs, and only a write-shaped tool with NO command answers the call here. Anything
+  // carrying a real command continues to the paths below, so X39's catastrophic-command refusal and
+  // the push scan still see it — a `Write` payload with a stray `rm -rf /` in a command field must
+  // not become unreachable in the course of fixing this.
+  {
     // readStdin() returns the raw payload as a STRING — every helper here parses it internally — so
     // this parses it once rather than assuming an object. Getting that wrong cost a debugging pass:
     // `INPUT.tool_input` was silently `{}`, the branch fell through, and a Write kept returning the
@@ -441,17 +467,30 @@ function main() {
     // An MCP tool has no schema this hook can rely on, so its whole input is searched as text. That
     // is deliberately cruder than the named fields above, and it can only ever over-look rather than
     // over-claim: a hit is still a real pattern match on text the tool was about to send.
-    if (!parts.length && /^mcp__/i.test(toolName)) {
+    // NOT gated on `!parts.length` — that was defect 3 above. An MCP input carrying a harmless
+    // `content` key turned the whole-input scan off, so the same secret in the same field was
+    // denied or ignored depending on whether an unrelated key happened to be present.
+    const WRITE_TOOL = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/i.test(toolName);
+    const MCP_TOOL = /^mcp__/i.test(toolName);
+    if (MCP_TOOL) {
       try {
         parts.push(JSON.stringify(ti));
       } catch {
         /* an input that will not serialise is left to the paths below */
       }
     }
+    // A write-shaped tool with no command has nothing to do with pushing, so it is answered here
+    // whatever the scan finds — including when it finds nothing to scan at all. That is defect 2:
+    // falling through with zero parts is what put a publishing prompt on an ordinary deletion.
+    const answersHere = (WRITE_TOOL || MCP_TOOL) && !CMD;
 
-    if (parts.length) {
-      const WRITE_DIR = extractCwd(INPUT) || process.cwd();
-      if (findStudioRoot(WRITE_DIR) === null) stepAside(); // not a studio project: never interfere
+    // `findStudioRoot(...) === null` used to stepAside() from here. That is right for a call this
+    // branch answers and WRONG for one it is only inspecting: a Bash command in a non-studio
+    // directory would have had its push scan swallowed. So the not-a-studio-project case now skips
+    // the content scan and lets the decision fall to `answersHere` below.
+    const WRITE_DIR = extractCwd(INPUT) || process.cwd();
+    const inStudio = findStudioRoot(WRITE_DIR) !== null;
+    if (parts.length && inStudio) {
       const found = [];
       parts
         .join('\n')
@@ -473,8 +512,8 @@ function main() {
             'fixture, end the line with the scan-allow marker the dev-memory skill documents.',
         );
       }
-      stepAside();
     }
+    if (answersHere) stepAside();
   }
 
   // ---- X39: refuse the irreversible ------------------------------------------------
