@@ -2552,6 +2552,77 @@ export function isPushCapable(rawC) {
   // reproduced live end-to-end with a real secret and zero confirmation
   // tokens recorded. Fixed with the same shared boundary as every other
   // regex in this function.
+  // ---- 2026-08-24, X288: transports that are not git ------------------------------
+  //
+  // Every clause above this one is `git` or `gh`. X179's insight was that a DOCUMENTED INVOCATION
+  // FORM had never been modelled — the dashed builtins `git-push` and `git-send-pack` — and the same
+  // sentence is true one step out of every non-git way of moving tracked bytes off this machine.
+  // Measured at the parent, all classified NOT push-capable, so the secret scan never ran at all:
+  //
+  //   scp creds.txt user@host:/tmp/        rsync -a . user@host:/srv/
+  //   curl -T creds.txt https://…          aws s3 cp creds.txt s3://bucket/
+  //   hub push origin main                 git svn dcommit
+  //   git-receive-pack .                   git-http-push url
+  //
+  // Each is an ordinary command a build or deploy step runs, and each moves the same bytes the push
+  // scan exists to look at.
+  //
+  // WHAT THIS DOES AND DELIBERATELY DOES NOT DO — the owner's decision of 2026-08-24, recorded
+  // because the alternative is defensible and was rejected on purpose. `isPushCapable` gates whether
+  // the tree is SCANNED; `sendsCommitsToRemote` gates the publishing-consent PROMPT, and these
+  // transports are added to the first and NOT the second. So a `scp` of a clean tree stays completely
+  // silent and only a real secret produces anything. Adding them to the consent prompt instead would
+  // have stopped every deploy script that copies a file, which is the L5 failure — a gate that
+  // interrupts honest work gets switched off and takes the real protection with it.
+  //
+  // NARROW ON PURPOSE, and this is where the false-alarm line sits. `scp` and `rsync` need a REMOTE
+  // TARGET (`user@host:` or `host:/path`), so a local `rsync -a src/ dst/` is not matched. `curl`
+  // needs an UPLOAD flag (`-T`, `--upload-file`, `-d`, `--data`, `-F`, `--form`), so an ordinary
+  // download is not matched. `aws s3` needs `cp`, `mv` or `sync` with an `s3://` destination, so
+  // `aws s3 ls` is not matched. Scanning is cheap and silent; being wrong here still costs, because
+  // a scan that runs on every `curl` would find test fixtures in ordinary repositories.
+  const REMOTE_TARGET = '[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+:|[A-Za-z0-9_.-]+\\.[A-Za-z]{2,}:';
+  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?(scp|rsync)['"]?[ \\t].*(${REMOTE_TARGET})`, 'i').test(c))
+    return true;
+  // `sftp` is separated from the pair above because the colon test is wrong for it. A colon is what
+  // distinguishes a remote target from a local one for scp and rsync — `rsync -a src/ dst/` is an
+  // ordinary local copy and must stay silent. sftp has NO local mode: `sftp user@host` is already a
+  // session with a remote, colon or no colon, so requiring one lost it.
+  if (
+    /(^|[^A-Za-z0-9_])['"]?sftp['"]?[ \t]+.*[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+/i.test(c) ||
+    new RegExp(`(^|[^A-Za-z0-9_])['"]?sftp['"]?[ \\t].*(${REMOTE_TARGET})`, 'i').test(c)
+  )
+    return true;
+  if (
+    /(^|[^A-Za-z0-9_])['"]?curl['"]?[ \t]/i.test(c) &&
+    /[ \t](-T|--upload-file|-d|--data(-raw|-binary|-urlencode)?|-F|--form)([ \t=]|$)/i.test(c)
+  )
+    return true;
+  if (
+    /(^|[^A-Za-z0-9_])['"]?aws['"]?[ \t]+s3[ \t]+(cp|mv|sync)[ \t]/i.test(c) &&
+    /s3:\/\//i.test(c)
+  )
+    return true;
+  // Third-party git front ends and the non-`push` git transports. `hub` and `glab` are the GitHub and
+  // GitLab equivalents of `gh`; `git svn dcommit` publishes to a Subversion remote; `git-receive-pack`
+  // and `git-http-push` are dashed builtins X179 did not reach because it enumerated the two that
+  // carry the word "push".
+  if (
+    new RegExp(
+      `(^|[^A-Za-z0-9_./\\\\-])['"]?(hub|glab|jj)['"]?[ \\t]+.*['"]?(push|mr[ \\t]+create|pr[ \\t]+create)['"]?${LEXICAL_BOUNDARY}`,
+      'i',
+    ).test(c)
+  )
+    return true;
+  if (/(^|[^A-Za-z0-9_])['"]?git['"]?[ \t]+svn[ \t]+dcommit/i.test(c)) return true;
+  if (
+    new RegExp(
+      `(^|[^A-Za-z0-9_./\\\\-])git-(receive-pack|http-push|upload-archive)${DASHED_END}`,
+      'i',
+    ).test(c)
+  )
+    return true;
+
   const SCRIPT_INDIRECTION_KEYWORDS = /(deploy|release|publish|ship|public|visibility)/i;
   if (
     new RegExp(

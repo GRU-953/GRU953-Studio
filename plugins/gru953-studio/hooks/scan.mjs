@@ -779,6 +779,19 @@ function main() {
       stepAside();
     }
   }
+  // 2026-08-24, X288: the two refusals below said "refusing to push" whatever the command was, and
+  // once scp, rsync, curl and `aws s3 cp` became reasons to scan, that sentence stopped being true of
+  // the thing in front of the user. Telling a non-technical owner their PUSH was refused when they
+  // typed `scp` is a message they cannot act on — and this product's whole argument for refusing on
+  // evidence is that the evidence is in the command text, so the message must describe that text.
+  const SEND_VERB = /(^|[^A-Za-z0-9_])(scp|sftp|rsync)([^A-Za-z0-9_]|$)/i.test(String(CMD || ''))
+    ? 'copy this to another machine'
+    : /(^|[^A-Za-z0-9_])curl([^A-Za-z0-9_]|$)/i.test(String(CMD || ''))
+      ? 'upload this'
+      : /(^|[^A-Za-z0-9_])aws([^A-Za-z0-9_]|$)/i.test(String(CMD || ''))
+        ? 'copy this to S3'
+        : 'push';
+
   const STUDIO_ROOT = findStudioRoot(SESSION_DIR);
   if (STUDIO_ROOT === null) {
     // Not a studio project: never interfere.
@@ -898,7 +911,8 @@ function main() {
         const ignoreCheck = git(['check-ignore', '-q', '--', 'Dev-Memory'], STUDIO_ROOT);
         if (ignoreCheck.status === 1) {
           deny(
-            'studio scan: refusing to push — Dev-Memory/ exists in this project but is not ' +
+            `studio scan: refusing to ${SEND_VERB} — Dev-Memory/ exists in this project but is not ` +
+              '' +
               "excluded by .gitignore, so it would ship. This project's rule is that Dev-Memory/ " +
               'never ships and always stays local-only (see the dev-memory and checkpoint-commit ' +
               'skills). Fix: add Dev-Memory/ to .gitignore at the project root, then retry.',
@@ -1782,7 +1796,7 @@ function main() {
   // On a repo with many files this left no lead on where to look. Now
   // included, still secret-safe (redact() never emits the matched value).
   deny(
-    `studio scan: refusing to push — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set. Findings (redacted to type+location, never the actual value):\n${findings.join('\n')}\nRemove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.`,
+    `studio scan: refusing to ${SEND_VERB} — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set. Findings (redacted to type+location, never the actual value):\n${findings.join('\n')}\nRemove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.`,
   );
 }
 
