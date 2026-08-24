@@ -4,8 +4,8 @@
 // Item text merely CONTAINS a keyword, so one row's evidence can vouch for two dimensions and a
 // dimension can be signed off by something that is not it.
 //
-// X119 IS A DISCLOSED RESIDUAL, NOT A DEFECT AWAITING A PATCH, and this file asserts what was
-// actually shipped rather than pretending otherwise. The history matters:
+// X119 WAS a disclosed residual and is now FIXED, on 2026-08-24. The history matters, because the
+// reasoning that first declined to fix it was right about the fix it was offered:
 //
 // The gate's own source records it as "finding D6 of the silent-skip sweep — answered by MEASUREMENT
 // rather than by tightening". Across 24 distinct Item labels drawn from six sources, zero matched
@@ -41,14 +41,17 @@
 //   case                                                      required
 //   A  a clean verdict exposes satisfiedBy                     the mitigation is present
 //   B  satisfiedBy names the ACTUAL row for each dimension     it is usable, not decorative
-//   C  the collision is visible when it happens                a wrong match shows in satisfiedBy
+//   C1 a colliding label cannot cover two dimensions           BLOCKED, naming the missing one
+//   C2 control: the same label beside a dedicated row         clean, attributed separately
 //   D  control: the golden fixture is clean                    no false alarm
 //   E  control: a genuinely missing dimension still BLOCKS      the gate has not been loosened
 //
-// Case C asserts the residual's DISCLOSURE, not its absence: the collision is expected to occur, and
-// the requirement is that a reader can see it. If a future change tightens the match so C stops
-// colliding, C is written to pass that way too and says so — the point is that the gate never signs
-// a dimension off invisibly.
+// C2 IS THE LOAD-BEARING CONTROL. An earlier attempt at this fix blocked whenever a dimension's only
+// row also matched another dimension — and that fired on "Accessibility review" covering
+// accessibility, which is a perfectly ordinary label genuinely about accessibility. That is the false
+// alarm the 2026-08-15 pass correctly refused. The rule that works is narrower: a row belongs to the
+// dimension whose keyword appears FIRST in its label, so "Accessibility review" is about
+// accessibility and the word "review" in it is incidental.
 //
 // Usage:
 //   node X119-dimension-evidence-binding.mjs                # asserts the shipped state
@@ -119,43 +122,81 @@ function fixture(mutate) {
   }
 }
 
-// ---- C: when a collision happens, it is VISIBLE ---------------------------------
+// ---- C: evidence is TIED to a dimension --------------------------------------
+//
+// 2026-08-24: this case used to assert only that a collision was VISIBLE, because visibility was all
+// that had shipped. The residual is now fixed — a row belongs to the dimension whose keyword appears
+// FIRST in its label, and to that one only — so this asserts the tying itself, in both directions.
 {
-  // Delete the review row; relabel Accessibility so one row matches both dimensions.
-  const dir = fixture((t) =>
+  // C1. Delete the dedicated review row and relabel Accessibility so its label also contains
+  // "review". Nothing then has independent code review as its primary dimension, so it must BLOCK as
+  // a missing dimension rather than being signed off by an accessibility row.
+  const only = fixture((t) =>
     t
       .split('\n')
       .filter((l) => !/^\|\s*Independent code review\s*\|/.test(l))
       .map((l) =>
         /^\|\s*Accessibility\s*\|/.test(l)
-          ? '| Accessibility review | pass | one row, one piece of evidence, for two dimensions |'
+          ? '| Accessibility review | pass | one row, one piece of evidence |'
           : l,
       )
       .join('\n'),
   );
-  const v = verdict(dir);
-  const sb = v.satisfiedBy || {};
-  const reviewRows = sb.review || [];
-  if (v.status === 'BLOCKED') {
-    // Legitimate outcome IF a future change tightened the match. Say so rather than failing.
-    console.log(
-      '  C  the collision ............................. no longer possible (match tightened)',
-    );
-  } else if (!reviewRows.length) {
+  const v1 = verdict(only);
+  if (v1.status !== 'BLOCKED') {
     note(
-      'case C: the verdict is clean and satisfiedBy names NO row for the review dimension, so the ' +
-        'dimension passed with nothing recorded as having satisfied it',
+      `case C1: with "Accessibility review" the only row whose label contains "review", the verdict is ` +
+        `${v1.status}. One row and one piece of evidence would be standing in for two dimensions, and ` +
+        'independent code review would be signed off by an accessibility row — the mechanism behind X276',
     );
-  } else if (!reviewRows.some((r) => /accessibility/i.test(r))) {
-    console.log(
-      `  C  the collision ............................. not reached (review <- ${JSON.stringify(reviewRows)})`,
+  } else if (
+    !(v1.problems || []).some((p) => /missing required dimension: independent code review/i.test(p))
+  ) {
+    note(
+      `case C1: it blocks, but not for the right reason — no problem says independent code review is ` +
+        `missing: ${JSON.stringify(v1.problems || []).slice(0, 200)}`,
+    );
+  } else {
+    console.log('  C1 a colliding label cannot cover two ....... BLOCKED, naming the missing one');
+  }
+  rmSync(only, { recursive: true, force: true });
+
+  // C2. THE CONTROL THAT MATTERS. The same colliding label, but the dedicated review row is left in
+  // place. This must be CLEAN: "Accessibility review" is genuinely about accessibility, and the word
+  // "review" in it is incidental. A rule that blocked here would be the false alarm the 2026-08-15
+  // pass correctly refused, and an earlier attempt at this fix did exactly that.
+  const both = fixture((t) =>
+    t
+      .split('\n')
+      .map((l) =>
+        /^\|\s*Accessibility\s*\|/.test(l)
+          ? '| Accessibility review | pass | genuinely an accessibility review |'
+          : l,
+      )
+      .join('\n'),
+  );
+  const v2 = verdict(both);
+  const sb = v2.satisfiedBy || {};
+  if (v2.status !== 'clean') {
+    note(
+      `case C2: a colliding label ALONGSIDE a dedicated review row returned ${v2.status}. That is a ` +
+        'false alarm on an ordinary label, which is worse than the residual being fixed: ' +
+        JSON.stringify(v2.problems || []).slice(0, 200),
+    );
+  } else if (
+    !(sb.review || []).some((r) => /^Independent code review$/i.test(r)) ||
+    !(sb.accessibility || []).some((r) => /^Accessibility review$/i.test(r))
+  ) {
+    note(
+      `case C2: clean, but the dimensions are not attributed to their own rows — review <- ` +
+        `${JSON.stringify(sb.review)}, accessibility <- ${JSON.stringify(sb.accessibility)}`,
     );
   } else {
     console.log(
-      `  C  the collision is visible .................. review <- ${JSON.stringify(reviewRows)}`,
+      '  C2 control: a colliding label beside its own  clean, each attributed separately',
     );
   }
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(both, { recursive: true, force: true });
 }
 
 // ---- D: control — the golden fixture must stay clean ---------------------------
@@ -200,6 +241,7 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(
-  '\nPASS: the gate reports which row satisfied each dimension, so a dimension signed off by the ' +
-    'wrong row is visible to a reader rather than silent — which is the disclosed answer to X119.',
+  '\nPASS: every row belongs to one dimension and the gate reports which, so no dimension can be ' +
+    'signed off by a row that is really about something else, and an ordinary label that merely ' +
+    'mentions another dimension is not falsely blocked.',
 );

@@ -557,32 +557,51 @@ function idsIn(text, re) {
 }
 
 function measureRecallCoverage(devMemory) {
+  // 2026-08-24, X283 — X120's remaining residual, named by X12's adjudication as the SECOND
+  // same-class swallow in this file. `readOr` returned '' for any read failure, so a file that is
+  // absent, or present and unreadable, produced exactly the same figures as a file that is present
+  // and holds nothing: total 0, inGraph 0, percent null.
+  //
+  // Measured on the golden fixture, which has no LESSONS.md at all: the report said lessons total 0,
+  // percent null — indistinguishable from a LESSONS.md sitting there with no lessons written in it.
+  //
+  // That defeats the one thing this report exists for. X86 added it so "a clean verdict cannot be
+  // mistaken for a statement about recall quality", and a zero that cannot tell an empty file from a
+  // missing one is not a statement about recall quality either.
+  //
+  // THE VERDICT IS DELIBERATELY UNCHANGED. Coverage is reported, never enforced, and that stays true —
+  // this is not a new way to block. What changes is that every figure now says where it came from, so
+  // a reader can tell a real zero from a file nobody has written yet.
   const readOr = (f) => {
     try {
-      return fs.readFileSync(path.join(devMemory, f), 'utf8');
-    } catch {
-      return '';
+      return { text: fs.readFileSync(path.join(devMemory, f), 'utf8'), source: 'read' };
+    } catch (e) {
+      return { text: '', source: e && e.code === 'ENOENT' ? 'absent' : 'unreadable' };
     }
   };
   const graph = readOr('GRAPH.md');
-  const nodes = idsIn(graph, /^\s*[-*]?\s*\[([A-Za-z]+-?\d+)\]/gm);
-  const of = (text, re) => {
-    const ids = idsIn(text, re);
+  const nodes = idsIn(graph.text, /^\s*[-*]?\s*\[([A-Za-z]+-?\d+)\]/gm);
+  const of = (read, re) => {
+    const ids = idsIn(read.text, re);
     const inGraph = [...ids].filter((x) => nodes.has(x)).length;
     return {
       total: ids.size,
       inGraph,
       percent: ids.size === 0 ? null : Math.round((100 * inGraph) / ids.size),
+      source: read.source,
     };
   };
   return {
     graphNodes: nodes.size,
+    graphSource: graph.source,
     tasks: of(readOr('PROGRESS.md'), /^\|\s*\**([A-Za-z]?T\d+)\**\s*\|/gm),
     requirements: of(readOr('REQUIREMENTS.md'), /^\|\s*\**(R\d+)\**\s*\|/gm),
     lessons: of(readOr('LESSONS.md'), /^\s*#{2,3}\s*(L\d+)\b/gm),
     note:
       'Reported, not enforced. A low percentage may be deliberate; it is shown so a clean verdict ' +
-      'cannot be mistaken for a statement about recall quality (finding X86).',
+      'cannot be mistaken for a statement about recall quality (finding X86). Each figure carries a ' +
+      '`source` of read, absent or unreadable, so a zero cannot be mistaken for a file nobody wrote ' +
+      '(finding X283).',
   };
 }
 

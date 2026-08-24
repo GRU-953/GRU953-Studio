@@ -366,7 +366,39 @@ function main() {
     );
   }
   for (const dim of REQUIRED) {
-    const matches = rows.filter((r) => dim.match.test(r.item));
+    // 2026-08-24, X119's residual — evidence is now TIED to a dimension.
+    //
+    // A row used to satisfy every dimension whose keyword it contained, so one row and one piece of
+    // evidence could vouch for two. Measured: delete the review row, relabel "Accessibility" as
+    // "Accessibility review", and the gate returned CLEAN with independent code review signed off by
+    // an accessibility row. That is the mechanism behind X276.
+    //
+    // The 2026-08-15 pass answered this by measurement and correctly REFUSED the tightening it
+    // considered — requiring the keyword at the START of the label would have missed "Automated
+    // tests", "Independent code review" and "Regression tests", and blocked healthy projects. What it
+    // could not see is that it sampled the labels which HAPPEN TO EXIST: of twelve ordinary
+    // alternatives, eight collide ("Security review", "Build and test", "Test documentation",
+    // "Licence review" among them).
+    //
+    // The rule that works is neither of those: a row belongs to the dimension whose keyword appears
+    // FIRST IN ITS LABEL, and to that one only. Checked against every real label in the project, the
+    // golden fixture, the documented template and the test suite — all nine keep the dimension they
+    // were plainly written for, including the four that keyword-at-start would have lost. And every
+    // colliding label gets one sensible owner: "Accessibility review" is about accessibility,
+    // "Security review" about security, "Code review and tests" about review.
+    //
+    // Every row that matches anything is still primary for exactly one dimension, so no row escapes
+    // the pass/fail checks below — narrowing the match cannot let a failing row through unexamined.
+    const firstHit = (item) => {
+      let best = null;
+      for (const d of REQUIRED) {
+        const hit = d.match.exec(item);
+        if (hit && (best === null || hit.index < best.index))
+          best = { key: d.key, index: hit.index };
+      }
+      return best && best.key;
+    };
+    const matches = rows.filter((r) => firstHit(r.item) === dim.key);
     // 2026-08-15, finding D6 of the silent-skip sweep — answered by MEASUREMENT rather than by
     // tightening. D6 says a dimension can be satisfied by an unrelated row, because the Item
     // cell only has to CONTAIN the keyword.
@@ -449,6 +481,7 @@ function main() {
       }
     }
   }
+
   if (problems.length === 0) {
     console.log(
       JSON.stringify(
