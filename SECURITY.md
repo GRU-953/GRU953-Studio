@@ -1143,6 +1143,29 @@ exactly as before, so this added no new interruptions.
 - **A command assembled while it runs is invisible.** If a script builds the words `git push` out of
   variables, or fetches them, nothing that reads text will find it. This is X15's own point, and it is
   a limit rather than a bug: no amount of further pattern work removes it.
+### The opt-out, and exactly when it applies
+
+A deliberate fake key in a test fixture would otherwise block every push in the repository that holds
+it. So one line can be exempted: end it with a comment reading `scan-allow: known test fixture`.
+
+It has to be a REAL comment in that kind of file — `//` in JavaScript or TypeScript, `#` in shell,
+YAML, Makefiles and `.env` files, `--` in SQL. A JSON file has no comments at all, so there is nowhere
+in one to put it, and no exemption is possible there.
+
+*Added 2026-08-24 (finding X286), and it is a correction rather than a new feature. Until that date
+the check was only "does this line end with that text", which asked nothing about the file — so `//`
+counted as a comment in every file on disk, and the marker silenced a REAL key in a Kubernetes secrets
+file, a Makefile, a shell script and a JSON config. Measured: five such files, five real keys, all
+exempted. In those files `//` is not an annotation at all, it is ordinary text that happens to sit at
+the end of the line, and the exemption's whole justification — a maintainer annotating a deliberate
+test vector — did not hold. If the file's comment syntax cannot be established, the exemption does not
+apply and the secret is reported.*
+
+*Two smaller things went with it. The refusal message used to tell you the marker was "documented by
+the dev-memory skill"; it was documented nowhere, in any file, so the message pointed at nothing. It
+now states the rule itself. And a commit or tag message accepts any of the three characters, because
+there is no file to take a comment syntax from and you wrote that text deliberately.*
+
 - **Three levels, then it stops.** A script that runs a script that runs a script is followed all
   the way; a fourth is not. So `deploy.sh` → `build.sh` → `publish.sh` is read, and one more link in
   that chain is where the reading ends.

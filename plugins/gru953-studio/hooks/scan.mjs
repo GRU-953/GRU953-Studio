@@ -391,7 +391,71 @@ const looksLikeASecret = (ln) => SECRET_RE.test(ln) || SECRET_SHAPES.some((re) =
 // the SAME opt-out marker as the push scan, or a line the project has deliberately exempted would
 // be exempt in one scan and flagged in the other.
 const SCAN_ALLOW_MARKER = '// scan-allow: known test fixture';
-const isScanAllowed = (ln) => String(ln).trimEnd().endsWith(SCAN_ALLOW_MARKER);
+// 2026-08-24, X286. `isScanAllowed` was `trimEnd().endsWith(SCAN_ALLOW_MARKER)` and asked nothing
+// about the FILE, so `//` was treated as a comment introducer in every file on disk. The opt-out is
+// documented as "a maintainer annotating a deliberate test vector"; in a Kubernetes secret manifest,
+// a Makefile, a shell script or a JSON config, `//` is not an annotation at all — it is ordinary
+// payload text that happens to sit at the end of the line, and the whole justification for the
+// exemption fails. Measured at the parent: five such files, five real AWS-shaped keys, all exempted.
+//
+// The rule now: the marker counts only when it follows a comment sigil VALID FOR THAT FILE'S TYPE.
+// On the owner's decision of 2026-08-24, chosen over restricting the opt-out to a list of code
+// extensions, because a `#` comment in a shell test fixture is perfectly legitimate.
+//
+// FAIL CLOSED ON AN UNKNOWN TYPE, and that is the deliberate half. If the comment syntax cannot be
+// established there is no way to establish that the marker is an annotation, so the opt-out does not
+// apply and the secret is reported. A file format with no comments at all — JSON — therefore has no
+// opt-out, which is correct: there is nowhere in a JSON file to write an annotation.
+//
+// NOTHING IN THIS PROJECT BREAKS, and that was checked before the change rather than hoped for: all
+// five files carrying the marker are `.mjs`, where `//` is exactly right. X218 control D pins the
+// whole tree, so a regression here fails the suite.
+const COMMENT_SIGILS = (file) => {
+  const f = String(file || '').toLowerCase();
+  const base = f.split(/[/\\]/).pop() || '';
+  const ext = (base.match(/\.([a-z0-9]+)$/) || [, ''])[1];
+  // C-family and its descendants: `//`.
+  if (
+    /^(mjs|cjs|js|jsx|ts|tsx|java|c|h|cc|cpp|hpp|go|rs|swift|kt|kts|scala|php|cs|m|mm|dart|zig)$/.test(
+      ext,
+    )
+  )
+    return ['//'];
+  // Shell, scripting and configuration: `#`.
+  if (
+    /^(sh|bash|zsh|fish|ps1|psm1|py|rb|pl|pm|r|yml|yaml|toml|ini|cfg|conf|env|tf|tfvars|gradle|properties|awk|sed)$/.test(
+      ext,
+    )
+  )
+    return ['#'];
+  // SQL and the ML family: `--`.
+  if (/^(sql|hs|lhs|lua|elm|ada|vhd)$/.test(ext)) return ['--'];
+  // Extensionless or dot-prefixed files whose comment syntax is `#` by convention.
+  if (
+    /^(makefile|gnumakefile|dockerfile|containerfile|rakefile|gemfile|procfile|\.env|\.npmrc|\.netrc|\.gitignore|\.dockerignore|\.editorconfig|\.bashrc|\.zshrc|\.profile)$/.test(
+      base,
+    )
+  )
+    return ['#'];
+  if (/^\.env\./.test(base) || /\.env$/.test(base)) return ['#'];
+  // Everything else — including json, md, html, csv and any unknown extension — has no established
+  // line-comment syntax here, so no marker in it can be shown to be an annotation.
+  return [];
+};
+// AUTHORED_TEXT is the sentinel for input with no file type: a commit message, a tag message. There
+// is no file to establish a comment syntax from, and the person wrote that text deliberately — nobody's
+// Kubernetes manifest becomes a commit message by accident — so any of the three sigils is accepted
+// there. This is the one place the old loose behaviour is kept, and it is kept on purpose.
+const AUTHORED_TEXT = Symbol('authored text with no file type');
+const isScanAllowed = (ln, file) => {
+  const text = String(ln).trimEnd();
+  const body = SCAN_ALLOW_MARKER.replace(/^\/\/\s*/, '');
+  const sigils = file === AUTHORED_TEXT ? ['//', '#', '--'] : COMMENT_SIGILS(file);
+  for (const sigil of sigils) {
+    if (text.endsWith(`${sigil} ${body}`)) return true;
+  }
+  return false;
+};
 
 function main() {
   // 2026-07-31 maintenance fix (F1): readStdin() now throws StdinReadFailure
@@ -547,7 +611,7 @@ function main() {
         .join('\n')
         .split(/\r?\n/)
         .forEach((ln, n) => {
-          if (isScanAllowed(ln)) return;
+          if (isScanAllowed(ln, typeof ti.file_path === 'string' ? ti.file_path : '')) return;
           if (looksLikeASecret(ln)) found.push(`line ${n + 1}: a vendor-shaped key or token`);
           else if (SECRETVAR_RE.test(ln)) found.push(`line ${n + 1}: a secret-looking assignment`);
         });
@@ -560,7 +624,11 @@ function main() {
             `${typeof ti.file_path === 'string' ? ti.file_path : 'a file'}. ${found.join('; ')}. ` +
             'Nothing has been written. Put the value in an environment variable, or in a file your ' +
             'project ignores, and reference it from the code instead. If it is a deliberate test ' +
-            'fixture, end the line with the scan-allow marker the dev-memory skill documents.',
+            'fixture, end that line with a comment saying `scan-allow: known test fixture` — using the ' +
+            'comment character your file actually uses (`//` in JavaScript and TypeScript, `#` in shell, ' +
+            'YAML, Makefiles and .env files, `--` in SQL). It must be a real comment in that kind of ' +
+            'file, or it is ignored — and a JSON file has no comments, so there is nowhere in one to ' +
+            'put it.',
         );
       }
     }
@@ -1274,7 +1342,8 @@ function main() {
       if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
-        if (looksLikeASecret(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(i + 1));
+        if (looksLikeASecret(ln) && !isScanAllowed(ln, file))
+          addFinding('secret', file, String(i + 1));
         // 2026-08-13, found while fixing X22. The SCAN_ALLOW_MARKER check was
         // applied to SECRET_RE but NOT to SECRETVAR_RE, so the project's own
         // documented escape hatch — "only a line ending in the explicit marker
@@ -1284,7 +1353,7 @@ function main() {
         // deliberate test vector had no way to tell which half of the scanner
         // would honour the annotation. Reproduced: line 6167 of hooks.test.mjs
         // carried the marker and was still reported. Both halves now honour it.
-        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
+        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, file))
           addFinding('secret-var', file, String(i + 1));
       }
     }
@@ -1315,8 +1384,9 @@ function main() {
       let n;
       const scanLine = (ln) => {
         lineNo++;
-        if (looksLikeASecret(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(lineNo));
-        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
+        if (looksLikeASecret(ln) && !isScanAllowed(ln, file))
+          addFinding('secret', file, String(lineNo));
+        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, file))
           addFinding('secret-var', file, String(lineNo));
       };
       while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
@@ -1448,8 +1518,9 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(content, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split(String.fromCharCode(0)).join('\n').split('\n')) {
-          if (looksLikeASecret(ln) && !isScanAllowed(ln)) addFinding('secret-history', file, '0');
-          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
+          if (looksLikeASecret(ln) && !isScanAllowed(ln, file))
+            addFinding('secret-history', file, '0');
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, file))
             addFinding('secret-var-history', file, '0');
         }
       }
@@ -1534,9 +1605,9 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(message, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (looksLikeASecret(ln) && !isScanAllowed(ln))
+          if (looksLikeASecret(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-commit-message', sha, '0');
-          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-var-commit-message', sha, '0');
         }
       }
@@ -1576,9 +1647,9 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(msg.stdout, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (looksLikeASecret(ln) && !isScanAllowed(ln))
+          if (looksLikeASecret(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-tag-message', tag, '0');
-          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-var-tag-message', tag, '0');
         }
       }
