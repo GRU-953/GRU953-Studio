@@ -7947,6 +7947,10 @@ for (const script of [
   // mcp__ tool was covered. Case K is the load-bearing control — measuring first showed that widening
   // the matcher WITHOUT a content scan makes every write either ask for publishing consent (in a git
   // repo) or be refused outright (outside one), because an empty command fails closed to push-capable.
+  // 2026-08-24, X278 and X279: one shape in two gates — a fixed list of words standing in for a
+  // structural fact. Cases G to J are the four X122 tables that must stay SILENT, kept here so the
+  // content-table threshold cannot be loosened without them failing.
+  'X278-X279-recogniser-boundary.mjs',
   'X7-X8-scan-before-every-write.mjs',
   'X5-X6-X15-resolve-not-guess.mjs',
   'X281-missing-recall-index.mjs',

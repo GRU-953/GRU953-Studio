@@ -731,9 +731,24 @@ function main() {
         if (AUXILIARY.test(rest)) return false; // a clause, not a status
         return rest.split(/\s+/).filter(Boolean).length <= 6;
       };
+      // 2026-08-24, X278. Everything above recognises WORD spellings of completion, and the value is
+      // first stripped of leading punctuation — so `- [x] T1 habit CRUD` became `x] T1 habit CRUD`
+      // and matched nothing. Measured: a PROGRESS.md of three `- [x]` bullets and no table returned
+      // clean, with the reason "every done row has a verified: cell" over a file holding no rows and
+      // no `verified:` cell at all. The one spelling the reproduction happened to use, `- T1: done`,
+      // blocked correctly — so the test pinned one spelling of the defect rather than the defect.
+      //
+      // A ticked markdown checkbox is the most idiomatic done-list there is, so this COMPLETES an
+      // existing rule rather than adding a new policy: the gate already demands evidence for a done
+      // claim outside a table, and this is that same claim written the way people actually write it.
+      //
+      // `[ ]` is deliberately excluded — an unticked box claims nothing. The marker must also stand
+      // as its own token, so an ordinary word containing an x cannot trip it.
+      const DONE_MARK = /(^|\s)(\[[xX]\]|✅|✔️?|☑️?)(\s|$)/;
       const segs = l.split(SEPARATORS);
       const isClaim = segs.some((seg, si) => {
         if (!seg || seg.trim() === '') return false;
+        if (DONE_MARK.test(seg)) return true; // a ticked box or a tick, wherever it sits
         if (isDoneClaimValue(seg)) return true; // a bare `done`, wherever it sits
         return si > 0 && isDoneValue(seg) && isStatusShaped(seg);
       });

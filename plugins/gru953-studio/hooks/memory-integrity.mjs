@@ -674,6 +674,37 @@ function main() {
   checkFocus(devMemory, problems);
   checkIndexCoversFiles(devMemory, problems);
   const coverage = measureRecallCoverage(devMemory);
+
+  // 2026-08-24, X12 — the last part of its claim, and it needed X283's provenance to exist before it
+  // could be enforced at all. X12 says this gate "reports internally consistent for a file it could
+  // not read". An unreadable GRAPH.md or LESSONS.md already blocked, by paths that happen to throw;
+  // an unreadable PROGRESS.md or REQUIREMENTS.md returned CLEAN, with the reason "recall index and
+  // knowledge graph are internally consistent" — X12's wording almost verbatim.
+  //
+  // That asymmetry could not be defended. Reading GRAPH.md is this gate's job and reading PROGRESS.md
+  // is another gate's, but "could not read" is not a finding about whose job it is: it is a memory
+  // file the product cannot see. Every sibling that once treated unreadable input as a clean pass has
+  // been repaired for exactly this — X113, X115, X118, X281 — and this is the same rule reaching the
+  // last place it had not.
+  //
+  // ABSENT IS STILL FINE, and that distinction is what makes this safe rather than noisy. A
+  // Dev-Memory with no LESSONS.md is a project that has not written lessons yet: it reports `absent`
+  // and stays clean. Only a file that EXISTS and cannot be read blocks, which is never ordinary.
+  for (const [name, figure] of [
+    ['GRAPH.md', { source: coverage.graphSource }],
+    ['PROGRESS.md', coverage.tasks],
+    ['REQUIREMENTS.md', coverage.requirements],
+    ['LESSONS.md', coverage.lessons],
+  ]) {
+    if (figure && figure.source === 'unreadable') {
+      problems.push(
+        `Dev-Memory/${name} exists but could not be read, so the coverage figure reported for it ` +
+          'means nothing. A memory file the product cannot read is not a clean state — fix the file ' +
+          'or its permissions, or remove it if it was not meant to be there (finding X12).',
+      );
+    }
+  }
+
   if (problems.length === 0) {
     console.log(
       JSON.stringify(

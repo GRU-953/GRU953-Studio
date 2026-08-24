@@ -174,6 +174,10 @@ function main() {
   // read positionally, so it is reported rather than skipped — the same
   // discipline verify-progress.mjs and quality-gate.mjs apply.
   const rows = [];
+  // X279: collected here rather than pushed straight to `problems`, which is not declared until
+  // after this loop — doing that threw a ReferenceError from the temporal dead zone, which running
+  // it caught immediately. Same class as X188, a shipped ReferenceError that a green suite missed.
+  const unreadableTables = [];
   const ragged = [];
   let sawContentTable = false;
   for (const table of parseTables(text)) {
@@ -215,7 +219,40 @@ function main() {
         /^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i,
       ),
     };
-    if (found.asset === -1 && found.medium === -1) continue; // not a content table
+    // 2026-08-24, X279. This `continue` is the line the X122 repair left standing, and it is why that
+    // repair did not hold. Widening the synonym list recognises one more spelling each time; the SKIP
+    // itself is what makes an unrecognised table invisible. Measured: a CONTENT.md whose second table
+    // is headed `Artwork | Format | Source | Approved | Rights | Alt`, carrying an unapproved,
+    // unattributed image with no alt-text, returned clean with `assets: 1` — and the identical table
+    // headed `Asset | Medium | ...` BLOCKED and named that image. The verdict depended on a word.
+    //
+    // A silent skip is still right for a table that has nothing to do with content: CONTENT.md may
+    // hold a `Draft | Reason` table and blocking on it was a real false alarm this gate has already
+    // been burned by. So the question is not "is this a content table" — guessing that is what the
+    // X122 note rejected — but "does this table plainly CLAIM to be one while I cannot read it".
+    //
+    // The evidence for that is the content-specific columns: provenance, approval, rights, alt-text,
+    // path. Three or more of them and no readable asset or medium column means a register the author
+    // clearly wrote for assets and this gate cannot see. THE THRESHOLD WAS CHOSEN AGAINST THE EXISTING
+    // CONTROLS, not picked: `Model | Status` and `Licence | Status` each match two, and both are X122
+    // controls that must stay silent; `Source | URL` matches one; `Draft | Reason` none. X279's table
+    // matches four.
+    if (found.asset === -1 && found.medium === -1) {
+      const contentish = ['source', 'approved', 'rights', 'alt', 'path'].filter(
+        (k) => found[k] !== -1,
+      );
+      if (contentish.length >= 3) {
+        unreadableTables.push(
+          `a table in CONTENT.md has ${contentish.length} content columns (${contentish.join(', ')}) ` +
+            `but no column this gate can read as the asset's name or medium — its headers are ` +
+            `"${table.headerCells.join(' | ')}". Every row in it was therefore skipped WITHOUT being ` +
+            'checked for approval, provenance, rights or alt-text. Rename the first column to Asset ' +
+            '(or Name, File, Item) and the second to Medium (or Type, Kind), so the rows are judged ' +
+            'rather than passed over (finding X279).',
+        );
+      }
+      continue; // not a content table, or one that has just been reported as unreadable
+    }
     sawContentTable = true;
     for (const r of table.rows) {
       if (r.ragged) {
@@ -228,6 +265,8 @@ function main() {
   }
 
   const problems = [];
+  // X279: merged in as soon as `problems` exists — see the note above the table loop.
+  problems.push(...unreadableTables);
   if (!sawContentTable) {
     // CONTENT.md exists but has no readable asset table — treat as incomplete.
     problems.push(
