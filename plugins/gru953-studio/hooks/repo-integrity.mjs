@@ -1099,12 +1099,36 @@ if (ciYmlText === null) {
 // but a missing invariant fails the gate every contributor is told to run.
 {
   const HOOKS_DIR = hooksDir;
+  // 2026-08-24, X289: this was `.filter((f) => f.endsWith('.mjs'))` on a single non-recursive read,
+  // while `hooks.json` registers a hook as an arbitrary shell command string and could perfectly well
+  // point at `hooks/lib/approve.js`, a `.cjs`, or anything in a subdirectory. Today it registers three
+  // `.mjs` files directly in this folder, so this is a guard against a future registration rather than
+  // a current hole — and it costs one recursive walk. `test/` is excluded because the reproductions
+  // there legitimately WRITE synthetic approvers as fixtures; that is X180's own method.
   let hookFiles = [];
-  try {
-    hookFiles = fs.readdirSync(HOOKS_DIR).filter((f) => f.endsWith('.mjs'));
-  } catch {
-    fail(`INV17: could not read ${HOOKS_DIR} to check for blanket approvals`);
-  }
+  const collect = (rel) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(path.join(HOOKS_DIR, rel), { withFileTypes: true });
+    } catch {
+      // An unreadable directory is reported, never treated as empty. Fifth time this shape has been
+      // found in this project (X113, X115, X118, X281, X283), so it is written the safe way here.
+      fail(
+        `INV17: could not read ${path.join(HOOKS_DIR, rel) || HOOKS_DIR} to check for blanket approvals`,
+      );
+      return;
+    }
+    for (const e of entries) {
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        if (e.name === 'test' || e.name === 'node_modules') continue;
+        collect(child);
+      } else if (/\.(mjs|cjs|js)$/.test(e.name)) {
+        hookFiles.push(child);
+      }
+    }
+  };
+  collect('');
   for (const f of hookFiles) {
     // Both of these necessarily quote the very pattern being searched for — the
     // test suite asserts on it, and this file defines it — so scanning them
@@ -1130,7 +1154,38 @@ if (ciYmlText === null) {
     // Safe to drop, measured rather than assumed: after the same comment-stripping this check does,
     // lib.mjs has ZERO live-code hits for either pattern (3 and 4 raw hits respectively, every one
     // of them inside a comment explaining why the capability was removed).
-    if (/permissionDecision['"]?\s*:\s*['"]allow['"]/.test(code)) {
+    // 2026-08-24, X289. This was `/permissionDecision['"]?\s*:\s*['"]allow['"]/` — a quote-delimited
+    // literal ADJACENT to the key, and nothing else. Measured against the shipped regex, every one of
+    // these returned false:
+    //
+    //   permissionDecision: `allow`                                  a template literal
+    //   const d = 'allow'; return { permissionDecision: d }           the value via a variable
+    //   const permissionDecision = 'allow'; return { permissionDecision }   ES6 shorthand
+    //   permissionDecision: 'al' + 'low'                              a concatenation
+    //   ['permissionDecision']: 'allow'                               a computed key
+    //
+    // This is the substring-standing-in-for-a-structural-fact shape (X116, X117, X206) sitting on the
+    // invariant that guards the permission architecture — the thing that stops X1, X91 and X110 being
+    // quietly reopened. `permissionDecision: "allow"` SUPPRESSES the user's prompt; that is X1, the
+    // oldest finding in this register.
+    //
+    // Two rules now, and the second is the one that does the work. Backticks and computed keys join
+    // the first. The second is structural: a quoted `allow` STRING anywhere in a hook's live code is a
+    // failure, whatever it is later assigned to — because no hook has any legitimate reason to hold
+    // that string at all. Measured before adopting it: across every hook in this tree, exactly two
+    // files contain one, and both were already exempt (`hooks.test.mjs` asserts on the pattern and
+    // this file defines it). Zero false alarms, so it is not a rule that will be switched off.
+    //
+    // THE RESIDUAL IS STATED RATHER THAN IMPLIED: `'al' + 'low'` builds the string without ever
+    // writing it, and no static reading of the source can catch that. What catches it is observing the
+    // OUTPUT, so the reproduction runs the real hook over a corpus and asserts that no emitted
+    // decision is ever `allow`. Static and dynamic, because neither alone is enough.
+    const ALLOW_LITERAL = /(["'`])allow\1/;
+    if (
+      /permissionDecision['"`]?\s*\]?\s*:\s*['"`]allow['"`]/.test(code) ||
+      /\[\s*['"`]permissionDecision['"`]\s*\]\s*:\s*['"`]allow['"`]/.test(code) ||
+      ALLOW_LITERAL.test(code)
+    ) {
       fail(
         `INV17: ${f} emits permissionDecision "allow" directly. NO hook may — including lib.mjs, which is why this check no longer exempts it — because a blanket approval suppresses the user's permission prompt rather than adding to it (findings X1, X91, X110, X180). Use stepAside() for "no objection" or escalate(reason) to ask`,
       );

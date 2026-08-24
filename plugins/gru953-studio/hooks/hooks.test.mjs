@@ -7970,6 +7970,7 @@ for (const script of [
   // held still, the emission form INV17 held still. The lesson is in every file: a green suite is
   // evidence about the axes someone thought of.
   'X284-transitive-indirection.mjs',
+  'X289-X290-emission-forms.mjs',
   'X286-marker-needs-a-comment.mjs',
   'X287-secret-shapes.mjs',
   'X288-non-git-transports.mjs',
