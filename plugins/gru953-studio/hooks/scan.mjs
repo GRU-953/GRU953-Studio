@@ -333,8 +333,59 @@ function decodeAndNormalize(buf) {
 // is long, dated and worth reading where it was written.
 const SECRET_RE =
   /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+// 2026-08-24, X287. The push scan's secret SHAPE had been held at one vendor pattern and one quoted
+// assignment since the beginning, and an axis-enumeration lens showed what that missed. Every shape
+// below was measured live: a committed studio repo, one credential file, `git push origin main`, and
+// every one returned `ask` carrying the sentence "no secrets, keys or private Dev-Memory files were
+// found in what this would ship".
+//
+// THAT IS WORSE THAN SILENCE, and it is why this is a High rather than a gap. A silent miss leaves the
+// user no worse informed. A POSITIVE ASSURANCE, given to a non-technical owner, about a scan that had
+// no pattern for the thing sitting in the tree, actively misleads them — and it sits on the product's
+// last line of push defence, X214 having removed the layer above it. The wording is corrected too, at
+// the escalate() below: both halves were the owner's decision of 2026-08-24, taken together on the
+// reasoning that adding patterns narrows the gap while correcting the wording stops the product ever
+// claiming a completeness it cannot have.
+//
+// EACH ENTRY IS A HIGH-CONFIDENCE SHAPE, not a keyword. L15 in this project is "enumerate, never
+// sweep", and the temptation here is to match the word `password` anywhere — which would fire on
+// every login form, every prompt string and every piece of documentation in an ordinary repository,
+// and be switched off within the week. So each of these requires STRUCTURE: a registry key beside the
+// npm token, all three words on a netrc line, the literal AWS key name, a JWT's three base64url
+// segments.
+const SECRET_SHAPES = [
+  // npm auth token in .npmrc — `//registry.npmjs.org/:_authToken=npm_…`. The `_authToken` key is
+  // unambiguous; nothing else in software uses it.
+  /_authToken\s*=\s*\S{16,}/i,
+  // .netrc — all three words on one line, which the format requires and prose does not… except that
+  // prose CAN: the false-alarm corpus caught this on "machine learning login page password strength
+  // meter", which is a plausible sentence in any documentation about authentication. So the shape is
+  // pinned to the format instead: a netrc entry BEGINS its line with `machine`, and the password is
+  // the last token on it or is followed by another netrc keyword. Prose continues past it.
+  /^[ \t]*machine[ \t]+\S+[ \t]+login[ \t]+\S+[ \t]+password[ \t]+\S+[ \t]*(?:$|account[ \t]|port[ \t]|macdef[ \t])/im,
+  // AWS's own key name, which SECRETVAR_RE missed because the value is conventionally UNQUOTED.
+  /aws_secret_access_key\s*[:=]\s*\S{20,}/i,
+  // A JWT: three base64url segments, the first of which is a JSON header already encoded — `{"`
+  // becomes `eyJ` — so this is structure rather than a guess.
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+  // A database URL carrying its password inline. The password can only sit between `:` and `@`, so a
+  // URL with no credentials cannot match. The negative lookahead is not a workaround: writing
+  // `postgres://user:${DB_PASSWORD}@host/db` is the CORRECT way to write this line, and flagging it
+  // would refuse good practice. Found the honest way — the first version of this pattern refused this
+  // project's own push, naming the reproduction that was being written for it.
+  /\b(postgres(ql)?|mysql|mongodb(\+srv)?|redis|amqp|mssql):\/\/[^\s:/@]+:(?![$%{<]|\{\{)[^\s:/@]{6,}@/i,
+  // An UNQUOTED secret assignment. SECRETVAR_RE requires quotes around the value, so
+  // `password: s3cr3tpassword123` in a YAML file did not match it. Kept narrow: at least 12
+  // characters, no spaces, and the value must not open with a quote, a `$`, a `<` or a `{` — which
+  // is what a placeholder, a variable reference or a template hole looks like.
+  /(?:^|[\s{,])(?:secret|token|password|passwd|apikey|api[_-]key|access[_-]key|auth[_-]token|client[_-]secret)[a-z0-9_-]{0,32}\s*[:=]\s*(?!["'`$<{])[A-Za-z0-9/+_.=-]{12,}\s*$/im,
+];
 const SECRETVAR_RE =
   /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
+// One place that asks "does this line hold a secret", so the push scan and the write scan cannot
+// answer it differently — which is exactly what happened for four days after X8, and is why this is
+// a function rather than three call sites each repeating the disjunction.
+const looksLikeASecret = (ln) => SECRET_RE.test(ln) || SECRET_SHAPES.some((re) => re.test(ln));
 
 // Hoisted with the two patterns above, and for the same reason: the write-content scan must honour
 // the SAME opt-out marker as the push scan, or a line the project has deliberately exempted would
@@ -497,7 +548,7 @@ function main() {
         .split(/\r?\n/)
         .forEach((ln, n) => {
           if (isScanAllowed(ln)) return;
-          if (SECRET_RE.test(ln)) found.push(`line ${n + 1}: a vendor-shaped key or token`);
+          if (looksLikeASecret(ln)) found.push(`line ${n + 1}: a vendor-shaped key or token`);
           else if (SECRETVAR_RE.test(ln)) found.push(`line ${n + 1}: a secret-looking assignment`);
         });
       if (found.length) {
@@ -1108,8 +1159,13 @@ function main() {
   //
   // The `$` anchor is load-bearing and deliberately kept: `id_ed25519.pub` is a
   // PUBLIC key and must stay clear, exactly as `id_rsa.pub` already did.
+  // 2026-08-24, X287: `.jks`, `.p12`, `.pfx` and `.ppk` are private-key CONTAINERS — a Java keystore,
+  // two PKCS#12 bundles and a PuTTY key. Each holds exactly what `.pem` and `.key` hold and neither
+  // was named, so a keystore committed to a repository shipped while `server.key` beside it did not.
+  // Added by NAME rather than by content because these are binary formats: the content patterns above
+  // cannot read them, so the filename is the only evidence available.
   const KEYFILE_RE =
-    /(^|\/)(\.env(\..+)?|.+\.env|id_(rsa|dsa|ecdsa|ed25519|ed448)|.+\.pem|.+\.key)$/i;
+    /(^|\/)(\.env(\..+)?|.+\.env|id_(rsa|dsa|ecdsa|ed25519|ed448)|.+\.pem|.+\.key|.+\.jks|.+\.p12|.+\.pfx|.+\.ppk)$/i;
   // 2026-07-11 Round 5 audit fix (case-sensitive ON PURPOSE — the `/i` flag
   // was removed): the studio always creates a project's private working
   // memory as `Dev-Memory` (capital D, capital M — see findStudioRoot,
@@ -1218,7 +1274,7 @@ function main() {
       if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
-        if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(i + 1));
+        if (looksLikeASecret(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(i + 1));
         // 2026-08-13, found while fixing X22. The SCAN_ALLOW_MARKER check was
         // applied to SECRET_RE but NOT to SECRETVAR_RE, so the project's own
         // documented escape hatch — "only a line ending in the explicit marker
@@ -1259,7 +1315,7 @@ function main() {
       let n;
       const scanLine = (ln) => {
         lineNo++;
-        if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(lineNo));
+        if (looksLikeASecret(ln) && !isScanAllowed(ln)) addFinding('secret', file, String(lineNo));
         if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
           addFinding('secret-var', file, String(lineNo));
       };
@@ -1392,7 +1448,7 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(content, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split(String.fromCharCode(0)).join('\n').split('\n')) {
-          if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret-history', file, '0');
+          if (looksLikeASecret(ln) && !isScanAllowed(ln)) addFinding('secret-history', file, '0');
           if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
             addFinding('secret-var-history', file, '0');
         }
@@ -1478,7 +1534,7 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(message, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !isScanAllowed(ln))
+          if (looksLikeASecret(ln) && !isScanAllowed(ln))
             addFinding('secret-commit-message', sha, '0');
           if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
             addFinding('secret-var-commit-message', sha, '0');
@@ -1520,7 +1576,8 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(msg.stdout, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !isScanAllowed(ln)) addFinding('secret-tag-message', tag, '0');
+          if (looksLikeASecret(ln) && !isScanAllowed(ln))
+            addFinding('secret-tag-message', tag, '0');
           if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln))
             addFinding('secret-var-tag-message', tag, '0');
         }
@@ -1776,9 +1833,23 @@ function main() {
         ? indirection
         : undefined;
     if (publishes !== undefined) {
+      // 2026-08-24, X287. This said "no secrets, keys or private Dev-Memory files were found in what
+      // this would ship" — a flat positive assurance, given to a non-technical owner, about a scan
+      // that only ever knew a fixed list of shapes. Measured at the time: an .npmrc auth token, a
+      // .netrc password, `aws_secret_access_key`, a kubeconfig token, a JWT, an unquoted
+      // `password: value`, a database URL carrying its password and three private-key containers all
+      // produced this exact sentence. Patterns for most of those were added the same day, and the
+      // wording still has to change, because the list will never be complete and the sentence would
+      // go on over-claiming for whatever is not yet on it. X195's shape: a verdict claiming coverage
+      // it does not have. Saying what was checked is both truer and more useful than saying nothing
+      // was found.
       escalate(
-        'studio scan: no secrets, keys or private Dev-Memory files were found in what this would ' +
-          'ship — so nothing here objects. But ' +
+        'studio scan: I checked what this would send for the kinds of secret I know how to ' +
+          'recognise — vendor keys and tokens, private keys, credential files, and passwords written ' +
+          'into settings — and found none. That is not the same as there being none: I can only ' +
+          'match shapes I have been taught, so treat this as "nothing known turned up", not "the ' +
+          'code is clean". ' +
+          'On the publishing side: ' +
           (publishes === null
             ? 'this command sends code out of your machine'
             : `this runs ${publishes.source}, which sends code out of your machine`) +

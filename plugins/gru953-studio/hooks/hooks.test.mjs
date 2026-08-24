@@ -228,8 +228,15 @@ function assertNotFlagged(r, message) {
   } catch {
     reason = r.stdout;
   }
+  // 2026-08-24, X287: this matched the literal sentence "no secrets, keys or private Dev-Memory files
+  // were found", and that sentence was the finding — a flat positive assurance about a scan that only
+  // ever knew a fixed list of shapes. The recogniser is now what makes the ask a CONSENT prompt rather
+  // than a refusal in question form: it names publishing and it does not name a finding. Matching the
+  // reassurance clause instead would pin the exact wording of a sentence that had to be rewritten
+  // once and may be rewritten again, and would fail the next time it is improved.
   assert.ok(
-    /no secrets, keys or private Dev-Memory files were found/.test(reason),
+    /fresh "yes"|sends code out of your machine|publishing/i.test(reason) &&
+      !/refusing|would put a secret|line \d+:/i.test(reason),
     `${message} — the ask must be the publishing-consent prompt, not a secret finding rephrased as ` +
       `a question: ${reason.slice(0, 200)}`,
   );
@@ -7963,6 +7970,7 @@ for (const script of [
   // held still, the emission form INV17 held still. The lesson is in every file: a green suite is
   // evidence about the axes someone thought of.
   'X284-transitive-indirection.mjs',
+  'X287-secret-shapes.mjs',
   'X288-non-git-transports.mjs',
   'X285-operand-and-wrapper-spelling.mjs',
   'X115-X122-residuals.mjs',
