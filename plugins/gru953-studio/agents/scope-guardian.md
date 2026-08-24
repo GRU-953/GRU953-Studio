@@ -59,7 +59,7 @@ a long multi-session build where the target is easy to lose.
    Round 1's version of this rule was still just prose describing a check,
    not an actual script; genuinely more useful than nothing but still
    LLM-self-policed). Run
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` at any stage
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .` at any stage
    boundary and before Publish. It counts `agents/*.md`, compares against
    the baseline recorded in the most recent `Dev-Memory/decisions/*roster*.md`
    entry, and exits non-zero if the count has grown without a matching

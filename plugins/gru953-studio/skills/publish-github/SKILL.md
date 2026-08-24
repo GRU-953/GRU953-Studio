@@ -102,7 +102,7 @@ full seven, matching security-compliance-auditor.md, studio/SKILL.md and CLAUDE.
 8. **Roster check, via `scope-guardian`** (2026-07-12 fix: this file — the
    role's own declared "single source of truth" — used to omit this step
    even though `publisher.md` and `/studio-publish` both treat it as
-   mandatory) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"`. A
+   mandatory) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .`. A
    non-zero exit means the agent roster grew past its recorded baseline
    with no named reason; resolve that first too.
 

@@ -39,6 +39,8 @@
 //   B  ci.yml mentioning the gate ONLY in a comment              FAILS    <- X117
 //   C  hooks.json wiring scan/gate under a Bash matcher          silent   (control)
 //   D  hooks.json where Bash and scan.mjs are in DIFFERENT entries FAILS  <- X116
+//   E  a command that MENTIONS scan.mjs but runs another script FAILS    <- X116's residual
+//   F  the gate named only in a non-comment YAML `name:` field  FAILS    <- X117's residual
 //
 // Usage:
 //   node X116-X117-weaker-predicate.mjs                # asserts the FIXED state
@@ -71,7 +73,11 @@ function problems(build) {
     // separates a gate that THREW from one that objected — both exit non-zero, and this
     // reproduction concludes "the check did not fire" from an empty problems list, which a
     // crash would produce just as readily as a healthy clean run.
-    const v = refuseCrash(readGate(process.execPath, gate, [dir]), 'X116-X117-weaker-predicate.mjs', die);
+    const v = refuseCrash(
+      readGate(process.execPath, gate, [dir]),
+      'X116-X117-weaker-predicate.mjs',
+      die,
+    );
     return v.problems;
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -114,9 +120,45 @@ const GOOD_WIRING = wiring([
 // something harmless; entry 2 runs the safety hooks under a matcher that matches nothing
 // a user would ever type. Today this passes.
 const SPLIT_WIRING = wiring([
-  { matcher: 'Bash|PowerShell|Monitor', hooks: [{ type: 'command', command: 'node self-heal-nudge.mjs' }] },
-  { matcher: 'NeverMatchesAnything', hooks: [{ type: 'command', command: 'node scan.mjs' }, { type: 'command', command: 'node gate.mjs' }] },
+  {
+    matcher: 'Bash|PowerShell|Monitor',
+    hooks: [{ type: 'command', command: 'node self-heal-nudge.mjs' }],
+  },
+  {
+    matcher: 'NeverMatchesAnything',
+    hooks: [
+      { type: 'command', command: 'node scan.mjs' },
+      { type: 'command', command: 'node gate.mjs' },
+    ],
+  },
 ]);
+
+// 2026-08-24. The two residuals the completeness critic named: both invariants still accepted a
+// MENTION where they claim an execution. E and F are those, and they are why the earlier repair did
+// not finish the job — comments were stripped and entries were correlated, but "the command contains
+// this filename" and "the file appears in non-comment YAML" were still substring tests.
+const MENTION_ONLY_WIRING = wiring([
+  {
+    matcher: 'Bash|PowerShell|Monitor|run_command',
+    // Runs something else, and merely NAMES the safety hooks as the argument to a flag.
+    hooks: [
+      { type: 'command', command: 'node self-heal-nudge.mjs --skip scan.mjs --skip gate.mjs' },
+    ],
+  },
+]);
+
+// The gate's filename in a non-comment `name:` field. Comment-stripping does not touch this.
+const NAME_FIELD_ONLY = [
+  'name: CI',
+  'on: [push]',
+  'jobs:',
+  '  check:',
+  '    runs-on: ubuntu-latest',
+  '    steps:',
+  '      - name: docs-consistency.mjs and charter-check.mjs',
+  '        run: echo nothing-here',
+  '',
+].join('\n');
 
 const mentions = (list, re) => list.some((p) => re.test(p));
 // Matched narrowly, against the exact wording of the two invariants under test. A looser
@@ -124,7 +166,8 @@ const mentions = (list, re) => list.some((p) => re.test(p));
 // matched repo-integrity's UNRELATED dangling-reference check, reporting a broken control
 // on a fixture that was fine. Both patterns must stay stable across the fix, so they
 // anchor on the phrases the messages keep either side of it.
-const CI_RE = /no longer runs (docs-consistency|charter-check)\.mjs|cannot verify (docs-consistency|charter-check)\.mjs runs in CI/i;
+const CI_RE =
+  /no longer runs (docs-consistency|charter-check)\.mjs|cannot verify (docs-consistency|charter-check)\.mjs runs in CI/i;
 const WIRING_RE = /no longer wires (scan|gate)\.mjs/i;
 
 // ---- X117 -------------------------------------------------------------------
@@ -133,7 +176,9 @@ const A = problems((d) => {
   writeFileSync(join(d, '.github', 'workflows', 'ci.yml'), REAL_STEP);
 });
 if (mentions(A, CI_RE)) {
-  die(`control A failed: a ci.yml with real run: steps was reported as not running the gates — ${A.find((p) => CI_RE.test(p))}`);
+  die(
+    `control A failed: a ci.yml with real run: steps was reported as not running the gates — ${A.find((p) => CI_RE.test(p))}`,
+  );
 }
 console.log('  A  ci.yml with a real `run:` step ................. silent  (as expected)');
 
@@ -142,7 +187,9 @@ const B = problems((d) => {
   writeFileSync(join(d, '.github', 'workflows', 'ci.yml'), COMMENT_ONLY);
 });
 const bCaught = mentions(B, CI_RE);
-console.log(`  B  ci.yml mentioning the gate ONLY in a comment ... ${bCaught ? 'FAILS  ' : 'silent '}${bCaught ? '' : '<- X117'}`);
+console.log(
+  `  B  ci.yml mentioning the gate ONLY in a comment ... ${bCaught ? 'FAILS  ' : 'silent '}${bCaught ? '' : '<- X117'}`,
+);
 
 // ---- X116 -------------------------------------------------------------------
 const C = problems((d) => {
@@ -150,7 +197,9 @@ const C = problems((d) => {
   writeFileSync(join(d, 'plugins', 'gru953-studio', 'hooks', 'hooks.json'), GOOD_WIRING);
 });
 if (mentions(C, WIRING_RE)) {
-  die(`control C failed: correct wiring was reported as broken — ${C.find((p) => WIRING_RE.test(p))}`);
+  die(
+    `control C failed: correct wiring was reported as broken — ${C.find((p) => WIRING_RE.test(p))}`,
+  );
 }
 console.log('  C  scan/gate wired under a Bash matcher ........... silent  (as expected)');
 
@@ -159,22 +208,50 @@ const D = problems((d) => {
   writeFileSync(join(d, 'plugins', 'gru953-studio', 'hooks', 'hooks.json'), SPLIT_WIRING);
 });
 const dCaught = mentions(D, WIRING_RE);
-console.log(`  D  Bash and scan.mjs in DIFFERENT entries ......... ${dCaught ? 'FAILS  ' : 'silent '}${dCaught ? '' : '<- X116'}`);
+console.log(
+  `  D  Bash and scan.mjs in DIFFERENT entries ......... ${dCaught ? 'FAILS  ' : 'silent '}${dCaught ? '' : '<- X116'}`,
+);
+
+// ---- E and F: the two residuals ------------------------------------------------
+const E = problems((d) => {
+  skeleton(d);
+  writeFileSync(join(d, 'plugins', 'gru953-studio', 'hooks', 'hooks.json'), MENTION_ONLY_WIRING);
+});
+const eCaught = mentions(E, WIRING_RE);
+console.log(
+  `  E  a command that MENTIONS scan.mjs, runs another ... ${eCaught ? 'FAILS  ' : 'silent '}${eCaught ? '' : '<- X116 residual'}`,
+);
+
+const F = problems((d) => {
+  skeleton(d);
+  writeFileSync(join(d, '.github', 'workflows', 'ci.yml'), NAME_FIELD_ONLY);
+});
+const fCaught = mentions(F, CI_RE);
+console.log(
+  `  F  the gate named only in a YAML \`name:\` field ..... ${fCaught ? 'FAILS  ' : 'silent '}${fCaught ? '' : '<- X117 residual'}`,
+);
 
 const open = [];
 if (!bCaught) open.push('X117 (a comment satisfies "runs in CI")');
+if (!eCaught)
+  open.push('X116 residual (a command that only MENTIONS the hook counts as running it)');
+if (!fCaught) open.push('X117 residual (a `name:` field counts as running it)');
 if (!dCaught) open.push('X116 (matcher and command never correlated)');
 
 if (expectBug) {
   if (open.length === 0) {
-    die('expected the X116/X117 defects and found neither. If they were fixed, delete this --expect-bug branch deliberately.');
+    die(
+      'expected the X116/X117 defects and found neither. If they were fixed, delete this --expect-bug branch deliberately.',
+    );
   }
   console.log(`\nREPRODUCED: ${open.join(' and ')}.`);
   process.exit(0);
 }
 
 if (open.length === 0) {
-  console.log('\nPASS: "runs in CI" means a real step, and the safety hooks must be wired under a matcher that covers Bash.');
+  console.log(
+    '\nPASS: "runs in CI" means a real step, and the safety hooks must be wired under a matcher that covers Bash.',
+  );
   process.exit(0);
 }
 

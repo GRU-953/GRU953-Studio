@@ -70,7 +70,11 @@ function die(msg) {
 function run(args, cwd) {
   // A crash is not a verdict. readGate() names it; refuseCrash() refuses to
   // let this reproduction reason about it. See _verdict.mjs.
-  const v = refuseCrash(readGate(process.execPath, gate, args, { cwd }), 'X114-cross-project-baseline.mjs', die);
+  const v = refuseCrash(
+    readGate(process.execPath, gate, args, { cwd }),
+    'X114-cross-project-baseline.mjs',
+    die,
+  );
   return { ...v.json, status: v.status, code: v.code, raw: v.raw.slice(0, 300) };
 }
 
@@ -91,7 +95,10 @@ function foreignProject(count, fn) {
 
 // ---- Controls that must keep working -----------------------------------------
 const A = run([PLUGIN, join(PLUGIN, '..', '..')], PLUGIN);
-if (A.status !== 'clean') die(`control A failed: the documented invocation must stay clean, got ${A.status} — ${A.reason || A.raw || ''}`);
+if (A.status !== 'clean')
+  die(
+    `control A failed: the documented invocation must stay clean, got ${A.status} — ${A.reason || A.raw || ''}`,
+  );
 console.log('  A  roots given explicitly, product repo ........... clean   (as expected)');
 
 const B = foreignProject(0, () => {
@@ -102,17 +109,41 @@ const B = foreignProject(0, () => {
     rmSync(empty, { recursive: true, force: true });
   }
 });
-if (B.status !== 'clean') die(`control B failed: with no baseline anywhere, the plugin's own ROSTER.md must be used and pass, got ${B.status} — ${B.reason || ''}`);
-console.log('  B  bare invocation, no baseline anywhere .......... clean   (as expected — ROSTER.md)');
+// 2026-08-24, X280, on the owner's decision. This control asserted that a BARE invocation falls
+// back safely to the plugin's own ROSTER.md and passes. That fallback is gone, and deliberately:
+// X280 established that all four shipped callers ran it bare, so the safety X114 added — the caller
+// asserting both roots — was never exercised in the product at all. A check whose safety depends on
+// an argument nobody passes has never been safe, so the bare form now REFUSES rather than guessing.
+//
+// The control is therefore inverted, not deleted: what must hold is that bare is refused, and that
+// the refusal says what to type. Cases C and D below still assert that a foreign baseline is never
+// silently adopted, which is X114's own subject and is unaffected.
+if (B.status === 'clean') {
+  die(
+    'control B failed: a BARE invocation returned clean. It must refuse and say which two roots to ' +
+      `name (X280), because without them it counts one tree's agents against another's baseline: ${JSON.stringify(B)}`,
+  );
+}
+if (!/both roots|roster-check needs/i.test(String(B.reason || ''))) {
+  die(
+    `control B failed: it refuses, but the reason does not tell the caller what to pass: ${JSON.stringify(B.reason)}`,
+  );
+}
+console.log('  B  bare invocation .............................. refused, and says what to pass');
 
 // ---- The defect: a foreign baseline, silently adopted ------------------------
 const C = foreignProject(90, (dir) => run([], dir));
 const cCaught = C.status !== 'clean';
-console.log(`  C  bare, foreign baseline of 90 (> 38 roles) ..... ${cCaught ? 'FAILS  ' : 'clean  '}${cCaught ? '' : '<- X114, a FALSE CLEAN'}`);
+console.log(
+  `  C  bare, foreign baseline of 90 (> 38 roles) ..... ${cCaught ? 'FAILS  ' : 'clean  '}${cCaught ? '' : '<- X114, a FALSE CLEAN'}`,
+);
 
 const D = foreignProject(5, (dir) => run([], dir));
-const dCaught = D.status !== 'clean' && /explicit|both roots|cross-project/i.test(String(D.reason || ''));
-console.log(`  D  bare, foreign baseline of 5 ................... ${D.status !== 'clean' ? 'blocked' : 'clean  '}${dCaught ? ' (for the right reason)' : ' (for the WRONG reason)'}`);
+const dCaught =
+  D.status !== 'clean' && /explicit|both roots|cross-project/i.test(String(D.reason || ''));
+console.log(
+  `  D  bare, foreign baseline of 5 ................... ${D.status !== 'clean' ? 'blocked' : 'clean  '}${dCaught ? ' (for the right reason)' : ' (for the WRONG reason)'}`,
+);
 
 // ---- Control E: naming both roots must still work ----------------------------
 const E = foreignProject(90, (dir) => run([PLUGIN, dir], dir));
@@ -125,13 +156,20 @@ if (E.status !== 'clean') {
 console.log('  E  same foreign baseline, roots given explicitly .. clean   (as expected)');
 
 if (expectBug) {
-  if (cCaught) die('expected the X114 false clean and did not find it. If it was fixed, delete this --expect-bug branch deliberately.');
-  console.log('\nX114 REPRODUCED: a foreign project baseline of 90 silently governs this plugin, so growth to 89 would pass.');
+  if (cCaught)
+    die(
+      'expected the X114 false clean and did not find it. If it was fixed, delete this --expect-bug branch deliberately.',
+    );
+  console.log(
+    '\nX114 REPRODUCED: a foreign project baseline of 90 silently governs this plugin, so growth to 89 would pass.',
+  );
   process.exit(0);
 }
 
 if (cCaught && dCaught) {
-  console.log('\nPASS: a baseline pairing nobody asserted is refused, and naming both roots still works.');
+  console.log(
+    '\nPASS: a baseline pairing nobody asserted is refused, and naming both roots still works.',
+  );
   process.exit(0);
 }
 

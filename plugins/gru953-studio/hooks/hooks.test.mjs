@@ -7950,6 +7950,11 @@ for (const script of [
   // 2026-08-24, X278 and X279: one shape in two gates — a fixed list of words standing in for a
   // structural fact. Cases G to J are the four X122 tables that must stay SILENT, kept here so the
   // content-table threshold cannot be loosened without them failing.
+  // 2026-08-24, X121's enumeration half, on the owner's "use the Path column, warn on strays"
+  // decision. Cases C, D and E are what keep it a convention rather than a project-wide scan: no
+  // Path column means nothing is enumerated, a folder no path points into is never inspected, and a
+  // sub-directory is not descended into.
+  'X121-unrecorded-assets.mjs',
   'X278-X279-recogniser-boundary.mjs',
   'X7-X8-scan-before-every-write.mjs',
   'X5-X6-X15-resolve-not-guess.mjs',

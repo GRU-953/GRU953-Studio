@@ -29,7 +29,7 @@ Publish the current project's working app to a private GitHub repository.
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .`,
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs" .`, and
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/content-check.mjs" .`. Also run
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` via
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .` via
    `scope-guardian` — a non-zero exit means the agent roster grew without a
    recorded reason; resolve that first too.
    Report each result plainly. Stop here, without asking to publish, if any

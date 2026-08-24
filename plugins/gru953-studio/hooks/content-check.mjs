@@ -293,6 +293,18 @@ function main() {
         : `a content row has MORE cells than its header, so its values line up against the wrong columns and its approval and rights cannot be verified -> "${r.raw}" (an unescaped "|" inside a cell is the usual cause - write it as \\|)`,
     );
   }
+  // 2026-08-24, X121, on the owner's decision: "use the Path column, warn on strays". The gate has
+  // always checked the paperwork of every asset RECORDED, and never looked at the folder to see
+  // whether a file is sitting there that no row records. Measured before this: a project with one
+  // recorded asset plus an unrecorded `assets/UNRECORDED-scraped-from-web.png` returned clean with
+  // `assets: 1`, and the verdict did not even say enumeration had been skipped.
+  //
+  // The convention chosen is the one that needs no new configuration and cannot be wrong about a
+  // folder nobody mentioned: the directories inspected are exactly those that a recorded Path
+  // already points into. A project that records `assets/hero.png` gets `assets/` looked at; a project
+  // that records no paths at all is inspected nowhere, which is the existing disclosed state.
+  const recordedFiles = new Set();
+  const watchedDirs = new Set();
   for (const row of rows) {
     const r = row.cells;
     const idx = row.idx;
@@ -344,6 +356,8 @@ function main() {
         // Resolved against the project root, and confined to it: a register must not send
         // this gate walking outside the project it describes.
         const resolved = path.resolve(root, assetPath);
+        recordedFiles.add(resolved);
+        watchedDirs.add(path.dirname(resolved));
         if (!resolved.startsWith(path.resolve(root))) {
           problems.push(
             `content "${name}": path "${assetPath}" resolves outside the project, which a content register may not do (finding X121).`,
@@ -354,6 +368,30 @@ function main() {
           );
         }
       }
+    }
+  }
+
+  // X121: the strays. Only inside directories a recorded path already points into, and only files —
+  // a nested directory is not an asset and is not walked into, which keeps this from turning into a
+  // whole-project scan the owner explicitly did not ask for.
+  const projectRoot = path.resolve(root);
+  for (const dir of [...watchedDirs].sort()) {
+    if (!dir.startsWith(projectRoot)) continue; // never look outside the project it describes
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue; // a directory that cannot be listed is already reported by the per-row existence check
+    }
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      const full = path.join(dir, e.name);
+      if (recordedFiles.has(full)) continue;
+      problems.push(
+        `${path.relative(projectRoot, full)} is in a folder your content register points into, but no ` +
+          'row records it. Every shipped asset needs a recorded approval, provenance and rights — add ' +
+          'a row for it, or move it out of that folder if it is not a shipped asset (finding X121).',
+      );
     }
   }
 

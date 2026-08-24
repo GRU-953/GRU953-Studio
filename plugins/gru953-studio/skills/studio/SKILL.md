@@ -250,7 +250,7 @@ specialists, and v4.1.0 added four more language specialists (Swift, C#, Go,
 TypeScript) plus a five-strong content team — reaching 38, each a
 distinct-ecosystem or distinct-discipline implementer) is
 guarded by `scope-guardian` running
-`node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
+`node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .` against the baseline in
 `Dev-Memory/decisions/*roster*.md` for a built project, falling back to the
 committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
 not skip scope-guardian on Standard/Complex Tier. Growing the roster past 38

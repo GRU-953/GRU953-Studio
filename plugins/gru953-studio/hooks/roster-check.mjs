@@ -50,8 +50,40 @@ function main() {
   const pluginRootGiven = typeof process.argv[2] === 'string' && process.argv[2] !== '';
   const devMemoryRootGiven = typeof process.argv[3] === 'string' && process.argv[3] !== '';
   const rootsAsserted = pluginRootGiven && devMemoryRootGiven;
-  const pluginRoot = pluginRootGiven ? process.argv[2] : path.resolve(here, '..');
-  const devMemoryRoot = devMemoryRootGiven ? process.argv[3] : process.cwd();
+
+  // 2026-08-24, X280, on the owner's decision. X114's repair made the two counts safe by requiring
+  // the CALLER to name both roots — and not one of the four shipped callers was ever updated to do
+  // so. All four ran it bare, as did the packaged copy an installing user receives, while every
+  // sibling gate in the same pre-flight lists was invoked with a root (`licence-scan.mjs .`,
+  // `verify-progress.mjs .`, `content-check.mjs .`). So the reproduction proved a property of an
+  // invocation the product never made.
+  //
+  // The four call sites are fixed in the same commit. This refuses the bare form outright rather than
+  // falling back to a guess, because a guess is what X114 was about: without both roots this counted
+  // the INSTALLED plugin's agents against the USER'S project baseline, which is two different trees.
+  // A check whose safety depends on an argument nobody passes has never been safe.
+  //
+  // It is a BREAKING change for anyone outside the product invoking it bare, which is why it needed
+  // the owner's word. The message says exactly what to type.
+  if (!rootsAsserted) {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        reason:
+          'roster-check needs both roots named, and will not guess them (finding X280). Run it as ' +
+          '`node roster-check.mjs <plugin-root> <project-root>` — for example ' +
+          '`node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .`. Without ' +
+          'both, it counted the agents of the INSTALLED plugin against the baseline of YOUR project, ' +
+          'which are two different trees, and reported the difference as a roster change (X114).',
+        pluginRootGiven,
+        devMemoryRootGiven,
+      }),
+    );
+    process.exit(1);
+  }
+
+  const pluginRoot = process.argv[2];
+  const devMemoryRoot = process.argv[3];
 
   const agentsDir = path.join(pluginRoot, 'agents');
   let agentFiles = [];

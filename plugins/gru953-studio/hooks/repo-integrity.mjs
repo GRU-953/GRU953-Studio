@@ -614,7 +614,8 @@ if (hooksJsonText === null) {
     for (const required of ['scan.mjs']) {
       const entriesRunningIt = preToolUse.filter((e) =>
         (Array.isArray(e.hooks) ? e.hooks : []).some((h) =>
-          new RegExp(required.replace('.', '\\.')).test(String(h.command || '')),
+          // X116: EXECUTED, not mentioned — see invokesScript() below.
+          invokesScript(h.command, required),
         ),
       );
       if (entriesRunningIt.length === 0) {
@@ -753,6 +754,29 @@ if (claudeMdText === null) {
     `CLAUDE.md no longer lists docs-consistency.mjs among the mandatory gates (2026-07-26 wiring regressed)`,
   );
 }
+// 2026-08-24, X116 and X117 — ONE definition for both, because the completeness critic was right
+// that they are two halves of one shape: a substring standing in for a structural fact.
+//
+// X116: the per-entry test for "this hooks.json entry runs scan.mjs" was a bare substring over the
+// whole command string, so any entry that merely MENTIONED the filename was credited as running it —
+// `node self-heal-nudge.mjs --skip scan.mjs` counted as wiring the secret scan.
+//
+// X117: the CI test strips comments, which closed the hole it was written for, but a filename in a
+// non-comment `name:` field still satisfied "the job runs it".
+//
+// Both are answered by asking the structural question instead: is the file EXECUTED? A script runs
+// when `node` is given it as an argument. A filename in prose, in a job name, or as the argument to
+// some other program's flag is a mention, and a mention is not wiring.
+function invokesScript(text, filename) {
+  const esc = filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // node, optionally its own flags, then a quoted or bare path whose final segment is the filename.
+  const re = new RegExp(
+    `(?:^|[^A-Za-z0-9_-])node(?:[ \\t]+--?[A-Za-z0-9-]+(?:=\\S+)?)*[ \\t]+["']?[^"'\\s;&|]*(?:[/\\\\])?${esc}(?=["'\\s;&|]|$)`,
+    'm',
+  );
+  return re.test(String(text || ''));
+}
+
 const ciYmlText = read(path.join(repoRoot, '.github', 'workflows', 'ci.yml'));
 
 // 2026-08-15, finding X117 (High, reproduced). The two checks below claim a gate RUNS in
@@ -779,7 +803,7 @@ if (ciYmlText === null) {
   fail(
     `.github/workflows/ci.yml is missing or unreadable — cannot verify docs-consistency.mjs runs in CI`,
   );
-} else if (!/docs-consistency\.mjs/.test(ciYmlCode)) {
+} else if (!invokesScript(ciYmlCode, 'docs-consistency.mjs')) {
   fail(
     `.github/workflows/ci.yml no longer runs docs-consistency.mjs (2026-07-26 wiring regressed)`,
   );
