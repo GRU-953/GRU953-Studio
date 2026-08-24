@@ -1317,10 +1317,36 @@ if (ciYmlText === null) {
 // control C pins that tabs and CRLF are ordinary whitespace, which matters because this project has a
 // CRLF CI leg. Build output is exempt for the reason INV18 gives: it is a copy, not a source.
 {
-  const TEXTUAL = /\.(mjs|js|md|json|ya?ml|txt)$/i;
+  // 2026-08-24, X291. This was `/\.(mjs|js|md|json|ya?ml|txt)$/i`, and the omissions were the files
+  // where the harm INV20 describes is WORST. A raw control byte makes `file(1)` report binary data and
+  // a default `grep` return nothing at all, so the file becomes invisible to every text tool and to
+  // anyone auditing it — and `tools/installers/install.sh` is X243's subject and the first thing a new
+  // user pipes into a shell. It was not scanned. Nor was the `.ps1` Windows installer, nor the seven
+  // `.html` doc pages including the download page, nor the `.ts`/`.rb`/`.roomodes`/`.windsurfrules`
+  // peer-tool targets.
+  //
+  // X222's reproduction varies the byte VALUE carefully (NUL in a case, BEL in another), pins the
+  // ESCAPE form as legal, and pins tab and CRLF for the Windows CI leg. The axis it held still was the
+  // EXTENSION: case A plants its byte in a `.mjs` and case D in a `.md`, both already on the list, so
+  // no case could ever reach the list's boundary.
+  //
+  // WRITTEN AS AN EXCLUSION RATHER THAN AN ALLOW-LIST, which is the actual repair. An allow-list of
+  // extensions is a list someone must remember to extend, and this finding is what forgetting looks
+  // like. Every tracked file is now scanned EXCEPT the binary formats named here — and a new text
+  // format added to this repository is covered on the day it arrives rather than on the day someone
+  // notices. The excluded set is small, closed and obviously binary: if any of these ever carried a
+  // control byte it would mean nothing, because they are not read by text tools in the first place.
+  const BINARY =
+    /\.(png|jpe?g|gif|webp|ico|svgz|woff2?|ttf|otf|eot|zip|gz|tgz|bz2|xz|7z|rar|pdf|mp[34]|wav|mov|mp4|webm|vsix|jar|so|dylib|dll|exe|wasm|node|map|lock)$/i;
+  // OS metadata, by basename. `.DS_Store` is Finder's own binary index: gitignored and untracked here,
+  // but INV20 walks the FILESYSTEM rather than git, so inverting the rule surfaced two of them
+  // immediately. They are binary by construction and nobody audits one, so they are excluded for the
+  // same reason as the extensions above — not because they were inconvenient.
+  const OS_METADATA = /^(\.DS_Store|Thumbs\.db|desktop\.ini|\.localized)$/i;
+  const TEXTUAL = (f) => !BINARY.test(f) && !OS_METADATA.test(path.basename(f));
   // Everything below 0x20 except tab (0x09), newline (0x0a) and carriage return (0x0d), plus DEL.
   const isForbidden = (b) => (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d) || b === 0x7f;
-  for (const f of allFiles.filter((x) => TEXTUAL.test(x) && !isBuildOutput(x))) {
+  for (const f of allFiles.filter((x) => TEXTUAL(x) && !isBuildOutput(x))) {
     let buf;
     try {
       buf = fs.readFileSync(f);
