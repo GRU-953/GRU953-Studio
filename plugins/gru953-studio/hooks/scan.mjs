@@ -41,7 +41,7 @@ import {
   deny,
   escalate,
   sendsCommitsToRemote,
-  resolveScriptIndirection,
+  resolveScriptChain,
   pipesRemoteCodeIntoAnInterpreter,
   readStdin,
   extractCommand,
@@ -576,9 +576,25 @@ function main() {
     // `bash -c "..."`, `sh -c '...'`, and `eval "..."`. The wrapper binary is matched at a command
     // position, so prose merely mentioning it contributes nothing (the X39 false-alarm lesson).
     for (const m of String(text).matchAll(
-      /(?:^|[\s;&|(])(?:(?:ba|z|k|da)?sh\s+(?:-[A-Za-z]+\s+)*-c|eval)\s+(['"])([\s\S]*?)\1/g,
+      /(?:^|[\s;&|(])(?:(?:ba|z|k|da)?sh\s+(?:--?[A-Za-z][A-Za-z0-9-]*\s+)*-[A-Za-z]*c|eval)\s+(['"])([\s\S]*?)\1/g,
     )) {
       const inner = m[2];
+      if (inner && inner.trim()) out.push(...unwrapShellText(inner, depth + 1));
+    }
+    // 2026-08-24, X285: the flag was `(?:-[A-Za-z]+\s+)*-c`, which requires `-c` to stand ALONE as
+    // its own token. `bash -lc "rm -rf /"` and `bash --login -c "rm -rf /"` therefore reached the
+    // machine with no decision from the only guard that exists to stop it being destroyed — and
+    // `bash -lc` is one of the commonest spellings of `bash -c` in existence. Now: any run of short
+    // or long options, then a cluster whose LAST letter is `c`, because `-c` consumes the argument
+    // after it and so must be last in its cluster. `-cl` is deliberately not matched.
+    //
+    // And the UNQUOTED payload, `bash -c rm\ -rf\ /`, which the pattern above cannot see at all
+    // because it requires a quote pair. Everything after the flag is taken as the payload; the
+    // canonicaliser resolves the escapes when the payload is re-normalised on the next pass.
+    for (const m of String(text).matchAll(
+      /(?:^|[\s;&|(])(?:(?:ba|z|k|da)?sh\s+(?:--?[A-Za-z][A-Za-z0-9-]*\s+)*-[A-Za-z]*c|eval)\s+([^'"\s][^\n]*)/g,
+    )) {
+      const inner = m[1];
       if (inner && inner.trim()) out.push(...unwrapShellText(inner, depth + 1));
     }
     return out;
@@ -607,6 +623,38 @@ function main() {
     String(t[0] || '')
       .replace(/^['"]+/, '')
       .replace(/['"]+$/, '');
+  // 2026-08-24, X285: the command WORD was canonicalised here since X224 and the OPERAND never was,
+  // so the danger simply moved one token to the right. `rm -rf //`, `rm -rf /.`, `rm -rf "/*"`,
+  // `dd if=/dev/zero of="/dev/disk0"` and `mkfs.ext4 "/dev/sda1"` all rendered NO DECISION while
+  // their unquoted, single-slash twins were refused. Found by an axis-enumeration lens: X39 varied
+  // position, separator, wrapper and command-word spelling — four axes, thoroughly, with 24
+  // false-alarm controls — and held the operand at exactly one canonical form throughout.
+  //
+  // Quotes off, then the path RESOLVED: `//`, `/.`, `/./`, `/..` and `/foo/..` all name the root
+  // directory to a shell and must be judged as the root. `.` and `..` segments are resolved rather
+  // than stripped, so `/tmp/..` collapses to `/` and is caught while `/tmp/x` does not.
+  //
+  // WHAT MUST NOT CHANGE, and the reason this is a resolver and not a looser pattern: `./build`,
+  // `node_modules`, `../x` and `/tmp/x` are among the commonest operands in software work. Each
+  // resolves to itself or to a relative path, never to `/`. A rule that caught any of them would be
+  // switched off within the week and take the real protection with it (L5). X39 holds 24 such
+  // commands as controls and every one of them still passes.
+  const pathWord = (raw) => {
+    const bare = String(raw || '')
+      .replace(/^['"]+/, '')
+      .replace(/['"]+$/, '');
+    if (!bare.startsWith('/')) return bare;
+    const kept = [];
+    for (const seg of bare.split('/')) {
+      if (seg === '' || seg === '.') continue;
+      if (seg === '..') {
+        kept.pop();
+        continue;
+      }
+      kept.push(seg);
+    }
+    return '/' + kept.join('/');
+  };
   const leads = (re) => commandSegments.filter((t) => t.length && re.test(cmdWord(t)));
   // 2026-08-18, X223: `const tokens = commandSegments.flat()` and `const has = (t) =>
   // tokens.includes(t)` stood here, computed for exactly the job below and never consumed once —
@@ -624,8 +672,13 @@ function main() {
         // already case-insensitive while the force test was not — so the pair disagreed with itself.
         const forced = /f/i.test(f) || seg.includes('--force');
         const targets = seg.slice(1).filter((t) => !t.startsWith('-'));
-        // The ROOT itself, or the root glob — never /tmp/x, ./build or node_modules.
-        const root = targets.some((t) => t === '/' || t === '/*' || t === '"/"' || t === "'/'");
+        // The ROOT itself, or the root glob — never /tmp/x, ./build or node_modules. Both are now
+        // read through pathWord, so `//`, `/.`, `/./`, `"/"`, `'/*'` and `/tmp/..` are the same
+        // target as `/`, which is what they are to a shell.
+        const root = targets.some((t) => {
+          const p = pathWord(t);
+          return p === '/' || p === '/*';
+        });
         return recursive && (forced || seg.includes('--no-preserve-root')) && root;
       },
     },
@@ -636,8 +689,12 @@ function main() {
         // of=/dev/<device>. The pseudo-devices are ordinary and stay allowed.
         const SAFE = /^\/dev\/(null|zero|random|urandom|stdout|stderr|tty|fd\/\d+)$/;
         return seg.some((t) => {
-          const m = t.match(/^of=(.+)$/);
-          return m && m[1].startsWith('/dev/') && !SAFE.test(m[1]);
+          // The quotes may sit around the whole assignment or only its value — `"of=/dev/disk0"`
+          // and `of="/dev/disk0"` are the same to a shell, and neither was seen before.
+          const m = pathWord(t).match(/^of=(.+)$/) || String(t).match(/^of=(.+)$/);
+          if (!m) return false;
+          const dev = pathWord(m[1]);
+          return dev.startsWith('/dev/') && !SAFE.test(dev);
         });
       },
     },
@@ -646,7 +703,7 @@ function main() {
       lead: /^(.*\/)?mkfs(\.[a-z0-9]+)?$/i,
       judge: (seg) => {
         if (seg.includes('--help') || seg.includes('-h')) return false;
-        return seg.some((t) => t.startsWith('/dev/'));
+        return seg.some((t) => pathWord(t).startsWith('/dev/'));
       },
     },
     {
@@ -703,7 +760,7 @@ function main() {
   let indirection = null;
 
   if (!isPushCapable(CMD)) {
-    indirection = resolveScriptIndirection(CMD, SESSION_DIR);
+    indirection = resolveScriptChain(CMD, SESSION_DIR);
     if (indirection === null || !isPushCapable(indirection.text)) {
       // X6's unresolvable half. `curl … | sh` runs code that does not exist on this machine until the
       // moment it runs, so no amount of reading finds it, and the ratified architecture — fail closed

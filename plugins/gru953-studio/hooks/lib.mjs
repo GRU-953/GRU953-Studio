@@ -2124,7 +2124,7 @@ export function resolveScriptIndirection(rawC, cwd) {
 
   // ---- an interpreter, or ./, invoked on a path -----------------------------------
   const direct = new RegExp(
-    `(?:^|[^A-Za-z0-9_])(?:\\.\\/|(?:ba|z)?sh[ \\t]+|node[ \\t]+|python3?[ \\t]+|ruby[ \\t]+|perl[ \\t]+)([^ \\t;&|'"]+\\.(?:sh|bash|zsh|mjs|cjs|js|py|rb|pl))${LEXICAL_BOUNDARY}`,
+    `(?:^|[^A-Za-z0-9_])(?:\\.\\/|(?:ba|z)?sh[ \\t]+|node[ \\t]+|python3?[ \\t]+|ruby[ \\t]+|perl[ \\t]+|source[ \\t]+|\\.[ \\t]+)([^ \\t;&|'"]+\\.(?:sh|bash|zsh|mjs|cjs|js|py|rb|pl))${LEXICAL_BOUNDARY}`,
     'i',
   ).exec(c);
   if (direct) {
@@ -2166,7 +2166,18 @@ export function resolveScriptIndirection(rawC, cwd) {
   }
 
   // ---- a package.json script -----------------------------------------------------
-  const run = /(?:^|[^A-Za-z0-9_])(?:npm|pnpm|yarn)[ \t]+run[ \t]+([A-Za-z0-9_:.-]+)/i.exec(c);
+  // 2026-08-24, X284: three spellings of the same thing were unmodelled, and the axis they sit on is
+  // "the runner", which the X5/X6/X15 reproduction held constant at `npm`.
+  //   * FLAGS BETWEEN `run` AND THE NAME — `npm run --silent build` is ordinary in CI output.
+  //   * `yarn build` with no `run` at all. Yarn omits it; pnpm accepts both. So `pnpm run build`
+  //     resolved and denied while `yarn build`, the same script by the same route, was silent.
+  // Being permissive about the NAME is safe here and deliberately so: a name that is not a key in
+  // `scripts` resolves to nothing and the caller is left exactly as it was, so `yarn install` and
+  // `yarn add x` cost a failed lookup and nothing else.
+  const run =
+    /(?:^|[^A-Za-z0-9_])(?:npm|pnpm|yarn|bun)[ \t]+run[ \t]+(?:-{1,2}[A-Za-z0-9-]+[ \t]+)*([A-Za-z0-9_:.-]+)/i.exec(
+      c,
+    ) || /(?:^|[^A-Za-z0-9_])yarn[ \t]+(?:-{1,2}[A-Za-z0-9-]+[ \t]+)*([A-Za-z0-9_:.-]+)/i.exec(c);
   if (run) {
     const raw = readCapped(path.resolve(base, 'package.json'));
     if (raw !== null) {
@@ -2207,6 +2218,61 @@ export function resolveScriptIndirection(rawC, cwd) {
   }
 
   return null;
+}
+
+// resolveScriptChain() follows indirection TRANSITIVELY, to a bounded depth.
+//
+// 2026-08-24, X284. `resolveScriptIndirection()` follows exactly one hop, and one hop is not the
+// shape of real deploy tooling: `deploy.sh` calls `build.sh`, `npm run release` calls `npm run push`.
+// Measured at the parent, against a committed studio repo with a tracked AWS-shaped key:
+//
+//   bash build.sh    deny        (one hop — build.sh pushes directly)
+//   bash outer.sh    NO DECISION  outer.sh is `bash build.sh`
+//   npm run chain    NO DECISION  scripts.chain is `npm run build`
+//   make chain       NO DECISION  the recipe is `bash build.sh`
+//
+// AND A MISS HERE IS NOT A WEAKER VERDICT. `isPushCapable` gates the whole content scan, so a command
+// it does not recognise is not scanned at all — the staged key reaches the network with the hook
+// silent. That is why depth mattered enough to find: the failure is total, not partial.
+//
+// This was DISCLOSED, which is the part worth being honest about. X15's row said "one level only (a
+// script that runs another script is not followed)" and SECURITY.md said the same. A disclosed
+// limitation is better than a hidden one and it is not a substitute for the fix when the fix is
+// eleven lines and the pattern for it was already in the same file — `unwrapShellText` has bounded
+// itself at three levels since X227, for exactly this reason and with exactly this reasoning.
+//
+// THE BOUND IS A REAL LIMIT, NOT A CLAIM OF COMPLETENESS. Three hops, and a chain longer than that
+// is followed as far as three and no further; a four-deep chain that only pushes at the fourth hop
+// is still missed, and that is the residual, disclosed here and in SECURITY.md rather than implied
+// to be closed. `seen` stops a script that runs itself from spinning — the ordinary shape being a
+// Makefile target that calls `make` again — and it is keyed on the resolved SOURCE, not the text, so
+// two different files holding identical content are still two hops.
+export function resolveScriptChain(rawC, cwd, maxDepth = 3) {
+  const seen = new Set();
+  const chain = [];
+  let text = rawC;
+  for (let d = 0; d < maxDepth; d += 1) {
+    const hop = resolveScriptIndirection(text, cwd);
+    if (hop === null) break;
+    const key = `${hop.kind}:${hop.source}`;
+    if (seen.has(key)) break;
+    seen.add(key);
+    chain.push(hop);
+    // Stop at the first hop that answers the question. Going deeper could only find a second reason
+    // for the same decision, and the caller reports the chain it actually followed.
+    if (isPushCapable(hop.text)) break;
+    text = hop.text;
+  }
+  if (!chain.length) return null;
+  const last = chain[chain.length - 1];
+  // The source names EVERY hop, because a refusal that says "build.sh pushes" when the user typed
+  // `bash outer.sh` is a refusal they cannot act on. The chain is what they need to see.
+  return {
+    kind: last.kind,
+    source: chain.map((h) => h.source).join(' → '),
+    text: last.text,
+    depth: chain.length,
+  };
 }
 
 // 2026-08-24, X6. The half of X6 that CANNOT be resolved, and therefore the one place where the

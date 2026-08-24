@@ -1143,8 +1143,15 @@ exactly as before, so this added no new interruptions.
 - **A command assembled while it runs is invisible.** If a script builds the words `git push` out of
   variables, or fetches them, nothing that reads text will find it. This is X15's own point, and it is
   a limit rather than a bug: no amount of further pattern work removes it.
-- **One level only.** A script that runs another script is not followed into: the studio reads the
-  one you named and stops there.
+- **Three levels, then it stops.** A script that runs a script that runs a script is followed all
+  the way; a fourth is not. So `deploy.sh` → `build.sh` → `publish.sh` is read, and one more link in
+  that chain is where the reading ends.
+
+  *Corrected 2026-08-24 (finding X284). Until that date this said "one level only", which was true
+  and was the wrong place to stop: `deploy.sh` calling `build.sh` is the ordinary shape of real
+  deployment tooling, not an edge case, and the same was true of `npm run release` calling
+  `npm run push`. Being written down here did not make it acceptable. The new limit is a real limit
+  and is tested as one, so it cannot quietly drift in either direction.*
 - **No shell semantics.** Variables, globs, conditionals and loops inside the script are not
   evaluated. The text is read, not interpreted.
 - **Remote code is never read at all.** `curl … | sh` runs something that does not exist on your

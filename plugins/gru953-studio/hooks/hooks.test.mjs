@@ -7958,6 +7958,12 @@ for (const script of [
   // proposed for closure and both survived a reading of the fix. Case C is the fifth guard in this
   // project against `try { … } catch { return [] }`; case E is the control that stops X122's fix
   // becoming the false alarm it was already burned by.
+  // 2026-08-24, the axis-enumeration band. Each of these guards a case its PARENT reproduction was
+  // structurally unable to see while reporting PASS — the operand X39 held still, the transport X179
+  // held still, the emission form INV17 held still. The lesson is in every file: a green suite is
+  // evidence about the axes someone thought of.
+  'X284-transitive-indirection.mjs',
+  'X285-operand-and-wrapper-spelling.mjs',
   'X115-X122-residuals.mjs',
   'X121-unrecorded-assets.mjs',
   'X278-X279-recogniser-boundary.mjs',
