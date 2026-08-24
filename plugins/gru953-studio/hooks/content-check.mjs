@@ -178,6 +178,17 @@ function main() {
   // after this loop — doing that threw a ReferenceError from the temporal dead zone, which running
   // it caught immediately. Same class as X188, a shipped ReferenceError that a green suite missed.
   const unreadableTables = [];
+  // 2026-08-24, X122's residual, found by a defeat probe. The threshold above reports a table that
+  // plainly claims to be a content register, and it was chosen against X122's own controls so it
+  // cannot fire on `Model | Status`. But a table with only ONE OR TWO content columns and unreadable
+  // asset headers is genuinely ambiguous — indistinguishable from an unrelated table by its headers
+  // alone — and it was still being skipped in SILENCE, with the verdict then affirming that every
+  // recorded asset has approval, provenance and rights.
+  //
+  // Silence is the defect, not the skip. So EVERY skipped table is now named in the verdict. This
+  // blocks nothing and therefore cannot false-alarm: a reader of a clean result can see which tables
+  // were not read and judge for themselves whether one of them should have been.
+  const tablesSkipped = [];
   const ragged = [];
   let sawContentTable = false;
   for (const table of parseTables(text)) {
@@ -251,6 +262,7 @@ function main() {
             'rather than passed over (finding X279).',
         );
       }
+      tablesSkipped.push(table.headerCells.join(' | '));
       continue; // not a content table, or one that has just been reported as unreadable
     }
     sawContentTable = true;
@@ -462,6 +474,10 @@ function main() {
           assetsExistenceChecked: resolvedRows,
           assetsInAppCopyNoFile: textNoPathRows,
           assetsUnresolvable: unresolvableRows,
+          // X122's residual: never skip a table in SILENCE. A reader of a clean verdict can now see
+          // which tables were not read, and judge whether one of them should have been. This blocks
+          // nothing, so it cannot false-alarm on an unrelated table.
+          tablesSkipped,
         },
         null,
         2,
@@ -470,7 +486,11 @@ function main() {
     process.exit(0);
   }
   console.log(
-    JSON.stringify({ status: 'BLOCKED', reason: 'content manifest incomplete', problems }, null, 2),
+    JSON.stringify(
+      { status: 'BLOCKED', reason: 'content manifest incomplete', problems, tablesSkipped },
+      null,
+      2,
+    ),
   );
   process.exit(1);
 }

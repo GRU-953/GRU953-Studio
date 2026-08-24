@@ -802,10 +802,29 @@ const MANIFEST_FILE_NAMES = [
   'packages.lock.json',
   'go.mod',
 ];
+// 2026-08-24, X115's residual — found by a defeat probe, not by reading. The X115 fix added a
+// `statSync(root).isDirectory()` guard, which closed the "does not EXIST" half properly. This
+// function is the other half and was untouched: any directory that exists, IS a directory, and
+// simply cannot be READ returned an empty list, produced zero manifests, and the scan fell through
+// to `{"status":"clean"}` with exit 0.
+//
+// Two proven cases, each with a control showing the fixture engages: the scan root itself unreadable
+// while containing a package.json and a GPL-3.0 dependency reported clean; and — more dangerous — a
+// single unreadable SUBDIRECTORY while the root is fine, where the gate looks like it worked and
+// simply never saw that subtree.
+//
+// FIFTH instance of one shape in this project: unreadable input reading as empty, after X113
+// (verify-progress), X118 (docs-consistency), X281 and X283 (memory-integrity). Recorded because
+// five is not a coincidence — it is a habit of this codebase, and `try { … } catch { return [] }` is
+// what the habit looks like.
+const unreadableDirs = [];
 function dirEntries(dir) {
   try {
     return fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (e) {
+    // An empty directory and one that cannot be read are not the same fact, and a licence scan that
+    // cannot tell them apart cannot support the word "clean".
+    unreadableDirs.push({ dir, code: (e && e.code) || 'unknown' });
     return [];
   }
 }
@@ -917,6 +936,25 @@ function main() {
   }
 
   const manifestDirs = findManifestDirs(root);
+
+  // X115's residual: a directory the scan could not read means the scan does not know what is in it,
+  // so it cannot report clean over it. Reported per directory, with the reason the read failed.
+  if (unreadableDirs.length) {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        reason:
+          `${unreadableDirs.length} director${unreadableDirs.length === 1 ? 'y' : 'ies'} under the ` +
+          'scan root could not be read, so no licence statement can be made about what is inside ' +
+          'them. An unreadable directory is not an empty one (finding X115).',
+        unreadable: unreadableDirs.map((u) => ({
+          dir: path.relative(root, u.dir) || '.',
+          error: u.code,
+        })),
+      }),
+    );
+    process.exit(1);
+  }
 
   const results = [];
   for (const dir of manifestDirs) {

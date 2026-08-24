@@ -7954,6 +7954,11 @@ for (const script of [
   // decision. Cases C, D and E are what keep it a convention rather than a project-wide scan: no
   // Path column means nothing is enumerated, a folder no path points into is never inspected, and a
   // sub-directory is not descended into.
+  // 2026-08-24, the residuals of X115 and X122 — both found by a DEFEAT PROBE after both had been
+  // proposed for closure and both survived a reading of the fix. Case C is the fifth guard in this
+  // project against `try { … } catch { return [] }`; case E is the control that stops X122's fix
+  // becoming the false alarm it was already burned by.
+  'X115-X122-residuals.mjs',
   'X121-unrecorded-assets.mjs',
   'X278-X279-recogniser-boundary.mjs',
   'X7-X8-scan-before-every-write.mjs',
