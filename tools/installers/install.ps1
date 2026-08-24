@@ -6,9 +6,14 @@
 #      this project does. If Node is missing it tells you exactly where to get
 #      it and stops.
 #   2. Installs the GRU953-Studio command from npm.
-#   3. Runs "gru953-studio install", which finds every supported app on this
-#      computer and sets GRU953-Studio up in each one, asking before it changes
-#      anything.
+#   3. Runs "gru953-studio install", which finds the supported apps on this
+#      machine and sets GRU953-Studio up in the ones it can.
+#
+#      IT DOES NOT ASK YOU ANYTHING (corrected 2026-08-25, finding X243: this
+#      header claimed it did, for three days after the same claim was removed
+#      from the shell installer next to it). There is no prompt anywhere in
+#      "gru953-studio install" - no readline, no stdin read, nothing. Running
+#      this installer IS the consent; nothing further is requested.
 #
 # ON PIPING THIS INTO POWERSHELL, honestly: running
 #   irm <url> | iex

@@ -83,6 +83,15 @@ const code = (t) =>
 
 const sh = read(SH);
 const ps = read(PS);
+
+// 2026-08-25: every installer, not just the one the fix went into. The Windows twin carried the same
+// false promise for three days AFTER install.sh was corrected, and this case reported "gone"
+// throughout — `ps` was already read for case E and was never checked for the defect this file
+// exists to catch. One list, both files, so a fix to one cannot leave the other reporting clean.
+const INSTALLERS = [
+  ['install.sh', sh || ''],
+  ['install.ps1', ps || ''],
+].filter(([, t]) => t.length > 0);
 if (sh === null) {
   console.error(`FAIL: ${SH} does not exist`);
   process.exit(1);
@@ -98,13 +107,20 @@ if (sh === null) {
   const asks = /readline|createInterface|process\.stdin|prompts?\(|inquirer/.test(cliSrc);
   if (asks) {
     console.log('  A  the CLI now asks something ................. claim would be fair, skipped');
-  } else if (/asking before it changes anything/.test(prose(sh))) {
-    note(
-      'case A: install.sh promises "asking before it changes anything" while nothing in ' +
-        'clients/cli/src/ reads stdin or prompts at all - a confirmation step that does not exist',
-    );
   } else {
-    console.log('  A  false confirmation promise ................. gone');
+    const promised = INSTALLERS.filter(([, text]) =>
+      /asking before it changes anything/.test(prose(text)),
+    ).map(([name]) => name);
+    if (promised.length) {
+      note(
+        `case A: ${promised.join(' and ')} promise "asking before it changes anything" while nothing ` +
+          'in clients/cli/src/ reads stdin or prompts at all - a confirmation step that does not exist',
+      );
+    } else {
+      console.log(
+        `  A  false confirmation promise ................. gone from all ${INSTALLERS.length} installers`,
+      );
+    }
   }
 }
 
