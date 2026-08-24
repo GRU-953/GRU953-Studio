@@ -77,10 +77,16 @@ the `brand-assets` guard. In the reference kit: the design system is Apache-2.0 
 used commercially, the guidebook is non-commercial, the fonts are OFL-1.1, and **the marks
 are not licensed at all**.
 
-Record each class as stated. Where the terms point at a document the kit does not ship —
-the reference kit's own note says the full trademark policy "does not ship beside this
-file" — record that the authoritative policy was **not read**, and never summarise a
-policy from its own summary.
+Record each class as stated. Where the terms point at a policy document, **follow the
+pointer before concluding anything.** "Does not ship beside this file" means it is not in
+the same folder — not that it is missing. Resolve the path against the whole kit.
+
+The reference kit is the worked example of why this matters: its licence names
+`08_guidebook/governance/TRADEMARKS.md`, and that file **is present in the kit and
+readable**. Read it and record it as read, with its path. Record "the authoritative policy
+was not read" only when a search across the kit genuinely fails, and then say where you
+looked. Never summarise a policy from its own summary, and never report a present,
+readable input as missing — that is this project's own rule inverted.
 
 ## Tier-scaling (YAGNI)
 
@@ -109,6 +115,11 @@ gate list in `CLAUDE.md`, a new repository invariant, and a registered reproduct
 
 ## Who applies this
 
-The `project-lead` runs intake at the start of a branded project and owns the answer to
-the ownership question. The `content-creation` skill reads `Dev-Memory/BRAND.md` before
-producing anything carrying a mark.
+The `brand-guardian` reads the kit and produces the intake findings — it is read-only by
+design, which suits reading a kit and does not suit writing one. The `memory-keeper` writes
+`Dev-Memory/BRAND.md`. The `project-lead` asks the ownership question and owns the answer,
+and writes nothing itself.
+
+That split is deliberate rather than bureaucratic: a role given work its own tool list
+forbids produces an instruction nobody can follow, which is how this skill was first
+written and what a review caught.

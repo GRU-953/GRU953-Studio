@@ -1,6 +1,6 @@
 ---
 name: brand-compliance
-description: How the studio checks whether a build honours a brand, and what it refuses to claim when it cannot. Blocks on two things only — the app name and the logo — and reports everything else. Delegates rendered-output measurement to a kit's own checker where one exists rather than re-implementing it, and never installs anything without a fresh yes. Use it before a phase checkpoint and before Publish on any project with a brand kit.
+description: How the studio checks whether a build honours a brand, and what it refuses to claim when it cannot. Blocks on two things only — the app name and the logo — and reports everything else. Uses a kit's own checker where that checker can actually be pointed at the build, states plainly when it cannot, and never installs anything without a fresh yes. Use it before a phase checkpoint and before Publish on any project with a brand kit.
 ---
 
 # Brand Compliance
@@ -67,11 +67,28 @@ Where a kit ships its own checker that renders and measures, **call it rather th
 re-implementing it.** Re-implementing would produce a second, worse measurer, and this
 project has learnt what two copies of one rule cost.
 
-The reference kit's checker is a worked example of a well-behaved one: it makes **no
-writes at all**, and its exit codes carry the whole verdict — `0` clean, `1` findings,
-`2` not equipped. Read the exit code; do not parse its prose. Map it straight onto the
-statuses above, and carry forward its own disclosure of what it could not measure (text
-over a gradient or an image, where the background cannot be resolved).
+**First establish WHAT a checker measures, because most of them measure their own kit.**
+A kit's checker is usually built to check the kit's own components, not your build. The
+reference kit's is exactly that: it renders the cards listed in a manifest **in its own
+directory** and accepts no path to anything else. Run it against a user's project and it
+measures the kit's documentation and proves nothing whatever about the project.
+
+So: if the checker cannot be pointed at the build under review, **its result is evidence
+about the kit, not about the build.** Record "the build's rendered output was not
+measured", put that on the cannot-check list, and never let its exit code stand in for a
+verdict on the project. Delegation is only worth having when the thing delegated to is
+looking at the right thing.
+
+**And read its exit code for what it actually means.** The reference checker exits `1` when
+it found a *blocker* and `0` otherwise — but it counts *major* findings separately, and
+those do not touch the exit code. A run printing `0 blocker, 7 major` exits `0`. So `0`
+means "no blocker", which is **not** the same as "no findings". Use the exit code to decide
+whether to BLOCK, and read the checker's own summary line for the counts. A `0` with any
+major present is `INCOMPLETE`, never `clean`.
+
+It makes **no writes at all**, which is what makes calling it safe. Carry forward its own
+disclosure of what it could not measure — text over a gradient or an image, where the
+background cannot be resolved.
 
 **Consent moment one — the kit's own brand plugin.** Where a kit ships a plugin, the
 studio does not absorb it: absorbing it would collide names with the studio's own roster,
@@ -97,8 +114,9 @@ user interface with themes and breakpoints, and nowhere else.
 - Does not block on colour, contrast, type or spacing. Those are reported.
 - Does not install anything without a fresh yes, and never on a silent default.
 - Does not re-implement a checker a kit already ships.
-- Does not parse a checker's prose output. The exit code is the contract; prose is for the
-  human reading it.
+- Does not infer findings from a checker's wording. The exit code decides whether to block;
+  the checker's own summary line supplies the counts, because the exit code does not carry
+  them.
 - Does not claim a rendered measurement it did not take. "Not measured" is a result and is
   printed as one.
 - Does not decide whether a mark may be copied at all — that is the `brand-assets` skill.
@@ -111,6 +129,14 @@ finding.** The absence of a brand finding is not evidence of compliance.
 
 ## Who applies this
 
-The `project-lead` runs it before a phase checkpoint and before Publish. The
-`quality-gate` skill's Definition of Done treats a `BLOCKED` brand verdict the way it
-treats any other failing dimension: the phase does not close.
+The `brand-guardian` reads the build and the kit and produces the findings — it is the role
+that owns this, and it is read-only by design. Where a checker must actually be run, the
+`security-compliance-auditor` runs it; where `Dev-Memory/BRAND.md` must be written, the
+`memory-keeper` writes it. The `project-lead` decides what to do with the verdict and owns
+the ownership answer, and does not run or write anything itself.
+
+**Nothing mechanical consumes a brand verdict, and saying otherwise would undo the
+paragraph above.** `quality-gate.mjs` checks a fixed list of dimensions and brand is not one
+of them, so a `BLOCKED` brand verdict stops nothing by itself. To hold a phase, the finding
+must be written into `Dev-Memory/QUALITY-GATE.md` under the existing **security / licence /
+privacy** row — and it is that row the gate reads, not this check.

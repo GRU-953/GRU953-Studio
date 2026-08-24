@@ -32,10 +32,11 @@ From the reference kit, verbatim, because the shape generalises:
 | Fonts | OFL-1.1 |
 | **Marks** — the name, the symbol, the tile, the wordmark, any lockup | **not licensed** |
 
-Read the classes from the kit and record them at intake. Where the terms point at a
-policy document the kit does not ship, record that the authoritative policy was **not
-read** — the reference kit says its own full trademark policy "does not ship beside this
-file" — and never summarise a policy from its own summary.
+Read the classes from the kit and record them at intake. Where the terms point at a policy
+document, **follow the pointer before concluding it is absent.** "Does not ship beside this
+file" means it is not in the same folder. The reference kit's own trademark policy is at
+`08_guidebook/governance/TRADEMARKS.md` and is present and readable; read it. Record the
+policy as unread only when a search across the whole kit fails, and say where you looked.
 
 ## The rules, and the line each one must not cross
 
@@ -109,7 +110,7 @@ absence of one is not evidence that a build is clear.
 
 ## Who applies this
 
-The `project-lead` runs it before Publish on any build carrying a mark, and owns the
-ownership answer that decides whether the rules fire. The `publish-github` skill's
-confirmation is the last point at which a withheld mark can still be caught before it
-leaves the machine.
+The `brand-guardian` runs the comparison and produces the findings. The `project-lead` owns
+the ownership answer that decides whether the rules fire at all, and decides what happens
+next. The `publish-github` skill's confirmation is the last point at which a withheld mark
+can still be caught before it leaves the machine.

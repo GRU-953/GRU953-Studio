@@ -208,6 +208,7 @@ not size (2026-07-11 v2.0.0):
 | An AI/LLM feature | `ai-developer` (any Tier — owns the prompt, the integration, the guardrails, and a small repeatable quality check) |
 | An AI/LLM feature | `responsible-ai-reviewer` (any Tier — an independent fairness/harm/transparency/over-reliance pass; 2026-07-25 audit fix: extended to all Tiers so no AI feature ships without independent review) |
 | A user interface | `accessibility-specialist` (any Tier); `ux-designer` (Standard+) |
+| A brand kit, or a build that will carry a logo, icon, wordmark or app name | `brand-guardian` (any Tier — runs the `brand-kit` intake first, then `brand-compliance` and `brand-assets`; 2026-08-25, Layer 4) |
 | Storing data beyond a session | `data-engineer` (Standard+) |
 | Money, logins, or personal data | `security-compliance-auditor`'s privacy review (personal-data minimisation, retention, consent, a plain notice) |
 | Hosting, packaging, or a deploy pipeline | `devops-engineer` (Standard+) |
