@@ -2382,6 +2382,22 @@ export function pipesRemoteCodeIntoAnInterpreter(rawC) {
 // with no reproduction to bound the guess, which is precisely how the clone and build-script cases
 // broke. It is a decision for the owner, with evidence, rather than a silent widening.
 export function sendsCommitsToRemote(rawC) {
+  if (
+    /(^|[^A-Za-z0-9_])['"]?(?:npm|pnpm|yarn|bun|vsce|ovsx)['"]?[ \t]+publish\b/i.test(
+      String(rawC || ''),
+    ) &&
+    !/--dry-run\b/i.test(String(rawC || ''))
+  )
+    return true;
+  // 2026-08-25: `npm publish` and its siblings are added HERE as well as to the scan, and that is a
+  // judgement worth stating rather than burying. The owner's decision of 24 August was "scan the
+  // transports, never prompt on them" — because a deploy script copying a file should not stop and
+  // ask. Publishing a package is not that. It makes code PUBLIC, irreversibly, on a registry, and the
+  // operating charter says publishing needs the user's own fresh "yes" every time.
+  //
+  // `gh release create` and `gh repo create --public` are deliberately NOT here: the `publish-github`
+  // skill owns that flow and carries its own confirmation, so a second prompt would be the false
+  // alarm this predicate was narrowed to avoid. Nothing owns `npm publish`, which is why it is.
   if (!rawC) return true;
   // Unanalysable, therefore unclassifiable. The ratified permission architecture is "fail closed to
   // `ask` on anything the tool cannot classify" — and this predicate's only caller IS the ask.
@@ -2640,18 +2656,31 @@ export function isPushCapable(rawC) {
   // download is not matched. `aws s3` needs `cp`, `mv` or `sync` with an `s3://` destination, so
   // `aws s3 ls` is not matched. Scanning is cheap and silent; being wrong here still costs, because
   // a scan that runs on every `curl` would find test fixtures in ordinary repositories.
-  const REMOTE_TARGET = '[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+:|[A-Za-z0-9_.-]+\\.[A-Za-z]{2,}:';
+  // 2026-08-25, found by the axis sweep as a residual of the X288 fix made the day before. The first
+  // version required `user@host:` or a dotted `host.tld:` — and an ssh_config Host ALIAS has neither.
+  // `Host myhost` is the ordinary way people name a machine they use often, so `scp creds.txt
+  // myhost:/tmp/` was unscanned while `scp creds.txt me@myhost:/tmp/` was caught. The alias form is
+  // the one a person actually types.
+  //
+  // The rule now matches what scp and rsync THEMSELVES do: a colon appearing before any slash makes
+  // the argument remote. That is their documented behaviour, so this cannot disagree with the tool
+  // about what is local — which is what the first version did.
+  //
+  // Two exclusions, both measured against the false-alarm corpus: a single-letter prefix is a Windows
+  // drive (`C:\path`), and a `scheme://` is a URL, not a host.
+  const REMOTE_TARGET =
+    '[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+:|(?:^|[ \\\\t])[A-Za-z0-9_.-]{2,}:(?!//)[^ \\\\t]*';
   if (new RegExp(`(^|[^A-Za-z0-9_])['"]?(scp|rsync)['"]?[ \\t].*(${REMOTE_TARGET})`, 'i').test(c))
     return true;
   // `sftp` is separated from the pair above because the colon test is wrong for it. A colon is what
   // distinguishes a remote target from a local one for scp and rsync — `rsync -a src/ dst/` is an
   // ordinary local copy and must stay silent. sftp has NO local mode: `sftp user@host` is already a
   // session with a remote, colon or no colon, so requiring one lost it.
-  if (
-    /(^|[^A-Za-z0-9_])['"]?sftp['"]?[ \t]+.*[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+/i.test(c) ||
-    new RegExp(`(^|[^A-Za-z0-9_])['"]?sftp['"]?[ \\t].*(${REMOTE_TARGET})`, 'i').test(c)
-  )
-    return true;
+  // sftp has NO local mode: every invocation with a target is a remote session, whatever the target
+  // looks like. So the colon test the transports above rely on is simply wrong here — `sftp myhost`
+  // is remote and carries neither a colon nor an `@`. Any non-flag argument is the evidence; bare
+  // `sftp` and `sftp --help` are not.
+  if (/(^|[^A-Za-z0-9_])['"]?sftp['"]?[ \t]+(?!-)[^ \t]/i.test(c)) return true;
   if (
     /(^|[^A-Za-z0-9_])['"]?curl['"]?[ \t]/i.test(c) &&
     /[ \t](-T|--upload-file|-d|--data(-raw|-binary|-urlencode)?|-F|--form)([ \t=]|$)/i.test(c)
@@ -2673,6 +2702,21 @@ export function isPushCapable(rawC) {
     ).test(c)
   )
     return true;
+  // 2026-08-25, the second residual the sweep found. `npm publish` sends a package to a PUBLIC
+  // registry — the most direct contradiction of the owner's standing "publish nothing online"
+  // directive that a single command can express — and it was neither scanned nor prompted. Nor were
+  // pnpm, yarn, bun, or `vsce publish` for a VS Code extension.
+  //
+  // A `--dry-run` genuinely publishes nothing, so it is excluded rather than swept in.
+  if (
+    /(^|[^A-Za-z0-9_])['"]?(?:npm|pnpm|yarn|bun|vsce|ovsx)['"]?[ \t]+publish\b/i.test(c) &&
+    !/--dry-run\b/i.test(c)
+  )
+    return true;
+  // A pipe INTO ssh sends the local tree somewhere else — `tar czf - . | ssh host 'cat > b.tgz'` is
+  // the classic form. A bare `ssh host` is an interactive login and sends nothing, so the pipe is the
+  // evidence and a plain ssh is deliberately not matched.
+  if (/\|[ \t]*(?:sudo[ \t]+)?ssh[ \t]+/i.test(c)) return true;
   if (/(^|[^A-Za-z0-9_])['"]?git['"]?[ \t]+svn[ \t]+dcommit/i.test(c)) return true;
   if (
     new RegExp(
