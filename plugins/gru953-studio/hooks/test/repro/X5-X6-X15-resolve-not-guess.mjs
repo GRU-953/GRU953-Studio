@@ -32,8 +32,8 @@
 // this machine until the moment it runs. No amount of reading finds it, so the owner's ratified
 // architecture — fail closed to `ask` on anything that cannot be classified — is the only honest
 // answer, and case G asserts it. Kept deliberately narrow: the fetch must be on the left of the pipe
-// that feeds the interpreter, so control H's LOCAL pipe is out of scope and says so rather than being
-// swept in.
+// that feeds the interpreter, so a LOCAL pipe is not swept into the ask — it is RESOLVED instead,
+// in cases H1 to H6, added 2026-08-24 when that half was done.
 //
 //   case                                                      required
 //   A  bash build.sh, where build.sh only pushes               scanned -> deny on a staged secret
@@ -43,7 +43,8 @@
 //   E  control: npm run test                                   silent
 //   F  control: make clean                                     silent
 //   G  curl … | sh                                             ask, and the reason says why
-//   H  control: cat s.sh | bash (local pipe)                   silent — out of scope, disclosed
+//   H1-H6 a file piped or redirected into an interpreter        scanned -> deny
+//   H7-H10 harmless forms, a non-interpreter, an unreadable path silent
 //   I  control: ls -la, npm ci, echo                           silent
 //   J  a clean tree: bash build.sh asks, naming the script      consent is coherent with git push
 //
@@ -164,12 +165,33 @@ check('F', 'make clean', 'no decision', 'control: resolves, does not push');
   }
 }
 
-// ---- H: control — the LOCAL pipe is deliberately out of scope -------------------
+// ---- H: X6's local half — a file piped or redirected into an interpreter -------
+//
+// Added 2026-08-24, when the local pipe stopped being out of scope. All six orders below reached the
+// network unscanned before that: `cat x.sh | bash`, the same with no spaces, `bash < x.sh`,
+// `bash <x.sh`, `< x.sh bash`, and the sudo form. No file extension is required for these,
+// deliberately — `| bash` and `< ` followed by an interpreter are unambiguous about what is about
+// to be executed, whatever the file is called, which is not true of a bare `bash foo`.
+for (const [n, cmd] of [
+  'cat build.sh | bash',
+  'cat build.sh|bash',
+  'bash < build.sh',
+  'bash <build.sh',
+  '< build.sh bash',
+  'cat build.sh | sudo bash',
+].entries()) {
+  check(`H${n + 1}`, cmd, 'deny', 'the piped file only pushes');
+}
+// The harmless forms of the same orders, a pipe whose right side is NOT an interpreter, and a path
+// that cannot be read — each must stay silent, or this becomes a guess in a new direction.
+check('H7', 'cat innocent.sh | bash', 'no decision', 'control: resolves, does not push');
+check('H8', 'bash < innocent.sh', 'no decision', 'control: resolves, does not push');
+check('H9', 'cat notes.md | grep x', 'no decision', 'control: grep is not an interpreter');
 check(
-  'H',
-  'cat innocent.sh | bash',
+  'H10',
+  'cat missing.sh | bash',
   'no decision',
-  'control: local pipe, disclosed as out of scope',
+  'control: unreadable path resolves to nothing',
 );
 
 // ---- I: control — ordinary work stays silent -----------------------------------

@@ -2133,6 +2133,38 @@ export function resolveScriptIndirection(rawC, cwd) {
     if (text !== null) return { kind: 'script', source: rel, text };
   }
 
+  // ---- a file piped or redirected INTO an interpreter -----------------------------
+  //
+  // 2026-08-24, X6's local half. `cat x.sh | bash` and `bash < x.sh` run a local file just as surely
+  // as `bash x.sh` does, and none of the three orders was modelled: all of `cat build.sh | bash`,
+  // `cat build.sh|bash`, `bash < build.sh`, `bash <build.sh`, `< build.sh bash` and
+  // `cat build.sh | sudo bash` reached the network unscanned.
+  //
+  // Unlike the direct form above, NO FILE EXTENSION IS REQUIRED here, and that is deliberate rather
+  // than lax. `bash foo` is ambiguous — foo might be a subcommand — which is why the direct rule
+  // wants an extension it recognises. `| bash` and `< ` followed by an interpreter are not ambiguous:
+  // whatever that file holds is about to be executed, whatever it is called. A path that cannot be
+  // read resolves to nothing and the caller is left exactly as it was.
+  const INTERP = '(?:sudo[ \\t]+)?(?:(?:ba|z)?sh|node|python3?|ruby|perl)';
+  const PATHCH = '([^ \\t;&|\'"<>]+)';
+  for (const re of [
+    // cat FILE | [sudo] interpreter
+    new RegExp(
+      `(?:^|[^A-Za-z0-9_])(?:cat|type)[ \\t]+${PATHCH}[ \\t]*\\|[ \\t]*${INTERP}${LEXICAL_BOUNDARY}`,
+      'i',
+    ),
+    // interpreter < FILE
+    new RegExp(`(?:^|[^A-Za-z0-9_])${INTERP}[ \\t]*<[ \\t]*${PATHCH}`, 'i'),
+    // < FILE interpreter
+    new RegExp(`(?:^|[^A-Za-z0-9_])<[ \\t]*${PATHCH}[ \\t]+${INTERP}${LEXICAL_BOUNDARY}`, 'i'),
+  ]) {
+    const hit = re.exec(c);
+    if (!hit) continue;
+    const rel = hit[1].replace(/^\.\//, '');
+    const text = readCapped(path.resolve(base, rel));
+    if (text !== null) return { kind: 'piped-script', source: rel, text };
+  }
+
   // ---- a package.json script -----------------------------------------------------
   const run = /(?:^|[^A-Za-z0-9_])(?:npm|pnpm|yarn)[ \t]+run[ \t]+([A-Za-z0-9_:.-]+)/i.exec(c);
   if (run) {
@@ -2185,9 +2217,10 @@ export function resolveScriptIndirection(rawC, cwd) {
 // amount of reading finds it. Measured at HEAD, both `cat s.sh | bash` and `curl -s … | sh` are
 // classified non-push and reach the network with no scan: the pipe form was never modelled.
 //
-// The local pipe (`cat s.sh | bash`) IS resolvable in principle and is left to a later pass; this
-// covers the network form, where asking costs almost nothing because fetching a script and executing
-// it unread is both rare in ordinary work and the exact idiom that cannot be checked any other way.
+// The local pipe (`cat s.sh | bash`) IS resolvable, and as of 2026-08-24 it is resolved — see the
+// piped-script form in resolveScriptIndirection above. This function covers only the case that can
+// never be resolved by anything, where asking costs almost nothing because fetching a script and
+// executing it unread is both rare in ordinary work and the exact idiom no amount of reading checks.
 // Keeping the rule this narrow is deliberate: an ask on every pipeline would be the false alarm that
 // gets a guard switched off (L5), and there is no version of that which is worth having.
 export function pipesRemoteCodeIntoAnInterpreter(rawC) {
