@@ -2275,6 +2275,41 @@ export function resolveScriptChain(rawC, cwd, maxDepth = 3) {
   };
 }
 
+// updateRootIsOurs() — the two-part test that establishes the git repository above this plugin IS
+// this plugin's, before anything is fetched or rebased.
+//
+// 2026-08-24, X292. This logic lived inline in `auto-update.mjs`, and X241's reproduction — the
+// CRITICAL finding about the nightly unattended updater rebasing a stranger's repository — said so
+// outright: "the guard, re-implemented here from the two properties it asserts rather than by
+// importing the module". All five of its cases called that local eight-line copy, and the SHIPPED
+// guard was touched only by four substring tests over the file's text.
+//
+// So `!crossesNodeModules && carriesThisPlugin` becoming `||`, or the boolean inverted, or
+// `relFromRoot` computed from the wrong pair of paths, would keep every substring present and all five
+// cases green while the updater rebased the user's Homebrew prefix again. The two copies agreed on the
+// day this was found; nothing in the file could have told anyone if they stopped.
+//
+// The fix is not a cleverer test, it is ONE implementation. `auto-update.mjs` calls this and the
+// reproduction imports this, so there is no second copy to drift. That is L14 in this project: sites
+// that each carry their own copy of a rule are sites that drift.
+//
+// THE TWO PROPERTIES, and why each is needed:
+//   * the path from the repository root down to the hook must not cross `node_modules` — if it does,
+//     this plugin is a DEPENDENCY of the repository above it, and that repository is someone else's;
+//   * the repository must actually carry this plugin's manifest, in either of the two layouts that
+//     are legitimate (a source checkout, or a marketplace tree with the plugin under `plugins/`).
+export function updateRootIsOurs(hookDir, studioRoot, exists) {
+  const stat = typeof exists === 'function' ? exists : (p) => fs.existsSync(p);
+  const relFromRoot = path.relative(String(studioRoot), String(hookDir));
+  const crossesNodeModules = relFromRoot.split(path.sep).some((seg) => seg === 'node_modules');
+  const carriesThisPlugin =
+    stat(path.join(String(studioRoot), '.claude-plugin', 'plugin.json')) ||
+    stat(
+      path.join(String(studioRoot), 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'),
+    );
+  return !crossesNodeModules && carriesThisPlugin;
+}
+
 // 2026-08-24, X6. The half of X6 that CANNOT be resolved, and therefore the one place where the
 // ratified architecture — "fail closed to ask on anything the tool cannot classify" — is the only
 // honest answer.

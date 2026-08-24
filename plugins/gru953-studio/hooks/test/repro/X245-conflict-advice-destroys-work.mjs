@@ -167,6 +167,91 @@ if (!block) {
   }
 }
 
+// ---- the axis this file held still: WHAT THE CODE EXECUTES -----------------------
+//
+// 2026-08-24, X293. Every case above varies the WORDING of the printed advice — `git stash drop`
+// hedged and placed last, `--ours`/`--theirs` each explained, "nothing has been lost" stated,
+// `git stash list` offered — and not one of them looks at what the updater actually RUNS. This file
+// imports `readFileSync` and nothing else.
+//
+// For a DATA-LOSS finding that is the wrong axis to be the only one. The finding is that the user's
+// work gets destroyed; the advice text is one route to that and the code is the other. A future edit
+// adding `execSync('git stash drop')`, `git checkout --force`, `git reset --hard` or `git clean -fd`
+// to the recovery path leaves cases A to E green, because the advice is untouched and case A only ever
+// asks whether the STRING 'git stash drop' is hedged in prose.
+//
+// So: collect every command the file executes, and judge the SET. Verified 2026-08-24 that there is no
+// live defect — the only stash operation executed anywhere is `git pull --rebase --autostash`, and
+// every other mention is comment text or the printed advice — but nothing in the file could have told
+// anyone if that changed.
+{
+  // The commands as the code would run them, with comments stripped so an explanation quoting a
+  // dangerous command is not mistaken for one being executed — the same distinction cases A to E
+  // already rely on for the advice text.
+  const live = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const executed = [];
+  // Both call shapes: a quoted literal, and a template literal with interpolation.
+  for (const m of live.matchAll(/exec(?:Sync|FileSync)\(\s*(['"`])([\s\S]*?)\1/g)) {
+    executed.push(m[2].replace(/\$\{[^}]*\}/g, '<…>').trim());
+  }
+  for (const m of live.matchAll(/spawn(?:Sync)?\(\s*(['"`])([\s\S]*?)\1/g)) {
+    executed.push(m[2].replace(/\$\{[^}]*\}/g, '<…>').trim());
+  }
+
+  // A command is destructive if it can discard work that exists nowhere else. `--autostash` is
+  // explicitly NOT on this list: it stashes and restores around a rebase, which is the opposite of
+  // discarding, and it is the one stash operation this updater is meant to perform.
+  const DESTRUCTIVE = [
+    {
+      re: /\bstash\s+(drop|clear)\b/,
+      why: 'discards a stash, which may be the only copy of the work',
+    },
+    { re: /\breset\s+--hard\b/, why: 'throws away committed and uncommitted work' },
+    { re: /\bcheckout\s+(--force|-f)\b/, why: 'overwrites local changes without asking' },
+    {
+      re: /\bclean\s+-[a-z]*[dxf]/,
+      why: 'deletes untracked files, which are never recoverable from git',
+    },
+    { re: /\brestore\s+.*--(worktree|staged)\b/, why: 'discards local modifications' },
+    { re: /\brebase\s+--abort\b.*\bstash\b/, why: 'aborts and drops in one step' },
+    { re: /\bbranch\s+-D\b/, why: 'force-deletes a branch and any commits only on it' },
+    { re: /\bpush\s+.*--force(?!-with-lease)/, why: 'overwrites remote history' },
+    { re: /\bfilter-branch\b/, why: 'rewrites history irreversibly' },
+    { re: /\brm\s+-[a-z]*[rf]/, why: 'deletes files' },
+  ];
+  const found = [];
+  for (const cmd of executed) {
+    for (const d of DESTRUCTIVE) {
+      if (d.re.test(cmd)) found.push(`\`${cmd}\` — ${d.why}`);
+    }
+  }
+  if (found.length) {
+    note(
+      `the updater EXECUTES ${found.length} destructive command(s) on a path this file only ever ` +
+        `read the advice text of: ${found.join('; ')}. The finding is that the user's work is ` +
+        'destroyed — the wording is one route to that and the code is the other.',
+    );
+  } else if (executed.length === 0) {
+    // An empty read is never evidence of health. If the extraction stops matching, this case must
+    // say so rather than report a clean set it never actually built.
+    note(
+      'found NO executed commands in auto-update.mjs at all. The file certainly runs git commands, so ' +
+        'the extraction above has stopped matching and this case is reporting on nothing.',
+    );
+  } else {
+    console.log(`  ·  ${executed.length} executed command(s) inspected ....... none destructive`);
+  }
+
+  // And the one stash operation that IS expected must still be there — otherwise a future edit could
+  // pass this case by removing the rebase entirely, which would not be a fix.
+  if (!executed.some((c) => /pull\s+--rebase\s+--autostash/.test(c))) {
+    note(
+      'the updater no longer runs `git pull --rebase --autostash`. That is the operation that PROTECTS ' +
+        'local work across the rebase, so its absence is not an improvement — check what replaced it.',
+    );
+  }
+}
+
 if (expectBug) {
   if (!problems.length) {
     console.error('FAIL: --expect-bug found nothing; this is not the defective state.');

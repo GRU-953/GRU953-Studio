@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { formatFsError } from './lib.mjs';
+import { formatFsError, updateRootIsOurs } from './lib.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -132,12 +132,11 @@ try {
 // Failing either is NOT an error: an installed copy has no repository to update, which is ordinary
 // and expected, and the CLI already prints the correct npm and Homebrew commands for that case. So
 // the updater stands aside quietly unless `--force` asked for an answer.
-const relFromRoot = path.relative(studioRoot, __dirname);
-const crossesNodeModules = relFromRoot.split(path.sep).some((seg) => seg === 'node_modules');
-const carriesThisPlugin =
-  fs.existsSync(path.join(studioRoot, '.claude-plugin', 'plugin.json')) ||
-  fs.existsSync(path.join(studioRoot, 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'));
-const rootIsOurs = !crossesNodeModules && carriesThisPlugin;
+// 2026-08-24, X292: the two-part test now lives in lib.mjs as `updateRootIsOurs()` and is imported,
+// so the reproduction that guards it tests THIS code rather than a hand-copied duplicate of it. The
+// duplicate was X241's own stated method and agreed with this on the day it was written; nothing in
+// the reproduction could have told anyone if they stopped agreeing.
+const rootIsOurs = updateRootIsOurs(__dirname, studioRoot);
 
 const isGitRepo = fs.existsSync(path.join(studioRoot, '.git')) && rootIsOurs;
 if (!rootIsOurs && fs.existsSync(path.join(studioRoot, '.git')) && force) {

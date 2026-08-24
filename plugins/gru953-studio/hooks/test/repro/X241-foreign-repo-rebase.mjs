@@ -60,16 +60,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 const HOOKS = join(here, '..', '..');
 const SRC = readFileSync(join(HOOKS, 'auto-update.mjs'), 'utf8');
 
-// The guard, re-implemented here from the two properties it asserts rather than by importing the
-// module — importing it would run the updater against this checkout, which would pull.
-const rootIsOurs = (start, root) => {
-  if (!root) return false;
-  const crosses = relative(root, start).split(sep).some((s) => s === 'node_modules');
-  const carries =
-    existsSync(join(root, '.claude-plugin', 'plugin.json')) ||
-    existsSync(join(root, 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'));
-  return !crosses && carries;
-};
+// THE SHIPPED GUARD, IMPORTED — not a copy.
+//
+// 2026-08-24, X292. This was "the guard, re-implemented here from the two properties it asserts rather
+// than by importing the module", with the honest reason that importing `auto-update.mjs` would run the
+// updater against this checkout and pull. The reason was sound and the consequence was that all five
+// cases below tested an eight-line local duplicate, while the SHIPPED guard was touched only by four
+// substring tests over the file's text. So `!crosses && carries` becoming `||`, or the boolean
+// inverted, or `relative()` called on the wrong pair of paths, would keep every substring present and
+// every case green while the nightly unattended updater rebased a stranger's repository again — which
+// is the CRITICAL finding this file exists for.
+//
+// The fix was to move the guard into `lib.mjs` as `updateRootIsOurs()`, which `auto-update.mjs` now
+// imports. lib.mjs has no side effects on import, so the original objection no longer applies: this
+// file can import the real implementation and there is no second copy to drift.
+const { updateRootIsOurs } = await import(join(HOOKS, 'lib.mjs'));
+const rootIsOurs = (start, root) => (root ? updateRootIsOurs(start, root) : false);
 const findGitRoot = (start) => {
   let d = resolve(start);
   for (;;) {
@@ -91,13 +97,14 @@ const mk = (...p) => {
 
 // ---- first: the guard must actually be present in the shipped file ------------------
 {
-  const wired =
-    /node_modules/.test(SRC) && /rootIsOurs/.test(SRC) && /claude-plugin/.test(SRC);
+  // The substring tests are kept — they are cheap and they catch the guard being deleted outright —
+  // but they are no longer what this file rests on. Cases A to E now exercise the shipped function.
+  const wired = /rootIsOurs/.test(SRC) && /updateRootIsOurs/.test(SRC);
   if (!wired) {
     note(
-      'the guard is not in auto-update.mjs at all: the file does not test for a node_modules ' +
-        'boundary and a plugin manifest before deciding isGitRepo, so findGitRoot\'s answer is ' +
-        'used unchecked',
+      'auto-update.mjs no longer imports updateRootIsOurs() from lib.mjs, so either the guard has ' +
+        'been deleted or a second copy of it has appeared — and a second copy is what X292 was ' +
+        "raised for. findGitRoot's answer would be used unchecked.",
     );
   } else {
     // It must gate isGitRepo, not merely exist somewhere in the file.
@@ -124,11 +131,15 @@ const mk = (...p) => {
     found = null;
   }
   if (!found) {
-    console.log('  A  real Homebrew layout ....................... absent on this machine, skipped');
+    console.log(
+      '  A  real Homebrew layout ....................... absent on this machine, skipped',
+    );
   } else {
     const root = findGitRoot(found);
     if (rootIsOurs(found, root)) {
-      note(`case A: the real installed copy at ${found} resolves to ${root} and is treated as ours`);
+      note(
+        `case A: the real installed copy at ${found} resolves to ${root} and is treated as ours`,
+      );
     } else {
       console.log(`  A  real Homebrew layout ....................... REFUSED (root was ${root})`);
     }
@@ -140,19 +151,62 @@ const mk = (...p) => {
   const root = mk('proj');
   mkdirSync(join(root, '.git'));
   const start = mk('proj', 'node_modules', '@gru953', 'studio-cli', 'plugin', 'hooks');
-  // Deliberately give the installed copy its OWN manifest, which is what a real package ships:
-  // property 2 alone would pass here, so this case is what makes property 1 load-bearing.
-  mkdirSync(join(tmp, 'proj', 'node_modules', '@gru953', 'studio-cli', 'plugin', '.claude-plugin'), {
-    recursive: true,
-  });
+  // Deliberately give the installed copy its OWN manifest, which is what a real package ships.
+  //
+  // 2026-08-24, X292: this comment used to claim "property 2 alone would pass here, so this case is
+  // what makes property 1 load-bearing". THAT CLAIM WAS FALSE, and it was false in a way no assertion
+  // in this file could see. `carriesThisPlugin` looks at the ROOT, not at the installed copy, and this
+  // fixture's root has no manifest — so property 2 refuses this case on its own and property 1 is
+  // never the reason. Proved by mutation once the shipped guard became importable: swapping the
+  // arguments of `path.relative` breaks the node_modules test completely and every case here still
+  // passed. Case B2 below is the fixture that actually isolates property 1.
+  mkdirSync(
+    join(tmp, 'proj', 'node_modules', '@gru953', 'studio-cli', 'plugin', '.claude-plugin'),
+    {
+      recursive: true,
+    },
+  );
   writeFileSync(
-    join(tmp, 'proj', 'node_modules', '@gru953', 'studio-cli', 'plugin', '.claude-plugin', 'plugin.json'),
+    join(
+      tmp,
+      'proj',
+      'node_modules',
+      '@gru953',
+      'studio-cli',
+      'plugin',
+      '.claude-plugin',
+      'plugin.json',
+    ),
     '{"name":"gru953-studio"}',
   );
   if (rootIsOurs(start, findGitRoot(start))) {
     note('case B: an installed copy under node_modules is treated as our own repository');
   } else {
     console.log('  B  installed copy under node_modules .......... REFUSED');
+  }
+}
+
+// ---- B2: the case that isolates property 1 -----------------------------------------
+//
+// A repository that DOES carry a plugin manifest at its root AND has this plugin installed underneath
+// it as a dependency. Ordinary rather than contrived: anyone developing their own plugin marketplace
+// repo who also installs GRU953-Studio is in exactly this layout. Property 2 PASSES here, so the only
+// thing that can refuse it is the node_modules boundary — which makes this the one case where a break
+// in property 1 is visible.
+{
+  const root = mk('mine');
+  mkdirSync(join(root, '.git'));
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  writeFileSync(join(root, '.claude-plugin', 'plugin.json'), '{"name":"someone-elses-plugin"}');
+  const start = mk('mine', 'node_modules', '@gru953', 'studio-cli', 'plugin', 'hooks');
+  if (rootIsOurs(start, findGitRoot(start))) {
+    note(
+      'case B2: a repository that carries its own plugin manifest and has this plugin installed ' +
+        'under node_modules is treated as ours. Property 2 passes here by design, so this is the ' +
+        'case that shows the node_modules boundary is working — and it is the only one that does.',
+    );
+  } else {
+    console.log('  B2 our plugin as a dependency of a plugin repo . REFUSED');
   }
 }
 

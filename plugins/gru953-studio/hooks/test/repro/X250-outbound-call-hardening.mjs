@@ -28,7 +28,7 @@
 // the option is what the finding is about and that is read-verifiable. B, C and D are executed.
 //
 //   case                                                    required
-//   A  the outbound call carries a timeout and a redirect     both options present
+//   A  the outbound call cannot hang or follow a redirect     both options present AND correct
 //   B  a null / number / string inside data                   no stack trace, still renders
 //   C  importing from a suffix-named file                      no request, no output
 //   D  the summary counts only real entries                    junk does not inflate it
@@ -64,8 +64,33 @@ const live = SRC.split('\n')
   const call = /fetchImpl\(url,\s*\{[\s\S]{0,400}?\}\s*\)/.exec(live);
   const text = call ? call[0] : '';
   const missing = [];
+  // 2026-08-24, X294: this was `/signal\s*:/` and `/redirect\s*:/` — the KEY's presence, not its
+  // VALUE. `redirect: 'follow'` is the DEFAULT and precisely the behaviour a redirect guard exists to
+  // prevent; `signal: null` and `signal: undefined` are no timeout at all. Both would have satisfied
+  // the old test, and this case would have printed "timeout and redirect guard — both present" over a
+  // call that hangs and follows redirects off the catalogue host.
+  //
+  // A key name is not a guarantee. The header's argument for READING rather than executing is right
+  // for an option's ABSENCE — proving a timeout fires means holding a socket open for fifteen seconds
+  // — and it does not extend to the option's value, which is equally read-verifiable.
   if (!/signal\s*:/.test(text)) missing.push('no timeout (signal)');
+  else if (/signal\s*:\s*(null|undefined|false)\b/.test(text))
+    missing.push('signal is present but empty, so there is no timeout');
+  else if (!/signal\s*:\s*AbortSignal\.timeout\(\s*\d+\s*\)/.test(text))
+    missing.push('signal is not an AbortSignal.timeout(<ms>), so no deadline is established');
+  else {
+    const ms = Number(/AbortSignal\.timeout\(\s*(\d+)\s*\)/.exec(text)[1]);
+    // A bound has to be a real bound. Ten minutes is not a timeout for a catalogue listing, and zero
+    // would abort before the request left the machine.
+    if (!(ms >= 1000 && ms <= 60000))
+      missing.push(`the timeout is ${ms} ms, which is not a usable deadline for this call`);
+  }
   if (!/redirect\s*:/.test(text)) missing.push('no redirect guard');
+  else if (!/redirect\s*:\s*['"`](error|manual)['"`]/.test(text))
+    missing.push(
+      `redirect is present but set to ${(/redirect\s*:\s*['"`]?([A-Za-z]+)/.exec(text) || [, '?'])[1]}, ` +
+        "and 'follow' is the default this option exists to override",
+    );
   if (!call) {
     note('case A: could not find the fetchImpl call site, so nothing here is testing it');
   } else if (missing.length) {
