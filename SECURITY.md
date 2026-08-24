@@ -1115,3 +1115,49 @@ author; R20, continuous integration green on every platform claimed) are not yet
 work. Shipping the fix for a Critical with less scrutiny than the code that caused it would lower the
 standard rather than raise it. The defect is therefore disclosed here and fixed in the release that can
 meet those requirements honestly.
+
+## Currency update (2026-08-24) — what reading a command can and cannot establish
+
+This section exists because of finding **X15**, which says something true and worth a user knowing:
+deciding what a shell command does by pattern-matching its text cannot converge. Twelve rounds of
+audit are the evidence, and the fix history proves it — whether `npm run build` might publish used to
+be decided by testing the command against six words (`deploy|release|publish|ship|public|visibility`),
+so `npm run deploy` was scanned and `npm run build` was not, on nothing but the name someone gave the
+script.
+
+**What changed on 2026-08-24.** Where an indirection can be resolved, it is now resolved instead of
+guessed at. The studio reads the thing that will actually run:
+
+| You type | It reads |
+| :-- | :-- |
+| an interpreter given a script — `bash`, `sh`, `node`, `python`, `ruby`, `perl`, or `./` | that script file |
+| `npm run <name>` (and the `pnpm` and `yarn` spellings) | that entry in `package.json`'s `scripts` |
+| `make <target>` | that target's recipe |
+| a script piped or redirected into an interpreter | that script file |
+
+and then asks the ordinary question of the real text. A script that does not publish stays silent,
+exactly as before, so this added no new interruptions.
+
+**What it still cannot do, stated plainly rather than left for you to discover.**
+
+- **A command assembled while it runs is invisible.** If a script builds the words `git push` out of
+  variables, or fetches them, nothing that reads text will find it. This is X15's own point, and it is
+  a limit rather than a bug: no amount of further pattern work removes it.
+- **One level only.** A script that runs another script is not followed into: the studio reads the
+  one you named and stops there.
+- **No shell semantics.** Variables, globs, conditionals and loops inside the script are not
+  evaluated. The text is read, not interpreted.
+- **Remote code is never read at all.** `curl … | sh` runs something that does not exist on your
+  machine until the moment it runs. The studio therefore **asks** rather than pretending to have
+  checked — that is the only honest answer available, and it is why you will see a question there and
+  nowhere else in ordinary work.
+
+**Why this is disclosed rather than fixed.** The residual is not an oversight waiting on effort. Any
+guard that decides from text has this boundary, and a product claiming otherwise would be making a
+promise it cannot keep. What the studio owes you is to be accurate about where the boundary is, and to
+ask rather than guess when it reaches it.
+
+**What it does NOT weaken.** The secret scan still reads the actual file set a push would ship, not
+the command that triggers it, so a secret in your tree is found regardless of how the push was
+spelled. The catastrophic-command refusals judge the command text itself, where the evidence is in the
+words. This section is about inferring a command's *intent*, which is a different and harder thing.
