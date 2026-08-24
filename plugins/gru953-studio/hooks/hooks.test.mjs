@@ -7973,6 +7973,7 @@ for (const script of [
   'X289-X290-emission-forms.mjs',
   'X291-inv20-file-types.mjs',
   'X38-X40-which-copy-guards-you.mjs',
+  'X101-timeout-margin.mjs',
   'X286-marker-needs-a-comment.mjs',
   'X287-secret-shapes.mjs',
   'X288-non-git-transports.mjs',
@@ -8479,7 +8480,34 @@ test('X16: every command hook declares an explicit timeout, and the hooks finish
   // bound on this repository, which is the largest tree they realistically meet.
   const repoRoot = path.resolve(HERE, '..', '..', '..');
   const bound = Math.min(...declared) * 1000;
-  for (const hook of ['scan.mjs', 'gate.mjs']) {
+  // 2026-08-25, X101: this iterated `['scan.mjs', 'gate.mjs']`, and X214 DELETED gate.mjs on
+  // 16 August — so half of this loop has been timing a file that does not exist for nine days,
+  // returning instantly and quietly improving the average it contributes to. A dead iteration in a
+  // timing check is not neutral: it makes the check look twice as thorough as it is. The hooks are
+  // read from hooks.json now, so this cannot go stale again the next time one is added or removed.
+  //
+  // The 4x floor here is kept deliberately loose because this runs on every commit and on CI runners
+  // of unknown load. The real margin is measured properly, against seven adversarial trees, in
+  // test/repro/X101-timeout-margin.mjs — which is where a decay will be caught first.
+  const wiredHookFiles = [
+    ...new Set(
+      Object.values(cfg.hooks)
+        .flat()
+        .flatMap((g) => g.hooks || [])
+        .filter((h) => h.type === 'command')
+        .map((h) => {
+          const m = /([A-Za-z0-9_.-]+\.mjs)/.exec(String(h.command || ''));
+          return m ? m[1] : null;
+        })
+        .filter(Boolean),
+    ),
+  ];
+  assert.ok(wiredHookFiles.length > 0, 'hooks.json must name at least one .mjs command hook');
+  for (const hook of wiredHookFiles) {
+    assert.ok(
+      fs.existsSync(path.join(HERE, hook)),
+      `hooks.json wires ${hook}, which does not exist — a hook that cannot run is not a gate`,
+    );
     const started = Date.now();
     runHook(hook, 'git push origin main', repoRoot);
     const took = Date.now() - started;

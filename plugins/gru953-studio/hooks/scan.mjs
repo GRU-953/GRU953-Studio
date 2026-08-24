@@ -21,6 +21,7 @@
 // stdout is reserved for the decision JSON.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 // 2026-07-26 audit finding 4: this was `require('node:zlib')` inside
@@ -133,11 +134,42 @@ function devMemoryHasAnyFile(devMemoryPath) {
 }
 
 // ---- push-tree resolution ------------------------------------------------------
+// expandTilde() — `~` is the shell's, not a path component.
+//
+// 2026-08-25, X295. `resolvePushTree()` returned a `git -C` or `cd` path VERBATIM, so a tilde was
+// never expanded: `path.resolve(SESSION_DIR, '~/repo')` yields `<session>/~/repo`, a directory that
+// does not exist. Measured at the parent, from a studio session against a target repo holding a
+// tracked AWS-shaped key:
+//
+//   git -C ~/target push origin main   ->  deny, "not a git work tree; cannot prove the push set is clean"
+//   git -C /Users/…/target push …      ->  deny, naming the secret
+//
+// So this was NOT a leak — the fail-closed layer caught it — and that is why it is graded Medium
+// rather than High. It is a FALSE REFUSAL with an untrue explanation: the tree it named is a perfectly
+// good git work tree, and the user is told otherwise about their own repository. A gate that blocks
+// honest work while explaining itself wrongly is the L5 risk, which is how gates get switched off.
+//
+// PROVENANCE, because it is the point of X296. This fix already existed. It was written on 15 August
+// and it survived only inside an uncommitted copy of scan.mjs in a folder that both a delivered
+// instruction document and my own summary had called disposable — in no commit, on no branch, one
+// deletion from gone. It was found by three reviewers refuting the sentence "it is safe to bin that
+// folder". The reasoning below is that author's, kept because it is right; the file it came from is
+// NOT restored, because the same copy also emits a blanket `allow` (finding X1).
+//
+// `~otheruser/` is deliberately NOT expanded: resolving it portably needs a passwd-database lookup
+// this project's Node-stdlib-only design has no call for, and nobody legitimately pushes from another
+// user's home directory on a single-user dev machine. Such a path is returned unexpanded — no worse
+// than before, just not improved either.
+function expandTilde(p) {
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
 function resolvePushTree(cmd, fallback) {
   let m = /(?:^|[^A-Za-z0-9_])git[ \t]+-C[ \t]+(?:"([^"]+)"|'([^']+)'|([^ \t]+))/.exec(cmd);
-  if (m) return m[1] || m[2] || m[3];
+  if (m) return expandTilde(m[1] || m[2] || m[3]);
   m = /^[ \t]*cd[ \t]+(?:"([^"]+)"|'([^']+)'|([^ \t;&|]+))[ \t]*(?:&&|;)/.exec(cmd);
-  if (m) return m[1] || m[2] || m[3];
+  if (m) return expandTilde(m[1] || m[2] || m[3]);
   return fallback;
 }
 

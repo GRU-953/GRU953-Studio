@@ -1125,6 +1125,19 @@ be decided by testing the command against six words (`deploy|release|publish|shi
 so `npm run deploy` was scanned and `npm run build` was not, on nothing but the name someone gave the
 script.
 
+*Updated 25 August 2026 (finding X15). This limit is real and permanent, and it is now recorded in the
+register as a **disclosed limit** rather than as an open defect — because calling it a defect implied
+someone would one day fix it, and nobody will. What has changed is how much of the product relies on
+reading text at all: a script is now READ rather than guessed at from its name, through up to three
+levels of one script calling another; the check no longer assumes git is the only way code leaves your
+machine; and when the studio says it found no secrets it now tells you which kinds it knows how to look
+for, instead of implying there are none.*
+
+*What is still outside the boundary, and always will be: a command assembled while it runs, from pieces
+that are not in the text; a fourth level of one script calling another; and code downloaded from the
+internet and run immediately, which does not exist on your machine until the moment it runs. For that
+last one the studio ASKS you rather than pretending to have checked.*
+
 **What changed on 2026-08-24.** Where an indirection can be resolved, it is now resolved instead of
 guessed at. The studio reads the thing that will actually run:
 
