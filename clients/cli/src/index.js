@@ -25,38 +25,81 @@ const { installInto } = require('./install-targets');
 const pathSetup = require('./path-setup');
 const autoupdate = require('./autoupdate');
 
-/**
- * The plugin directory to install FROM — the studio itself, not this command.
- *
- * Two places it can legitimately be, checked in this order:
- *
- *   1. `../plugin`, inside this package. That is where scripts/bundle-plugin.mjs
- *      copies it at pack time so the published package carries the studio. Checked
- *      FIRST because a published install is the common case for real users.
- *   2. `../../../plugins/gru953-studio`, i.e. the repository checkout this file
- *      lives in during development.
- *
- * Returns null when neither exists, and every caller then says so plainly rather
- * than installing an empty directory — the same trap a previous version of the
- * Antigravity bridge fell into, reporting success over an empty folder.
- *
- * 2026-08-11: the bundled location is new. Before it, an npm or Homebrew install
- * had no studio to install at all, so `install` and `models` could not do their
- * jobs — while the README, the Homebrew caveats and the wiki all said they could.
- * Found by running the real Homebrew-installed command instead of the checkout;
- * every test passed beforehand because every test ran from a checkout, where the
- * plugin is always a few directories up.
- */
-function findPluginSource() {
-    const candidates = [
-        path.join(__dirname, '..', 'plugin'),
-        path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio'),
-    ];
-    for (const c of candidates) {
-        if (fs.existsSync(path.join(c, '.claude-plugin', 'plugin.json'))) return c;
-    }
-    return null;
-}
+  /**
+   * Where the studio itself lives, relative to this file.
+   *
+   * Two places it can legitimately be:
+   *
+   *   1. `../plugin`, inside this package. Where scripts/bundle-plugin.mjs copies it at pack time, so
+   *      a published package carries the studio. In a published install this is the ONLY candidate.
+   *   2. `../../../plugins/gru953-studio`, the repository checkout this file lives in during
+   *      development. In a checkout BOTH exist.
+   *
+   * 2026-08-24, finding X38. This used to return the FIRST of those that existed, with the packaged
+   * copy first and the comment here arguing for that order — "checked FIRST because a published
+   * install is the common case for real users". The argument was sound for a published install, where
+   * only one candidate exists and the order cannot matter, and wrong for a checkout, where both exist
+   * and the packaged copy is build output that goes stale the moment anyone edits a hook. So in the one
+   * situation where the order decides anything, it chose the stale answer, and no comparison of dates,
+   * versions or contents was made. That is X38's literal statement.
+   *
+   * Now: SOURCE WINS when both are present and real, and a difference between them is reported rather
+   * than silently resolved. The old comment is rewritten rather than left in place, because as written
+   * it invited the next reader to put the order back.
+   *
+   * IDENTITY-GUARDED, and this is not polish. The second candidate is three directories up — outside
+   * this package — and it is not merely copied from; it is a directory the tool RUNS CODE out of and
+   * hands to the updater. Promoting it from "never reached" to "consulted first" without checking what
+   * it is would be a real widening: in a global npm install that path can land in a shared directory
+   * whose contents change when the user installs any other package. So a candidate counts only if its
+   * manifest actually names this plugin. Three independent reviewers refused to certify the reorder
+   * without this, and they were right to.
+   */
+  function pluginManifestName(dir) {
+      try {
+          const raw = fs.readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8');
+          const j = JSON.parse(raw);
+          return typeof j.name === 'string' ? j.name : null;
+      } catch {
+          return null; // unreadable or unparseable is not an identity
+      }
+  }
+
+  function findPluginSource() {
+      const packaged = path.join(__dirname, '..', 'plugin');
+      const checkout = path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio');
+      // Only a directory whose manifest names THIS plugin is a candidate.
+      const valid = [checkout, packaged].filter((d) => pluginManifestName(d) === 'gru953-studio');
+      if (valid.length === 0) return null;
+      const chosen = valid[0]; // checkout first — source is the truth when both are real
+      if (valid.length > 1) {
+          // Both exist. They are meant to be identical: the bundler regenerates the packaged copy on
+          // prepack. A difference means the packaged copy is stale, which is the defect X38 names, so
+          // it is said out loud instead of being resolved in silence.
+          const a = pluginVersion(checkout);
+          const b = pluginVersion(packaged);
+          if (a && b && a !== b) {
+              console.error(
+                  `GRU953-Studio: the packaged copy in this checkout is version ${b} while the source ` +
+                      `is ${a}. Using the source. Run "node clients/cli/scripts/bundle-plugin.mjs" to ` +
+                      'refresh the packaged copy.',
+              );
+          }
+      }
+      return chosen;
+  }
+
+  /** The version string from a plugin manifest, or null if it cannot be read. */
+  function pluginVersion(dir) {
+      try {
+          const j = JSON.parse(
+              fs.readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8'),
+          );
+          return (j.metadata && j.metadata.version) || j.version || null;
+      } catch {
+          return null;
+      }
+  }
 
 /** A downloaded .vsix sitting next to the checkout's dist/, if one was built. */
 // 2026-08-22, X261: this took the LAST entry of a plain alphabetical sort, which is not the newest

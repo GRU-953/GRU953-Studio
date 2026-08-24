@@ -52,7 +52,37 @@ import { fileURLToPath } from 'node:url';
 import { readDecision, refuseCrash } from './_verdict.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+// 2026-08-24, X40. This file works out where it itself lives and runs the `scan.mjs` sitting next to
+// it — so it always tests its own NEIGHBOUR, whichever folder that happens to be, and never the copy
+// a live session is running. When the two differed it passed while the product misbehaved, and NOTHING
+// IN ITS OUTPUT REVEALED WHICH FILE IT HAD EXERCISED. That is the whole of X40.
+//
+// It cannot fix which copy the platform loads — that is not a test's job. What it can do, and now
+// does, is make a passing run traceable to a specific file on disk instead of to "a copy of scan.mjs
+// somewhere". A verdict that cannot name its subject is not evidence about the product.
+const reportSubject = (hooksDir) => {
+  const target = path.join(hooksDir, 'scan.mjs');
+  let size = '?';
+  let version = 'unknown';
+  try {
+    size = String(fs.readFileSync(target, 'utf8').split('\n').length) + ' lines';
+  } catch {
+    size = 'UNREADABLE';
+  }
+  try {
+    const j = JSON.parse(
+      fs.readFileSync(path.join(hooksDir, '..', '.claude-plugin', 'plugin.json'), 'utf8'),
+    );
+    version = (j.metadata && j.metadata.version) || j.version || 'unknown';
+  } catch {
+    /* an unreadable manifest is reported as unknown, never guessed */
+  }
+  console.log(`  subject: ${target}`);
+  console.log(`           version ${version}, ${size}`);
+};
 const HOOKS = path.resolve(HERE, '..', '..');
+reportSubject(HOOKS);
 const REPO = path.resolve(HOOKS, '..', '..', '..');
 const NODE = process.execPath;
 const expectBug = process.argv.includes('--expect-bug');

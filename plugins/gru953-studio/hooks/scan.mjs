@@ -42,6 +42,7 @@ import {
   escalate,
   sendsCommitsToRemote,
   resolveScriptChain,
+  carriesThisPlugin,
   pipesRemoteCodeIntoAnInterpreter,
   readStdin,
   extractCommand,
@@ -1295,8 +1296,43 @@ function main() {
   // bug. Normalised on win32 only, so nothing changes on Linux or macOS where case
   // genuinely distinguishes two different files.
   const samePathCase = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
-  const OWN_FIXTURE_DIR = samePathCase(
-    path.resolve(HOOKS_DIR, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory') + path.sep,
+  // 2026-08-24, X38/X40 — THE ANCHOR MOVED, and this is the change that closes them.
+  //
+  // This used to be `path.resolve(HOOKS_DIR, 'test', 'fixtures', …)` — built from the directory of
+  // the RUNNING HOOK. So the exemption only lined up with the files being scanned when the hook
+  // happened to live inside the very checkout it was scanning. Any other copy pointed the exemption
+  // at a tree that was not being scanned, matched nothing, and refused a clean repository: X22's
+  // whole defect, reached by geometry rather than by staleness.
+  //
+  // Verified this way round rather than assumed: a byte-identical copy of scan.mjs in a different
+  // directory reproduced the full refusal, so being STALE was sufficient and never necessary. That
+  // is why deleting stale folders could not have closed these findings, and why the earlier framing
+  // — "only the owner can refresh what is installed" — was looking for the wrong thing entirely.
+  //
+  // The exemption is now a property of the REPOSITORY BEING SCANNED, which is what it always meant:
+  // "this repository is allowed to ship its own test fixtures." Whichever copy of the hook runs, the
+  // answer is the same.
+  //
+  // GATED ON IDENTITY, because anchoring to the scanned repository widens the exemption on its own.
+  // `carriesThisPlugin()` — the same predicate the updater uses, one definition in lib.mjs — means
+  // only a tree that actually holds this plugin's manifest may claim it.
+  //
+  // RESIDUAL, disclosed — and MEASURED, which made it narrower than it first looked. The theoretical
+  // risk is a repository that installs this plugin's manifest AND recreates this exact fixture path to
+  // hide secrets under the exemption. Built and tried: it was still REFUSED, by a different check —
+  // its `Dev-Memory/` was not gitignored, which is its own finding. So claiming the exemption takes
+  // more than the manifest alone, and the honest statement is "narrow, and not the only layer", not
+  // "wide open". Either way it is a repository its own owner built: this scan protects someone from
+  // shipping their own secrets by accident, not from a tree constructed to defeat it.
+  const OWN_FIXTURE_REL = path.join(
+    'plugins',
+    'gru953-studio',
+    'hooks',
+    'test',
+    'fixtures',
+    'dev-memory',
+    'golden',
+    'Dev-Memory',
   );
   // 2026-08-17 X217 fix (HIGH): `base` is a REQUIRED argument, because the two callers
   // below hold paths measured from DIFFERENT directories and this helper cannot tell
@@ -1308,9 +1344,21 @@ function main() {
   // call site is what stops that being assumed again. Omitting it makes `path.resolve`
   // throw, which lands in the `catch` and refuses — the safe direction, never a silent
   // exemption.
+  // The repository ROOT, which is not always `base`. `base` is whatever git printed its paths relative
+  // to — `REPO` for the working-tree scan, the toplevel for the history scan — and `REPO` is the
+  // session's directory, which may be a SUBDIRECTORY of the repository. X217 exists because those two
+  // were conflated once already.
+  //
+  // 2026-08-24: and the first version of this fix conflated them again, in the other direction. It
+  // asked `carriesThisPlugin(base)`, which is false whenever `base` is a subdirectory — so a push from
+  // `hooks/` lost the exemption and X217 reopened within the hour. Both facts belong to the ROOT: where
+  // the fixture is, and whether this repository is ours. Only the resolution of `f` belongs to `base`.
+  const OWN_FIXTURE_ROOT = repoToplevelForDiff.ok ? repoToplevelForDiff.stdout.trim() : REPO;
   const isOwnTestFixture = (f, base) => {
     try {
-      return samePathCase(path.resolve(base, String(f)) + path.sep).startsWith(OWN_FIXTURE_DIR);
+      if (!carriesThisPlugin(OWN_FIXTURE_ROOT)) return false;
+      const dir = samePathCase(path.resolve(OWN_FIXTURE_ROOT, OWN_FIXTURE_REL) + path.sep);
+      return samePathCase(path.resolve(base, String(f)) + path.sep).startsWith(dir);
     } catch {
       return false; // unresolvable path is never exempt
     }

@@ -2299,15 +2299,39 @@ export function resolveScriptChain(rawC, cwd, maxDepth = 3) {
 //   * the repository must actually carry this plugin's manifest, in either of the two layouts that
 //     are legitimate (a source checkout, or a marketplace tree with the plugin under `plugins/`).
 export function updateRootIsOurs(hookDir, studioRoot, exists) {
-  const stat = typeof exists === 'function' ? exists : (p) => fs.existsSync(p);
   const relFromRoot = path.relative(String(studioRoot), String(hookDir));
   const crossesNodeModules = relFromRoot.split(path.sep).some((seg) => seg === 'node_modules');
-  const carriesThisPlugin =
-    stat(path.join(String(studioRoot), '.claude-plugin', 'plugin.json')) ||
-    stat(
-      path.join(String(studioRoot), 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'),
+  return !crossesNodeModules && carriesThisPlugin(studioRoot, exists);
+}
+
+// carriesThisPlugin() — does this directory hold THIS plugin's manifest, in either legitimate layout?
+//
+// 2026-08-24, X38/X40. Split out of updateRootIsOurs() because a second caller needs exactly this half
+// and nothing else: scan.mjs's "I am allowed to push my own repository" exemption. That exemption used
+// to be built from the RUNNING HOOK's own directory, so any copy of the hook sitting outside the
+// checkout it was scanning pointed the exemption at the wrong tree and refused a clean repository —
+// X22's defect, reinstated by geometry rather than by staleness.
+//
+// Anchoring the exemption to the SCANNED repository instead is only safe if that repository is
+// actually ours, and this is that test.
+//
+// ONE definition, two callers, deliberately. The alternative is two copies of a security predicate
+// that agree today — which is L14, and X292 was raised this same morning for exactly that shape: a
+// reproduction testing its own hand-copied duplicate of the guard it claimed to protect.
+//
+// Both layouts are real and both must pass: a source checkout carries the manifest under
+// `plugins/gru953-studio/`, and a packaged or installed copy carries it at its own root.
+export function carriesThisPlugin(root, exists) {
+  const stat = typeof exists === 'function' ? exists : (p) => fs.existsSync(p);
+  if (!root) return false;
+  try {
+    return (
+      stat(path.join(String(root), '.claude-plugin', 'plugin.json')) ||
+      stat(path.join(String(root), 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'))
     );
-  return !crossesNodeModules && carriesThisPlugin;
+  } catch {
+    return false; // an unresolvable root is never ours
+  }
 }
 
 // 2026-08-24, X6. The half of X6 that CANNOT be resolved, and therefore the one place where the
