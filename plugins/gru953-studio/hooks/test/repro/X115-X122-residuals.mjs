@@ -172,12 +172,26 @@ const skipped = (v) => (Array.isArray(v.tablesSkipped) ? v.tablesSkipped : null)
 }
 
 // ---- G: control — the real project --------------------------------------------
+// 2026-08-25, found by CI on the first push — the leg that could never run on the development
+// machine. `Dev-Memory/` is GITIGNORED, so a fresh clone has none, and a gate handed a directory with
+// no `Dev-Memory/` correctly answers "not a studio project" rather than "clean". Both are honest
+// answers to different questions; this control accepted only one, so it passed locally for a reason
+// that had nothing to do with the product being correct and failed on every clean checkout.
+//
+// The sample sweep flagged this exact shape about X22 on 24 August — "case A cannot fail when
+// Dev-Memory/ is absent at the checkout root, the environment CI runs in" — and it was not acted on.
+// CI acted on it instead.
+const HONEST_ON_THIS_PROJECT = (s) => s === 'clean' || s === 'not a studio project';
 for (const hook of ['licence-scan.mjs', 'content-check.mjs']) {
   const v = run(hook, REPO);
-  if (v.status !== 'clean') {
-    note(`control G: ${hook} is no longer clean on this project ("${v.status}")`);
+  if (!HONEST_ON_THIS_PROJECT(v.status)) {
+    note(
+      `control G: ${hook} gave "${v.status}" on this project — expected either "clean" (a checkout ` +
+        'whose gitignored Dev-Memory/ is present on disk) or "not a studio project" (a fresh clone, ' +
+        'which is what CI has). Anything else means this fix has broken the real repository.',
+    );
   } else {
-    console.log(`  G  control: ${hook.padEnd(34)} clean`);
+    console.log(`  G  control: ${hook.padEnd(30)} ${v.status}`);
   }
 }
 

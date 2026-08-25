@@ -135,13 +135,39 @@ console.log(`X22 reproduction — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\
   // So it says so. A check that cannot check must not report success — the same rule as X113
   // (a gate that cannot read its input), X195 (a disclosure that admits what was not verified)
   // and X188 (a crash is not a verdict).
-  const engaged = fs.existsSync(path.join(REPO, 'Dev-Memory'));
+  //
+  // 2026-08-25, X347, found by CI on the very first push - the one leg that could never run on the
+  // development machine. The disclosure above was right that this case needs a `Dev-Memory/` at or
+  // above the checkout, and wrong to stop at calling that unverifiable. `Dev-Memory/` is GITIGNORED,
+  // so a clean checkout has none; `findStudioRoot()` asks only whether that directory EXISTS
+  // (lib.mjs:384), so the condition can simply be created, exercised, and removed again. Nothing is
+  // faked: an empty `Dev-Memory/` is exactly what makes a checkout a studio project, which is the
+  // state case A is about. On the development machine the directory is already there and is left
+  // strictly alone - `weMadeIt` removes only what this case itself created.
+  //
+  // What the old `if (!ok && engaged) failures++` actually did: in CI case A counted NOTHING, in
+  // either direction. Cases B and C do not vary with `--expect-bug`. So the file exited 0 for BOTH
+  // runs and the two-direction contract in hooks.test.mjs failed with "still reports the DEFECT as
+  // present, so either the fix regressed or the reproduction no longer tests anything". The second
+  // half of that sentence was the true one. A case excused from counting is a case that has stopped
+  // testing - the same shape as X176 itself, one level up.
+  const ROOT_DM = path.join(REPO, 'Dev-Memory');
+  const weMadeIt = !fs.existsSync(ROOT_DM);
+  if (weMadeIt) fs.mkdirSync(ROOT_DM, { recursive: true });
+  let engaged = false;
+  let decision = null;
+  let reason = '';
+  try {
+    engaged = fs.existsSync(ROOT_DM);
+    ({ decision, reason } = decisionFor(REPO));
+  } finally {
+    if (weMadeIt) fs.rmSync(ROOT_DM, { recursive: true, force: true });
+  }
   if (!engaged) {
     console.log(
-      '  ....  A  NOT EXERCISED - no Dev-Memory/ at or above this checkout, so scan.mjs stands aside; this case cannot tell the fixture exemption working from scan.mjs never running. CI-unverifiable by construction (finding X176).',
+      '  ....  A  NOT EXERCISED - no Dev-Memory/ at or above this checkout and one could not be created, so scan.mjs stands aside; this case cannot tell the fixture exemption working from scan.mjs never running.',
     );
   }
-  const { decision, reason } = decisionFor(REPO);
   const findings = reason
     .split('\n')
     .filter((l) => l.trim().startsWith('{'))
@@ -158,7 +184,10 @@ console.log(`X22 reproduction — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\
   // still fails this case, in either environment.
   const want = expectBug ? 'deny' : engaged ? 'ask' : null;
   const ok = decision === want;
-  if (!ok && engaged) failures++;
+  // Counted whenever the case was exercised. `engaged` is now false only if the directory could
+  // neither be found nor created, and then `want` is null - which standing aside satisfies - so the
+  // FIX direction still passes honestly while the BUG direction is the one this guard used to lose.
+  if (!ok) failures++;
   console.log(
     `  ${ok ? 'ok  ' : 'FAIL'}  A  the product repo: decision=${decision} (want ${want})`,
   );

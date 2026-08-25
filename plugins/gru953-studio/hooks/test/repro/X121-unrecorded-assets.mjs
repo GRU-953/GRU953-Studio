@@ -161,16 +161,29 @@ expect(
 );
 
 // ---- G: control — the real projects ------------------------------------------
+// 2026-08-25, found by CI on the first push — the leg that could never run on the development
+// machine. `Dev-Memory/` is GITIGNORED, so a fresh clone has none, and this gate then correctly
+// answers "not a studio project" rather than "clean". Both are honest answers to different questions;
+// this control accepted only one, so it passed locally for a reason that had nothing to do with the
+// product being correct, and failed on every clean checkout.
+//
+// The golden fixture ALWAYS carries a Dev-Memory/, so it must still be exactly clean — only the
+// repository control has two honest answers. Splitting them keeps strictness where it means something.
 for (const [i, root] of [GOLDEN, REPO].entries()) {
   const v = verdict(root);
-  if (v.status !== 'clean') {
+  const ok =
+    i === 0 ? v.status === 'clean' : v.status === 'clean' || v.status === 'not a studio project';
+  if (!ok) {
     note(
-      `control G${i + 1}: ${i === 0 ? 'the golden fixture' : 'this project'} is no longer clean ` +
-        `("${v.status}"): ${JSON.stringify(v.problems || []).slice(0, 180)}`,
+      `control G${i + 1}: ${i === 0 ? 'the golden fixture' : 'this project'} gave "${v.status}" — ` +
+        (i === 0
+          ? 'the fixture always carries a Dev-Memory/, so only "clean" is honest here'
+          : 'expected "clean" (Dev-Memory/ present on disk) or "not a studio project" (a fresh clone)') +
+        `: ${JSON.stringify(v.problems || []).slice(0, 180)}`,
     );
   } else {
     console.log(
-      `  G${i + 1}  control: ${(i === 0 ? 'the golden fixture' : 'this project').padEnd(46)} clean`,
+      `  G${i + 1}  control: ${(i === 0 ? 'the golden fixture' : 'this project').padEnd(40)} ${v.status}`,
     );
   }
 }
