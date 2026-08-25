@@ -260,6 +260,99 @@ for (const f of falseAlarms) console.log(`         flagged: "${f}"`);
   console.log('  F  a Status cell reading "shipped" ............. clean   (control: X139 holds)');
 }
 
+// ---- the two axes this file held still, added 2026-08-25 ------------------------
+//
+// X194 varied the WORDING of a done claim thoroughly and held two things constant: the SEPARATOR
+// between the task and the claim, and the SPELLING of a tick. An axis-enumeration sweep asked what
+// was never moved, and the answer was measurable in one run against the real gate — with no evidence
+// recorded anywhere, these were all reported CLEAN:
+//
+//   T1 = done      T1 -> done      T1<TAB>done      T1 (done)      - T1 x ✓
+//
+// while `T1 — done`, `T1 | done`, `T1: done` and the ✅ ✔ ☑ ticks all blocked correctly. A gate that
+// catches three spellings of a claim and misses five is not catching the claim; it is catching a
+// habit of punctuation.
+//
+// THE BARE-SPACE FORM IS ASSERTED AS A GAP, not fixed. `T1 done`, with no punctuation at all, is still
+// reported clean and that is deliberate: adding it makes every sentence containing the word a
+// candidate, leaving the auxiliary-verb guard as the only thing between this gate and a false alarm on
+// ordinary prose. Case Z below pins that decision so it cannot be quietly reversed, and so nobody
+// mistakes it for an oversight.
+{
+  const SEPARATORS = [
+    ['an em dash', 'T1 — done'],
+    ['a pipe', 'T1 | done'],
+    ['a colon', 'T1: done'],
+    ['an equals', 'T1 = done'],
+    ['an ASCII arrow', 'T1 -> done'],
+    ['a unicode arrow', 'T1 → done'],
+    ['a tab', 'T1\tdone'],
+  ];
+  const TICKS = [
+    ['a ticked box', '- [x] T1 build it'],
+    ['U+2705 ✅', '- T1 build it ✅'],
+    ['U+2714 ✔', '- T1 build it ✔'],
+    ['U+2713 ✓', '- T1 build it ✓'],
+    ['U+2611 ☑', '- T1 build it ☑'],
+  ];
+  const missed = [];
+  for (const [label, line] of [...SEPARATORS, ...TICKS]) {
+    if (!swept(verdict(append(line)))) missed.push(`${label} (${JSON.stringify(line)})`);
+  }
+  if (missed.length) {
+    die(
+      `separator/tick axes: ${missed.length} unevidenced done claim(s) were reported CLEAN — ` +
+        `${missed.join(', ')}. The claim is the same in every one; only the punctuation differs`,
+    );
+  } else {
+    console.log(
+      `  S  ${SEPARATORS.length} separators and ${TICKS.length} tick spellings ..... all blocked`,
+    );
+  }
+
+  // The false-alarm line, which is what makes widening the separators safe rather than reckless.
+  const ordinary = [
+    'T1 — the build is done when tests pass',
+    'T1 — this will be done later',
+    'T1 — nothing has been done yet',
+    'Notes (see below) about the plan',
+    'The work is not done and should not be marked so',
+    'T1 — a cross means not done: ✗',
+    'Setup = configure the tools first',
+  ];
+  const wrong = ordinary.filter((l) => swept(verdict(append(l))));
+  if (wrong.length) {
+    die(
+      `control: ${wrong.length} ordinary line(s) now BLOCK — ${wrong.join('; ')}. Widening the ` +
+        'separators must not turn prose into a claim; a gate that fires on prose gets switched off',
+    );
+  } else {
+    console.log(`  S· control: ${ordinary.length} ordinary lines ................ still clean`);
+  }
+
+  // Z — the two stated gaps, asserted rather than left implicit. The parenthesised form was TRIED:
+  // it worked, and it blocked the golden fixture's own "Phase 1 (Build) shipped" line, so it was
+  // withdrawn. Both gaps are pinned here so neither drifts back in unnoticed.
+  if (swept(verdict(append('T1 (done)')))) {
+    die(
+      'case Z: `T1 (done)` now BLOCKS. Parentheses were deliberately excluded from the separator set ' +
+        'because splitting on a bracket made the golden fixture\'s "Phase 1 (Build) shipped" read as ' +
+        'a done claim. If this is wanted, the control must be re-checked first.',
+    );
+  } else {
+    console.log('  Z· the parenthesised form ................... still clean (stated gap)');
+  }
+  if (swept(verdict(append('T1 done')))) {
+    die(
+      'case Z: `T1 done`, with no separator at all, now BLOCKS. That may be an improvement — but it ' +
+        'was a deliberate exclusion, because with no punctuation every sentence containing the word ' +
+        'becomes a candidate. Decide it deliberately and update this case; do not let it drift in.',
+    );
+  } else {
+    console.log('  Z  the bare-space form ....................... still clean (stated gap)');
+  }
+}
+
 if (expectBug) {
   if (falseAlarms.length === 0)
     die(

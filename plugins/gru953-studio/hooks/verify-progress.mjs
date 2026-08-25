@@ -362,7 +362,9 @@ function main() {
   // Symbols survive the decoration strip below, so they are tested on the de-emphasised
   // cell before it: a bare tick or a ticked checkbox is a completion claim in every project
   // that uses one.
-  const DONE_SYMBOLS = /^\s*(✅|✔️?|☑️?|\[x\]|100\s*%)\s*$/i;
+  // 2026-08-25: `✓` added here too. The same omission had two homes, and a fix that reached only one
+  // of them would be this project's L14 in the file that keeps finding it.
+  const DONE_SYMBOLS = /^\s*(✅|✔️?|✓|☑️?|\[x\]|100\s*%)\s*$/i;
   const isDoneValue = (c) => {
     const raw = deEmphasise(String(c == null ? '' : c)).trim();
     if (DONE_SYMBOLS.test(raw)) return true;
@@ -714,7 +716,29 @@ function main() {
       // is described in the release notes" is a sentence about where things are written down. No
       // amount of position or whole-value testing can tell those apart, which is why both earlier
       // attempts failed.
-      const SEPARATORS = /\||:|\s[—-]\s|^\s*[—-]\s/;
+      // 2026-08-25, found by the axis sweep asking what X194's reproduction held still while it
+      // varied everything else. The answer was THE SEPARATOR: only `|`, `:`, a spaced em dash and a
+      // spaced hyphen ever appeared, so every other way of writing the same claim read as clean.
+      // Measured against the real gate, all of these were CLEAN with no evidence recorded:
+      //
+      //   T1 = done      T1 -> done      T1<TAB>done      T1 (done)
+      //
+      // while `T1 — done`, `T1 | done` and `T1: done` blocked correctly. A gate that catches three
+      // spellings of a claim and misses four is not catching the claim.
+      //
+      // The BARE-SPACE form (`T1 done`) is deliberately NOT added. With no punctuation at all every
+      // sentence containing the word becomes a candidate, and the auxiliary guard below would be the
+      // only thing between this gate and a false alarm on ordinary prose. That is too much load for
+      // one guard, and a gate that fires on prose gets switched off (L5). Disclosed gap, not a
+      // widened pattern.
+      // PARENTHESES WERE TRIED AND WITHDRAWN, and the withdrawal is the useful part. Adding `[()]`
+      // caught `T1 (done)` — and immediately BLOCKED this project's own golden fixture, whose line 3
+      // reads "Phase 1 (Build) shipped and verified below". Splitting on a bracket turned an ordinary
+      // parenthetical into a segment ending "shipped", which the done-value recogniser accepts.
+      // Parentheses are everywhere in prose; the control said so within one run. So `T1 (done)` joins
+      // the bare-space form as a stated gap rather than a widened pattern, and the negative control
+      // earned its keep for the second time this week.
+      const SEPARATORS = /\||:|=|->|→|\t|\s[—-]\s|^\s*[—-]\s/;
       const AUXILIARY =
         /\b(is|are|was|were|be|been|being|has|have|had|will|would|can|could|should|may|might|do|does|did|remains?|stays?)\b/i;
       const isStatusShaped = (c) => {
@@ -744,7 +768,11 @@ function main() {
       //
       // `[ ]` is deliberately excluded — an unticked box claims nothing. The marker must also stand
       // as its own token, so an ordinary word containing an x cannot trip it.
-      const DONE_MARK = /(^|\s)(\[[xX]\]|✅|✔️?|☑️?)(\s|$)/;
+      // 2026-08-25: `✓` U+2713 LIGHT CHECK MARK was missing while `✅` U+2705, `✔` U+2714 and `☑`
+      // U+2611 were all present — so the plainest tick of the four read as clean. Measured: the same
+      // line ticked with ✅, ✔ or ☑ blocked, and with ✓ did not. `✗`/`✘` are deliberately NOT here:
+      // a cross claims the opposite and must never be read as done.
+      const DONE_MARK = /(^|\s)(\[[xX]\]|✅|✔️?|✓|☑️?)(\s|$)/;
       const segs = l.split(SEPARATORS);
       const isClaim = segs.some((seg, si) => {
         if (!seg || seg.trim() === '') return false;
