@@ -442,8 +442,12 @@ function cmdUninstall() {
             console.log(`  FAILED    ${host.name}: ${e.message}`);
         }
     }
+    // 2026-08-25, X348: `known === false` means status() could not read the crontab, so it does not
+    // know whether a nightly job is there. Skipping the removal on that would leave a scheduled job
+    // that pulls and runs upstream code on a machine the owner has just uninstalled from — while this
+    // command printed nothing about it. disable() reports honestly in either case, so it is called.
     const au = autoupdate.status();
-    if (au.enabled) console.log(`  ${autoupdate.disable().message}`);
+    if (au.enabled || au.known === false) console.log(`  ${autoupdate.disable().message}`);
     console.log('');
     console.log(`Removed from ${removed} place${removed === 1 ? '' : 's'}. Your projects and their files are untouched.`);
     if (left > 0) {

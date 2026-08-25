@@ -372,7 +372,7 @@ function disable(options = {}) {
     };
 }
 
-/** @returns {{enabled: boolean, mechanism: string, message: string}} */
+/** @returns {{enabled: boolean, mechanism: string, message: string, known?: boolean}} */
 function status(options = {}) {
     const { platform = process.platform, homeDir = os.homedir(), runner = defaultRunner, env = process.env } = options;
     const run = runner;
@@ -387,7 +387,32 @@ function status(options = {}) {
     }
     const timerFile = path.join(p.systemdDir, p.systemdTimer);
     if (fs.existsSync(timerFile)) return { enabled: true, mechanism: 'systemd', message: `Scheduled daily (systemd user timer). Definition: ${timerFile}` };
-    if (readCrontab(run).includes(CRON_MARKER)) return { enabled: true, mechanism: 'cron', message: 'Scheduled daily (cron).' };
+    // 2026-08-25, X348, found by CI on the first push: `installer (ubuntu-latest)` died with
+    // "readCrontab(...).includes is not a function" and took the whole `doctor` report down with it,
+    // mid-page, after printing four green lines. On 22 August readCrontab was changed from returning
+    // a string to returning `{ text, readable }` — precisely so that "the crontab is empty" and "the
+    // crontab could not be read" would stop being the same answer. Two of its three call sites were
+    // updated. This one, eleven lines below both of those comments, was not. That is the exact L14
+    // shape ("fix every place carrying the shape") that the comment above it invokes by name.
+    //
+    // It could only ever crash on Linux — darwin returns at the launchd branch and win32 at schtasks,
+    // so the sole leg that reaches this line is the one this machine cannot run — and no unit test
+    // reached it either: every one passes an explicit platform or a runner whose crontab read succeeds.
+    //
+    // The second half matters as much as the crash. "Not scheduled, and nothing checks on its own" is
+    // the REASSURING answer, and an unreadable crontab may well have an entry sitting in it unread. So
+    // an unreadable crontab reports what it is — unknown — and says `known: false` for the uninstall
+    // path, which must attempt the removal rather than skip it on a guess.
+    const cron = readCrontab(run);
+    if (cron.readable && cron.text.includes(CRON_MARKER))
+        return { enabled: true, mechanism: 'cron', message: 'Scheduled daily (cron).' };
+    if (!cron.readable)
+        return {
+            enabled: false,
+            known: false,
+            mechanism: 'cron',
+            message: `Could not read your crontab, so whether a daily update check is scheduled is UNKNOWN — which is not the same as no. ${cron.error || ''} Check it yourself with \`crontab -l\`.`.trim(),
+        };
     return { enabled: false, mechanism: hasSystemd(run) ? 'systemd' : 'cron', message: 'Not scheduled, and nothing checks on its own. GRU953-Studio updates only when you ask it to — run `gru953-studio update`, or `/studio-update` inside a session.' };
 }
 

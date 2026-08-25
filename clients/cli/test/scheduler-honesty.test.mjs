@@ -196,3 +196,49 @@ test('win32: schtasks reporting the task does not exist IS absence, and stays a 
   assert.equal(r.ok, true, 'nothing to remove is not a failure');
   assert.match(r.message, /was no daily update check/i);
 });
+
+// 2026-08-25, X348. Everything above tests enable() and disable(). status() — the function `doctor`
+// prints and `uninstall` branches on — was tested only on darwin, so its cron branch was never
+// reached by anything: darwin returns at launchd, win32 at schtasks, and the sole leg that reaches
+// the crontab read is Linux, which this machine cannot run. It crashed there on
+// `readCrontab(...).includes is not a function` and took the whole doctor report down mid-page.
+// Found by CI on the first push, not by the suite.
+test('status on linux: an unreadable crontab is UNKNOWN, not "nothing is scheduled"', () => {
+  const home = mkTmp('gru-status-unreadable-');
+  const runner = runnerWith({
+    listOk: false,
+    listStdout: '',
+    listStderr: 'crontab: cannot open /var/spool/cron/crontabs/sam: Permission denied',
+  });
+  const s = autoupdate.status({ platform: 'linux', homeDir: home, runner, env: {} });
+  assert.equal(s.known, false, 'a read that failed cannot know whether a job is scheduled');
+  assert.match(s.message, /unknown/i);
+  assert.doesNotMatch(
+    s.message,
+    /nothing checks on its own/i,
+    'that sentence is the reassuring answer and must not be given on a failed read',
+  );
+  fs.rmSync(home, RM);
+});
+
+test('status on linux: an EMPTY crontab really is "not scheduled"', () => {
+  const home = mkTmp('gru-status-empty-');
+  const runner = runnerWith({ listOk: false, listStdout: '', listStderr: 'no crontab for sam' });
+  const s = autoupdate.status({ platform: 'linux', homeDir: home, runner, env: {} });
+  assert.equal(s.enabled, false);
+  assert.notEqual(s.known, false, 'an empty crontab was read successfully, so this IS known');
+  assert.match(s.message, /not scheduled/i);
+  fs.rmSync(home, RM);
+});
+
+test('status on linux: a crontab carrying our marker is reported as scheduled', () => {
+  const home = mkTmp('gru-status-on-');
+  const runner = runnerWith({
+    listOk: true,
+    listStdout: `# something of the user's own\n${OLD_LINE(autoupdate.CRON_MARKER)}\n`,
+  });
+  const s = autoupdate.status({ platform: 'linux', homeDir: home, runner, env: {} });
+  assert.equal(s.enabled, true);
+  assert.equal(s.mechanism, 'cron');
+  fs.rmSync(home, RM);
+});
