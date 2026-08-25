@@ -26,11 +26,21 @@ reaches each tool:
 | Cursor | `.cursorrules` | Yes for now. Cursor has moved to `.cursor/rules/*.mdc`; the old file is still read but is deprecated (X44) |
 | Windsurf | `.windsurfrules` | Yes for now. The product has been renamed Devin Desktop (X44) |
 | Cline | `.clinerules` | **Probably not.** Written as a FILE; current Cline expects a DIRECTORY of that name (X44) |
-| Roo Code | `.roomodes` | **No.** Prose is written into a slot Roo reads as structured data, so it is ignored (X41) |
+| Roo Code | `.roomodes` | **Yes.** A valid JSON `.roomodes` carrying a `customModes` entry (X41, fixed 2026-08-25 — this row said "No" for ten days after the behaviour was fixed) |
 | Devin, Replit, OpenHands, Augment Code, Tabnine, JetBrains AI, Amazon Q | none | **No file is written for any of these seven.** |
 
-`.agents/AGENTS.md` is also written, but the AGENTS.md convention reads a file at
-the project ROOT, so it does not reach tools that follow that convention (X42).
+**Both** a root `AGENTS.md` and `.agents/AGENTS.md` are written, so tools following the
+AGENTS.md convention — which reads the project ROOT — do reach it (X42, fixed).
+
+*(Corrected 2026-08-25. Until today this paragraph said the root file was NOT written and
+so the convention "does not reach tools that follow it". The behaviour had been fixed and
+the document was never updated, so the product spent ten days telling users two of its own
+capabilities did not work. Verified before rewriting: running the real
+`initializeUniversalRules()` into an empty directory writes nine files including
+`AGENTS.md` at the root, 2,581 bytes, and a `.roomodes` that parses as JSON with a
+`customModes` key. That is the X45 class inverted — an untrue public claim, but understating
+the product rather than overstating it, which is why no gate caught it: every check here
+hunts for a claim that promises too much.)*
 
 The behaviour fixes — a YAML `.roomodes`, a root `AGENTS.md`, `.cursor/rules/*.mdc`,
 and whatever is decided about `.clinerules` being a file or a directory — each
