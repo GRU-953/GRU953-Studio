@@ -1126,17 +1126,38 @@ function main() {
       .split('\0')
       .filter((s) => s.length > 0);
   const fileSet = new Set();
-  for (const p of nulParts(git(['ls-files', '-z', '--', ':/'], REPO, 'buffer').stdout))
-    fileSet.add(p);
-  for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout)) {
+  // 2026-08-25, X349. These three enumerations read `.stdout` and threw `.ok` away, so ANY git
+  // failure - an unreadable index, a permissions problem, a repository in a state git refuses to
+  // read - contributed zero paths. `FILES` came out empty, the scan found nothing, and the verdict
+  // at the bottom of this file then told the owner, in plain words, that it "checked what this would
+  // send ... and found none". A scan that enumerated NOTHING reporting that it FOUND nothing is the
+  // reassuring answer from a check that could not check: the class already filed here as X113, X115,
+  // X118, X281, X283, X328 and X348. The force-add branch fourteen lines below always had the
+  // correct form - `if (out.ok)` - so this file knew the right shape in one place and not in the
+  // other three. That is L14 exactly: fix every place carrying the shape.
+  const enumErrors = [];
+  const enumerate = (args, label) => {
+    const r = git(args, REPO, 'buffer');
+    if (!r.ok) {
+      const first = String(r.stderr || '')
+        .trim()
+        .split('\n')[0];
+      enumErrors.push(`${label}: ${first || `git exited ${r.status}`}`);
+      return [];
+    }
+    return nulParts(r.stdout);
+  };
+  for (const p of enumerate(['ls-files', '-z', '--', ':/'], 'the tracked files')) fileSet.add(p);
+  for (const p of enumerate(['diff', '--cached', '--name-only', '-z'], 'the staged changes')) {
     if (repoToplevelForDiff.ok) {
       fileSet.add(path.relative(REPO, path.join(repoToplevelForDiff.stdout.trim(), p)));
     } else {
       fileSet.add(p); // couldn't resolve toplevel; fall back to the raw (possibly wrong) path rather than dropping it
     }
   }
-  for (const p of nulParts(
-    git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'], REPO, 'buffer').stdout,
+  for (const p of enumerate(
+    ['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'],
+    'the untracked files',
   ))
     fileSet.add(p);
   // 2026-07-21 Round 13 audit fix (HIGH): if THIS command force-adds ignored
@@ -1983,6 +2004,23 @@ function main() {
       : indirection && sendsCommitsToRemote(indirection.text)
         ? indirection
         : undefined;
+    // 2026-08-25, X349, second half. If the file list could not be built then nothing was scanned,
+    // and NEITHER available answer below may be given: not the "found none" wording, and not the
+    // silence that `stepAside()` produces. Fail closed to `ask` - the permission architecture this
+    // project settled on - with the git error named, so the owner is deciding with the truth in
+    // front of them. Deliberately NOT `deny`: a transient git failure denying a push is a gate
+    // crying wolf, and a gate that cries wolf gets switched off (L5).
+    if (enumErrors.length) {
+      escalate(
+        `studio scan: I could NOT list the files this would ${SEND_VERB} - ${enumErrors.join('; ')}. ` +
+          'So nothing was scanned for secrets. Treat this as UNCHECKED, not as clean: the check did ' +
+          'not run, which is not the same as it having found nothing. ' +
+          (publishes !== undefined
+            ? 'Your operating charter also needs your own fresh "yes" before anything is published. '
+            : '') +
+          'Say yes only if you are content to send this with the secret check having not run at all.',
+      );
+    }
     if (publishes !== undefined) {
       // 2026-08-24, X287. This said "no secrets, keys or private Dev-Memory files were found in what
       // this would ship" — a flat positive assurance, given to a non-technical owner, about a scan

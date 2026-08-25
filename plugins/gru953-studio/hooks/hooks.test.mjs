@@ -2833,31 +2833,77 @@ test('auto-update.mjs: an available update is still detected with LC_ALL set to 
 // own cases (which re-implement the predicate to avoid importing a module that would pull this very
 // checkout) it proves the refusal end to end: no fetch, no rebase, a non-destructive exit, and a
 // message that tells the user what to do instead.
+//
+// 2026-08-26, finding X363 — Windows CI fix (reproduced: `not ok 142` on windows-latest/node 22 — "fixture check:
+// it must be one commit BEHIND", actual 'hello\r\n' against expected 'hello\n'). CLASS: the host's
+// git config leaking into a fixture — the SAME defect the sibling test above records for
+// 2026-07-26's `not ok 119`, and the reason a second instance of it got in is that this test was
+// written with raw `spawnSync('git', ...)` and no `env`, bypassing this suite's own hermetic
+// `git()`/`gitEnv()` helper (and every reason gitEnv() exists) entirely. GitHub's windows-latest
+// runners set core.autocrlf=true in git's SYSTEM config, so `git clone` converted the fixture's LF
+// blob to CRLF as it checked it out — standard, documented git behaviour, not a bug in
+// auto-update.mjs and not a fixture that failed to go behind.
+//
+// The fixture was in fact never wrong. Measured here on macOS with core.autocrlf=true injected via
+// GIT_CONFIG_SYSTEM, this exact fixture came back 'hello\r\n' while
+// `git rev-list --count HEAD..@{u}` returned 1 — one commit behind, as intended — and through the
+// hermetic helper below it came back 'hello\n' and 1 under that same hostile system config. So the
+// PRECONDITION was the thing at fault: it announced "one commit BEHIND" while actually asserting
+// exact bytes, and an end-of-line conversion therefore presented itself as a fixture that would
+// not go behind. Both halves are corrected: the fixture's git calls go through gitEnv() so no host
+// config reaches them, and behind-ness is now asserted AS behind-ness. Nothing here asks for less
+// than before — the byte-exact check is kept alongside the new count, not replaced by it.
 test('auto-update.mjs: refuses to touch a git repository that is not a GRU953-Studio checkout (X241)', () => {
   const bareDir = mkTmp('gru-au-foreign-bare-');
-  spawnSync('git', ['init', '--bare', bareDir], { encoding: 'utf8' });
+  git(['init', '-q', '--bare', '-b', 'main'], bareDir);
   const seedDir = mkTmp('gru-au-foreign-seed-');
-  spawnSync('git', ['init', seedDir], { encoding: 'utf8' });
+  git(['init', '-q', '-b', 'main'], seedDir);
   fs.writeFileSync(path.join(seedDir, 'file.txt'), 'hello\n');
-  spawnSync('git', ['add', '-A'], { cwd: seedDir, encoding: 'utf8' });
-  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'one'], { cwd: seedDir, encoding: 'utf8' });
-  spawnSync('git', ['push', bareDir, 'HEAD:refs/heads/main'], { cwd: seedDir, encoding: 'utf8' });
+  git(['add', '-A'], seedDir);
+  // No `-c user.email/-c user.name` any more: gitEnv() supplies GIT_AUTHOR_*/GIT_COMMITTER_*, and it
+  // additionally neutralises a runner's commit.gpgsign and core.hooksPath, which `-c user.*` never
+  // did and which would fail these commits outright rather than merely rewrite their line endings.
+  git(['commit', '-q', '-m', 'one'], seedDir);
+  git(['push', '-q', bareDir, 'HEAD:refs/heads/main'], seedDir);
   fs.appendFileSync(path.join(seedDir, 'file.txt'), 'update\n');
-  spawnSync('git', ['add', '-A'], { cwd: seedDir, encoding: 'utf8' });
-  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'two'], { cwd: seedDir, encoding: 'utf8' });
-  spawnSync('git', ['push', bareDir, 'HEAD:refs/heads/main'], { cwd: seedDir, encoding: 'utf8' });
+  git(['add', '-A'], seedDir);
+  git(['commit', '-q', '-m', 'two'], seedDir);
+  git(['push', '-q', bareDir, 'HEAD:refs/heads/main'], seedDir);
 
   // A repository the user owns, with an update genuinely waiting on its remote, and the plugin
   // sitting inside it as an installed package. This is the Homebrew and npm-global shape.
   const top = mkTmp('gru-au-foreign-top-');
+  // A throwaway cwd for the clone, the way the four tests above do it: `git()` needs a cwd to
+  // derive gitEnv()'s HOME and config paths from, and the raw `spawnSync` this replaces passed no
+  // cwd at all — so it ran in the suite's own cwd, which is this very checkout.
+  const cloneCwd = mkTmp('gru-au-foreign-cwd-');
   // `-b main` explicitly: a bare repo's HEAD follows init.defaultBranch, which need not be the
   // branch that was pushed, and a clone that finds no matching branch checks out nothing at all.
-  spawnSync('git', ['clone', '-b', 'main', bareDir, top], { encoding: 'utf8' });
-  spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'reset', '--hard', 'HEAD~1'], { cwd: top, encoding: 'utf8' });
-  spawnSync('git', ['branch', '--set-upstream-to=origin/main'], { cwd: top, encoding: 'utf8' });
+  // `--config core.autocrlf=false` rather than a `git config` call afterwards, because clone
+  // applies it after init and BEFORE checkout — so the first materialisation of the working tree is
+  // already LF, with nothing relying on a later `reset --hard` to rewrite it. It also persists in
+  // the clone's LOCAL config, which beats system and global: runAutoUpdate() below deliberately
+  // spawns the real script with NO env override (auto-update.mjs is production code — it must not
+  // need gitEnv()'s hermetic config to behave), so anything that script wrote into this tree would
+  // otherwise be subject to the host's autocrlf all over again.
+  git(['clone', '-q', '--config', 'core.autocrlf=false', '-b', 'main', bareDir, top], cloneCwd);
+  git(['reset', '-q', '--hard', 'HEAD~1'], top);
+  git(['branch', '--set-upstream-to=origin/main'], top);
   assert.ok(fs.existsSync(path.join(top, 'file.txt')), 'fixture check: the clone must have a working tree');
+  // Behind-ness asserted in git's own terms rather than inferred from file bytes. A bare count from
+  // `rev-list` is what auto-update.mjs itself relies on for exactly this reason (see the LC_ALL test
+  // above): no eol filter, locale or catalogue can rewrite it.
+  assert.equal(
+    git(['rev-list', '--count', 'HEAD..@{u}'], top).stdout.trim(),
+    '1',
+    'fixture check: it must be one commit BEHIND its upstream, so an update is genuinely waiting',
+  );
   const before = fs.readFileSync(path.join(top, 'file.txt'), 'utf8');
-  assert.equal(before, 'hello\n', 'fixture check: it must be one commit BEHIND, so an update is genuinely waiting');
+  // Kept, and kept byte-exact: it pins WHICH commit is checked out (the parent's 'hello\n', not the
+  // tip's 'hello\nupdate\n'), and it is what makes the "byte-identical" assertion at the end of this
+  // test mean something — a fixture that had silently started life as CRLF would compare CRLF to
+  // CRLF and prove nothing about the LF content the seed actually committed.
+  assert.equal(before, 'hello\n', 'fixture check: the checkout must carry the LF content that was committed');
 
   const hooksDir = path.join(top, 'node_modules', '@gru953', 'studio-cli', 'plugin', 'hooks');
   fs.mkdirSync(hooksDir, { recursive: true });
@@ -2882,7 +2928,7 @@ test('auto-update.mjs: refuses to touch a git repository that is not a GRU953-St
     /not updating|not a GRU953-Studio checkout/i,
     'and with --force it must say why, and name the package route instead',
   );
-  fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS);
+  fs.rmSync(bareDir, RM_OPTS); fs.rmSync(seedDir, RM_OPTS); fs.rmSync(top, RM_OPTS); fs.rmSync(cloneCwd, RM_OPTS);
 });
 
 test('dashboard.mjs: no Dev-Memory is a no-op, exit 0', () => {
@@ -8307,6 +8353,19 @@ for (const script of [
   // earned their place twice: case B caught the filter letting a bare ARRAY through (typeof [] is
   // 'object'), and case D had to be taught to REPORT a throw rather than die on it.
   'X250-outbound-call-hardening.mjs',
+  // 2026-08-25, X349: the push scan built its would-ship file list from three `git` calls and threw
+  // away whether any of them SUCCEEDED. A failed enumeration produced an empty set, the scan found
+  // nothing in it, and the verdict told the owner it had "checked what this would send ... and found
+  // none" — measured at the parent on a repository with an AWS-shaped key tracked in it. The
+  // force-add branch fourteen lines below always had the correct `if (out.ok)` form, so the file knew
+  // the right shape in one place and not in the other three: L14. Found by a sweep for the shape
+  // behind X348, which was the same mistake in clients/cli/src/autoupdate.js.
+  //
+  // Its case A is reachable only because `GIT_INDEX_FILE` can be pointed at a directory: that breaks
+  // `ls-files` while leaving `rev-parse --is-inside-work-tree` working, and scan.mjs already guards
+  // the latter. Control E pins that older guard so the two are never confused. No `chmod` anywhere —
+  // POSIX mode bits are advisory on Windows, and X347 was exactly that trap in this directory.
+  'X349-enumeration-blindness.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
