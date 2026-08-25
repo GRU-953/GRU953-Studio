@@ -68,7 +68,21 @@ const REQUIRED = [
   { key: 'review', match: /review/i, label: 'independent code review' },
   {
     key: 'security',
-    match: /secur|secret|licen[cs]e|privac|vuln/i,
+    // 2026-08-25, from the X138-X173 band (re-issued as X318). `Penetration testing` satisfied the
+    // TESTS dimension, because that matcher is `/\btest/i` and "testing" begins with "test" — so a
+    // Definition of Done could pass with a pentest report and NO unit-test run recorded anywhere.
+    // Measured: with an accessibility row present and `Penetration testing` the only test-shaped row,
+    // the gate returned clean.
+    //
+    // Fixed by claiming the phrase for the dimension it belongs to rather than by tightening the
+    // tests matcher. X119 made the FIRST keyword by POSITION win, so `penetrat` at index 0 beats
+    // `test` at index 12 and the row lands in security — where a pentest report is real evidence.
+    // Enumerating the security-testing phrases is narrower than trying to define what "test" may not
+    // touch (L15: enumerate, never sweep).
+    //
+    // Residual, stated: `load testing` or `smoke testing` still satisfy TESTS. That is defensible —
+    // both are test runs — and is not the defect this closes.
+    match: /secur|secret|licen[cs]e|privac|vuln|penetrat|pentest|threat model/i,
     label: 'security / licence / privacy clean',
   },
   { key: 'accessibility', match: /access/i, label: 'accessibility (or N/A with a reason)' },
