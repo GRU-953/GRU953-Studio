@@ -89,15 +89,47 @@ test('findPluginSource prefers the repository source over the packaged copy, and
     'whatever it returns must actually be the studio',
   );
 
-  // In THIS checkout both candidates exist, so the order is decidable and must be the source one.
+  // 2026-08-25, X352. The comment that stood here said "In THIS checkout both candidates exist, so
+  // the order is decidable" — and it was false for the checkout that matters. `clients/cli/plugin/`
+  // is GITIGNORED (.gitignore:29), so it exists only on a machine where someone has run the packer.
+  // CI uses actions/checkout and has none, so this `if` was false on every CI leg and the ONLY
+  // behavioural check of the X38 ordering ran nowhere but a developer's laptop. This file's own header
+  // records that the original defect survived precisely because "every test ran from a checkout".
+  //
+  // The other check of the ordering, X38-X40-which-copy-guards-you.mjs, is a regex over the source
+  // text — it cannot see a behavioural change at all. So X38 (the tool running, and handing the
+  // updater, a stale build-output copy instead of the source) could regress with nothing in the
+  // repository noticing, as long as the candidate-list literal was left alone.
+  //
+  // So the competing candidate is CREATED when it is absent, the ordering is measured, and only what
+  // this test created is removed again. The manifest deliberately names `gru953-studio`: a candidate
+  // naming anything else is filtered by the identity guard and would not compete, which would make
+  // the assertion pass without deciding anything — the same trap one level down.
   const checkout = path.join(PACKAGE_ROOT, '..', '..', 'plugins', 'gru953-studio');
   const packaged = path.join(PACKAGE_ROOT, 'plugin');
-  if (fs.existsSync(path.join(packaged, '.claude-plugin', 'plugin.json'))) {
+  const packagedManifestDir = path.join(packaged, '.claude-plugin');
+  const packagedManifest = path.join(packagedManifestDir, 'plugin.json');
+  const madeManifest = !fs.existsSync(packagedManifest);
+  const madePackagedDir = !fs.existsSync(packaged);
+  if (madeManifest) {
+    fs.mkdirSync(packagedManifestDir, { recursive: true });
+    fs.writeFileSync(
+      packagedManifest,
+      `${JSON.stringify({ name: 'gru953-studio', version: '0.0.0-competing-candidate-for-a-test' }, null, 2)}\n`,
+      'utf8',
+    );
+  }
+  try {
+    // Called again on purpose: `found` above was resolved before the competing candidate existed.
+    const withBoth = findPluginSource();
     assert.equal(
-      path.resolve(found),
+      path.resolve(withBoth),
       path.resolve(checkout),
       'with both present it must choose the repository source, not the build output — X38',
     );
+  } finally {
+    if (madePackagedDir) fs.rmSync(packaged, { recursive: true, force: true, maxRetries: 3 });
+    else if (madeManifest) fs.rmSync(packagedManifestDir, { recursive: true, force: true, maxRetries: 3 });
   }
 
   // And the identity guard: a candidate whose manifest names something else is not this plugin.

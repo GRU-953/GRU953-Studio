@@ -114,19 +114,43 @@ Say 'Installed.'
 Say ''
 Say 'Now setting GRU953-Studio up in the apps on this computer...'
 Say ''
-$cli = Get-Command gru953-studio -ErrorAction SilentlyContinue
+# CORRECTED 2026-08-25, X355. This is the Windows twin of X258, and X258 was applied to install.sh
+# only. It asked PATH first and used the npm prefix merely as a fallback — so it ran whatever
+# `gru953-studio` happened to be first on PATH, never the build `npm install -g` had just written,
+# and it printed no version at all to notice by. X258's measured consequence on the machine where it
+# was found: PATH resolved to a package-manager symlink into version 6.0.3 while the copy just
+# installed was 6.1.0, so the installer reported success having configured the machine with an OLDER
+# build. Every Windows user taking the documented `irm ... | iex` route (README.md:166,
+# docs/index.html:69) was still on that path.
+#
+# Order is now the same as install.sh's: the just-installed shim first, PATH second, and whichever is
+# about to run is named out loud with its version. `npm prefix -g` on Windows returns the prefix
+# ITSELF as the shim directory (there is no `bin` subdirectory as on POSIX), which is why the two
+# scripts join different paths onto the same command — a difference that is real, not a drift.
+$cli = $null
+$prefix = $null
+try { $prefix = (& npm prefix -g 2>$null | Select-Object -First 1) } catch { $prefix = $null }
+if ($prefix) {
+    foreach ($leaf in @('gru953-studio.cmd', 'gru953-studio.ps1', 'gru953-studio')) {
+        $candidate = Join-Path $prefix $leaf
+        if (Test-Path $candidate) { $cli = $candidate; break }
+    }
+}
+if (-not $cli) {
+    $onPath = Get-Command gru953-studio -ErrorAction SilentlyContinue
+    if ($onPath) { $cli = $onPath.Source }
+}
 if ($cli) {
-    & gru953-studio install
+    $ver = 'unknown'
+    try { $ver = (& $cli --version 2>$null | Select-Object -First 1) } catch { $ver = 'unknown' }
+    if (-not $ver) { $ver = 'unknown' }
+    Say "Using $cli (version $ver)"
+    & $cli install
 } else {
-    # Installed, but its folder is not on PATH in THIS window yet. A new
-    # PowerShell window would pick it up, but making the user open one before
-    # anything works is a poor first experience, so find it directly.
-    $prefix = (& npm prefix -g) 2>$null
-    $candidate = Join-Path $prefix 'gru953-studio.cmd'
-    if (Test-Path $candidate) {
-        & $candidate install
-    } else {
-        Die @"
+    # Neither the npm prefix nor PATH held a shim. Before X355 this branch was reached only when PATH
+    # had nothing, and it then re-tried the npm prefix — which is now tried FIRST, so by the time we
+    # are here both places have genuinely been looked in and there is nothing left to try.
+    Die @"
 The GRU953-Studio command was installed but cannot be found afterwards.
 
 Close this window, open a new PowerShell window, and run:
@@ -135,7 +159,6 @@ Close this window, open a new PowerShell window, and run:
 If that still does not find it, run this to see where npm put it:
   npm prefix -g
 "@
-    }
 }
 
 Say ''

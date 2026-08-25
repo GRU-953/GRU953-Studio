@@ -377,13 +377,44 @@ function status(options = {}) {
     const { platform = process.platform, homeDir = os.homedir(), runner = defaultRunner, env = process.env } = options;
     const run = runner;
     const p = jobPaths({ platform, homeDir, env });
+    // 2026-08-25, X350. X348 taught the CRON leg of this function that "I could not read it" is not
+    // "there is nothing there", and left these two legs exactly as they were — the L14 miss repeated
+    // inside the change that invoked L14 by name, two legs above it. Both decided by a boolean that
+    // is false for a FAILURE as well as for an ABSENCE, and both then printed the sentence the X348
+    // comment below names as "the REASSURING answer". `disable()` for win32 already separates the two
+    // (lines 318-333); `status()` for the same mechanism did not.
+    //
+    // It is not only wording. `doctor` prints this as a positive safety assertion (index.js:160, 350)
+    // and `uninstall` ACTS on it (index.js:450): without `known: false` the removal is skipped, so a
+    // daily job that pulls and runs upstream code stays scheduled on a machine the owner has just
+    // uninstalled from, with nothing printed about it.
+    const UNKNOWN = (what, detail) => ({
+        enabled: false,
+        known: false,
+        message: `Could not tell whether a daily update check is scheduled — ${what}. That is UNKNOWN, which is not the same as no. ${detail}`.trim(),
+    });
     if (platform === 'darwin') {
+        // fs.existsSync answers false for EACCES on a parent directory just as it does for absence,
+        // so the directory is stat'd separately: unreadable there means the answer is not known.
+        let launchAgentsReadable = true;
+        try {
+            fs.accessSync(path.dirname(p.launchAgent), fs.constants.R_OK);
+        } catch (e) {
+            launchAgentsReadable = e && e.code === 'ENOENT'; // absent is a real answer; unreadable is not
+        }
         const on = fs.existsSync(p.launchAgent);
+        if (!on && !launchAgentsReadable)
+            return { ...UNKNOWN(`${path.dirname(p.launchAgent)} could not be read`, `Check it yourself with \`ls ${path.dirname(p.launchAgent)}\`.`), mechanism: 'launchd' };
         return { enabled: on, mechanism: 'launchd', message: on ? `Scheduled daily (macOS launchd). Definition: ${p.launchAgent}` : 'Not scheduled, and nothing checks on its own. GRU953-Studio updates only when you ask it to — run `gru953-studio update`, or `/studio-update` inside a session.' };
     }
     if (platform === 'win32') {
-        const on = run('schtasks', ['/Query', '/TN', 'GRU953-Studio Update'], { shell: true }).ok;
-        return { enabled: on, mechanism: 'schtasks', message: on ? 'Scheduled daily (Windows Task Scheduler).' : 'Not scheduled, and nothing checks on its own. GRU953-Studio updates only when you ask it to — run `gru953-studio update`, or `/studio-update` inside a session.' };
+        const q = run('schtasks', ['/Query', '/TN', 'GRU953-Studio Update'], { shell: true });
+        if (q.ok) return { enabled: true, mechanism: 'schtasks', message: 'Scheduled daily (Windows Task Scheduler).' };
+        // Only absence is absence — the same test `disable()` already applies to the same command.
+        const err = `${q.stderr || ''} ${q.stdout || ''}`.trim();
+        if (!/cannot find|does not exist|no such|not exist/i.test(err))
+            return { ...UNKNOWN('the Task Scheduler query failed', `${err} Check it yourself with \`schtasks /Query /TN "GRU953-Studio Update"\`.`), mechanism: 'schtasks' };
+        return { enabled: false, mechanism: 'schtasks', message: 'Not scheduled, and nothing checks on its own. GRU953-Studio updates only when you ask it to — run `gru953-studio update`, or `/studio-update` inside a session.' };
     }
     const timerFile = path.join(p.systemdDir, p.systemdTimer);
     if (fs.existsSync(timerFile)) return { enabled: true, mechanism: 'systemd', message: `Scheduled daily (systemd user timer). Definition: ${timerFile}` };

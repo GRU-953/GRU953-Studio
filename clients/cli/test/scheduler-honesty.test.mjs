@@ -56,14 +56,30 @@ function runnerWith({ listOk, listStdout = '', listStderr = '', writeOk = true, 
       return { ok: systemd, status: systemd ? 0 : 1, stdout: '', stderr: '' };
     if (cmd === 'crontab' && args[0] === '-l')
       return { ok: listOk, status: listOk ? 0 : 1, stdout: listStdout, stderr: listStderr };
-    if (cmd === 'crontab')
+    if (cmd === 'crontab') {
+      // 2026-08-25, X351: capture what we are being asked to INSTALL, here, while the file still
+      // exists. `writeCrontab` deletes its temp directory before returning (autoupdate.js:173), so
+      // reading `args[0]` after the call always finds nothing — and line 86 below already ASSUMED
+      // someone had done this, reading a `run.lastText` that nothing in the repository ever set.
+      try {
+        run.lastText = fs.readFileSync(args[0], 'utf8');
+      } catch {
+        run.lastText = null; // recorded as unreadable rather than as empty
+      }
       return { ok: writeOk, status: writeOk ? 0 : 1, stdout: '', stderr: writeOk ? '' : 'crontab: installing new crontab failed' };
+    }
     return { ok: true, status: 0, stdout: '', stderr: '' };
   };
   run.calls = calls;
+  run.lastText = undefined;
   return run;
 }
-const writes = (runner) => runner.calls.filter((c) => c.cmd === 'crontab' && c.args[0] !== '-l');
+// Each write carries the content that was installed, captured at call time (X351). `text` is a
+// string for a readable temp file and null when it could not be read — never silently absent.
+const writes = (runner) =>
+  runner.calls
+    .filter((c) => c.cmd === 'crontab' && c.args[0] !== '-l')
+    .map((c) => ({ ...c, text: runner.lastText }));
 const OLD_LINE = (m) => `17 4 * * * "/usr/bin/node" "/x/index.js" update >/dev/null 2>&1 ${m}`;
 
 // ---- 1. the stale cron line must be migrated, not silently kept ---------------------
@@ -83,13 +99,23 @@ test('cron: a pre-X232 line that discards output is rewritten, not reported as a
   assert.equal(r.ok, true);
   const w = writes(runner);
   assert.equal(w.length, 1, 'the stale line must be rewritten, so exactly one write must happen');
-  const written = fs.existsSync(w[0].args[0]) ? fs.readFileSync(w[0].args[0], 'utf8') : (runner.lastText || '');
-  // The file is deleted by writeCrontab, so assert on the message instead when it is gone.
-  if (written) {
-    assert.ok(!written.includes('>/dev/null'), 'the migrated crontab must not still discard output');
-    assert.ok(written.includes('.gru953-studio-update.log'), 'it must name the log');
-    assert.ok(written.includes('/usr/bin/backup'), "the user's own entries must survive");
-  }
+  // 2026-08-25, X351. `runner.lastText` was never assigned by anything in the repository — a grep for
+  // `lastText =` returned zero — and the temp file is deleted before the call returns, so `written`
+  // was ALWAYS the empty string and `if (written)` was always false. The three assertions inside were
+  // dead: exactly finding 1 of this file's own header, "X232 was only half fixed", switched off by the
+  // guard meant to tolerate a missing file. What still ran was the message-shape assertion below,
+  // which the BUGGY code also satisfies — so this file could report the migration working while
+  // `autoupdate on` reinstalled the pre-X232 line that throws the nightly updater's only failure
+  // report at /dev/null.
+  //
+  // The capture now happens in runnerWith, and the guard is GONE: a capture that stops working must
+  // fail loudly rather than quietly stop testing. That distinction is finding X347, found by CI in
+  // this repository earlier today, and this is the same shape one directory across.
+  const written = w[0].text;
+  assert.equal(typeof written, 'string', 'the crontab being installed must have been captured');
+  assert.ok(!written.includes('>/dev/null'), 'the migrated crontab must not still discard output');
+  assert.ok(written.includes('.gru953-studio-update.log'), 'it must name the log');
+  assert.ok(written.includes('/usr/bin/backup'), "the user's own entries must survive");
   assert.match(r.message, /updat|rewrit|migrat/i, 'the user must be told the old line was replaced');
   assert.doesNotMatch(r.message, /Nothing changed/i);
   fs.rmSync(home, RM);

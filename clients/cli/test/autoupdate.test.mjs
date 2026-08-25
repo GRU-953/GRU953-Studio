@@ -26,9 +26,21 @@ function fakeRunner({ ok = true, stdout = '', systemd = true } = {}) {
         calls.push({ cmd, args, opts });
         if (cmd === 'systemctl' && args[1] === '--version') return { ok: systemd, status: systemd ? 0 : 1, stdout: '', stderr: '' };
         if (cmd === 'crontab' && args[0] === '-l') return { ok: !!stdout, status: stdout ? 0 : 1, stdout, stderr: '' };
+        // 2026-08-25, X351: capture the crontab we are being asked to INSTALL, here, while the file
+        // still exists. `writeCrontab` deletes its temp directory before returning (autoupdate.js:173),
+        // so a test that reads `write.args[0]` afterwards always finds nothing — see the comment on the
+        // assertions below for what that cost.
+        if (cmd === 'crontab' && args[0] !== '-l') {
+            try {
+                run.lastText = fs.readFileSync(args[0], 'utf8');
+            } catch {
+                run.lastText = null; // recorded as unreadable rather than as empty
+            }
+        }
         return { ok, status: ok ? 0 : 1, stdout: '', stderr: ok ? '' : 'pretend failure' };
     };
     run.calls = calls;
+    run.lastText = undefined;
     return run;
 }
 
@@ -160,15 +172,25 @@ test("cron: turning it off removes only our line and keeps the user's own entrie
     autoupdate.disable({ platform: 'linux', homeDir: home, runner, env: {} });
     const write = runner.calls.find((c) => c.cmd === 'crontab' && c.args[0] !== '-l');
     assert.ok(write, 'the crontab must be rewritten');
-    const written = fs.existsSync(write.args[0]) ? fs.readFileSync(write.args[0], 'utf8') : null;
-    // The temp file is deleted immediately after the call, so if it is gone the
-    // assertion below is checked instead via the marker's absence in the runner's
-    // recorded input. Either way, the user's own two lines must survive.
-    if (written !== null) {
-        assert.match(written, /\/usr\/bin\/backup/);
-        assert.match(written, /\/usr\/bin\/weekly/);
-        assert.ok(!written.includes(autoupdate.CRON_MARKER), 'our line must be gone');
-    }
+    // 2026-08-25, X351. This read `write.args[0]` — a temp file `writeCrontab` had already deleted —
+    // so `written` was ALWAYS null and the three assertions below never ran, on any platform, in any
+    // checkout. The comment that stood here said the check happened "instead via the marker's absence
+    // in the runner's recorded input"; no such check existed anywhere in the file, and none could:
+    // the recorded input is a PATH, so the marker can never appear in it.
+    //
+    // Measured cost, by mutation: inverting autoupdate.js:358 so that `disable()` keeps OUR line and
+    // deletes the USER'S made no test in the repository fail — 60/60 in clients/cli and 479/479 in the
+    // hooks suite, before and after. `autoupdate off` deleting every one of the user's own cron jobs
+    // while leaving the GRU953 updater running was invisible to the whole suite. The three assertions
+    // that would have caught it are these, and they were switched off by a guard.
+    //
+    // The content is now captured by the fake runner at call time, and the guard is GONE: if the
+    // capture ever stops working these assertions must fail loudly rather than quietly not run.
+    const written = runner.lastText;
+    assert.equal(typeof written, 'string', 'the crontab being installed must have been captured');
+    assert.match(written, /\/usr\/bin\/backup/, "the user's own backup line must survive");
+    assert.match(written, /\/usr\/bin\/weekly/, "the user's own weekly line must survive");
+    assert.ok(!written.includes(autoupdate.CRON_MARKER), 'our line must be gone');
     fs.rmSync(home, RM);
 });
 
