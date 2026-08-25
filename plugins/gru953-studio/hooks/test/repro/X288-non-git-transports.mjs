@@ -50,14 +50,25 @@
 
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
 const HOOKS = join(here, '..', '..');
-const { isPushCapable, sendsCommitsToRemote } = await import(join(HOOKS, 'lib.mjs'));
+// 2026-08-26, finding X356 (Windows-only; class: a filesystem path used where the ESM
+// loader requires a URL). `import()` of a bare absolute path works on POSIX only —
+// on the Windows runner join(HOOKS, 'lib.mjs') is 'D:\a\...\lib.mjs', which Node parses
+// as a URL with scheme "d:" and rejects with ERR_UNSUPPORTED_ESM_URL_SCHEME. It throws
+// during top-level evaluation, so this reproduction crashed before case A ran and the
+// harness read the non-zero exit as "the defect is back". pathToFileURL() gives the
+// right file:// URL on both platforms and resolves to the same module instance on POSIX.
+// Idiom copied from X242 (9cb7c9e) into this file in 9767709; already fixed once in the
+// product code (repo-integrity.mjs, "2026-08 R3") and never carried into the tests.
+const { isPushCapable, sendsCommitsToRemote } = await import(
+  pathToFileURL(join(HOOKS, 'lib.mjs')).href
+);
 
 const problems = [];
 const note = (s) => problems.push(s);

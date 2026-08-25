@@ -28,6 +28,87 @@ const pluginRoot = path.join(repoRoot, 'plugins', 'gru953-studio');
 const problems = [];
 const fail = (msg) => problems.push(msg);
 
+// ---- repo-relative paths, spelled ONE way ------------------------------------
+//
+// 2026-08-26, finding X359 (Windows-only). `path.relative()` emits `path.sep`, which is '\' on
+// win32. Every path pattern in this file is written the way this repository writes a path
+// everywhere else — with '/' — so on the `windows-latest` CI leg `path.relative(repoRoot, f)`
+// returned `.kilo\plans\1784979892610-round3-convergence.md`, EXEMPT_FROM_INV4_RE matched nothing
+// with more than one segment, and INV4 blocked on twelve references that live in the three
+// categories it deliberately exempts: the archived `.kilo/` plans, `Dev-Memory/`, and X215's own
+// reproduction fixtures under `hooks/test/`. Twelve of the twenty-one tests the Windows leg started
+// failing after 4f3b3b9 are that one line: every assertion of the form "the real repo is clean",
+// plus X215's control G, X225's control D and X234's census, which all read this gate's verdict.
+// Root-level `CHANGELOG.md` kept its exemption throughout, because a single-segment path has no
+// separator to misspell — which is why the Windows problem list named the nested records only.
+//
+// Reproduced on macOS, not inferred: swapping `path.relative`/`path.sep` for their win32 forms in
+// a child process reproduces the CI problem list entry for entry, in order.
+//
+// The false BLOCK was the loud half. The quiet half is worse: `isBuildOutput()` carried the same
+// spelling, so on any Windows machine that HAS run the bundler the stale packaged copy under
+// `clients/cli/plugin/` stops being excluded from `anyMjsBasename` and is admitted as evidence
+// that a deleted hook still exists — X219's false-clean, reinstated by spelling alone, on the one
+// platform where nobody would see it. A false-clean is the defect class this file exists to close.
+//
+// THE BOUNDARY, stated once because L14 is about exactly this: normalise at the SINGLE point where
+// an absolute OS path becomes a repo-relative KEY. Above that line paths stay OS-native, because
+// that is what `fs` takes and what `path.join` produces. Below it every consumer — a regex
+// alternative, a Set membership test, a problem message — reads the one spelling this repository
+// uses in its documents, its .gitattributes and its CI files. One helper at the boundary, not N
+// replaces at N call sites: the scattered form is what let two predicates written on the same day
+// disagree with the comment above them.
+//
+// `.split(path.sep).join('/')` rather than `.replace(/\\/g, '/')`: on POSIX a backslash is a LEGAL
+// filename character, so an unconditional replace would silently turn a real file called `a\b.md`
+// into a two-segment path and hand it an exemption it never had. Splitting on `path.sep` touches
+// only the character that IS the separator on the platform actually running.
+//
+// The separator is a PARAMETER of the normaliser, not a closed-over constant, for one reason: this
+// project is developed on macOS, where `path.relative` cannot produce a backslash, so a guard
+// written only against the live separator can never fail here — which is precisely how this
+// defect reached CI. INV22 below feeds it the win32 spelling explicitly.
+const toPosixWithSep = (p, sep) => p.split(sep).join('/');
+const toPosix = (p) => toPosixWithSep(p, path.sep);
+const repoRel = (f) => toPosix(path.relative(repoRoot, f));
+
+// ---- paragraphs, with exact offsets and either line ending --------------------
+//
+// 2026-08-26, finding X361 — found while sweeping X359's class, and a DIFFERENT defect with the
+// same platform cause. Two invariants here judge a claim by its PARAGRAPH (INV4's bare-name rule
+// after X219, INV21's removed-identifier rule after X226), and both segmented with
+// `text.split('\n\n')`. A CRLF-encoded document separates paragraphs with `\r\n\r\n`, so that split
+// never fires: the whole file becomes ONE paragraph, and a single "removed" anywhere in it excuses
+// every undisclosed reference everywhere else in it.
+//
+// FALSE-CLEAN, which this repository rates as its worst class, and measured rather than reasoned:
+// planting X219's own control-G shape (a bare reference to a hook that exists nowhere, with the
+// disclosure in a NEIGHBOURING paragraph, which X219 requires to BLOCK) reports it as LF and misses
+// it entirely as CRLF — 1 hit against 0. `.gitattributes` pins this repository to LF, so CI's
+// Windows leg was never exposed; what WAS exposed is hooks.test.mjs's own CRLF regression test,
+// which re-encodes a copy of this repo and asserts the result is still clean. It was still clean
+// partly because two of the rules had stopped running. A test that holds an axis still while the
+// thing it tests quietly switches off is X347's shape, one week old.
+//
+// Line-ending tolerance ONLY — the separator is still exactly "one blank line", not "a line with
+// whitespace on it". Widening that would change the verdict on LF input too, and a fix that alters
+// behaviour on the platform CI is green on is no longer a portability fix.
+//
+// The capture group is what makes the offsets exact: a separator is 2 characters as LF and 4 as
+// CRLF, and the previous code added a hard-coded 2. Every consumer here turns an offset back into a
+// line number for a problem message, so a drifting offset means a message pointing at the wrong
+// line — the failure mode that makes a gate untrustworthy rather than merely wrong.
+const paragraphs = (text) => {
+  const out = [];
+  const parts = text.split(/(\r?\n\r?\n)/);
+  let start = 0;
+  for (let i = 0; i < parts.length; i += 2) {
+    out.push({ start, end: start + parts[i].length, text: parts[i] });
+    start += parts[i].length + (parts[i + 1] ? parts[i + 1].length : 0);
+  }
+  return out;
+};
+
 function read(p) {
   try {
     return fs.readFileSync(p, 'utf8');
@@ -232,11 +313,18 @@ const EXEMPT_FROM_INV4_RE = new RegExp(
     '(^|/)clients/cli/plugin/', // build output
   ].join('|'),
 );
-const isHistoricalRecord = (f) => EXEMPT_FROM_INV4_RE.test(path.relative(repoRoot, f));
+// 2026-08-26, X359: `repoRel()` and not `path.relative()` directly — the patterns above are
+// '/'-spelled, so they have to be handed the '/' spelling of the path. See the boundary note at the
+// top of this file for why that conversion lives in one helper rather than at each call site.
+const isHistoricalRecord = (f) => EXEMPT_FROM_INV4_RE.test(repoRel(f));
 // The packaging copy, named once so the two places that care cannot drift apart: it is exempt as a
 // PLACE references may live (above), and it is also not admissible as EVIDENCE that a file exists
 // (X219, below).
-const isBuildOutput = (f) => /(^|\/)clients\/cli\/plugin\//.test(path.relative(repoRoot, f));
+// 2026-08-26, X359: the pattern is a named constant now only so INV22's self-check can exercise the
+// win32 spelling against the very regex this predicate uses, rather than against a second copy of
+// it — a guard tested against its own duplicate is X292's shape and proves nothing.
+const BUILD_OUTPUT_RE = /(^|\/)clients\/cli\/plugin\//;
+const isBuildOutput = (f) => BUILD_OUTPUT_RE.test(repoRel(f));
 
 const knownHooks = new Set(hookFiles);
 const refHook = /hooks\/([a-z0-9-]+\.mjs)/gi;
@@ -289,7 +377,7 @@ for (const f of allFiles.filter(
   refHook.lastIndex = 0;
   while ((m = refHook.exec(text))) {
     if (!knownHooks.has(m[1]))
-      fail(`file ${path.relative(repoRoot, f)} references hooks/${m[1]} which does not exist`);
+      fail(`file ${repoRel(f)} references hooks/${m[1]} which does not exist`);
   }
   if (f.endsWith('.mjs')) continue; // records, per the note above
   // A reference that DISCLOSES the removal is a record and passes, per X215: "gate.mjs (removed
@@ -310,16 +398,12 @@ for (const f of allFiles.filter(
   // An explicit removal word is required. "previously" and "used to" also open sentences that go on
   // to describe present behaviour, so they do not count.
   const DISCLOSES = /\b(removed|deleted|no longer\b|never existed)\b/i;
-  const paras = [];
-  {
-    let start = 0;
-    let line = 1;
-    for (const block of text.split('\n\n')) {
-      paras.push({ start, end: start + block.length, line, text: block });
-      start += block.length + 2;
-      line += block.split('\n').length + 1;
-    }
-  }
+  // 2026-08-26, X361: was an inline `text.split('\n\n')` with a hard-coded separator length of 2,
+  // which segmented nothing at all on a CRLF checkout. Shared with INV21, which carried the same
+  // two lines, because two copies of one rule are two things that drift (L14). The per-paragraph
+  // `line` field this loop also tracked was never read — the line number in the message below is
+  // counted from the match offset instead — so it is gone rather than carried forward unmaintained.
+  const paras = paragraphs(text);
   const paraAt = (idx) => paras.find((p) => idx >= p.start && idx <= p.end);
   refBareHook.lastIndex = 0;
   while ((m = refBareHook.exec(text))) {
@@ -328,7 +412,7 @@ for (const f of allFiles.filter(
     if (para && DISCLOSES.test(para.text)) continue;
     const lineNo = text.slice(0, m.index).split('\n').length;
     fail(
-      `file ${path.relative(repoRoot, f)}:${lineNo} references ${m[1]}, which does not exist ` +
+      `file ${repoRel(f)}:${lineNo} references ${m[1]}, which does not exist ` +
         'anywhere in this repository. If it was removed, say so in the same paragraph — a record ' +
         'may name a deleted file, a live instruction may not.',
     );
@@ -1052,7 +1136,15 @@ async function checkHostRuleFiles() {
     );
   } finally {
     console.log = realConsoleLog;
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    // 2026-08-26, X359 (same Windows sweep, a second shape rather than a second instance —
+    // separators are not involved). On Windows a directory whose handles are not yet released
+    // throws EPERM/EBUSY from rmSync, and this call sits in a `finally` OUTSIDE the catch above,
+    // so a throw here escapes as an unhandled rejection: a raw stack trace on stderr and no JSON
+    // on stdout at all, losing the whole structured report — which is the failure mode the catch
+    // above was added to prevent, one line further down. `maxRetries`/`retryDelay` are the idiom
+    // already used for exactly this in hooks.test.mjs's own RM_OPTS. Not observed in the Windows
+    // log; a latent hazard closed while the file was open, not a fix for an observed failure.
+    fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 }
 await checkHostRuleFiles();
@@ -1273,22 +1365,23 @@ if (ciYmlText === null) {
   for (const f of allFiles.filter((x) => x.endsWith('.md'))) {
     if (isHistoricalRecord(f) || isBuildOutput(f)) continue;
     const text = read(f) || '';
-    let offset = 0;
-    for (const para of text.split('\n\n')) {
+    // 2026-08-26, X361: the second copy of INV4's paragraph segmentation, with the same CRLF hole
+    // and the same hard-coded separator length. One shared implementation now — the whole point of
+    // the finding is that a rule written twice is a rule fixed once.
+    for (const { start: offset, text: para } of paragraphs(text)) {
       const discloses = DISCLOSES_REMOVAL.test(para);
       if (!discloses) {
         for (const [label, re] of REMOVED_IDENTIFIERS) {
           if (!re.test(para)) continue;
           const line = text.slice(0, offset + para.search(re)).split('\n').length;
           fail(
-            `INV21: ${path.relative(repoRoot, f)}:${line} asserts ${label}, an authorisation token ` +
+            `INV21: ${repoRel(f)}:${line} asserts ${label}, an authorisation token ` +
               'removed on 2026-08-16 by finding X214. No such file is created and no hook reads one, ' +
               'so a document presenting it as a live check states a guarantee the product does not ' +
               'keep. If the mention is historical, say so in the same paragraph.',
           );
         }
       }
-      offset += para.length + 2;
     }
   }
 }
@@ -1359,7 +1452,7 @@ if (ciYmlText === null) {
     const code = buf[at].toString(16).padStart(2, '0');
     const total = buf.reduce((n, b) => n + (isForbidden(b) ? 1 : 0), 0);
     fail(
-      `INV20: ${path.relative(repoRoot, f)}:${line} contains a raw control byte 0x${code}` +
+      `INV20: ${repoRel(f)}:${line} contains a raw control byte 0x${code}` +
         `${total > 1 ? ` (${total} in the file)` : ''}, which makes file(1) report binary data and a ` +
         'default grep return nothing at all - so this file is invisible to every text tool and to ' +
         'anyone auditing it. Write the character as an escape sequence instead; the runtime value is ' +
@@ -1422,10 +1515,15 @@ if (ciYmlText === null) {
 // never be satisfied.
 const packagedRoot = path.join(repoRoot, 'clients', 'cli', 'plugin');
 if (fs.existsSync(packagedRoot)) {
+  // 2026-08-26, X359: this pair was already separator-CORRECT — both sides come from
+  // path.relative() and `path.sep` is used to split them — so it was never broken. Normalised
+  // anyway, so that this file has exactly ONE spelling of a relative path rather than two that
+  // happen to agree: the mixed form is what a future edit reads as permission to write the other
+  // one, and every problem message this invariant emits now reads the same on all three platforms.
   const relFiles = (root) =>
     walk(root)
-      .map((f) => path.relative(root, f))
-      .filter((f) => !f.split(path.sep).includes('node_modules') && !f.endsWith('.DS_Store'))
+      .map((f) => toPosix(path.relative(root, f)))
+      .filter((f) => !f.split('/').includes('node_modules') && !f.endsWith('.DS_Store'))
       .sort();
   const sourceFiles = new Set(relFiles(pluginRoot));
   const packagedFiles = relFiles(packagedRoot);
@@ -1479,22 +1577,166 @@ if (fs.existsSync(packagedRoot)) {
   }
 }
 
+// ---- INV 22: this gate's own path vocabulary is separator-blind ----------------
+//
+// 2026-08-26, finding X359. The invariant about the invariants, and the only one here that checks
+// this file rather than the repository. It exists because of HOW X359 was found: not by anybody
+// reading repo-integrity.mjs, but by a Windows CI leg going from green to twenty-three red at once,
+// twelve of them this file. Nothing on a developer's machine could have failed, because on macOS
+// and Linux `path.relative` cannot produce the spelling that breaks the patterns.
+//
+// So the guard does not observe the live separator — it SUPPLIES both. Two halves, because the two
+// ways this class comes back are different:
+//
+//   BEHAVIOURAL — the same relative path, spelled the win32 way and the POSIX way, must be
+//   classified identically by the real EXEMPT_FROM_INV4_RE and the real BUILD_OUTPUT_RE. Not by
+//   copies of them: a guard tested against its own duplicate of the rule is X292's shape, and
+//   proves only that two strings written together agree. This fails on EVERY platform the moment
+//   a normalisation is dropped or a new '/'-spelled alternative is added without one.
+//
+//   STRUCTURAL — the normalisation must not be bypassed anywhere in this file. The behavioural
+//   half can only see the two predicates it names; a THIRD one added next month, or a problem
+//   message built straight from an OS path, is exactly the L14 residual that produced X359 in the
+//   first place (two sites, same shape, one of them mentioned in a comment claiming the other's
+//   behaviour). So every computation of a repo-relative path in this file's live code must pass
+//   through the normaliser named in the boundary note at the top.
+//
+// Scoped to THIS file on purpose, and the scope is a real limit rather than a tidy one: the same
+// shape lives in docs-consistency.mjs, which this agent does not own. That is recorded as a
+// separate change rather than swept in here — and a sibling gate is not something this invariant
+// could honestly assert about anyway, since it cannot know which of another file's relative paths
+// are compared against '/'-spelled patterns and which are handed back to `fs`.
+{
+  // Each case is a repo-relative path written the way this repository writes one, with the verdict
+  // both predicates must return for it. Chosen to pin the boundaries that were argued for
+  // elsewhere in this file, so that moving one of them fails here too: `.kilo/` and `Dev-Memory/`
+  // and `hooks/test/` are the three categories X215 drew; `clients/cli/plugin/` is the only case
+  // where both predicates must say yes; `skills/dev-memory/SKILL.md` is X225's case-SENSITIVITY
+  // decision, which is a live product file and must stay covered under either spelling; and
+  // `CHANGELOG.md` is the single-segment path that kept working on Windows and so proves nothing
+  // on its own — it is here to keep the negative controls honest company.
+  const SEPARATOR_CASES = [
+    ['.kilo/plans/1784979892610-round3-convergence.md', true, false],
+    ['Dev-Memory/FINDINGS.md', true, false],
+    [
+      'plugins/gru953-studio/hooks/test/repro/X215-live-versus-historical-reference.mjs',
+      true,
+      false,
+    ],
+    ['clients/cli/plugin/hooks/scan.mjs', true, true],
+    ['CHANGELOG.md', true, false],
+    ['AUDIT-2026-08.md', true, false],
+    ['plugins/gru953-studio/skills/dev-memory/SKILL.md', false, false],
+    ['plugins/gru953-studio/agents/architect.md', false, false],
+    ['README.md', false, false],
+  ];
+  for (const [rel, wantExempt, wantBuildOutput] of SEPARATOR_CASES) {
+    // The live normaliser, on the live separator, over the spelling `path.relative()` would
+    // actually produce here. DISCLOSED ASYMMETRY, because a guard whose reach is overstated is
+    // worse than a narrow one: on POSIX this can only catch a normaliser that MANGLES an
+    // already-correct path, and on Windows it also catches one that fails to convert. `toPosix()`
+    // closes over `path.sep`, and no POSIX machine can make `path.sep` be '\', so that half of it
+    // is genuinely only exercised on the Windows leg. Everything below this line is
+    // platform-independent because it supplies the separator instead of reading it.
+    const live = rel.split('/').join(path.sep);
+    if (toPosix(live) !== rel) {
+      fail(
+        `INV22: toPosix('${live}') returned '${toPosix(live)}', not '${rel}'. The one helper that ` +
+          "turns an OS path into this repository's own spelling of it no longer does so, which " +
+          'silently un-fixes every path predicate and problem message below it (finding X359).',
+      );
+    }
+    for (const sep of ['/', '\\']) {
+      // The path as `path.relative()` would hand it over on a platform whose separator is `sep`,
+      // then normalised the way the live code normalises it on that same platform.
+      const spelled = toPosixWithSep(rel.split('/').join(sep), sep);
+      const gotExempt = EXEMPT_FROM_INV4_RE.test(spelled);
+      const gotBuildOutput = BUILD_OUTPUT_RE.test(spelled);
+      if (gotExempt !== wantExempt || gotBuildOutput !== wantBuildOutput) {
+        // TWO causes, and the message names both rather than guessing: if only the '\' spelling
+        // disagrees, a predicate has gone separator-sensitive again (X359); if BOTH spellings
+        // disagree, the category boundary itself moved — which is X215's live-versus-record line or
+        // X225's case-sensitivity decision, and those are settled findings, not preferences.
+        fail(
+          `INV22: '${rel}' spelled with '${sep}' as its separator is classified ` +
+            `{historicalRecord: ${gotExempt}, buildOutput: ${gotBuildOutput}} but must be ` +
+            `{historicalRecord: ${wantExempt}, buildOutput: ${wantBuildOutput}}. If only the '\\' ` +
+            'spelling disagrees, a path predicate in this file is separator-sensitive again: on ' +
+            "Windows a repo-relative path is spelled with '\\', so a '/'-spelled pattern stops " +
+            'matching and every exemption of more than one segment silently evaporates (finding ' +
+            'X359) — normalise the path at the boundary rather than widening the pattern. If BOTH ' +
+            'spellings disagree, an exemption category has moved: that boundary is X215 (live ' +
+            'instruction versus record) and X225 (case-sensitive, so the live skills/dev-memory/ ' +
+            'directory is NOT a record), so change this case only with a finding that says why.',
+        );
+      }
+    }
+  }
+  // The structural half. Built by concatenation so that the needle is not itself a hit in the
+  // source it searches — the same reason INV17 skips this file when scanning for approval literals.
+  //
+  // SAME LINE, deliberately, and it is a real narrowness rather than an oversight: splitting the
+  // call and the normalisation across two statements is correct code that this flags. The
+  // alternative is tracking a value through statements, which needs a parser rather than a line
+  // scan, and the convention this enforces is worth the friction — a normalisation two lines away
+  // from the call is a normalisation a later edit can delete without the remaining line looking
+  // wrong, which is how X359 read on the page for the whole day it was live. If a future author
+  // wants the two-statement form, the fix is to name the composed helper (`repoRel(f)`, or a new
+  // one for a different root), not to loosen this.
+  const RELATIVE_CALL = 'path.' + 'relative(';
+  const NORMALISER = 'toPosix';
+  const selfSource = read(path.join(hooksDir, 'repo-integrity.mjs'));
+  if (selfSource === null) {
+    fail(
+      'INV22: could not read hooks/repo-integrity.mjs to verify its own path vocabulary. This gate ' +
+        'cannot report clean while unable to check the one thing it checks about itself.',
+    );
+  } else {
+    // Comments legitimately quote the defective form while explaining it, exactly as INV17 found
+    // for the approval literals. Stripped with the same idiom rather than a second one.
+    const liveLines = selfSource
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((line, i) => [i + 1, line])
+      .filter(([, line]) => !/^\s*\/\//.test(line));
+    for (const [lineNo, line] of liveLines) {
+      if (!line.includes(RELATIVE_CALL)) continue;
+      if (line.includes(NORMALISER)) continue;
+      fail(
+        `INV22: repo-integrity.mjs:${lineNo} computes a repo-relative path with ${RELATIVE_CALL}) ` +
+          `without passing it through ${NORMALISER}(). On Windows that result is spelled with ` +
+          "'\\', and every path pattern and problem message in this file is written with '/' — so " +
+          'the value is compared against patterns it can no longer match, or printed in a spelling ' +
+          'that differs from the one the rest of CI prints (finding X359). Use repoRel(f) for a ' +
+          `path relative to the repository root, or ${NORMALISER}() for any other root.`,
+      );
+    }
+  }
+}
+
 // ---- report ------------------------------------------------------------------
+// 2026-08-26, X359, second half. The BLOCKED branch used to carry only two of the four census
+// figures, and the two it dropped are the two X234's case A reads. So when X359 blocked this gate
+// on Windows, X234 did not report "repo-integrity blocked" — it reported "commandCount reports
+// undefined, independently 11; hookCount reports undefined, independently 19", i.e. it named a
+// broken COUNTER as the defect. Confirmed by execution both ways: `hookCount` and `commandCount`
+// were always computed correctly (19 and 11, agreeing with an independent count) on the very run
+// that printed "undefined"; they were simply not in this object.
+//
+// That is L13 at the level of a report: an instrument that cannot tell a broken read from a
+// negative result reports the broken read as a negative result — and it cost a reader of the
+// Windows log a false lead, twelve tests wide. All four figures are known by the time either
+// branch runs, and a figure withheld from a failing report is the one nobody can check. Emitted on
+// both paths now, in the same order, so the census can be read whatever the verdict is.
+const census = {
+  agentCount,
+  skillCount,
+  hookCount: hookFiles.length,
+  commandCount: commandFiles.length,
+};
 if (problems.length === 0) {
-  console.log(
-    JSON.stringify(
-      {
-        status: 'clean',
-        agentCount,
-        skillCount,
-        hookCount: hookFiles.length,
-        commandCount: commandFiles.length,
-      },
-      null,
-      2,
-    ),
-  );
+  console.log(JSON.stringify({ status: 'clean', ...census }, null, 2));
   process.exit(0);
 }
-console.log(JSON.stringify({ status: 'BLOCKED', problems, agentCount, skillCount }, null, 2));
+console.log(JSON.stringify({ status: 'BLOCKED', problems, ...census }, null, 2));
 process.exit(1);

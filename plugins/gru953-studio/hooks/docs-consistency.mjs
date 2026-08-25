@@ -110,9 +110,30 @@ const allFiles = walk(repoRoot);
 // scan.mjs's DEVMEMORY_RE. Exactly five files lose the exemption and all five are live product
 // files, measured before the change.
 const RECORD_OR_FIXTURE_RE = /(^|\/)(CHANGELOG\.md|AUDIT-[^/]*\.md)|(^|\/)Dev-Memory\//;
-const allMd = allFiles.filter(
-  (f) => f.endsWith('.md') && !RECORD_OR_FIXTURE_RE.test(path.relative(repoRoot, f)),
-);
+
+// 2026-08-26, X365 — the sibling of X359, found by sweeping its class rather than by CI. The pattern
+// above is spelled with '/' and was handed `path.relative()` output, which emits `path.sep` — '\' on
+// win32. So on Windows `Dev-Memory\FINDINGS.md` and `docs\AUDIT-2026-08.md` lose an exemption they
+// have on every other platform, and this gate false-BLOCKS on every record in them, exactly as
+// repo-integrity.mjs did on the twelve tests CI caught. Demonstrated by calling the pattern directly
+// with both spellings, not by simulating the path module.
+//
+// It is dormant on CI only by accident: `Dev-Memory/` is gitignored so a clean runner has none, and
+// the AUDIT files happen to sit at the repository ROOT, where a single-segment path has no separator
+// to misspell. It would fire on the first Windows machine that did real development here — which is
+// the condition this project is actually for.
+//
+// `.split(path.sep).join('/')` and NOT `.replace(/\\/g, '/')`: a backslash is a legal POSIX filename
+// character, and an unconditional replace would hand a file genuinely named `a\b.md` an exemption it
+// never had. Normalise at the boundary, never widen the pattern.
+//
+// NOT applied at :149's `abs.startsWith(path.resolve(repoRoot, '.kilo') + path.sep)` — that one is
+// already correct, because `resolve` and `sep` agree with each other on every platform. Normalising
+// there would break it. The rule is about a relative path meeting a '/'-spelled pattern, not about
+// separators in general.
+const toPosix = (p) => p.split(path.sep).join('/');
+const repoRel = (f) => toPosix(path.relative(repoRoot, f));
+const allMd = allFiles.filter((f) => f.endsWith('.md') && !RECORD_OR_FIXTURE_RE.test(repoRel(f)));
 
 // Files that legitimately quote a stale or wrong number as EVIDENCE, not as
 // a live claim. AUDIT-2026-07.md IS the findings register — its own rows
@@ -230,9 +251,7 @@ for (const f of allMd) {
       if (isInHistoricalSection(historicalRanges, m.index)) continue;
       const n = parseInt(m[1], 10);
       if (n !== skillCount) {
-        fail(
-          `${path.relative(repoRoot, f)} states "${m[0]}" — the actual skill count is ${skillCount}`,
-        );
+        fail(`${repoRel(f)} states "${m[0]}" — the actual skill count is ${skillCount}`);
       }
     }
   }
@@ -320,7 +339,7 @@ if (actualStageCount === null) {
       const claimed = NUMBER_WORDS[m[1].toLowerCase()];
       if (claimed !== actualStageCount) {
         fail(
-          `${path.relative(repoRoot, f)} calls it a "${m[1]}-stage" lifecycle — studio/SKILL.md's own lifecycle line names ${actualStageCount} stages`,
+          `${repoRel(f)} calls it a "${m[1]}-stage" lifecycle — studio/SKILL.md's own lifecycle line names ${actualStageCount} stages`,
         );
       }
     }
@@ -451,7 +470,7 @@ for (const f of allMd) {
     if (mergedRoleNames.has(token)) continue;
     if (NON_ROLE_EXEMPTIONS.has(token)) continue;
     fail(
-      `${path.relative(repoRoot, f)} references \`${token}\`, which names no current agent, no merged-away role in ROSTER.md, and is not an exempted non-role term — a dangling specialist reference (finding 27's class)`,
+      `${repoRel(f)} references \`${token}\`, which names no current agent, no merged-away role in ROSTER.md, and is not an exempted non-role term — a dangling specialist reference (finding 27's class)`,
     );
   }
 }
@@ -669,7 +688,7 @@ for (const f of allMd) {
     if (!looksLikePathRef(token)) continue;
     if (!refResolves(token, f)) {
       fail(
-        `${path.relative(repoRoot, f)} says "see \`${token}\`", but no file at that path exists (checked the repo root, the plugin root, agents/, skills/, hooks/, and commands/) — a dangling cross-reference`,
+        `${repoRel(f)} says "see \`${token}\`", but no file at that path exists (checked the repo root, the plugin root, agents/, skills/, hooks/, and commands/) — a dangling cross-reference`,
       );
     }
   }

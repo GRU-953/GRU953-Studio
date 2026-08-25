@@ -34,13 +34,17 @@
 // table is still not blocked while still being named.
 //
 //   case                                                      required
-//   A  licence-scan: the scan ROOT unreadable                   BLOCKED, saying so
-//   B  licence-scan: one unreadable SUBDIRECTORY                BLOCKED — the dangerous case
-//   C  control: everything readable                             not blocked for this reason
+//   A  licence-scan: the scan ROOT unreadable                   BLOCKED, saying so   [POSIX only]
+//   B  licence-scan: one unreadable SUBDIRECTORY                BLOCKED — dangerous  [POSIX only]
+//   C  control: everything readable                             READ, and not blocked for that
 //   D  content-check: an ambiguous table is NAMED               listed in tablesSkipped
 //   E  control: an unrelated table is named but not blocked      clean, and listed
 //   F  control: a register with no skipped tables                clean, empty list
 //   G  control: the real project                                 unchanged
+//
+// A and B carry X115's half and cannot run on win32 — see the X358 note above the fixture. D carries
+// X122's half and runs everywhere, which is the only reason this file still means anything on
+// Windows; the `liveCases` guard at the bottom is what stops that from going quiet again.
 //
 // Usage:
 //   node X115-X122-residuals.mjs                # asserts the fixed state
@@ -60,6 +64,15 @@ const REPO = join(HOOKS, '..', '..', '..');
 const problems = [];
 const note = (s) => problems.push(s);
 
+const WINDOWS = process.platform === 'win32';
+
+// The cases that VARY with the fix, as opposed to the controls, which assert the absence of a false
+// alarm and therefore pass in both directions by construction. Recorded by name because a platform
+// on which every varying case is skipped runs green in BOTH directions and has stopped testing
+// anything, while still reporting as a passing reproduction — finding X347, found by CI in this very
+// file. The guard at the bottom refuses that state out loud instead of letting it look healthy.
+const liveCases = [];
+
 function run(hook, root) {
   const r = spawnSync(process.execPath, [join(HOOKS, hook), root], { encoding: 'utf8' });
   try {
@@ -70,6 +83,50 @@ function run(hook, root) {
 }
 
 // ---- A to C: licence-scan and the unreadable directory ---------------------------
+//
+// 2026-08-26, finding X358 — found by CI on `hooks (windows-latest, node 22)`, the one leg the
+// development machine cannot run. Cases A and B manufacture an unreadable directory with
+// `chmodSync(dir, 0o000)`. POSIX mode bits are ADVISORY on Windows: `fs.chmod` there can only
+// toggle the read-only attribute, and Windows ignores even that on a DIRECTORY. So the directory
+// stayed perfectly readable, the walk never reached the unreadable branch, and both cases read the
+// gate's honest answer about something else as the defect coming back.
+//
+// DEMONSTRATED, not supposed, in two halves that meet:
+//   * on this Mac the three fixtures below differ — `readdirSync` on the chmod'd root throws EACCES
+//     and licence-scan says BLOCKED (A), the chmod'd subdirectory likewise (B), the untouched one
+//     says INCOMPLETE (C);
+//   * on the Windows leg all three reported the SAME status as each other,
+//       INCOMPLETE — install dependencies for every ecosystem present, then re-run
+//     which is licence-scan.mjs:992 and is reachable only once `results.length > 0` — i.e. only
+//     after `findManifestDirs` had SUCCESSFULLY READ the very directory the chmod was meant to
+//     close, and found the package.json inside it. The gate was right; the fixture was inert.
+//
+// WHY NOT MAKE IT REALLY UNREADABLE THERE. `icacls /deny` is the only mechanism on Windows that
+// genuinely closes a directory, and it was rejected deliberately, not for convenience:
+//   * it cannot be exercised from this machine at all, so it would ship as untested code inside a
+//     test — the worst place in the tree for it;
+//   * an explicit DENY ace is bypassed by a process holding backup/restore privilege, and whether
+//     GitHub's windows-latest image runs elevated is something this machine CANNOT verify. A DENY
+//     that silently fails to bite leaves the case green for the wrong reason, which is exactly the
+//     disease X347 treated in this file hours earlier;
+//   * a test that only works when the runner is not an administrator is a flaky test, not a fix;
+//   * and cleanup inherits the problem — `rmSync` on a denied directory throws EPERM, so the repro
+//     would have to un-deny before deleting, adding two more unverifiable subprocess calls.
+// There is also no PORTABLE fixture for this fact. The branch needs a path where
+// `statSync(p).isDirectory()` is true and `readdirSync(p)` throws; every Windows trick that makes
+// readdir fail (a dangling junction, a path past MAX_PATH, replacing the directory with a file)
+// makes statSync fail in the same breath, so it lands in X115's "does not EXIST" half, which is
+// already covered. Deleting the directory between the two calls would work and is a race, not a test.
+//
+// So A and B are skipped EXPLICITLY on win32, and X115's half of this file is UNEXERCISED there.
+// Stated plainly rather than hidden, because the alternative — weakening `blockedForUnreadable` so
+// INCOMPLETE counts as "blocked for being unreadable" — would delete the only assertion these two
+// cases exist to make, on every platform, to buy a green tick on one.
+// What still covers the class on Windows: phase1-gate-honesty.mjs case P7, which replaces a file
+// with a DIRECTORY — a failure every platform produces — and, in this file, case D.
+const SKIPPED_ON_WINDOWS =
+  'chmod 0o000 cannot close a directory on Windows, so the fixture is inert there (X358)';
+
 function licenceFixture(makeUnreadable) {
   const dir = mkdtempSync(join(tmpdir(), 'x115r-'));
   mkdirSync(join(dir, 'sub'), { recursive: true });
@@ -81,7 +138,10 @@ function licenceFixture(makeUnreadable) {
 const blockedForUnreadable = (v) =>
   v.status === 'BLOCKED' && /could not be read/i.test(String(v.reason || ''));
 
-{
+if (WINDOWS) {
+  console.log(`  skip A  licence-scan: the scan root unreadable . ${SKIPPED_ON_WINDOWS}`);
+} else {
+  liveCases.push('A');
   const dir = licenceFixture('.');
   const v = run('licence-scan.mjs', dir);
   chmodSync(dir, 0o755);
@@ -92,7 +152,10 @@ const blockedForUnreadable = (v) =>
   }
   rmSync(dir, { recursive: true, force: true });
 }
-{
+if (WINDOWS) {
+  console.log(`  skip B  licence-scan: one unreadable subdir .... ${SKIPPED_ON_WINDOWS}`);
+} else {
+  liveCases.push('B');
   const dir = licenceFixture('sub');
   const v = run('licence-scan.mjs', dir);
   chmodSync(join(dir, 'sub'), 0o755);
@@ -106,13 +169,64 @@ const blockedForUnreadable = (v) =>
   }
   rmSync(dir, { recursive: true, force: true });
 }
+// 2026-08-26, finding X360 — the X347 shape one line down from control G, noticed while fixing
+// X358. This control's job is "the READABLE case is not blocked FOR BEING UNREADABLE", and it
+// asserted only the negative: anything that was not `BLOCKED … could not be read` counted as a
+// pass. A gate that crashed before walking, bailed out on the root, or opened no directory at all
+// satisfies that too — the control would go green having witnessed nothing about readability. That
+// is precisely how control G passed on this machine and failed on every clean checkout.
+//
+// The negative is kept and TWO POSITIVES are added, so the control can only pass by seeing the gate
+// actually read a readable tree. This narrows what is accepted; it does not widen it.
+//
+// The honest answers for THIS fixture, and why each one is honest:
+//   * `INCOMPLETE — install dependencies …` (licence-scan.mjs:992) — what the fixture really
+//     produces, on every platform. It is a fresh temp dir holding package.json and sub/package.json
+//     with no node_modules and no lockfile, so the npm scan returns `checked: false`
+//     (licence-scan.mjs:91) and the gate refuses to conclude. It is also POSITIVE PROOF the tree was
+//     read: that branch is only reachable once `results.length > 0`, and results come only from
+//     directories `findManifestDirs` succeeded in reading.
+//   * `clean` (licence-scan.mjs:969, "no recognised dependency manifests found") — honest, though
+//     not reachable while the fixture declares a manifest. Kept so that editing `licenceFixture`
+//     cannot turn a correct answer into a red test.
+// Nothing else is honest here, and the list is deliberately not widened past these two: any other
+// BLOCKED means the gate objected to something this fixture does not contain; NEEDS HUMAN REVIEW
+// needs unrecognised licence strings and there are no dependencies at all; a crash is a crash.
+// Accepting "anything but one status" is the vacuum this note exists to close.
+const READABLE_FIXTURE_IS_HONEST = (s) => s === 'clean' || /^INCOMPLETE\b/.test(s);
 {
+  // NOT added to `liveCases`: strengthened or not, C is still a control. It passes against the
+  // pre-fix gate too (a readable tree walked fine before the fix as well), so it can never stand in
+  // for a case that varies with the fix. Counting it here would have quietly satisfied the guard
+  // below and re-created X347 in the act of guarding against it.
   const dir = licenceFixture(null);
   const v = run('licence-scan.mjs', dir);
+  const status = String(v.status || '');
+  // The gate reports each scanned directory as `path.relative(root, dir) || '.'`, and
+  // path.relative emits '\' on win32 — the separator-sensitivity class this whole Windows pass is
+  // about. Normalised before comparison so this control cannot become the next X358.
+  const read = (Array.isArray(v.results) ? v.results : [])
+    .map((r) => String(r.dir || '').split(/[\\/]/).join('/'))
+    .sort();
+  const sawBoth = read.length === 2 && read[0] === '.' && read[1] === 'sub';
   if (blockedForUnreadable(v)) {
     note(`control C: everything readable was blocked for being unreadable — a false alarm: ${JSON.stringify(v).slice(0, 160)}`);
+  } else if (!READABLE_FIXTURE_IS_HONEST(status)) {
+    note(
+      `control C: a fully readable fixture gave "${status}" — expected "clean" or "INCOMPLETE …". ` +
+        'Anything else means the gate never got as far as reading the tree, so "not blocked for ' +
+        'being unreadable" would have been true for a reason that has nothing to do with readability',
+    );
+  } else if (status !== 'clean' && !sawBoth) {
+    note(
+      `control C: the verdict does not show both readable directories being read (results dirs = ` +
+        `${JSON.stringify(read)}, expected ["." , "sub"]), so this control cannot witness that a ` +
+        'readable tree was in fact read, and its pass would prove nothing',
+    );
   } else {
-    console.log(`  C  control: everything readable .............. not blocked for this (${v.status})`);
+    console.log(
+      `  C  control: everything readable ..... read ${JSON.stringify(read)}, not blocked for that (${status})`,
+    );
   }
   rmSync(dir, { recursive: true, force: true });
 }
@@ -131,6 +245,14 @@ function contentFixture(extra) {
 const skipped = (v) => (Array.isArray(v.tablesSkipped) ? v.tablesSkipped : null);
 
 {
+  // Counted as live on every platform, and that is what keeps this file honest on win32 once A and
+  // B are skipped there (X358). Nothing in this case touches chmod, a path separator or an
+  // absolute-path import — it is a markdown table fed to a gate — so it answers the same way
+  // everywhere, and CI's Windows leg shows it running and passing. Verified to VARY with the product
+  // code, not merely to pass: against content-check.mjs as it stands the verdict names the skipped
+  // table, and against a copy with the `tablesSkipped.push` at content-check.mjs:265 removed — the
+  // pre-fix behaviour, skipping in silence — this case reports `tablesSkipped` empty and notes.
+  liveCases.push('D');
   // Two content columns only — below the reporting threshold, and ambiguous by design.
   const dir = contentFixture(
     '\n## Artwork\n\n| Artwork | Format | Approved | Rights |\n| :-- | :-- | :-- | :-- |\n| hero.svg | image | | |\n',
@@ -193,6 +315,24 @@ for (const hook of ['licence-scan.mjs', 'content-check.mjs']) {
   } else {
     console.log(`  G  control: ${hook.padEnd(30)} ${v.status}`);
   }
+}
+
+// 2026-08-26, the executable half of finding X347 — and the reason X358 could be answered with a
+// skip rather than an untestable ACL. Skipping a case on a platform is only honest while some case
+// that VARIES with the fix still runs there. If none does, this file exits 0 plain and non-zero on
+// --expect-bug on that platform for a reason that has nothing to do with the product: it asserts
+// nothing and reports as a healthy reproduction. X347 was that exact trap, in this file, and it took
+// CI to find it because nothing here said so out loud. This does, in both directions, before any
+// verdict is reached.
+console.log(`\n  cases that vary with the fix, live on ${process.platform}: ${liveCases.join(', ') || 'NONE'}`);
+if (!liveCases.length) {
+  console.error(
+    `\nFAIL: every case that varies with the fix is skipped on ${process.platform}, so this file ` +
+      'now passes in both directions here and tests nothing. That is finding X347 exactly — a ' +
+      'reproduction that cannot run in the environment CI runs in, looking green. Restore a live ' +
+      'case on this platform or delete the file; do not leave it reporting success.',
+  );
+  process.exit(1);
 }
 
 if (expectBug) {

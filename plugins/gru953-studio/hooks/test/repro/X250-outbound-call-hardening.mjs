@@ -43,15 +43,29 @@
 
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
 const MOD = join(here, '..', '..', 'openrouter-models.mjs');
+// 2026-08-26, finding X356 (Windows-only; class: a filesystem path used where the ESM loader requires
+// a URL). MOD is a PATH and stays one — readFileSync() below needs a path. The ESM loader does not:
+// `import(MOD)` works on POSIX only, because '/a/b.mjs' happens to be a valid relative URL, whereas on
+// the Windows runner MOD is 'D:\a\...\openrouter-models.mjs', which Node parses as a URL with scheme
+// "d:" and rejects with ERR_UNSUPPORTED_ESM_URL_SCHEME. It threw during top-level evaluation, so this
+// reproduction died before case A ran and the harness read the non-zero exit as "the defect is back".
+// MOD_URL is the loader's form of the same file, and it is needed in THREE places: here, and in the two
+// child scripts cases C and E generate — JSON.stringify() of a Windows path yields a JS literal that is
+// still a bare Windows path, so those children would have kept crashing one process further down, with
+// case C reporting "the importer did not complete at all" instead of what it is there to measure.
+// pathToFileURL() is correct on both platforms and, on POSIX, resolves to the same module instance the
+// bare path did. Idiom copied from X242 (9cb7c9e) into this file in 01f822d; already fixed once in the
+// product code (repo-integrity.mjs, "2026-08 R3") and never carried into the tests.
+const MOD_URL = pathToFileURL(MOD).href;
 const SRC = readFileSync(MOD, 'utf8');
-const { main, selectModels } = await import(MOD);
+const { main, selectModels } = await import(MOD_URL);
 
 const problems = [];
 const note = (s) => problems.push(s);
@@ -149,7 +163,8 @@ const live = SRC.split('\n')
     importer,
     [
       "globalThis.fetch = async () => { console.log('FETCH-FIRED'); return { ok: true, status: 200, json: async () => ({ data: [] }) }; };",
-      `await import(${JSON.stringify(MOD)});`,
+      // X356: MOD_URL, not MOD — the child is an ESM loader too. See the note beside MOD_URL.
+      `await import(${JSON.stringify(MOD_URL)});`,
       "console.log('IMPORT-DONE');",
     ].join('\n'),
     'utf8',
@@ -229,7 +244,8 @@ const live = SRC.split('\n')
   writeFileSync(
     runner,
     [
-      `const { main } = await import(${JSON.stringify(MOD)});`,
+      // X356: MOD_URL, not MOD — the child is an ESM loader too. See the note beside MOD_URL.
+      `const { main } = await import(${JSON.stringify(MOD_URL)});`,
       "const fake = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'a/b', pricing: { prompt: '0', completion: '0' }, context_length: 100 }] }) });",
       "process.exitCode = await main(['--all'], { fetchImpl: fake });",
     ].join('\n'),

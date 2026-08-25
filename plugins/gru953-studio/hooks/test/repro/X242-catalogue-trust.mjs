@@ -51,12 +51,27 @@
 //   node X242-catalogue-trust.mjs --expect-bug   # asserts the defects, for the parent commit
 
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
 const MOD = join(here, '..', '..', 'openrouter-models.mjs');
-const { isFreeModel, formatTable, fetchModels } = await import(MOD);
+// 2026-08-26, finding X356 (Windows-only; class: a filesystem path used where the
+// ESM loader requires a URL). THIS FILE IS THE ORIGIN of the idiom. `import()` of a
+// bare absolute path is a POSIX accident: '/a/b.mjs' is a valid relative URL, but on
+// the Windows runner join() yields 'D:\a\...\openrouter-models.mjs', which Node parses
+// as a URL with scheme "d:" and rejects with ERR_UNSUPPORTED_ESM_URL_SCHEME. It throws
+// during top-level evaluation, so the reproduction died before case A ran and the
+// harness read the non-zero exit as "the defect is back". pathToFileURL() emits the
+// correct file:// URL on both platforms and, on POSIX, resolves to the SAME module
+// instance the bare path did — so nothing about the reproduction's meaning changes.
+// This exact bug had already been found and fixed once in the product code
+// (repo-integrity.mjs, "2026-08 R3", found live on the Windows CI leg); the lesson was
+// never carried into the test idiom, and this call site, added here in 9cb7c9e, was
+// then copied verbatim into X250 (01f822d), X179 (d7f73be), X288 (9767709) and X241
+// (31c1700). None of the five ever ran on Windows: the last green Windows CI (4f3b3b9)
+// carried four repro scripts, and all five of these post-date it.
+const { isFreeModel, formatTable, fetchModels } = await import(pathToFileURL(MOD).href);
 
 const CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 

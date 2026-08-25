@@ -51,7 +51,7 @@
 
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname, relative, sep, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { globSync } from 'node:fs';
 
@@ -74,7 +74,17 @@ const SRC = readFileSync(join(HOOKS, 'auto-update.mjs'), 'utf8');
 // The fix was to move the guard into `lib.mjs` as `updateRootIsOurs()`, which `auto-update.mjs` now
 // imports. lib.mjs has no side effects on import, so the original objection no longer applies: this
 // file can import the real implementation and there is no second copy to drift.
-const { updateRootIsOurs } = await import(join(HOOKS, 'lib.mjs'));
+//
+// 2026-08-26, finding X356 (Windows-only; class: a filesystem path used where the ESM loader requires
+// a URL). The import above was written as `import(join(HOOKS, 'lib.mjs'))`, which works on POSIX only:
+// on the Windows runner that string is 'D:\a\...\lib.mjs', which Node parses as a URL with scheme "d:"
+// and rejects with ERR_UNSUPPORTED_ESM_URL_SCHEME. It throws during top-level evaluation, so importing
+// the shipped guard — the whole point of X292 above — took this reproduction from "tests a duplicate"
+// straight to "does not run at all" on Windows, and the harness read the non-zero exit as "the defect
+// is back". pathToFileURL() gives the right file:// URL on both platforms and resolves to the same
+// module instance on POSIX. Idiom copied from X242 (9cb7c9e) into this file in 31c1700; already fixed
+// once in the product code (repo-integrity.mjs, "2026-08 R3") and never carried into the tests.
+const { updateRootIsOurs } = await import(pathToFileURL(join(HOOKS, 'lib.mjs')).href);
 const rootIsOurs = (start, root) => (root ? updateRootIsOurs(start, root) : false);
 const findGitRoot = (start) => {
   let d = resolve(start);

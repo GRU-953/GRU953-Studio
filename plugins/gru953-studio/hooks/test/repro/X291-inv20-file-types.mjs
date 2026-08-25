@@ -41,6 +41,22 @@
 // Control E exists because inverting the rule surfaced two `.DS_Store` files immediately: gitignored
 // and untracked, but INV20 walks the FILESYSTEM rather than git.
 //
+// 2026-08-26, finding X362 (Windows-only). This file was written on a machine where `path.sep` is '/'
+// and it assumed that
+// everywhere: every case identifies its fixture by looking for the fixture's own '/'-spelled relative
+// path inside the gate's problem text, and INV20 names files with `path.relative()`, which emits '\'
+// on win32. So the two positive cases reported the installers as unscanned when they had in fact been
+// scanned and flagged, and — worse — the four negative controls went on printing a success word while
+// asserting nothing at all, because a needle that can never match satisfies "no problem names this
+// file" for free. Both halves came from ONE separator-sensitive comparison; both are fixed in one
+// place, above `judge`, where the mechanism and the evidence are set out in full.
+//
+// A CONTROL'S SUCCESS NOW PRINTS "not flagged", NEVER "skipped". The old word was this file's way of
+// saying "INV20 declined to flag it, as required", and in a CI log it is indistinguishable from "this
+// control did not run" — which is exactly how the Windows failure read, and exactly what was in fact
+// happening underneath. A control that cannot fail is not a control, so a negative verdict is now
+// accepted only after a positive case in the same run has proved the matcher can match at all.
+//
 // NOTHING IS EXECUTED. Every fixture is a file written into a temporary copy of the tree, read as
 // bytes by the gate, and deleted. The `install.sh` fixture is never run.
 //
@@ -96,14 +112,66 @@ function inv20Over(dir) {
   }
 }
 
+// 2026-08-26, X362, found by CI on `hooks (windows-latest, node 22)` — the one leg the development machine
+// cannot run. Every case here asks "did INV20 name THIS FILE?" and asked it by looking for the
+// fixture's relative path inside the problem text. Those paths are written with '/' throughout this
+// file; INV20 names the file with `path.relative(repoRoot, f)` (repo-integrity.mjs:1362), which emits
+// `path.sep` — '\' on win32. The gate said `tools\installers\install.sh`, the needle said
+// `tools/installers/install.sh`, and a plain `includes` cannot bridge that.
+//
+// SEPARATOR-SENSITIVE STRING COMPARISON, the same class as the case-sensitivity defect fixed in
+// scan.mjs on 13 August: the assertion was about WHICH FILE and it was written as an assertion about
+// HOW THE PATH IS SPELLED. The gate was right on Windows and the reproduction was wrong about it.
+//
+// That this and nothing else was wrong is settled by the Windows log itself. Case B plants five
+// fixtures and exactly four were reported missed; the fifth — `.roomodes`, the only one with no
+// directory component and so the only one spelled identically on both platforms — was caught. Byte
+// value cannot explain that (the caught one carries a NUL, as three of the missed four do) and nor can
+// extension. Path depth is the only axis that separates them. Confirmed here by re-emitting INV20's
+// path with '\' on this Mac: the run then produced the Windows text exactly, both cases and all four
+// counts.
+//
+// Normalised for the COMPARISON ONLY, never for what is printed, so a real failure still reports the
+// path in the shape the platform produced. Case is deliberately NOT folded: these fixtures are
+// created by this file in a known case and INV20 derives its path from a walk of that same tree, so
+// nothing here can arrive re-cased — unlike scan.mjs, which compares a path it was handed against one
+// it built itself, and needs the win32 case fold for that reason.
+const mentions = (problem, rel) => problem.replace(/\\/g, '/').includes(rel);
+
+// A NEGATIVE control asserts "no problem names this file", and a needle that can never match anything
+// satisfies that for free. On the Windows leg D, F and G passed for precisely that reason while A
+// and B were failing on the same broken comparison: they printed a success word without testing
+// anything, which is the worst state a control can be in — it is switched off and still reporting.
+//
+// Demonstrated on this Mac rather than assumed. With INV20's separator made win32-shaped AND
+// `png|woff2?` deleted from its binary exclusion — so a .png carrying control bytes really is flagged
+// — control D still reported success. With POSIX separators the identical break was caught as
+// "case D: 2 of 3 control: genuinely binary formats were WRONGLY caught: docs/logo.png,
+// docs/font.woff2".
+//
+// So a negative verdict is accepted only once a POSITIVE case in the same run has shown that a path of
+// the same SHAPE can be matched at all. Nested and root-level are tracked apart because only a nested
+// match proves the separator is handled, and case E's `.DS_Store` has no separator to get wrong. A and
+// B run before any control and supply both kinds.
+let matchedNested = false;
+let matchedFlat = false;
+
 const judge = (id, label, files, wantCaught) => {
   const missed = [];
   for (const [rel, body] of files) {
     const dir = treeWith([[rel, body]]);
     const got = inv20Over(dir);
     rmSync(dir, { recursive: true, force: true });
-    if (got === null) missed.push(`${rel} (no readable JSON)`);
-    else if (got.some((p) => p.includes(rel)) !== wantCaught) missed.push(rel);
+    if (got === null) {
+      missed.push(`${rel} (no readable JSON)`);
+      continue;
+    }
+    const named = got.some((p) => mentions(p, rel));
+    if (named !== wantCaught) missed.push(rel);
+    else if (named) {
+      if (rel.includes('/')) matchedNested = true;
+      else matchedFlat = true;
+    }
   }
   if (missed.length) {
     note(
@@ -111,7 +179,19 @@ const judge = (id, label, files, wantCaught) => {
     );
     return;
   }
-  console.log(`  ${id}  ${label.padEnd(46, '.')} ${wantCaught ? 'caught' : 'skipped'}`);
+  if (!wantCaught) {
+    const nested = files.some(([rel]) => rel.includes('/'));
+    if (nested ? !matchedNested : !matchedFlat) {
+      note(
+        `case ${id}: ${label} is VACUOUS, not passed — nothing in this run has matched a ` +
+          `${nested ? 'nested' : 'root-level'} path, so "no problem names this file" may hold ` +
+          'because the comparison can never match rather than because the gate declined. It ' +
+          'certifies nothing until a positive case passes',
+      );
+      return;
+    }
+  }
+  console.log(`  ${id}  ${label.padEnd(46, '.')} ${wantCaught ? 'caught' : 'not flagged'}`);
 };
 
 judge(
