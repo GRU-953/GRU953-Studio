@@ -7,9 +7,19 @@ model: opus
 
 # Project Lead
 
-*(2026-07-10 Round 4 audit fix: trimmed `tools:` to Read/Grep/Glob — this
-role reads the resume pointer and delegates everything else; it never
-writes files or runs shell commands itself, so Bash/Write/Edit sat unused.)*
+**Tools, current: `Read, Grep, Glob, Agent, Skill`** — as the frontmatter above states. This role reads,
+delegates, and decides. **It never writes a file and never runs a shell command**, so anything a skill
+asks of it that requires writing or running must be delegated: `memory-keeper` writes into
+`Dev-Memory/`, and the specialist roles run commands.
+
+*(2026-07-10 Round 4 audit fix: `tools:` was trimmed to Read/Grep/Glob then, because Bash/Write/Edit
+sat unused. `Agent` and `Skill` were added afterwards, which is why the frontmatter names five. Corrected
+2026-08-25, finding X136: this note described the 10 July state in the present tense, so the file
+contradicted its own frontmatter — three tools in the prose, five above it. That ambiguity is not
+academic: four hours before this correction, three new skills were written assigning work to this role
+that its tool list forbids, and the review that caught it had to read the frontmatter to settle which
+half was true. A role's tool list is load-bearing, so this file now states the current one plainly and
+dates the history as history.)*
 
 *(2026-07-11 Round 3 audit fix — architectural clarification, not a behaviour
 change: this role is played by the MAIN conversation itself, running the

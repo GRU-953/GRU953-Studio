@@ -2382,6 +2382,30 @@ export function pipesRemoteCodeIntoAnInterpreter(rawC) {
 // with no reproduction to bound the guess, which is precisely how the clone and build-script cases
 // broke. It is a decision for the owner, with evidence, rather than a silent widening.
 export function sendsCommitsToRemote(rawC) {
+  // 2026-08-25, X17 — and this is the most consequential consent gap found in the programme. Making a
+  // repository PUBLIC is the single most irreversible publishing act available, and it raised NOTHING.
+  // Measured at HEAD on a clean studio fixture: `gh repo edit --visibility public`,
+  // `gh api -X PATCH repos/o/r -f visibility=public` and the equivalent curl all returned zero bytes on
+  // stdout and stderr, exit 0 — while `git push origin main` on the same fixture returned `ask`.
+  //
+  // `skills/operating-charter/SKILL.md` promises the user's own explicit, fresh "yes" every time
+  // something is published. A private repository turned public publishes everything in it at once, and
+  // the product said nothing at all.
+  //
+  // NARROW ON PURPOSE, because a false prompt here would be the L5 failure on the one gate that most
+  // needs to keep working. It matches a visibility change TO public only: `--visibility private`,
+  // `gh repo view`, and a PATCH carrying no visibility key are all left silent.
+  {
+    const t = String(rawC || '');
+    const toPublic =
+      /--visibility[= \t]+["']?public\b/i.test(t) ||
+      /-f[ \t]+visibility[= \t]*["']?public\b/i.test(t) ||
+      /["']?visibility["']?\s*[:=]\s*["']?public\b/i.test(t);
+    if (toPublic && /(^|[^A-Za-z0-9_])(?:gh|curl|hub|glab)(?:[ \t]|$)/i.test(t)) return true;
+    // The dedicated subcommand form, which carries no `visibility` word at all.
+    if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+repo[ \t]+(?:create|edit)\b[^\n]*--public\b/i.test(t))
+      return true;
+  }
   if (
     /(^|[^A-Za-z0-9_])['"]?(?:npm|pnpm|yarn|bun|vsce|ovsx)['"]?[ \t]+publish\b/i.test(
       String(rawC || ''),
@@ -2717,6 +2741,46 @@ export function isPushCapable(rawC) {
   // the classic form. A bare `ssh host` is an interactive login and sends nothing, so the pipe is the
   // evidence and a plain ssh is deliberately not matched.
   if (/\|[ \t]*(?:sudo[ \t]+)?ssh[ \t]+/i.test(c)) return true;
+  // 2026-08-25, X200 — the THIRD round of the same gap, and the pattern is now the finding. X288 added
+  // scp/rsync/curl/aws, X297 added the ssh alias form, X298 added npm publish. Each time the list grew
+  // by the transports someone thought of. Measured at HEAD with an AWS key pair committed in the
+  // fixture, every one of these returned zero output and exit 0 — no scan at all:
+  //
+  //   vercel deploy --prod   netlify deploy --prod   firebase deploy   docker push me/img
+  //   vercel --prod          docker buildx build --push              gsutil rsync -r dist gs://b/
+  //   wrangler deploy        fly deploy                              kubectl apply -f k8s/
+  //
+  // These are the ordinary ways a build reaches the internet in 2026, and the secret scan never ran
+  // before any of them. Added to the SCAN gate only, not the consent gate, per the owner's decision of
+  // 24 August: a deploy step should not stop and ask, and scanning is silent unless it finds something.
+  //
+  // `--dry-run` is excluded throughout because it publishes nothing. `docker build` without `--push`
+  // is excluded because it produces a local image. `kubectl apply` IS included: a manifest is exactly
+  // where a secret rides to a cluster.
+  if (
+    /(^|[^A-Za-z0-9_])['"]?(?:vercel|netlify|firebase|wrangler|fly|flyctl|railway|render|heroku|now|surge|amplify)['"]?[ \t]+(?:deploy|publish|--prod\b)/i.test(
+      c,
+    ) &&
+    !/--dry-run\b/i.test(c)
+  )
+    return true;
+  // `vercel --prod` with no subcommand at all is a deploy.
+  if (/(^|[^A-Za-z0-9_])['"]?vercel['"]?[ \t]+(?:-[A-Za-z-]+[ \t]+)*--prod\b/i.test(c)) return true;
+  // Docker: a push, or a build that pushes as it goes.
+  if (/(^|[^A-Za-z0-9_])['"]?docker['"]?[ \t]+(?:image[ \t]+)?push\b/i.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])['"]?docker['"]?[ \t]+buildx?\b[^\n]*--push\b/i.test(c)) return true;
+  // Object stores other than S3, which X288 already covers.
+  if (/(^|[^A-Za-z0-9_])['"]?(?:gsutil|gcloud)['"]?[ \t]/i.test(c) && /gs:\/\//i.test(c))
+    return true;
+  if (/(^|[^A-Za-z0-9_])['"]?az['"]?[ \t]+storage[ \t]+blob[ \t]+(?:upload|sync)\b/i.test(c))
+    return true;
+  // A manifest applied to a cluster carries whatever is written in it.
+  if (
+    /(^|[^A-Za-z0-9_])['"]?kubectl['"]?[ \t]+(?:apply|create|replace)\b/i.test(c) &&
+    !/--dry-run\b/i.test(c)
+  )
+    return true;
+
   if (/(^|[^A-Za-z0-9_])['"]?git['"]?[ \t]+svn[ \t]+dcommit/i.test(c)) return true;
   if (
     new RegExp(
