@@ -30,6 +30,8 @@
 // makes it impossible to mistake for either.
 
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Run a gate or hook and classify its answer.
@@ -182,4 +184,38 @@ export function readDecision(nodePath, hookPath, payload, opts = {}) {
     raw,
     why: String(decision),
   };
+}
+
+// 2026-08-26, findings X366, X367 and X368 — the third instance of the X347 shape in this directory,
+// and the reason it is a shared helper rather than a third copy of the same eight lines.
+//
+// `scan.mjs` stands aside ENTIRELY — emitting no decision at all — when `findStudioRoot()` finds no
+// `Dev-Memory/` at or above the cwd (scan.mjs:947 -> lib.mjs:384). `Dev-Memory/` is GITIGNORED, so a
+// fresh checkout has none. A control that records a problem only on `deny` therefore records nothing
+// on every CI leg, while printing the same reassuring line it prints on the development machine. Three
+// controls were in exactly that state, and all three still satisfied the two-direction contract, so
+// the suite reported them healthy while they measured nothing.
+//
+// `findStudioRoot()` asks only whether that directory EXISTS. So the condition can be created, the
+// control exercised, and only what was created removed again. Nothing is faked by this: an empty
+// `Dev-Memory/` is precisely what makes a checkout a studio project, which is the state the controls
+// are about. On a machine where the directory is already there it is left strictly alone.
+//
+// It returns whether the hook could be engaged rather than assuming it: if the directory can be
+// neither found nor created, the caller is told so and must say so out loud instead of passing.
+export function asStudioProject(root, fn) {
+  const dm = path.join(root, 'Dev-Memory');
+  const weMadeIt = !fs.existsSync(dm);
+  if (weMadeIt) {
+    try {
+      fs.mkdirSync(dm, { recursive: true });
+    } catch {
+      // cannot be created here; fn is told `false` and must not report success
+    }
+  }
+  try {
+    return fn(fs.existsSync(dm));
+  } finally {
+    if (weMadeIt) fs.rmSync(dm, { recursive: true, force: true, maxRetries: 3 });
+  }
 }

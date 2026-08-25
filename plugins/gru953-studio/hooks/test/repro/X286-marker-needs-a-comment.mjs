@@ -64,6 +64,7 @@ import { spawnSync, execSync } from 'node:child_process';
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
 const HOOKS = join(here, '..', '..');
+import { asStudioProject } from './_verdict.mjs';
 const REPO = join(HOOKS, '..', '..', '..');
 
 const problems = [];
@@ -192,8 +193,19 @@ judge(
 
 // ---- G: control — this plugin's own tree must stay pushable --------------------
 {
-  const got = push(REPO);
-  if (got === 'deny') {
+  // 2026-08-26, X368. `push(REPO)` answers `silent` wherever there is no `Dev-Memory/` above the
+  // repository — which is every CI leg, since it is gitignored — so this control's stated job ("five
+  // files here carry the marker as a trailing comment and all five are .mjs; if the fix withdrew a
+  // real exemption it has broken the project it protects") was done nowhere but the development
+  // machine, while the reassuring line printed either way. X286 exists BECAUSE X218 held an axis still
+  // behind a whole-tree control; that protecting control was itself inert.
+  const [got, gEngaged] = asStudioProject(REPO, (on) => [push(REPO), on]);
+  if (!gEngaged || got === 'silent') {
+    note(
+      `control G: the scan stood aside on this tree (engaged=${gEngaged}, answer=${got}), so this ` +
+        "control did not check the project's own five exemptions at all. That is not a pass.",
+    );
+  } else if (got === 'deny') {
     note(
       "control G: this plugin's own tree is now refused. Five files here carry the marker as a " +
         'trailing comment and all five are .mjs; if the fix withdrew a real exemption it has broken ' +

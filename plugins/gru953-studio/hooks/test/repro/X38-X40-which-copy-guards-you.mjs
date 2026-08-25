@@ -58,6 +58,7 @@ const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
 const HOOKS = join(here, '..', '..');
 const PLUGIN = join(HOOKS, '..');
+import { asStudioProject } from './_verdict.mjs';
 const REPO = resolve(PLUGIN, '..', '..');
 
 const problems = [];
@@ -96,9 +97,25 @@ const pushOwnRepo = (hookPath) =>
 
 // ---- A: the same hook, run from outside the checkout ------------------------------
 {
-  const inside = pushOwnRepo(join(HOOKS, 'scan.mjs'));
-  const outside = pushOwnRepo(join(ELSEWHERE, 'hooks', 'scan.mjs'));
-  if (inside.decision === 'deny') {
+  // 2026-08-26, X367. This case compares the hook run from inside the checkout against a
+  // byte-identical copy run from elsewhere. With no `Dev-Memory/` above the repository BOTH
+  // invocations step aside and return `silent` — so on every CI leg the case compared two silences,
+  // fell through to the `else`, and printed "not a refusal". The file already guards ONE vacuity mode
+  // (`inside.decision === 'deny'`) and not this one, which is the mode CI is always in, because
+  // `Dev-Memory/` is gitignored. A re-anchoring regression — the exact root cause X38/X40 names —
+  // would therefore have been invisible on every leg with the suite green.
+  const [inside, outside, engaged] = asStudioProject(REPO, (on) => [
+    pushOwnRepo(join(HOOKS, 'scan.mjs')),
+    pushOwnRepo(join(ELSEWHERE, 'hooks', 'scan.mjs')),
+    on,
+  ]);
+  if (!engaged || (inside.decision === 'silent' && outside.decision === 'silent')) {
+    note(
+      'case A: both copies stood aside, so the location axis was not measured at all. That is not a ' +
+        'pass — it is the vacuity mode this case was blind to until 2026-08-26 (X367). ' +
+        `engaged=${engaged}, inside=${inside.decision}, outside=${outside.decision}`,
+    );
+  } else if (inside.decision === 'deny') {
     note(
       `case A: the hook INSIDE the checkout already refuses this repository (${inside.reason.slice(0, 90)}). ` +
         'That is X22, and this case cannot measure the location axis while it is true',

@@ -46,7 +46,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { readDecision, refuseCrash } from './_verdict.mjs';
+import { readDecision, refuseCrash, asStudioProject } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -93,7 +93,27 @@ const SECRET_REASON = /secrets, key files/i;
 const GITIGNORE_REASON = /not excluded by \.gitignore/i;
 
 // ---- A, B: this plugin's own tree, from two directories -------------------------
-const A = decide(REPO_ROOT);
+// 2026-08-26, X366. Cases A and B run `scan.mjs` against THIS repository, and `scan.mjs` steps aside
+// entirely — no decision at all — when `findStudioRoot()` finds no `Dev-Memory/` at or above the cwd
+// (scan.mjs:947 -> lib.mjs:384). `Dev-Memory/` is gitignored, so on CI both came back `none`,
+// `bRefused` was false, and case B — the whole subject of this file — 'passed' because the code under
+// test was never reached. This file's own header states that hazard for controls C and D ('a probe
+// repository must have a Dev-Memory/ folder or nothing is measured at all') and then failed to apply
+// it to A and B. Exactly the X347 mechanism: one gate, two honest answers, and the test pinning
+// whichever the environment happens to give.
+//
+// `asStudioProject` creates the directory when it is absent and removes only what it created, so both
+// cases are now exercised everywhere. `engaged` is reported rather than assumed: if the hook could not
+// be engaged, that is said out loud instead of read as a pass.
+const [A, B, engaged] = asStudioProject(REPO_ROOT, (on) => [decide(REPO_ROOT), decide(HOOKS), on]);
+if (!engaged) {
+  // `die`, not a soft note, and in BOTH directions: if the hook could not be engaged then neither
+  // case measured anything, and a reproduction that measured nothing must never report success.
+  die(
+    'cases A and B: there is no `Dev-Memory/` at or above this checkout and one could not be ' +
+      'created, so scan.mjs stood aside and neither case measured anything. That is not a pass.',
+  );
+}
 if (A.decision === 'deny') {
   die(
     'control A failed: a push from the repository ROOT is refused. That worked before this finding ' +
@@ -103,7 +123,6 @@ if (A.decision === 'deny') {
 }
 console.log(`  A  from the repository root ..................... ${A.decision}   (control)`);
 
-const B = decide(HOOKS);
 const bRefused = B.decision === 'deny';
 console.log(
   `  B  from a subdirectory (hooks/) ................. ${B.decision}${bRefused ? '   <- X217' : ''}`,
