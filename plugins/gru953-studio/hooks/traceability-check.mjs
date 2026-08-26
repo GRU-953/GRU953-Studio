@@ -55,6 +55,7 @@ import {
   // 2026-08-15: this gate now reads tables through the shared reader rather than its own
   // private parser. See parseTable() below for the five defects that closed.
   parseTables,
+  classifyStudioRoot,
 } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
@@ -396,7 +397,26 @@ function main() {
   // two separate, unguarded calls racing against each other — see
   // lib.mjs's isDirectory() for the full reproduction (a crash instead of a
   // plain message if Dev-Memory disappears between the two calls).
-  if (!isDirectory(devMemory)) {
+  // 2026-08-26, X370. Was `if (!isDirectory(devMemory))` alone, which answered
+  // "not a studio project" with exit 0 for a root that does not exist, a root that is a
+  // FILE, and a Dev-Memory that is a file — i.e. for every state in which this gate had
+  // examined nothing. Reproduced by execution against `/definitely/not/here` and against
+  // `./README.md`, while licence-scan.mjs on the same input correctly answered BLOCKED.
+  // classifyStudioRoot() separates "readable root, genuinely no Dev-Memory/" (stand aside,
+  // exit 0 — load-bearing, this gate runs in ordinary checkouts) from "could not look"
+  // (BLOCKED, exit 1). Single-sourced in lib.mjs because five copies is how it drifted.
+  const rootKind = classifyStudioRoot(root);
+  if (rootKind.kind === 'unreadable') {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        problems: [rootKind.why],
+        root,
+      }),
+    );
+    process.exit(1);
+  }
+  if (rootKind.kind === 'not-studio') {
     console.log(
       JSON.stringify({
         status: 'not a studio project',

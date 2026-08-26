@@ -377,6 +377,76 @@ export function isDirectory(p) {
   }
 }
 
+// 2026-08-26, finding X370. The five project-level gates — verify-progress, quality-gate,
+// traceability-check, memory-integrity and content-check — each decided "is this a studio
+// project?" with their own copy of a single guarded stat of `<root>/Dev-Memory`, and answered
+// `{"status":"not a studio project"}` with exit 0 whenever that stat did not yield a directory.
+//
+// That conflates two states which must never share an answer:
+//
+//   (a) `root` is a readable directory that simply has no Dev-Memory/  -> genuinely not a
+//       studio project. Standing aside with exit 0 is correct and load-bearing: these gates
+//       run in ordinary non-studio checkouts and must not fire there.
+//   (b) `root` does not exist, or is a FILE, or cannot be read at all  -> the gate could not
+//       look. It has measured nothing.
+//
+// Both produced "not a studio project", exit 0. Reproduced by execution: all five answer
+// clean for `/definitely/not/here` AND for `./README.md` used as a root, while licence-scan
+// on the same input correctly answers `BLOCKED: cannot scan ... it does not exist`. These are
+// blocking Publish pre-flight checks, so a mistyped or unresolved path made five of them
+// report success on work none of them had inspected.
+//
+// The rule broken is the one verify-progress.mjs's own header states, ten lines above the
+// defect: "A gate that cannot read its input must never claim its input is fine — the same
+// rule as X106's swallowed parse error and X115/X118." X115 applied it to licence-scan and
+// was never carried across to these five.
+//
+// Single-sourced deliberately. Five copies of this decision is how it drifted in the first
+// place, and this file's own SEPARATOR_ROW_RE/PLACEHOLDER_RE history is the same lesson: one
+// definition cannot drift.
+//
+// @returns {{kind:'unreadable'|'not-studio'|'studio', devMemory:string, why:string}}
+export function classifyStudioRoot(root) {
+  const resolved = path.resolve(String(root ?? ''));
+  const devMemory = path.join(resolved, 'Dev-Memory');
+
+  let rootStat;
+  try {
+    rootStat = fs.statSync(resolved);
+  } catch (e) {
+    return {
+      kind: 'unreadable',
+      devMemory,
+      why: `cannot inspect ${resolved} — ${formatFsError(e)}. This gate has examined nothing, so it reports no verdict rather than a clean one`,
+    };
+  }
+  if (!rootStat.isDirectory()) {
+    return {
+      kind: 'unreadable',
+      devMemory,
+      why: `${resolved} is not a directory, so it cannot be a project root. This gate has examined nothing, so it reports no verdict rather than a clean one`,
+    };
+  }
+
+  let dmStat;
+  try {
+    dmStat = fs.statSync(devMemory);
+  } catch {
+    // Absent Dev-Memory/ inside a readable root is the legitimate stand-aside: case (a).
+    return { kind: 'not-studio', devMemory, why: 'no Dev-Memory/ directory — nothing to check' };
+  }
+  if (!dmStat.isDirectory()) {
+    // A FILE named Dev-Memory is not "no studio project"; it is a project whose marker is
+    // corrupt, and answering clean would hide that.
+    return {
+      kind: 'unreadable',
+      devMemory,
+      why: `${devMemory} exists but is not a directory — the studio's project marker is corrupt, which is not the same as this not being a studio project`,
+    };
+  }
+  return { kind: 'studio', devMemory, why: 'Dev-Memory/ present' };
+}
+
 // ---- studio run marker (the run-scope gate) --------------------------------------
 // The studio's project marker is its Dev-Memory folder. Walk up from `start`
 // looking for one; return the project root that contains it, or null when no
@@ -558,7 +628,37 @@ export function tokenConfirmedWithinTtl(text, expected) {
 // satisfied verify-progress.mjs's letter-only lookbehind AND had no alternative
 // here, so a hyphenated spelling passed both halves. Added explicitly.
 export const CONTRADICTION_RE =
-  /(?<!\b(?:not|never|no)[ \t]+)\b(unverified(?=[ \t]*:)|(?:un|non|not)-verified|(?:is|are|remains?|still|currently)[ \t]+unverified|exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|current(?:ly)?[ \t]+(?:[^,;|()]{0,40}?[ \t]+)?(?<!\b(?:not|never|no)[ \t]+)fails?|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion(?=[ \t]+(?:(?:was|is|are|were|has|had|have|got|been)[ \t]+)*(?:spotted|found|seen|detected|introduced|observed|occurred|appeared|reported|caught))))\b/i;
+  /(?<!\b(?:not|never|no)[ \t]+)\b(unverified(?=[ \t]*:)|(?:un|non|not)-verified|(?:is|are|remains?|still|currently)[ \t]+unverified|exit(?:ed)?(?:[ \t]+with)?[ \t]+code[ \t]*:?[ \t]*[1-9]\d*|exit[ \t]+[1-9]\d*|now[ \t]+fails?|currently[ \t]+(broken|failing)|current(?:ly)?[ \t]+(?:[^,;|()]{0,40}?[ \t]+)?(?<!\b(?:not|never|no)[ \t]+)fails?|has(?:n'?t| not)[ \t]+(?:yet[ \t]+)?been[ \t]+(?:re-?)?verified|not[ \t]+(?:yet[ \t]+)?verified|still[ \t]+fail(?:s|ing)?|regress(?:ed|ion(?=[ \t]+(?:(?:was|is|are|were|has|had|have|got|been)[ \t]+)*(?:spotted|found|seen|detected|introduced|observed|occurred|appeared|reported|caught)))|[1-9]\d*[ \t]+tests?[ \t]+(?:failed|failing)|[1-9]\d*[ \t]+(?:failed|failing|failures?|errors?)|failures?[ \t]*=[ \t]*[1-9]\d*)\b/i;
+
+// 2026-08-26, finding X371. CONTRADICTION_RE is the ONLY automated defence against an
+// evidence cell that is marked passing while its own text says the run failed — it is used by
+// quality-gate.mjs:279, verify-progress.mjs and traceability-check.mjs. Measured against
+// eleven realistic phrasings of a failing test run, it caught four and missed SEVEN, including
+// the single commonest shape a real test runner prints:
+//
+//     "3 failed, 12 passed"                    missed
+//     "Tests: 3 failed, 12 passed, 15 total"   missed   (Jest/Vitest summary line)
+//     "2 failing"                              missed   (Mocha)
+//     "1 test failed" / "5 tests failed"       missed
+//     "FAILED (failures=2)"                    missed   (Python unittest)
+//     "`npm test` -> 3 failed"                 missed
+//
+// So the enumeration covered how a HUMAN narrates a failure ("now fails", "still failing",
+// "currently broken", "exit code 1") and not how a TEST RUNNER reports one — which is what
+// actually gets pasted into an evidence cell. Three alternatives are added for the numeric
+// forms, and the leading digit class is deliberately `[1-9]` rather than `\d`: "0 failed,
+// 15 passed" is a PASSING run and must not be blocked, and it is a real line real runners
+// print.
+//
+// On over-breadth, which this file has been burned by twice (the `regress(?:ed|ion)` case and
+// the `unverified inference` case). "3 failed uploads" in ordinary prose will match. That is
+// accepted deliberately, because the two errors are not symmetrical and the quality-gate skill
+// already states the principle: "a false 'clean' is worse than a false block; nobody re-checks
+// a green result before shipping." A false block prints the offending cell and is resolved by
+// rewording it; a false clean ships a build whose own evidence said it was broken. Verified
+// against the nine legitimate phrasings that must NOT trip it, including "0 failed, 15 passed",
+// "no tests failed", "zero failures", "Regression tests added" and "handles failed logins
+// correctly" — all still clean.
 
 // ---- shared markdown-table patterns (fixes a six-way drift) ------------------
 // 2026-07-29 maintenance fix (audit finding 4). SEPARATOR_ROW_RE (the `| :-- |

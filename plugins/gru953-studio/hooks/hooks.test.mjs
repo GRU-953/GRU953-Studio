@@ -1831,6 +1831,78 @@ const FULL_DOD = [
   '| Reproducible build | pass | `make build` -> exit 0 on clean clone |',
 ].join('\n');
 
+// 2026-08-26, finding X371. CONTRADICTION_RE is the ONLY automated defence against an
+// evidence cell marked passing whose own text says the run failed, and it is shared by
+// quality-gate.mjs, verify-progress.mjs and traceability-check.mjs. Measured before the fix:
+// it recognised how a HUMAN narrates a failure ("now fails", "exit code 1") and missed seven
+// of the ways a TEST RUNNER reports one — which is what actually gets pasted into an evidence
+// cell, including the single commonest shape, "3 failed, 12 passed".
+//
+// Both directions are asserted here. The must-NOT-match list is the load-bearing half: "0
+// failed, 15 passed" is a real line real runners print for a PASSING run, and blocking it
+// would make this gate fire on green builds and get switched off.
+test('lib.mjs: CONTRADICTION_RE recognises test-runner failure summaries, not just human narration (X371)', () => {
+  for (const v of [
+    '3 failed, 12 passed',
+    'Tests: 3 failed, 12 passed, 15 total',
+    '2 failing',
+    '1 test failed',
+    '5 tests failed',
+    'FAILED (failures=2)',
+    '`npm test` -> 3 failed',
+    '10 failed',
+    '1 error',
+    '3 errors',
+  ]) {
+    assert.ok(CONTRADICTION_RE.test(v), `"${v}" is a failing run and must be recognised as a contradiction`);
+  }
+  for (const v of [
+    '0 failed, 15 passed',
+    'Tests: 0 failed, 15 passed, 15 total',
+    '0 failing',
+    'no tests failed',
+    'zero failures',
+    'all 15 passed',
+    'Regression tests added for this case',
+    'handles failed logins correctly',
+    'covers the failure path',
+    '`npm test` -> exit 0 (2026-07-19)',
+    'reviewer sign-off, 0 open findings',
+  ]) {
+    assert.ok(
+      !CONTRADICTION_RE.test(v),
+      `control: "${v}" is legitimate text for a PASSING row and must not be blocked — a false alarm here is how a gate gets switched off`,
+    );
+  }
+});
+
+// The same finding proved end to end through the gate, not only against the regex: a complete
+// Definition-of-Done table with every dimension marked pass, whose Automated tests evidence is
+// a real runner summary reporting failures, must BLOCK. Before X371 it reported clean, so a
+// build whose own recorded evidence said it was broken cleared the gate.
+test('quality-gate.mjs: BLOCKS a full DoD table whose test evidence is a runner summary reporting failures (X371)', () => {
+  const dir = mkTmp('gru-qg-x371-');
+  writeGate(dir, FULL_DOD.replace('`npm test` -> exit 0 (2026-07-19)', '`npm test` -> 3 failed, 12 passed'));
+  const r = runScript('quality-gate.mjs', dir);
+  assert.notEqual(r.code, 0, 'a table whose own evidence reports 3 failed tests must not pass the gate');
+  assert.match(
+    JSON.stringify(r.json),
+    /its own text says it is currently failing/,
+    'the block must name the contradiction, not some unrelated missing dimension',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('quality-gate.mjs: still passes a full DoD table whose runner summary reports zero failures (X371 control)', () => {
+  for (const evidence of ['`npm test` -> exit 0, 15 passed', '`npm test` -> 0 failed, 15 passed']) {
+    const dir = mkTmp('gru-qg-x371ok-');
+    writeGate(dir, FULL_DOD.replace('`npm test` -> exit 0 (2026-07-19)', evidence));
+    const r = runScript('quality-gate.mjs', dir);
+    assert.equal(r.code, 0, `control: "${evidence}" is a passing run and must clear the gate`);
+    fs.rmSync(dir, RM_OPTS);
+  }
+});
+
 test('quality-gate.mjs: no Dev-Memory is a no-op (not a studio project), exit 0', () => {
   const dir = mkTmp('gru-qg-nostudio-');
   const r = runScript('quality-gate.mjs', dir);
@@ -8366,6 +8438,13 @@ for (const script of [
   // the latter. Control E pins that older guard so the two are never confused. No `chmod` anywhere —
   // POSIX mode bits are advisory on Windows, and X347 was exactly that trap in this directory.
   'X349-enumeration-blindness.mjs',
+  // 2026-08-26, X370. Five project-level gates answered "not a studio project" with exit 0
+  // for a root that does not exist, a root that is a FILE, and a Dev-Memory that is a file —
+  // i.e. for every state in which they had examined nothing. X115 fixed exactly this for
+  // licence-scan.mjs and was never carried across to its five siblings, all of which are
+  // blocking Publish pre-flight checks. Proven to bite by reverting one gate and watching
+  // the reproduction name that gate and all three of its cases.
+  'X370-unreadable-root-reported-clean.mjs',
 ]) {
   test(`repro/${script}: the fix holds, and the reproduction can still detect the defect`, () => {
     const p = path.join(HERE, 'test', 'repro', script);
@@ -8380,6 +8459,38 @@ for (const script of [
       bug.status,
       0,
       `${script} still reports the DEFECT as present, so either the fix regressed or the reproduction no longer tests anything:\n${bug.stdout}`,
+    );
+    // 2026-08-26, X369. The assertion above was the whole bug direction, and a non-zero exit
+    // is not evidence of a measurement. A reproduction that DIES — a renamed fixture, a typo
+    // in its own path, a ReferenceError introduced while editing it — also exits non-zero, and
+    // so satisfied this contract while proving nothing whatsoever. That is precisely the
+    // "measured nothing, reported healthy" class of X350-X368, sitting in the harness those
+    // findings were recorded by; and `test/repro/_verdict.mjs` already exists because the same
+    // confusion between a crash and a verdict once let a shipped ReferenceError in
+    // quality-gate.mjs pass a green suite. Its discipline was never applied to the wrapper
+    // that runs it.
+    //
+    // So the bug direction now requires the exit to be accompanied by a DELIBERATE verdict.
+    // Measured across all 70 reproductions under this contract before tightening it: every one
+    // exits non-zero, none emits a stack trace, none is silent, and all 70 already print one of
+    // the recognised deliberate forms — so this adds no tolerance for a false alarm and removes
+    // the tolerance for a crash.
+    const bugOut = `${bug.stdout || ''}${bug.stderr || ''}`;
+    const threw =
+      /\b(ReferenceError|TypeError|SyntaxError|RangeError|AssertionError)\b/.test(bug.stderr || '') ||
+      /^\s+at\s+\S+\s*\(/m.test(bug.stderr || '');
+    assert.ok(
+      !threw,
+      `${script} exited ${bug.status} by THROWING, not by reaching a verdict — a crash satisfies "non-zero exit" while measuring nothing, so this reproduction currently proves nothing about the defect it names:\n${(bug.stderr || '').split('\n').slice(0, 6).join('\n')}`,
+    );
+    assert.ok(
+      bugOut.trim() !== '',
+      `${script} exited ${bug.status} having printed nothing at all — no verdict was produced, so the non-zero exit is not evidence that the reproduction looked for anything`,
+    );
+    assert.match(
+      bugOut,
+      /\b(FAIL|MISMATCH)\b|expected the .*? (defect|defects)|expected .*? and found none/i,
+      `${script} exited ${bug.status} without stating a deliberate verdict. The bug direction must SAY it looked for the defect and did not find it (the recognised forms are a "FAIL:" line, a "MISMATCH" block, or an "expected ... and found none" sentence). An unexplained non-zero exit is indistinguishable from a broken reproduction`,
     );
   });
 }

@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { stripBom, isDirectory, deEmphasise, parseTables } from './lib.mjs';
+import { stripBom, isDirectory, deEmphasise, parseTables, classifyStudioRoot } from './lib.mjs';
 
 // 2026-07-29 maintenance fix (audit finding 4): kept as its own separate
 // constant rather than importing lib.mjs's shared PLACEHOLDER_RE — this one
@@ -105,7 +105,26 @@ function main() {
   // own, so Dev-Memory disappearing (or a permissions problem) between the
   // two threw a raw stack trace instead of this project's own plain-English
   // contract. isDirectory() makes this one guarded call.
-  if (!isDirectory(devMemory)) {
+  // 2026-08-26, X370. Was `if (!isDirectory(devMemory))` alone, which answered
+  // "not a studio project" with exit 0 for a root that does not exist, a root that is a
+  // FILE, and a Dev-Memory that is a file — i.e. for every state in which this gate had
+  // examined nothing. Reproduced by execution against `/definitely/not/here` and against
+  // `./README.md`, while licence-scan.mjs on the same input correctly answered BLOCKED.
+  // classifyStudioRoot() separates "readable root, genuinely no Dev-Memory/" (stand aside,
+  // exit 0 — load-bearing, this gate runs in ordinary checkouts) from "could not look"
+  // (BLOCKED, exit 1). Single-sourced in lib.mjs because five copies is how it drifted.
+  const rootKind = classifyStudioRoot(root);
+  if (rootKind.kind === 'unreadable') {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        problems: [rootKind.why],
+        root,
+      }),
+    );
+    process.exit(1);
+  }
+  if (rootKind.kind === 'not-studio') {
     console.log(
       JSON.stringify({
         status: 'not a studio project',
