@@ -203,103 +203,64 @@ if (studioSkill === null) {
   );
 }
 
-// ---- C3: the generator's copy still agrees with the canonical one ----------
-// The real anti-drift check. Reads universal-init.js's CHARTER_FILE template by
-// running nothing and parsing nothing clever: the template is a plain string
-// constant, so its content is extracted between its own delimiters. Deliberately
-// NOT by importing and executing the generator — repo-integrity.mjs's INV15
-// already does that (and documents why a source-scrape of its OTHER template
-// produced false positives, because of backslash-escaped backticks). This
-// template contains no escaped backticks in its clause bodies, which is what
-// makes the simpler read safe here; C4 below covers the executed output anyway,
-// so a mistake in this parse cannot produce a false CLEAN on its own.
-const generatorPath = path.join(repoRoot, 'clients', 'cli', 'src', 'universal-init.js');
-const generatorText = read(generatorPath);
-if (generatorText === null) {
-  fail(
-    `clients/cli/src/universal-init.js is missing or unreadable — cannot verify the charter copy every non-Claude platform receives`,
-  );
-} else {
-  const m = generatorText.match(/const CHARTER_FILE = `([\s\S]*?)`;/);
-  if (!m) {
-    fail(
-      `clients/cli/src/universal-init.js no longer defines a CHARTER_FILE template — the charter would stop reaching Cursor, Windsurf, Cline, Roo Code, Aider and GitHub Copilot entirely`,
-    );
-  } else {
-    const generated = sections(m[1]);
-    for (const clause of REQUIRED_CLAUSES) {
-      if (!generated.has(clause)) {
-        fail(
-          `universal-init.js's CHARTER_FILE is missing the "${clause}" clause — the charter binds on Claude hosts but not on the others`,
-        );
-        continue;
-      }
-      if (!canonical.has(clause)) continue; // already reported by C1
-      const a = normaliseBody(canonical.get(clause));
-      const b = normaliseBody(generated.get(clause));
-      if (a !== b) {
-        fail(
-          `the "${clause}" clause has DRIFTED between skills/operating-charter/SKILL.md and universal-init.js's CHARTER_FILE — the two copies of the charter no longer say the same thing. Canonical: "${a.slice(0, 90)}…" Generated: "${b.slice(0, 90)}…"`,
-        );
-      }
+// ---- C3: the charter has exactly ONE copy, and nothing else restates it ------
+// 2026-08-26, v7 Phase 4. This replaces two checks that no longer have anything to
+// compare. C3 used to diff the canonical charter against
+// `clients/cli/src/universal-init.js`'s CHARTER_FILE template, and C4 walked six committed
+// host rule files (.cursorrules, .windsurfrules, .clinerules, .roomodes,
+// .github/copilot-instructions.md, .agents/AGENTS.md) confirming each still carried the
+// charter's marker text. Both existed for one reason: the charter necessarily lived in TWO
+// copies, because a Claude skill cannot be loaded by Cursor or Aider, so the same rules had to
+// be written into each host's own rules file — and two copies of a rule drift.
+//
+// v7 targets Claude Code only, so the generator and every host rule file are gone and the
+// charter has ONE copy. That is strictly better than two copies kept in step by a gate: the
+// drift those checks detected is now impossible rather than merely noticed.
+//
+// But deleting them outright would remove a control and leave nothing in its place, and the
+// property that made drift possible could come back the moment somebody pastes the charter's
+// rules into a second file "so the agent definitely sees them". So the check INVERTS: instead of
+// proving two copies agree, it proves there is only one. Any other file in the plugin that
+// restates a charter clause heading is reported, because that is a second copy in the making.
+//
+// `skills/studio/SKILL.md` is exempt: C2 above requires it to NAME the charter, and its
+// companion-skill list legitimately summarises what the charter covers. The distinction is
+// between pointing at the charter and reproducing it.
+{
+  const CLAUSE_HEADING_RE = /^##\s+CHARTER-CLAUSE:\s*(.+?)\s*$/gm;
+  const exempt = new Set([
+    path.join('skills', 'operating-charter', 'SKILL.md'),
+    path.join('hooks', 'charter-check.mjs'),
+  ]);
+  const walk = (dir, acc = []) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return acc;
+    }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full, acc);
+      else acc.push(full);
+    }
+    return acc;
+  };
+  for (const f of walk(pluginRoot)) {
+    const rel = path.relative(pluginRoot, f);
+    if (exempt.has(rel)) continue;
+    if (!/\.(md|mjs|js|json)$/.test(f)) continue;
+    const text = read(f);
+    if (text === null) continue;
+    const found = [...text.matchAll(CLAUSE_HEADING_RE)].map((m) => m[1]);
+    if (found.length > 0) {
+      fail(
+        `${rel} restates the charter clause heading(s) ${found.map((x) => JSON.stringify(x)).join(', ')}. The charter must have exactly ONE copy: two copies of a rule drift apart, which is the defect the checks this replaced existed to catch. Point at skills/operating-charter/SKILL.md instead of reproducing it.`,
+      );
     }
   }
 }
 
-// ---- C4: every committed host rule file still carries the charter ----------
-// INV15 in repo-integrity.mjs already proves these files match the generator
-// byte-for-byte. That is necessary but not sufficient for the charter: if the
-// generator itself stopped emitting the charter, INV15 would stay perfectly
-// green (generator and committed copies would agree — on charter-free content)
-// while the rules quietly stopped binding on six platforms. Checking for the
-// charter's own marker text in each committed file closes that specific
-// false-clean.
-const HOST_FILES_WITH_CHARTER = [
-  '.cursorrules',
-  '.windsurfrules',
-  '.clinerules',
-  '.roomodes',
-  '.github/copilot-instructions.md',
-  '.agents/AGENTS.md',
-];
-for (const rel of HOST_FILES_WITH_CHARTER) {
-  const text = read(path.join(repoRoot, ...rel.split('/')));
-  if (text === null) {
-    fail(`${rel} is missing — a supported AI host would receive no charter at all`);
-  } else if (!/Operating Charter/i.test(text)) {
-    fail(
-      `${rel} no longer carries the Operating Charter section — the owner's working rules would not bind on that platform`,
-    );
-  }
-}
-// The unabridged project-local copy, and Aider's pointer at it. Aider is the
-// one supported host that takes no prose rule file at all, so this pair is the
-// ONLY route by which the charter reaches it — checked explicitly rather than
-// assumed, because a `read:` entry pointing at a file nothing generates is a
-// dead reference this repo has already had to fix once (2026-07-26 finding 11,
-// the .aider.model.metadata.json case).
-const charterCopy = read(path.join(repoRoot, '.agents', 'OPERATING-CHARTER.md'));
-if (charterCopy === null) {
-  fail(
-    `.agents/OPERATING-CHARTER.md is missing — .aider.conf.yml's read: list points at it, so Aider would be told to read a file that does not exist`,
-  );
-} else {
-  for (const clause of REQUIRED_CLAUSES) {
-    if (!new RegExp('^##\\s+' + clause + '\\s*$', 'm').test(charterCopy)) {
-      fail(`.agents/OPERATING-CHARTER.md is missing the "${clause}" clause`);
-    }
-  }
-}
-const aiderConf = read(path.join(repoRoot, '.aider.conf.yml'));
-if (aiderConf === null) {
-  fail(`.aider.conf.yml is missing — cannot verify Aider is pointed at the charter`);
-} else if (!/\.agents\/OPERATING-CHARTER\.md/.test(aiderConf)) {
-  fail(
-    `.aider.conf.yml's read: list no longer includes .agents/OPERATING-CHARTER.md — the charter would not reach Aider, the one supported host that reads no prose rule file`,
-  );
-}
-
-// ---- report ---------------------------------------------------------------
 // ---- C5: the load-bearing guarantees are still actually THERE ---------------
 // Substance, not headings. See REQUIRED_GUARANTEES above for why this exists and what was
 // proven about the state before it did.

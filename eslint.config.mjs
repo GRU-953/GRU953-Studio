@@ -1,9 +1,8 @@
 // Repo-tooling ESLint config (dev-only — see CONTRIBUTING.md's "A note on
 // dependencies" section). Scoped to the plugin's own hook scripts, which are
 // zero-runtime-dependency ESM (.mjs) — the `clients/` bridges each carry their
-// own separate lint setup with their own lockfile (see clients/vscode's
-// eslint.config.mjs, which replaced its old .eslintrc.json in PR #29),
-// already wired into CI's `clients` job.
+// own separate lint setup with their own lockfile (clients/cli's
+// eslint.config.mjs), already wired into CI's `clients` job.
 //
 // The rule that matters most here: NOT listing CommonJS globals
 // (`require`/`module`/`exports`/`__dirname`/`__filename`) makes referencing

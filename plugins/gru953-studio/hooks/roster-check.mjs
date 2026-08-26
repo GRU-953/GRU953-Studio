@@ -164,8 +164,22 @@ function main() {
     // narrates an earlier/hypothetical count before the authoritative one ("...50
     // considered (role count: 50) but settled on baseline = 5") would otherwise
     // read the wrong number, which in one direction hides real scope creep.
-    const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/gi)];
-    const rm = rmAll.length ? rmAll[rmAll.length - 1] : null;
+    // 2026-08-26, v7. "Take the LAST match" was fixed in 2026-07-21 for a ROSTER.md that
+    // narrates a hypothetical count BEFORE the authoritative one. But this file's authoritative
+    // count is its bold header on line 3, and everything after it is dated history — which
+    // states the count as it was at the time, correctly. So the last match is a HISTORICAL
+    // number, and the rule only appeared to work while history happened to agree with the
+    // present. The first time the roster actually changed (38 -> 36) it read 38 from a v4.5.0
+    // section and reported the new roster as exceeding a baseline it had itself just set.
+    //
+    // Fixed by preferring the bold `**role count: N**` declaration — the committed-baseline form
+    // this file's own header uses — and falling back to the previous last-match rule only when
+    // no such declaration exists, so the 2026-07-21 case stays covered.
+    const bold = [...rosterText.matchAll(/\*\*\s*role count[ \t]*[:=]?[ \t]*(\d+)\s*\*\*/gi)];
+    const rmAll = bold.length
+      ? bold
+      : [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/gi)];
+    const rm = rmAll.length ? (bold.length ? rmAll[0] : rmAll[rmAll.length - 1]) : null;
     if (!rm) {
       console.log(
         JSON.stringify(

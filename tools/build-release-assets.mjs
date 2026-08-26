@@ -27,22 +27,18 @@
 //   Antigravity    — a DIFFERENT layout: plugin.json at the root, skills/ and
 //                    rules/ subdirectories, installed to
 //                    ~/.gemini/config/plugins/ (global) or .agents/plugins/
-//                    (per workspace). Critically, Antigravity's plugin format
-//                    has NO agents/ or commands/ component at all, so the 38
-//                    specialists cannot be shipped as agents there. They are
-//                    projected into a generated rules/ file instead — see
-//                    buildRosterRule(). Inventing an agents/ directory
-//                    Antigravity would ignore would be a dead reference of
-//                    exactly the kind this repo has had to fix before.
-//   VS Code        — a .vsix, built by @vscode/vsce, which also serves Cursor
-//                    and Windsurf (both VS Code forks).
+//                    (per workspace). REMOVED IN v7.0.0 along with the rest of
+//                    the host adapters, together with the VS Code .vsix that
+//                    also served the Cursor and Windsurf forks. v7 targets
+//                    Claude Code only, so what is built here is the Claude
+//                    packages, the Windows portable CLI, the installers and the
+//                    checksums.
 //
 // Usage:
 //   node tools/build-release-assets.mjs [--out dist] [--skip-vsix]
 //
-// --skip-vsix exists because packaging the extension shells out to npx and
-// needs its dependencies installed; the three zips and the checksums must still
-// be buildable (and testable) without that.
+// --skip-vsix is retained as an accepted no-op so an existing caller passing it does
+// not break. There is no longer a .vsix to skip.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -426,25 +422,9 @@ export function buildAssets({ outDir, skipVsix = false, log = console.log } = {}
     );
   }
 
-  // --- Antigravity: its own documented layout, not the Claude one.
-  const skillFiles = collectFiles(path.join(PLUGIN_ROOT, 'skills'));
-  const agEntries = [
-    {
-      name: 'gru953-studio/plugin.json',
-      data: JSON.stringify({ name: 'gru953-studio', version }, null, 2) + '\n',
-    },
-    ...skillFiles.map((f) => ({ ...f, name: `gru953-studio/skills/${f.name}` })),
-    { name: 'gru953-studio/rules/gru953-roster.md', data: buildRosterRule() },
-    {
-      name: 'gru953-studio/rules/gru953-operating-charter.md',
-      data: fs.readFileSync(path.join(REPO_ROOT, '.agents', 'OPERATING-CHARTER.md'), 'utf8'),
-    },
-    { name: 'INSTALL.txt', data: INSTALL_ANTIGRAVITY(version) },
-  ];
-  const agName = `gru953-studio-antigravity-${version}.zip`;
-  fs.writeFileSync(path.join(outDir, agName), createZip(agEntries));
-  written.push(agName);
-  log(`built ${agName} (${agEntries.length} files, Antigravity plugin.json + skills/ + rules/)`);
+  // --- Antigravity: removed in v7.0.0 with the rest of the host adapters. It built its own
+  // --- zip in Antigravity's documented layout (plugin.json + skills/ + rules/), reading the
+  // --- charter from .agents/OPERATING-CHARTER.md — a file that no longer exists.
 
   // --- The Windows portable package winget installs. Deliberately built from
   // --- clients/cli only: it is the COMMAND, not the studio's skills and agents,
@@ -502,23 +482,9 @@ export function buildAssets({ outDir, skipVsix = false, log = console.log } = {}
     log(`copied ${script}`);
   }
 
-  // --- VS Code (and Cursor / Windsurf, both VS Code forks).
-  if (skipVsix) {
-    log('skipped the .vsix (--skip-vsix)');
-  } else {
-    const vscodeDir = path.join(REPO_ROOT, 'clients', 'vscode');
-    const vsixName = `gru953-studio-${version}.vsix`;
-    execFileSync(
-      'npx',
-      ['--yes', '@vscode/vsce', 'package', '--out', path.join(outDir, vsixName)],
-      {
-        cwd: vscodeDir,
-        stdio: 'inherit',
-      },
-    );
-    written.push(vsixName);
-    log(`built ${vsixName}`);
-  }
+  // --- VS Code (and the Cursor / Windsurf forks): removed in v7.0.0. Packaging the extension
+  // --- shelled out to `npx @vscode/vsce` against clients/vscode, which is gone. `skipVsix` is
+  // --- kept as an accepted option so any existing caller passing it does not break.
 
   // --- Checksums, so a download can be verified. Meaningful only because the
   // --- ZIP writer stamps fixed timestamps: see tools/lib/zip.mjs.

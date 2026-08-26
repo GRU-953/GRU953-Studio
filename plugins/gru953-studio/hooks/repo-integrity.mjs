@@ -179,7 +179,24 @@ function walk(dir, acc = []) {
   return acc;
 }
 const allFiles = walk(repoRoot);
-const allMd = allFiles.filter((f) => f.endsWith('.md'));
+// 2026-08-26, finding X374. `allMd` had NO record exemption, so INV7's skill-reference check
+// (`\`name\` skill` -> that skill must exist) read CHANGELOG.md and AUDIT-*.md as live claims.
+// Those files are the project's own history: a changelog entry announcing a skill, and an audit
+// row citing one, are RECORDS of what was true then. The consequence was that no skill could
+// ever be deleted while the changelog still mentioned it — which is always — so this gate
+// blocked v7's removal of five integration skills with four errors that were all the same
+// missing exemption.
+//
+// Its sibling docs-consistency.mjs learned exactly this in X216 and carries
+// RECORD_OR_FIXTURE_RE for it; the lesson had never been carried across to this file. And X365
+// is carried across too, not just the pattern: that finding was this same exemption spelled with
+// '/' while being handed `path.relative()` output, which emits '\' on Windows — so every record
+// lost its exemption there and the gate false-BLOCKED on the platform nobody develops on. Hence
+// `repoRel()` below rather than `path.relative()` directly, which is exactly what X359's own
+// note in this file already instructs.
+const RECORD_RE = /(^|\/)(CHANGELOG\.md|AUDIT-[^/]*\.md)$|(^|\/)Dev-Memory\//;
+const isRecord = (f) => RECORD_RE.test(repoRel(f));
+const allMd = allFiles.filter((f) => f.endsWith('.md') && !isRecord(f));
 
 // ---- INV 1: agent frontmatter present & name matches filename ----------------
 for (const f of agentFiles) {
@@ -576,8 +593,19 @@ if (rosterText === null) {
     `no committed roster baseline at plugins/gru953-studio/ROSTER.md (needed so the product's own roster can be verified)`,
   );
 } else {
-  const rmAll = [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/gi)];
-  const rm = rmAll.length ? rmAll[rmAll.length - 1] : null;
+  // 2026-08-26, finding X375. Identical to the defect fixed in roster-check.mjs on the same
+  // day, because this is the same rule written twice — the exact drift this repository's
+  // SEPARATOR_ROW_RE history is about, and it went wrong in both copies. "Take the LAST match"
+  // was correct for a ROSTER.md narrating a hypothetical count BEFORE the authoritative one,
+  // but this file's authoritative count is its bold header and everything after it is dated
+  // history stating the count as it was THEN. So the last match is a historical number, and the
+  // rule only appeared to work while history agreed with the present. The first real roster
+  // change (38 -> 36) made both gates read 38 from a v4.5.0 section.
+  const boldRoster = [...rosterText.matchAll(/\*\*\s*role count[ \t]*[:=]?[ \t]*(\d+)\s*\*\*/gi)];
+  const rmAll = boldRoster.length
+    ? boldRoster
+    : [...rosterText.matchAll(/(?:role count|baseline)[ \t]*[:=]?[ \t]*(\d+)/gi)];
+  const rm = rmAll.length ? (boldRoster.length ? rmAll[0] : rmAll[rmAll.length - 1]) : null;
   if (!rm) fail(`ROSTER.md does not state a numeric "role count: <n>"`);
   else if (parseInt(rm[1], 10) !== agentCount)
     fail(`ROSTER.md role count ${rm[1]} != actual agent count ${agentCount}`);
@@ -948,7 +976,6 @@ const GUARDRAIL_FILES = [
   'agents/accessibility-specialist.md',
   'agents/ai-developer.md',
   'agents/architect.md',
-  'agents/audio-content-specialist.md',
   'agents/brand-guardian.md',
   'agents/builder.md',
   'agents/content-director.md',
@@ -960,7 +987,7 @@ const GUARDRAIL_FILES = [
   'agents/fixer.md',
   'agents/flutter-dart-developer.md',
   'agents/go-developer.md',
-  'agents/image-content-specialist.md',
+  'agents/media-content-specialist.md',
   'agents/interviewer.md',
   'agents/java-developer.md',
   'agents/kotlin-developer.md',
@@ -982,7 +1009,6 @@ const GUARDRAIL_FILES = [
   'agents/text-content-specialist.md',
   'agents/typescript-developer.md',
   'agents/ux-designer.md',
-  'agents/video-content-specialist.md',
   'skills/audit-loop/SKILL.md',
   'skills/dev-memory/SKILL.md',
   'skills/ecosystem-finder/SKILL.md',
@@ -995,8 +1021,6 @@ const GUARDRAIL_FILES = [
   // instruction`, :130), so this closes a floor gap rather than adding a requirement: nothing has to
   // change in the skill, and the invariant simply stops being able to go green while that file
   // silently loses it.
-  'skills/openrouter-integration/SKILL.md',
-  'skills/universal-platform-integration/SKILL.md',
   // 2026-08-10: the charter is the single most attractive target for injected
   // text — content that successfully rewrote the charter would rewrite how the
   // studio treats its own owner — so it carries the guardrail itself.
@@ -1015,158 +1039,17 @@ for (const rel of GUARDRAIL_FILES) {
   }
 }
 
-// ---- INV 15: the root AI-host rule files match what universal-init.js generates ----
-// 2026-08 R3 Phase 3.1 (D6). Seven committed root files (.cursorrules,
-// .windsurfrules, .clinerules, .roomodes, .aider.conf.yml,
-// .github/copilot-instructions.md, .agents/AGENTS.md) exist so a browser of
-// this repo — or a copy of it opened directly in Cursor/Windsurf/Cline/Roo/
-// Aider/Copilot — sees a real, working example of what
-// clients/cli/src/universal-init.js actually generates for a built project.
-// Nothing checked they still matched. Found live, not hypothetically: the
-// committed .aider.conf.yml still carried a `model-metadata-file:` line that
-// a 2026-07-26 fix deliberately stopped generating (Aider has its own
-// built-in model metadata; pointing it at a file GRU953-Studio never creates
-// was a dead reference) — the code changed, the committed reference file
-// never did.
+// ---- INV 15: removed in v7.0.0 -------------------------------------------------
+// INV15 executed `clients/cli/src/universal-init.js`'s generator and compared its output
+// byte-for-byte against the committed `.cursorrules`, `.windsurfrules`, `.clinerules`,
+// `.roomodes`, `.github/copilot-instructions.md` and `.agents/AGENTS.md`, so a drifted
+// committed copy could not ship. It was a good check with nothing left to check: v7 targets
+// Claude Code only, and both the generator and every file it generated are gone.
 //
-// Verified by execution before writing this check, not by re-deriving the
-// generator's template strings with a second, hand-maintained copy (a naive
-// regex-scrape of the template literal source was tried first and produced
-// FALSE drift reports on every file, because it doesn't account for the
-// backslash-escaped backticks inside the JS template literal — e.g. the
-// source text \`project-lead\` differs from the real string value
-// `project-lead` by two backslash characters the regex approach can't see).
-// The only reliable comparison is running the REAL generator and reading
-// its REAL output, which is exactly what this does: import
-// initializeUniversalRules from the actual CLI module and run it against a
-// throwaway temp directory, then diff its output (with the generator's own
-// BEGIN/END markers stripped, since the committed reference copies are
-// deliberately unmarked, human-readable examples) against each committed
-// file.
-async function checkHostRuleFiles() {
-  const generatorPath = path.join(repoRoot, 'clients', 'cli', 'src', 'universal-init.js');
-  if (!fs.existsSync(generatorPath)) {
-    fail(
-      `clients/cli/src/universal-init.js is missing — cannot verify the root AI-host rule files still match it`,
-    );
-    return;
-  }
-  let initializeUniversalRules;
-  try {
-    // 2026-08 R3 (found live on the Windows CI leg): a bare `import()` of a
-    // path.resolve()'d absolute path works on POSIX but throws on Windows —
-    // `D:\a\...` looks like a URL with scheme "d:" to Node's ESM loader
-    // ("Only URLs with a scheme in: file, data, and node are supported"),
-    // which made this whole check fail on every Windows run. pathToFileURL()
-    // builds the correct `file://` URL for either platform.
-    ({ initializeUniversalRules } = await import(pathToFileURL(path.resolve(generatorPath))));
-  } catch (e) {
-    fail(`clients/cli/src/universal-init.js could not be loaded: ${e.message}`);
-    return;
-  }
-  if (typeof initializeUniversalRules !== 'function') {
-    fail(
-      `clients/cli/src/universal-init.js no longer exports initializeUniversalRules — cannot verify the root AI-host rule files`,
-    );
-    return;
-  }
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gru953-hostrule-gen-'));
-  // initializeUniversalRules() calls console.log() for real CLI users' own
-  // benefit (it's meant to be run interactively) — but this script's stdout
-  // is reserved for the final JSON report (like every other hook in this
-  // repo, e.g. gate.mjs's own "stdout is reserved for the decision JSON").
-  // Confirmed by execution: without silencing it, stdout starts with
-  // "Initializing GRU953-Studio rules..." and every subsequent
-  // JSON.parse(stdout) call — including this project's own test harness —
-  // fails on invalid JSON. Restored in the finally block regardless of
-  // outcome, so a thrown error can never leave console.log silenced for the
-  // rest of the process.
-  const realConsoleLog = console.log;
-  console.log = () => {};
-  try {
-    initializeUniversalRules(tmpDir);
-    const HOST_RULE_FILES = [
-      '.cursorrules',
-      '.windsurfrules',
-      '.clinerules',
-      '.roomodes',
-      '.aider.conf.yml',
-      '.github/copilot-instructions.md',
-      // 2026-08-23, X42: the AGENTS.md convention reads a ROOT file, and only `.agents/AGENTS.md`
-      // was ever written — so nothing consumed it. The generator now writes both, and the new one
-      // is listed here for the same reason as its siblings: a generated file with no committed
-      // reference copy is a generated file nothing watches for drift.
-      'AGENTS.md',
-      '.agents/AGENTS.md',
-      // 2026-08-10 (operating charter): the unabridged charter this generator
-      // now also writes, for a host that reads project files but cannot load a
-      // Claude skill (Aider, via its own `read:` list). Listed here for the
-      // same reason as its six siblings — a committed reference copy that
-      // drifts from the real generator output is precisely the defect INV15
-      // exists to catch.
-      '.agents/OPERATING-CHARTER.md',
-    ];
-    // Normalises line endings AND strips the generator's own markers, so a
-    // CRLF-encoded committed copy (a real Windows checkout — see
-    // .gitattributes' own header comment on exactly this class of issue) is
-    // compared on CONTENT, not line-ending style. Found live: this file's own
-    // CRLF regression test converts every .md file (including
-    // .github/copilot-instructions.md and .agents/AGENTS.md) to CRLF and
-    // asserted repo-integrity.mjs stays clean — it didn't, until `committed`
-    // was normalised the same way `generated` already is.
-    const normalise = (s) =>
-      s
-        .split(/\r?\n/)
-        .filter((line) => !/GRU953-STUDIO:(BEGIN|END)/.test(line))
-        .join('\n')
-        .trim();
-    for (const rel of HOST_RULE_FILES) {
-      const generated = read(path.join(tmpDir, rel));
-      const committed = read(path.join(repoRoot, rel));
-      if (generated === null) {
-        fail(
-          `INV15: universal-init.js no longer generates ${rel} at all — the committed copy is now orphaned`,
-        );
-        continue;
-      }
-      if (committed === null) {
-        fail(
-          `INV15: ${rel} is missing from the repo root but universal-init.js still generates it`,
-        );
-        continue;
-      }
-      if (normalise(generated) !== normalise(committed)) {
-        fail(
-          `INV15: ${rel} no longer matches what clients/cli/src/universal-init.js generates (the committed reference copy has drifted from the real generator output)`,
-        );
-      }
-    }
-  } catch (e) {
-    // 2026-08-05 further-pass audit fix (found by execution): this block had
-    // only a `finally`, so a throw from initializeUniversalRules() (or
-    // anything inside the try) propagated up through `await checkHostRuleFiles()`
-    // as an unhandled rejection — a raw Node stack trace on stderr and NO
-    // JSON on stdout at all, losing the entire structured report this script
-    // exists to produce. The throw is now caught and surfaced as one ordinary
-    // BLOCKED problem like every other integrity failure, so a broken
-    // generator can never silently turn this gate into a raw crash.
-    fail(
-      `INV15: could not run clients/cli/src/universal-init.js's initializeUniversalRules to verify the root AI-host rule files: ${e && e.message ? e.message : String(e)}`,
-    );
-  } finally {
-    console.log = realConsoleLog;
-    // 2026-08-26, X359 (same Windows sweep, a second shape rather than a second instance —
-    // separators are not involved). On Windows a directory whose handles are not yet released
-    // throws EPERM/EBUSY from rmSync, and this call sits in a `finally` OUTSIDE the catch above,
-    // so a throw here escapes as an unhandled rejection: a raw stack trace on stderr and no JSON
-    // on stdout at all, losing the whole structured report — which is the failure mode the catch
-    // above was added to prevent, one line further down. `maxRetries`/`retryDelay` are the idiom
-    // already used for exactly this in hooks.test.mjs's own RM_OPTS. Not observed in the Windows
-    // log; a latent hazard closed while the file was open, not a fix for an observed failure.
-    fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
-  }
-}
-await checkHostRuleFiles();
+// Deliberately recorded rather than silently deleted. An invariant that vanishes without a
+// note is indistinguishable from one somebody removed because it was inconvenient — and the
+// property INV15 protected (two copies of the same content must agree) is now guaranteed by
+// there being one copy, which charter-check.mjs's C3 enforces by refusing a second.
 
 // ---- INV 16: charter-check.mjs stays wired into both the gate list and CI ----
 // 2026-08-10, added with the operating charter. Deliberately the same shape as
@@ -1747,6 +1630,87 @@ if (fs.existsSync(packagedRoot)) {
 // Windows log a false lead, twelve tests wide. All four figures are known by the time either
 // branch runs, and a figure withheld from a failing report is the one nobody can check. Emitted on
 // both paths now, in the same order, so the census can be read whatever the verdict is.
+// ---- INV 23: no two roles are the same role wearing different nouns --------------
+// ROSTER.md requires every role to fill "a named, specific, **non-overlapping** gap", and until
+// v7.0.0 nothing enforced it — the rule was prose, and a live violation had been sitting in the
+// roster since v4.1.0. The three media roles (image/audio/video-content-specialist) shared one
+// trigger, one provider, one method, one approval gate and one output shape; the three files
+// differed only in the nouns. v7 merged them, and this invariant is what stops the next one.
+//
+// METHOD. Jaccard similarity over 8-word shingles of each role file, with the role's OWN name
+// words removed first. That neutralisation is the part that matters: without it, three roles
+// that differ only in the words "image", "audio" and "video" look genuinely different, because
+// the distinguishing noun is doing all the work. Strip it and what is left is whether the ROLE
+// is different.
+//
+// THRESHOLD, CALIBRATED AGAINST THIS ROSTER RATHER THAN BORROWED. Measured over all 630 pairs
+// before choosing a number, with a known-good and a known-bad reference:
+//
+//   known-bad   0.284  audio-content-specialist vs video-content-specialist (the pair v7 merged;
+//                      also the highest non-language-pack pair on the 38-role roster)
+//   known-good  0.037  the highest non-language-pack pair on the merged 36-role roster
+//
+// A threshold of 0.25 sits an order of magnitude clear of the known-good ceiling and below the
+// known-bad. Note the audit that raised this finding reported 0.811 for that same pair; this
+// measurement does not reproduce it, and the number here is the one this file actually computes.
+// The qualitative finding held; its figure did not, which is why the reference above is measured
+// rather than cited.
+//
+// THE LANGUAGE PACK IS EXEMPT, deliberately. `*-developer` roles score 0.30-0.55 against each
+// other, and that is correct: a language pack IS the same six-step protocol per language, and
+// their non-overlapping gap is the language itself. Including them would make this invariant
+// fire on ten legitimate roles from the day it shipped, and a gate that fires on correct work
+// gets switched off. If two language specialists ever need distinguishing, that is a roster
+// decision, not a similarity score.
+{
+  const SIMILARITY_LIMIT = 0.25;
+  const SHINGLE = 8;
+  const shinglesOf = (file) => {
+    const text = read(path.join(agentsDir, file));
+    if (text === null) return null;
+    const own = new Set(file.replace(/\.md$/, '').split('-'));
+    const words = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 3 && !own.has(w));
+    const out = new Set();
+    for (let i = 0; i + SHINGLE <= words.length; i++)
+      out.add(words.slice(i, i + SHINGLE).join(' '));
+    return out;
+  };
+  const isLanguagePack = (a, b) => /-developer\.md$/.test(a) && /-developer\.md$/.test(b);
+  const sets = new Map();
+  for (const f of agentFiles) {
+    const sh = shinglesOf(f);
+    // An unreadable role file is reported, never skipped — the L13 rule this file keeps relearning.
+    if (sh === null) {
+      fail(`agents/${f} could not be read, so it could not be compared against the other roles`);
+      continue;
+    }
+    sets.set(f, sh);
+  }
+  const names = [...sets.keys()].sort();
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const a = names[i];
+      const b = names[j];
+      if (isLanguagePack(a, b)) continue;
+      const A = sets.get(a);
+      const B = sets.get(b);
+      let inter = 0;
+      for (const x of A) if (B.has(x)) inter++;
+      const union = A.size + B.size - inter;
+      const score = union ? inter / union : 0;
+      if (score >= SIMILARITY_LIMIT) {
+        fail(
+          `agents/${a} and agents/${b} are ${(score * 100).toFixed(1)}% similar once their own names are removed (limit ${(SIMILARITY_LIMIT * 100).toFixed(0)}%). ROSTER.md requires every role to fill a named, specific, NON-OVERLAPPING gap: either state in ROSTER.md what distinguishes these two, or merge them and record the merge in a consolidation table. This is the check the three media roles went unnoticed by for four months.`,
+        );
+      }
+    }
+  }
+}
+
 const census = {
   agentCount,
   skillCount,

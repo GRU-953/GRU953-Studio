@@ -119,8 +119,7 @@ The condition is therefore: the local Ollama **server responds** AND `ollama lis
 **names at least one model**. A client on disk is not a model, and an empty model
 list is not availability.
 
-When that holds (see the `ollama-integration` skill),
-recall MAY add a semantic re-rank step: embed the active task and the index
+When that holds, recall MAY add a semantic re-rank step: embed the active task and the index
 summaries locally and rank by closeness, to catch a relevant entry whose wording
 differs from the task's keywords. This is a private, local, free enhancement —
 **never a dependency**. Its absence is the normal path; keyword/tag scoring

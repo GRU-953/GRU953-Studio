@@ -236,7 +236,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [cli, antigravity, vscode]
+        # v7.0.0: was [cli, antigravity, vscode]. The Antigravity bridge and the VS Code
+        # extension were removed with the rest of the host adapters — and the Antigravity
+        # package could never install anyway: its published tarball carried no copy of the
+        # plugin it resolves at runtime. The matrix is kept rather than inlined so adding a
+        # second client back is a one-word change.
+        package: [cli]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -246,24 +251,14 @@ jobs:
         working-directory: clients/${{ matrix.package }}
         run: npm ci
       - name: Run tests
-        if: matrix.package != 'vscode'
         working-directory: clients/${{ matrix.package }}
         run: npm test
-      # 2026-07-29 maintenance fix (audit finding 7): cli and antigravity had
-      # no lint step at all — the repo-wide `node --check` sweep above
-      # explicitly prunes `./clients`, so nothing here was syntax/lint-checked
-      # by CI beyond whatever `npm test` happened to import. Mirrors vscode's
-      # own lint step below, just without a compile step (plain JS, no TS).
+      # 2026-07-29 maintenance fix (audit finding 7): the clients had no lint step at all —
+      # the repo-wide `node --check` sweep above explicitly prunes `./clients`, so nothing
+      # here was syntax- or lint-checked by CI beyond whatever `npm test` happened to import.
       - name: Lint
-        if: matrix.package == 'cli' || matrix.package == 'antigravity'
         working-directory: clients/${{ matrix.package }}
         run: npm run lint
-      - name: Compile and lint
-        if: matrix.package == 'vscode'
-        working-directory: clients/vscode
-        run: |
-          npm run compile
-          npm run lint
 
   # 2026-08-10, with the release installers. Builds every downloadable asset on
   # EVERY pull request, not only on a release tag. The reason is specific: before
@@ -272,9 +267,8 @@ jobs:
   # version already claimed. Building here means a packaging defect fails a PR
   # like any other defect.
   #
-  # The .vsix is included: it is the one asset whose build shells out to another
-  # tool (@vscode/vsce) and therefore the one most likely to break from the
-  # outside.
+  # (Until v7.0.0 this also built a .vsix through @vscode/vsce and an Antigravity zip. Both
+  # went with the host adapters.)
   packaging:
     name: packaging (all release assets)
     runs-on: ubuntu-latest
@@ -283,9 +277,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-      - name: Install the VS Code extension's dependencies (needed to package the .vsix)
-        working-directory: clients/vscode
-        run: npm ci
       - name: Build every release asset
         run: node tools/build-release-assets.mjs --out dist
       - name: Every archive must be readable, and structurally right
@@ -302,16 +293,8 @@ jobs:
             unzip -Z1 "dist/gru953-studio-$target-$VER.zip" | grep -qx 'INSTALL.txt' \
               || { echo "$target package is missing its install guide" >&2; exit 1; }
           done
-          # Antigravity uses a different layout, and must NOT contain agents/ or
-          # commands/ — it has no such component, so either would be a directory
-          # it silently ignores.
-          AG="dist/gru953-studio-antigravity-$VER.zip"
-          unzip -Z1 "$AG" | grep -qx 'gru953-studio/plugin.json' || { echo "Antigravity package needs plugin.json at its root" >&2; exit 1; }
-          unzip -Z1 "$AG" | grep -qx 'gru953-studio/rules/gru953-roster.md' || { echo "Antigravity package is missing the roster rule" >&2; exit 1; }
-          if unzip -Z1 "$AG" | grep -qE '^gru953-studio/(agents|commands)/'; then
-            echo "Antigravity package must not contain agents/ or commands/" >&2; exit 1
-          fi
-          test -f "dist/gru953-studio-$VER.vsix" || { echo "the .vsix was not built" >&2; exit 1; }
+          # (v7.0.0 removed the Antigravity zip and the .vsix along with those host adapters,
+          # and with them the checks that each carried its host's own required layout.)
           # The Windows portable package is what winget installs. Unlike the plugin
           # packages it MUST contain something runnable — the first winget manifest
           # pointed at a plugin zip full of markdown and would have been rejected,

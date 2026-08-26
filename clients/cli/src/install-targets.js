@@ -3,7 +3,7 @@
 // A note on where the Antigravity layout lives, recorded plainly because it is a
 // deliberate duplication rather than an oversight:
 //
-// clients/antigravity/src/install.js contains the same layout logic. The two are
+// (Until v7.0.0 clients/antigravity/src/install.js contained the same layout logic. The two were
 // separate published npm packages, so a relative require across them works in a
 // git checkout and breaks the moment either is installed from npm, and making one
 // depend on the other couples their versions for about forty lines of code. The
@@ -23,7 +23,7 @@ const { spawnSync } = require('child_process');
  * Developer Mode or administrator rights there, which most Windows users have
  * neither enabled nor heard of, while a junction does the same job for a
  * directory with no special privilege. Same reasoning, and the same fallback, as
- * clients/antigravity/src/link-or-copy.js.
+ * the former clients/antigravity/src/link-or-copy.js (removed in v7.0.0).
  */
 function linkOrCopy(sourceDir, targetPath, platform = process.platform) {
     try {
@@ -58,80 +58,8 @@ function installClaudePlugin(host, { pluginSourceDir, platform = process.platfor
 
 /**
  * Installs Antigravity's own layout. Kept in step with
- * clients/antigravity/src/install.js by a test — see the note at the top.
+ * the former clients/antigravity/src/install.js by a test, until v7.0.0 removed it.
  */
-function installAntigravity(host, { pluginSourceDir, platform = process.platform }) {
-    const target = host.installDir;
-    const steps = [];
-    try {
-        fs.mkdirSync(target, { recursive: true });
-    } catch (e) {
-        return { ok: false, message: `Could not create ${target}: ${e.message}` };
-    }
-
-    let version = '0.0.0';
-    try {
-        version =
-            JSON.parse(fs.readFileSync(path.join(pluginSourceDir, '.claude-plugin', 'plugin.json'), 'utf8')).version ||
-            version;
-    } catch {
-        /* cosmetic only; a missing version must not stop the install */
-    }
-    // 2026-08-22, X253: the same correction as clients/antigravity/src/install.js, applied here
-    // because the two carry this layout logic on purpose (see the header note) and fixing one twin
-    // while leaving the other is the mistake this project calls L14. These three writes are
-    // unconditional and reported the same word whether the file was new or replaced, while `skills/`
-    // beside them is guarded — so one run could report skills "already present" in the same breath
-    // as silently replacing a rules file the user had edited. The writes are unchanged: these are
-    // generated projections of the plugin, and a stale copy is worse than a replaced one. What
-    // changes is that a replacement now says so.
-    try {
-        const pluginJsonPath = path.join(target, 'plugin.json');
-        const replacing = fs.existsSync(pluginJsonPath);
-        fs.writeFileSync(
-            pluginJsonPath,
-            JSON.stringify({ name: 'gru953-studio', version }, null, 2) + '\n',
-            'utf8',
-        );
-        steps.push(replacing ? 'plugin.json (replaced)' : 'plugin.json');
-    } catch (e) {
-        return { ok: false, message: `Could not write plugin.json: ${e.message}` };
-    }
-
-    const skillsTarget = path.join(target, 'skills');
-    if (!fs.existsSync(skillsTarget)) {
-        const r = linkOrCopy(path.join(pluginSourceDir, 'skills'), skillsTarget, platform);
-        if (!r.ok) return { ok: false, message: `Could not install the skills: ${r.error.message}` };
-        steps.push(`skills (${r.method})`);
-    }
-
-    const rulesTarget = path.join(target, 'rules');
-    try {
-        fs.mkdirSync(rulesTarget, { recursive: true });
-        const rosterPath = path.join(rulesTarget, 'gru953-roster.md');
-        const replacingRoster = fs.existsSync(rosterPath);
-        fs.writeFileSync(rosterPath, buildRosterRule(pluginSourceDir), 'utf8');
-        steps.push(replacingRoster ? 'rules/gru953-roster.md (replaced)' : 'rules/gru953-roster.md');
-        const charter = path.join(pluginSourceDir, 'skills', 'operating-charter', 'SKILL.md');
-        if (!fs.existsSync(charter)) return { ok: false, message: `Could not find the operating charter at ${charter}.` };
-        const charterPath = path.join(rulesTarget, 'gru953-operating-charter.md');
-        const replacingCharter = fs.existsSync(charterPath);
-        fs.copyFileSync(charter, charterPath);
-        steps.push(
-            replacingCharter
-                ? 'rules/gru953-operating-charter.md (replaced)'
-                : 'rules/gru953-operating-charter.md',
-        );
-    } catch (e) {
-        return { ok: false, message: `Could not write the rules: ${e.message}` };
-    }
-
-    return {
-        ok: true,
-        changed: true,
-        message: `Installed at ${target} (${steps.join(', ')}). the roster is provided as a rules file Antigravity follows itself (it does support separate subagents since CLI v1.1.6; installing the 38 as real subagents is not done yet - X43), so the roster is provided as a rules file it follows itself.`,
-    };
-}
 
 /** Derived from the real agents/ directory, never hand-maintained. */
 function buildRosterRule(pluginSourceDir) {
@@ -156,7 +84,8 @@ function buildRosterRule(pluginSourceDir) {
     return `# GRU953-Studio specialist roster
 
 Antigravity plugins support skills and rules but have no \`agents/\` component
-(verified against antigravity.google/docs/plugins, 2026-08-10), so these
+(verified against Antigravity's plugin documentation, 2026-08-10; that host is no longer
+supported as of v7.0.0), so these
 specialists are not separate subagents here as they are in Claude Code. When the
 studio protocol calls for one, adopt that role yourself and follow its brief.
 
@@ -174,38 +103,6 @@ ${rows.join('\n')}
  * would skip the editor's own registration step and produce an extension it
  * lists but never activates.
  */
-function installVscodeFamily(host, { vsixPath, platform = process.platform }) {
-    if (!vsixPath || !fs.existsSync(vsixPath)) {
-        return {
-            ok: false,
-            message: `No .vsix file was found to install. Download "gru953-studio-<version>.vsix" from https://github.com/GRU-953/GRU953-Studio/releases and run: ${host.command} --install-extension <the file you downloaded>`,
-        };
-    }
-    // 2026-08-22, X246: `shell: true` is needed on Windows because these hosts ship a `.cmd`
-    // launcher, and Node's own documentation warns that it does NOT escape arguments in that mode —
-    // so the path went to cmd.exe raw. A `.vsix` path containing a shell metacharacter would break
-    // the command, and `&` in particular would end it and start another. Rather than attempt
-    // cmd.exe quoting, which is a well-known source of its own bugs, a path that cannot be passed
-    // safely is not passed at all: the user is told the exact command to run themselves. Refusing
-    // to build a command we cannot build correctly is the only honest option here.
-    const UNSAFE_FOR_CMD = /["%&|<>^]/;
-    if (platform === 'win32' && UNSAFE_FOR_CMD.test(vsixPath)) {
-        return {
-            ok: false,
-            changed: false,
-            message: `The extension file's location contains a character Windows treats specially, so it cannot be installed automatically without risk: ${vsixPath}. Install it by hand with this command, or move the file to a folder whose name has only letters, numbers, spaces, dashes and underscores: ${host.command} --install-extension "${vsixPath}"`,
-        };
-    }
-    const r = spawnSync(host.command, ['--install-extension', vsixPath, '--force'], {
-        encoding: 'utf8',
-        shell: platform === 'win32',
-    });
-    if (r.status === 0) return { ok: true, changed: true, message: `Installed into ${host.name}.` };
-    return {
-        ok: false,
-        message: `${host.name} refused the extension: ${(r.stderr || r.stdout || '').trim() || 'no output'}. You can install it by hand with: ${host.command} --install-extension ${vsixPath}`,
-    };
-}
 
 /**
  * @param {object[]} hosts     from detectHosts().found
@@ -232,8 +129,6 @@ function installInto(hosts, options = {}) {
         }
         let r;
         if (host.kind === 'claude-plugin') r = installClaudePlugin(host, { pluginSourceDir, platform });
-        else if (host.kind === 'antigravity') r = installAntigravity(host, { pluginSourceDir, platform });
-        else if (host.kind === 'vscode-family') r = installVscodeFamily(host, { vsixPath, platform });
         else r = { ok: false, message: `No installer for host kind "${host.kind}".` };
         results.push({ host, skipped: false, changed: false, ...r });
     }
@@ -243,8 +138,6 @@ function installInto(hosts, options = {}) {
 module.exports = {
     installInto,
     installClaudePlugin,
-    installAntigravity,
-    installVscodeFamily,
     buildRosterRule,
     linkOrCopy,
 };

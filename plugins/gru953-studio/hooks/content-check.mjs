@@ -6,9 +6,11 @@
 // rights/licence note, and — for media — alt-text or a caption. Zero
 // dependencies (Node stdlib only).
 //
-// Added 2026-07-19 (Content Creation, see the `content-creation` and
-// `gemini-integration` skills). AI-generated media that ships without recorded
-// approval, provenance and rights is a real gold-standard and legal risk; this
+// Added 2026-07-19 (Content Creation, see the `content-creation` skill). Media that
+// ships without recorded approval, provenance and rights is a real gold-standard and
+// legal risk — and it stays a risk in v7, which SPECIFIES media rather than generating
+// it: an asset the owner sourced themselves needs its rights recorded just as much as a
+// generated one did, arguably more. This
 // makes the manifest mechanical, like quality-gate.mjs does for the Definition
 // of Done.
 //

@@ -45,16 +45,6 @@ Also load and follow these companion skills as standing rules:
   instructions conflict. It never overrides a safety gate.
 - `first-run` — the one-off setup that runs before a user's very first
   project (never on later projects).
-- `google-antigravity-integration` — dual-harness operation: the protocol for
-  executing GRU953-Studio inside Google Antigravity (`agy` CLI, IDE, 2.0 app,
-  Python SDK, the Gemini model tiers, and the Antigravity SDK), seamlessly
-  alongside Claude Code.
-- `universal-platform-integration` — the protocol for running GRU953-Studio on
-  every other 2026 AI coding platform (Cursor, Windsurf, Copilot, Devin,
-  Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI): how
-  the roster, skills and memory system project into each host (2026-07-26
-  audit finding 13 — this was the only skill nothing referred to, so the
-  flagship "works everywhere" capability never actually loaded).
 - `dev-memory` — how to read and write the project's memory files, and the
   cross-project files that carry lessons and working-style preferences
   from one project to the next.
@@ -215,7 +205,7 @@ not size (2026-07-11 v2.0.0):
 | Running as a live, long-lived service | `devops-engineer`'s reliability pass (health checks, structured logging, failure posture) |
 | More than one language (e.g. English + Bangla) | `localisation-specialist` |
 | The stack uses Dart/Flutter, Kotlin, Rust, Python, Java, C++, Swift, C#, Go or TypeScript | the matching native language specialist (`flutter-dart-developer` / `kotlin-developer` / `rust-developer` / `python-developer` / `java-developer` / `cpp-developer` / `swift-developer` / `csharp-developer` / `go-developer` / `typescript-developer`) for that language's build tasks, each loading its `lang-*` pack — `builder` still handles web/scripting defaults and glue (see `architect`) |
-| The app needs real content — copy, images, audio or video | the content team at the Content stage (`content-director` + `text-content-specialist`; and `image-`/`audio-`/`video-content-specialist` when the brief needs media, via the opt-in `gemini-integration`) — see the `content-creation` skill |
+| The app needs real content — copy, images, audio or video | the content team at the Content stage (`content-director` + `text-content-specialist`; and `media-content-specialist` when the brief needs media) — see the `content-creation` skill |
 | User-facing documentation for the built app | `technical-writer` (Standard+) |
 | A decision that turns on an external, current fact | `researcher` (on demand) |
 | A task would clearly benefit from an existing Claude Code skill/plugin GRU953-Studio has no native way to provide | `researcher` (any Tier, via the `ecosystem-finder` skill — recommends at most one or two, always confirmed with a pop-up before anything installs, never bundled into GRU953-Studio itself) |
@@ -270,9 +260,10 @@ prototype, the `content-director` plans the app's real content (text, image,
 audio, video) from the spec + warframe and generates the bulk before Build
 consumes it; UI-dependent assets become content tasks in the phased plan. Text
 is written natively by `text-content-specialist` in **Bangla + English** via
-Claude; image/audio/video use the **opt-in** `gemini-integration` (the user's
-own Google key, a cost + "sent to Google" approval before *every* generation,
-graceful degrade with a step-by-step guide when a human must supply an asset).
+Claude; image, audio and video are SPECIFIED by `media-content-specialist` — an
+asset brief per asset, with every platform format, its alt-text written and a
+rights note, plus a step-by-step guide for the owner to produce the file. v7
+generates no media and needs no external provider.
 Every asset is recorded in `Dev-Memory/CONTENT.md` with approval, provenance,
 rights and alt-text — enforced by `hooks/content-check.mjs` before Publish. The
 `model-router` chooses/switches content and media models + effort.

@@ -434,7 +434,13 @@ const mergedRoleNames = new Set();
 {
   let inMergedTable = false;
   for (const line of rosterText.split(/\r?\n/)) {
-    if (/^##\s*v3\.0\.0 consolidation/i.test(line)) {
+    // 2026-08-26, v7. This was pinned to `## v3.0.0 consolidation` by name, so it recognised
+    // exactly one consolidation and no other. The first time the roster was consolidated again
+    // — v7.0.0, merging three media roles into one — every reference to a merged-away role read
+    // as a dangling one, and this gate reported seven problems that were all the same missing
+    // pattern. A check keyed to one hard-coded version is a check that expires; matched on the
+    // SHAPE of the heading instead, so the next consolidation is covered on the day it lands.
+    if (/^##\s*v\d+\.\d+\.\d+ consolidation/i.test(line)) {
       inMergedTable = true;
       continue;
     }
@@ -551,10 +557,13 @@ if (mcpPackageJsonRaw !== null) {
 // says exactly how — an over-strict gate nobody can understand is one that gets switched
 // off (lesson L5).
 //
-// NOT COVERED, and deliberately not half-covered: a dependency fetched over the network
-// at run time. `hooks/openrouter-models.mjs` legitimately uses Node's built-in fetch to
-// read a public model catalogue, so "this plugin never fetches anything" is NOT a
-// property this product has and must not be asserted as one. Disclosed in RESIDUALS.md.
+// A dependency fetched over the network at run time used to be explicitly NOT covered here:
+// the model-catalogue hook read a public catalogue with Node's built-in fetch, so
+// "this plugin never fetches anything" was not a property the product had and this comment
+// said so rather than asserting it. That hook went with v7's model integrations, and the
+// plugin now makes NO outbound network call at all — so the property is finally true. It is
+// still not asserted as a gate here, because nothing checks it; if that is ever wanted, the
+// check is a sweep for `fetch(`/`http` in the hooks tree, not a claim in a comment.
 //
 // Reproduction: hooks/test/repro/X109-vendored-dependency.mjs — five cases, two controls,
 // one of which is the real tree.

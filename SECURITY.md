@@ -559,7 +559,8 @@ vetting (for `claude-plugins-official`/`claude-plugins-community`
 sources) or their own judgement (for any other source), not on anything
 this project's security hooks check.
 
-**External software installation (`ollama-integration` skill).** With
+**External software installation (removed in 7.0.0 — retained here because it
+describes every published version up to and including 6.1.0).** With
 the same kind of explicit, per-instance confirmation, GRU953-Studio can
 install Ollama itself (`curl -fsSL https://ollama.com/install.sh | sh`
 on macOS/Linux, the equivalent `.ps1`/`.exe` on Windows) and download AI
@@ -608,7 +609,11 @@ Gemini integration below. Every generated asset is recorded in the project's
 `Dev-Memory/CONTENT.md` with its approval, provenance, rights and alt-text,
 and `hooks/content-check.mjs` blocks Publish if that record is incomplete.
 
-**Google Gemini media generation (`gemini-integration` skill, v4.1.x).** This
+**Google Gemini media generation (v4.1.x; removed in 7.0.0 — retained here
+because it describes every published version up to and including 6.1.0. v7 carries
+no external model integrations and generates no media, so this control surface no
+longer exists: no API key is read, nothing is sent to Google, and the plugin makes
+no outbound network call at all).** This
 is the studio's first optional external cloud service. It is off unless the
 user turns it on, and it uses the **user's own Google API key read from their
 environment** — never written to a project file, never printed, never

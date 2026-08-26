@@ -53,7 +53,12 @@ test('finds Claude Code by its settings folder, and says why it believes that', 
 test('reports nothing found on a machine with none of them, rather than guessing', () => {
     const r = detectHosts({ platform: 'linux', homeDir: '/home/sam', env: { PATH: '' }, exists: () => false });
     assert.equal(r.found.length, 0);
-    assert.ok(r.missing.length >= 6, 'every supported host must be listed as missing');
+    // v7.0.0: was `>= 6` when the CLI installed into Claude Code, Claude Desktop, Antigravity
+    // and three VS Code-family editors. v7 targets Claude Code only, so the supported list is
+    // shorter — but the point of the assertion is unchanged: every host it CLAIMS to support
+    // must be accounted for, so an empty machine reports them missing rather than reporting
+    // nothing at all and looking like a successful scan.
+    assert.ok(r.missing.length >= 2, 'every supported host must be listed as missing');
 });
 
 test("Claude Desktop's folder is the right one for each operating system", () => {
@@ -78,40 +83,7 @@ test("Claude Desktop's folder is the right one for each operating system", () =>
     );
 });
 
-test('finds Antigravity at the location its own documentation names', () => {
-    const home = '/home/sam';
-    const r = detectHosts({
-        platform: 'linux',
-        homeDir: home,
-        env: { PATH: '' },
-        exists: existsOnly([path.join(home, '.gemini', 'config')]),
-    });
-    const ag = r.found.find((h) => h.id === 'antigravity');
-    assert.ok(ag);
-    assert.equal(ag.installDir, path.join(home, '.gemini', 'config', 'plugins', 'gru953-studio'));
-    assert.equal(ag.kind, 'antigravity', 'it must use the Antigravity layout, not the Claude one');
-});
 
-test('finds a VS Code-family editor by its command on the PATH', () => {
-    // 2026-08-11, caught by the windows-latest CI leg: this used hardcoded POSIX
-    // strings for both the PATH entries and the expected file. detect.js builds
-    // candidate paths with path.join, which uses the HOST's separator — so on a
-    // Windows runner it looked for "\usr\local\bin\cursor" and the fixture
-    // offered "/usr/local/bin/cursor". The code was right (in real use the host
-    // platform IS the target platform); the fixture was wrong. Built with path.join
-    // so the fixture speaks the same dialect as the code under test.
-    const binDir = path.join(path.sep, 'usr', 'local', 'bin');
-    const r = detectHosts({
-        platform: 'linux',
-        homeDir: path.join(path.sep, 'home', 'sam'),
-        env: { PATH: [path.join(path.sep, 'usr', 'bin'), binDir].join(':') },
-        exists: existsOnly([path.join(binDir, 'cursor')]),
-    });
-    const cursor = r.found.find((h) => h.id === 'cursor');
-    assert.ok(cursor, 'Cursor must be found by its command');
-    assert.match(cursor.detectedBy, /"cursor" command/);
-    assert.ok(!r.found.some((h) => h.id === 'vscode'), 'VS Code must not be reported when only Cursor is present');
-});
 
 test('whichSync honours PATHEXT on Windows — a bare name never matches there', () => {
     // The bug this prevents: on Windows the executable is `code.cmd`, so looking

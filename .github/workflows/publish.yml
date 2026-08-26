@@ -5,7 +5,7 @@ name: Publish
 # separate act from merging code.
 #
 # Three independent jobs, each gated behind its own GitHub Environment
-# (publish-npm-cli / publish-npm-antigravity / publish-vscode-marketplace).
+# (publish-npm-cli; the antigravity and vscode-marketplace jobs were removed in v7.0.0).
 # An Environment with required reviewers configured (Settings > Environments
 # in the GitHub UI, or the API — this workflow file only names the
 # environment; the actual reviewer requirement is repo configuration, not
@@ -97,148 +97,14 @@ jobs:
         working-directory: clients/cli
         run: npm publish --access public
 
-  publish-npm-antigravity:
-    name: Publish @gru953/studio-antigravity to npm
-    runs-on: ubuntu-latest
-    environment: publish-npm-antigravity
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-      - name: Ensure npm is new enough for Trusted Publishing (11.5.1+)
-        run: npm install -g npm@latest
-      # 2026-08-07 audit fix. The v5.1.3 tag was pushed while every
-      # package.json in the repo still said 5.1.2, so the "already published"
-      # check below saw a live version and skipped the publish in silence —
-      # a tag that shipped nothing and reported success. The tag is the
-      # human's stated intent; package.json is what actually gets published.
-      # If they disagree, that is always a mistake, so fail loudly here
-      # rather than let the skip path swallow it.
-      - name: Tag must match this package's version
-        working-directory: clients/antigravity
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          VER=$(node -p "require('./package.json').version")
-          if [ "$TAG" != "$VER" ]; then
-            echo "Tag v$TAG does not match clients/antigravity/package.json version $VER." >&2
-            echo "Bump the version (and every other manifest) before tagging, or delete and re-push the correct tag." >&2
-            exit 1
-          fi
-          echo "Tag v$TAG matches clients/antigravity/package.json."
-      - name: Install dependencies
-        working-directory: clients/antigravity
-        run: npm ci
-      - name: Run the same tests and lint CI already requires
-        working-directory: clients/antigravity
-        run: |
-          npm test
-          npm run lint
-      - name: Check if this version is already published
-        id: check
-        working-directory: clients/antigravity
-        run: |
-          PKG=$(node -p "require('./package.json').name")
-          VER=$(node -p "require('./package.json').version")
-          if npm view "$PKG@$VER" version >/dev/null 2>&1; then
-            echo "::notice::$PKG@$VER is already on npm — a tag was likely re-pushed (e.g. after re-signing). Skipping, nothing to do."
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Publish
-        if: steps.check.outputs.exists == 'false'
-        working-directory: clients/antigravity
-        run: npm publish --access public
-
-  publish-vscode-marketplace:
-    name: Publish the VS Code extension to the Marketplace
-    runs-on: ubuntu-latest
-    environment: publish-vscode-marketplace
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-      # 2026-08-07 audit fix. The v5.1.3 tag was pushed while every
-      # package.json in the repo still said 5.1.2, so the "already published"
-      # check below saw a live version and skipped the publish in silence —
-      # a tag that shipped nothing and reported success. The tag is the
-      # human's stated intent; package.json is what actually gets published.
-      # If they disagree, that is always a mistake, so fail loudly here
-      # rather than let the skip path swallow it.
-      - name: Tag must match this package's version
-        working-directory: clients/vscode
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          VER=$(node -p "require('./package.json').version")
-          if [ "$TAG" != "$VER" ]; then
-            echo "Tag v$TAG does not match clients/vscode/package.json version $VER." >&2
-            echo "Bump the version (and every other manifest) before tagging, or delete and re-push the correct tag." >&2
-            exit 1
-          fi
-          echo "Tag v$TAG matches clients/vscode/package.json."
-      - name: Install dependencies
-        working-directory: clients/vscode
-        run: npm ci
-      - name: Run the same compile and lint CI already requires
-        working-directory: clients/vscode
-        run: |
-          npm run compile
-          npm run lint
-      - name: Check if this version is already published
-        id: check
-        working-directory: clients/vscode
-        run: |
-          PUBLISHER=$(node -p "require('./package.json').publisher")
-          NAME=$(node -p "require('./package.json').name")
-          VER=$(node -p "require('./package.json').version")
-          RESPONSE=$(curl -s -X POST "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json;api-version=3.0-preview.1" \
-            -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$PUBLISHER.$NAME\"}]}],\"flags\":914}")
-          LATEST=$(node -e "
-            const d = JSON.parse(process.argv[1]);
-            const ext = d.results?.[0]?.extensions?.[0];
-            console.log(ext?.versions?.[0]?.version || '');
-          " "$RESPONSE")
-          if [ "$LATEST" = "$VER" ]; then
-            echo "::notice::$PUBLISHER.$NAME v$VER is already on the Marketplace — a tag was likely re-pushed (e.g. after re-signing). Skipping, nothing to do."
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Package and publish
-        if: steps.check.outputs.exists == 'false'
-        working-directory: clients/vscode
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx @vscode/vsce publish --pat "$VSCE_PAT"
-
-  # 2026-08-10, user-requested: "dedicated downloadable GRU953-Studio installers
-  # for Claude Desktop, VS Code, & Antigravity as assets for every release
-  # automatically on GitHub, in addition to the existing publishing channels."
+  # v7.0.0 removed two publish jobs from here: publish-npm-antigravity, which pushed
+  # @gru953/studio-antigravity to npm, and publish-vscode-marketplace, which pushed the VS
+  # Code extension. Both packages were deleted with the host adapters. The Antigravity one
+  # had never worked in any case: its published tarball carried no copy of the plugin its
+  # own code resolves at runtime, so every published version of it was uninstallable.
   #
-  # Deliberately NOT gated behind a GitHub Environment, unlike the three jobs
-  # above. Those three publish to somebody else's registry — npm and the VS Code
-  # Marketplace — where a mistake is public, permanent and outside this
-  # repository's control, so each gets its own human approval. This job only
-  # attaches files to this repository's OWN release for the tag the maintainer
-  # has already deliberately pushed. Adding a fourth approval prompt for that
-  # would train whoever is releasing to click through all four without reading,
-  # which would weaken the three that matter.
-  #
-  # It does, however, refuse to invent a release. If no release exists for the
-  # tag yet, it creates a DRAFT rather than a published one: release notes are
-  # the `publisher` role's job and are written by a human who has to be honest
-  # about what is in them, and CI generating notes from commit subjects would
-  # quietly replace that. A draft holds the assets until that human publishes it.
+  # Neither name can be deleted from a registry, only deprecated — see MIGRATION.md.
+
   release-assets:
     name: Build and attach the downloadable installers
     runs-on: ubuntu-latest
@@ -264,9 +130,6 @@ jobs:
             exit 1
           fi
           echo "Tag v$TAG matches plugin.json."
-      - name: Install the VS Code extension's dependencies (needed to package the .vsix)
-        working-directory: clients/vscode
-        run: npm ci
       - name: Build every release asset
         run: node tools/build-release-assets.mjs --out dist
       - name: Show what was built, and prove each archive is readable

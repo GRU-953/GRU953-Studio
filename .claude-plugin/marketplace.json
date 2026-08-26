@@ -4,13 +4,13 @@
     "name": "Aninda Sundar Howlader"
   },
   "metadata": {
-    "description": "A marketplace for GRU953-Studio: a Tier-sized team of specialised autonomous AI software developers, led by an AI project lead, that turns a plain-English idea and a short pop-up interview into a working, tested, privately-published app. A native Claude Code plugin. For other AI coding tools it writes rules files they read on their own; support is best-effort, uneven, and checked per release.",
+    "description": "A marketplace for GRU953-Studio: a Tier-sized team of specialised AI software developers, led by an AI project lead, that turns a plain-English idea and one short pop-up interview into a working, tested project on your own machine. A native Claude Code plugin \u2014 from 7.0.0 it targets Claude Code only, and every check it reports is one it actually ran.",
     "version": "6.1.0"
   },
   "plugins": [
     {
       "name": "gru953-studio",
-      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 38 specialised roles that interviews you by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews, tests and privately publishes a working app to your own GitHub \u2014 under your name, as sole author. Built for non-technical users, in plain UK English. A native Claude Code plugin. For other AI coding tools \u2014 Cursor, Cline, Windsurf, GitHub Copilot and anything reading an AGENTS.md \u2014 it writes that tool's own instructions file, so the same working rules follow you across editors. Those file conventions change often; support is best-effort and checked per release.",
+      "description": "An AI project lead plus a Tier-sized team (Tiny/Standard/Complex) of up to 36 specialised roles. It interviews you once by pop-up multiple-choice questions (Semi-Structured + Panel + STAR), then researches, designs, plans, codes, reviews and tests without interrupting you again \u2014 proving each step by executing it, not by writing that it passed. It stops with a finished, tested project on your machine; pushing it anywhere stays your decision. Built for non-technical users, in plain UK English. Claude Code only from 7.0.0: the earlier support for other editors was never tested end to end and its own documentation called it best-effort, so it was withdrawn rather than left as a promise.",
       "author": {
         "name": "Aninda Sundar Howlader"
       },
@@ -25,26 +25,17 @@
         "memory",
         "github-publishing",
         "tiered-team",
-        "cross-platform",
         "claude-code-plugin",
-        "google-antigravity",
-        "antigravity-sdk",
-        "ollama",
         "self-healing",
         "tdd",
         "content-creation",
-        "gemini",
-        "bangla",
         "prototyping",
         "command-centre",
-        "cursor",
-        "windsurf",
-        "devin",
-        "aider",
-        "openhands",
-        "universal-agentic-studio",
         "antigravity",
-        "gemini-3.6"
+        "gemini-3.6",
+        "headless",
+        "autonomous",
+        "apache-2.0"
       ],
       "source": "./plugins/gru953-studio"
     }

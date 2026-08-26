@@ -36,14 +36,22 @@ reaches it.
   empty states, error messages, notifications — in both languages, matched to
   the spec and prototype and wired into the app's i18n keys via
   `localisation-specialist`. Extensible later to store listings and marketing.
-- **Image / audio / video → opt-in Gemini** (`image-`/`audio-`/`video-content-specialist`
-  via the `gemini-integration` skill). Off by default; the user's own key; a
-  cost estimate and "sent to Google" notice before **every** generation; a
-  numbered step-by-step guide when a human must supply an asset instead.
+- **Image / audio / video → specified, not generated** (`media-content-specialist`).
+  For each asset it writes a brief — what it depicts, every platform format and
+  density required, the alt-text in full, and a rights note — plus a numbered
+  step-by-step guide for the owner to produce it. No external provider, no API
+  key, no per-generation cost, and nothing sent to a third party.
 
-Which model and effort each piece uses is chosen by the shared `model-router`
-(Claude tiers for text; the Gemini capability registry for media), so content
-generators plan, select and switch models like the code side does.
+  (Until v7.0.0 media was generated through an opt-in paid Google integration, by
+  three separate roles, behind an approval prompt shown before *every* generation.
+  v7 targets Claude Code only and carries no model integrations. What remains is
+  the path the product already documented for when no key was available; the
+  role's value was never the API call but knowing that an iOS icon needs
+  @1x/@2x/@3x and that an asset with no recorded rights is a liability.)
+
+Which model and effort each piece of TEXT uses is chosen by the shared
+`model-router`, so content generation plans and switches models like the code side
+does.
 
 ## The content plan and the CONTENT.md manifest
 

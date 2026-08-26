@@ -1,6 +1,6 @@
 # GRU953-Studio role roster (committed baseline)
 
-**role count: 38**
+**role count: 36**
 
 This file is the committed baseline the roster checks read. `roster-check.mjs`
 verifies the number of `agents/*.md` files against it; `repo-integrity.mjs`
@@ -14,6 +14,30 @@ Per `CONTRIBUTING.md` and `governance/GOVERNANCE.md`, adding a role
 requires a named, specific, **non-overlapping** gap. Removing or merging a
 role is allowed and encouraged where two roles overlap or a hand-off is
 artificial (the v3.0.0 consolidation below).
+
+## v7.0.0 consolidation (2026-08-26): 38 → 36
+
+`ROSTER.md` requires every role to fill "a named, specific, **non-overlapping**
+gap", and nothing enforced it — the rule was prose. An audit found a live
+violation: the three media roles were one role trisected by medium, sharing a
+single trigger (the Content stage), a single provider, a single method, a single
+approval gate and a single output shape. Measured across all 703 role pairs,
+audio against video was the second-most similar of any pair in the roster.
+
+| Merged away | Into | Why it overlapped |
+| :-- | :-- | :-- |
+| image-content-specialist | media-content-specialist | Same trigger, provider, method, gate and output shape as the other two; the three files differed only in the nouns |
+| audio-content-specialist | media-content-specialist | As above |
+| video-content-specialist | media-content-specialist | As above |
+
+The merged role also stops generating. All three old roles produced media through
+the opt-in Gemini models, and v7 targets Claude Code only with no external model
+integrations. What remains is not a gap but the path the product already
+documented for when no key was available: a specification plus a step-by-step
+guide for the owner. The role's value was never the API call — it was knowing that
+an iOS icon needs @1x/@2x/@3x, that every image needs alt-text, and that an asset
+with no recorded rights is a liability. It also removes a per-generation approval
+pop-up, which an unattended run could never have answered.
 
 ## v3.0.0 consolidation (2026-07-11): 31 → 23
 
@@ -91,7 +115,7 @@ of every named platform — Android, iOS, macOS, Windows, Linux, web — each wi
 distinct-ecosystem owner, Flutter remaining the cross-platform default (see
 `architect`'s platform map).
 
-## Content team (5), added v4.1.0 (2026-07-19)
+## Content team (3), added v4.1.0 (2026-07-19), reduced to 3 in v7.0.0
 
 Owner-directed expansion (feature request: "add a content creation phase after
 prototyping with specialised roles to generate the app's content"). Recorded
@@ -100,16 +124,14 @@ a distinct, **non-overlapping** gap: producing the app's actual content (copy,
 images, audio, video) is separate work from building the app shell (`builder`/
 language specialists), designing it (`architect`/`ux-designer`), translating
 existing strings (`localisation-specialist`), or documenting it for users
-(`technical-writer`). Text is generated natively by Claude; media via the opt-in
-`gemini-integration`.
+(`technical-writer`). Text is generated natively by Claude; media is SPECIFIED
+rather than generated — see the v7.0.0 note below.
 
 | Role | Distinct gap it fills | Activates when |
 | :-- | :-- | :-- |
 | content-director | Plans and orchestrates all content from the spec + prototype; owns the content plan, `CONTENT.md` and the media opt-in | The Content stage (any app needing real content) |
 | text-content-specialist | Writes the app's own in-app copy & microcopy in Bangla + English (not translation, not user docs) | Any app with in-app text |
-| image-content-specialist | Generates the app's images/icons/illustrations via Gemini, platform-appropriate, with alt-text | Brief needs images |
-| audio-content-specialist | Generates the app's audio/narration/speech via Gemini, with transcripts | Brief needs audio |
-| video-content-specialist | Generates the app's video/clips via Gemini, with captions | Brief needs video |
+| media-content-specialist | Decides exactly what each image, audio and video asset must be — every platform format, its alt-text written, its rights recorded — and how the owner produces it | Brief needs any media asset |
 
 ## Model tiers (deliberate, cheapest-first)
 

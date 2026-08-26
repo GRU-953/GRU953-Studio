@@ -4,7 +4,7 @@
 // It never installs system software. Installing Node.js, git or the GitHub CLI
 // changes the user's machine well beyond this project's remit, and doing it
 // unasked is not something this project does anywhere else either (see the
-// ollama-integration skill's confirm-before-install rule, which applies the same
+// former ollama-integration skill's confirm-before-install rule (removed in v7.0.0), which applied the same
 // principle to a much smaller download).
 //
 // The instructions are written to the operating charter's "WHEN YOU NEED ME TO

@@ -25,10 +25,13 @@ whenever content is added or revised. Follow the `content-creation` skill.
    content it needs, in which languages (Bangla + English for text), and which
    media. Record the plan and each asset in `Dev-Memory/CONTENT.md` (via
    `memory-keeper`).
-2. **Decide the Gemini opt-in** once, plainly (the `gemini-integration` skill):
-   media generation uses Google's paid cloud and the user's own key, and sends
-   content to Google — get an explicit yes before any media is generated; record
-   it. With no opt-in, plan placeholders + a step-by-step guide for the user.
+2. **Plan how each media asset will actually be obtained.** v7 generates no
+   media: `media-content-specialist` writes an asset brief and a step-by-step
+   guide, and the owner supplies the file. So plan placeholders against each brief
+   and keep the build moving — a missing decorative image never blocks working
+   software. (Until v7.0.0 this step decided an opt-in to paid Google generation,
+   with a per-generation cost and data-egress approval. That provider is gone,
+   and with it a prompt no unattended run could answer.)
    **Also own the capability registry's currency** (2026-07-26 — `gemini-
    integration`'s "Who applies this" assigns this role ownership of "the
    registry currency," never stated here until now): before delegating any

@@ -97,24 +97,11 @@ function hostDefinitions({ platform, homeDir, env }) {
             confidence: 'unverified',
             note: 'Anthropic documents installing through the app (Customize > Plugins), not by copying files. Use the in-app route; this is offered only as a convenience.',
         },
-        {
-            id: 'antigravity',
-            name: 'Google Antigravity',
-            kind: 'antigravity',
-            configDir: path.join(homeDir, '.gemini', 'config'),
-            installDir: path.join(homeDir, '.gemini', 'config', 'plugins', 'gru953-studio'),
-            confidence: 'documented',
-            note: 'Antigravity scans ~/.gemini/config/plugins for plugin directories.',
-        },
-        ...vscodeFamily.map((e) => ({
-            id: e.id,
-            name: e.name,
-            kind: 'vscode-family',
-            command: e.command,
-            configDir: e.extDir,
-            confidence: 'documented',
-            note: `Installed as an extension through the "${e.command}" command.`,
-        })),
+        // v7.0.0: Google Antigravity and the VS Code family (VS Code, Cursor, Windsurf) were
+        // detected and installed into here. Both are gone with the rest of the host adapters:
+        // v7 targets Claude Code only. `vscodeFamily` below is still detected for the doctor
+        // report, so a user who has those editors is told plainly that they are no longer
+        // supported rather than being silently ignored.
     ];
 }
 

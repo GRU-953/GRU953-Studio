@@ -168,11 +168,16 @@ test('npm pack produces a tarball containing the whole studio, not just the comm
   // already being split this way; this one was missed.
   const names = list.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
-  // The five things whose absence broke `install` and `models`.
+  // The things whose absence broke `install`. (v7.0.0: this list also carried
+  // the model-catalogue hook, which existed for the `models` command. Both it and that command
+  // went with v7's model integrations, so the tarball no longer needs to carry that hook — and
+  // the plugin now makes no outbound network call at all. `dod.mjs` is added in its place: it is
+  // one of the gates a project built by the plugin must be able to run, so an installing user
+  // receiving a tarball without it would get a plugin that cannot check its own work.)
   for (const required of [
     'package/plugin/.claude-plugin/plugin.json',
     'package/plugin/skills/operating-charter/SKILL.md',
-    'package/plugin/hooks/openrouter-models.mjs',
+    'package/plugin/hooks/dod.mjs',
     'package/src/index.js',
   ]) {
     // The message carries what WAS in the tarball. When this failed on the Windows CI

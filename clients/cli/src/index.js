@@ -351,24 +351,6 @@ function cmdAutoupdate(argv) {
     console.log('  Change it with: gru953-studio autoupdate on   |   gru953-studio autoupdate off');
 }
 
-async function cmdModels(argv) {
-    const pluginSourceDir = findPluginSource();
-    if (!pluginSourceDir) {
-        console.error('The studio itself is missing from this installation, which is not a normal state.');
-        console.error('Try reinstalling: npm install -g @gru953/studio-cli@latest');
-        console.error('(or "brew reinstall gru953-studio" if you used Homebrew).');
-        console.error('Inside Claude Code, /studio-models does the same thing without this command.');
-        process.exitCode = 1;
-        return;
-    }
-    const modulePath = path.join(pluginSourceDir, 'hooks', 'openrouter-models.mjs');
-    // Imported rather than reimplemented: the free-versus-paid decision is the
-    // one place in this project where being wrong costs the user money, so it
-    // exists exactly once, in the plugin, with its own tests.
-    const { pathToFileURL } = require('url');
-    const mod = await import(pathToFileURL(modulePath).href);
-    process.exitCode = await mod.main(argv);
-}
 
 function cmdUpdate() {
     const pluginSourceDir = findPluginSource();
@@ -461,17 +443,13 @@ function cmdUninstall() {
 function cmdHelp() {
     console.log(`GRU953-Studio — the command-line helper
 
-  gru953-studio install        Find every supported AI coding tool on this
-                               computer and set GRU953-Studio up in each one.
+  gru953-studio install        Find Claude Code on this computer and set
+                               GRU953-Studio up in it.
   gru953-studio doctor         Check everything is in place, and say what is not.
   gru953-studio status         Report on the project in the current folder.
-  gru953-studio models         Show the AI models that are free to use right now.
   gru953-studio update         Check for a newer version and apply it.
   gru953-studio autoupdate on  Schedule a daily update check (off by default).
   gru953-studio autoupdate off Remove that scheduled check.
-  gru953-studio init           Write the rule files that let Cursor, Windsurf,
-                               Cline, Roo Code, Aider and Copilot follow the
-                               studio protocol in the current project.
   gru953-studio uninstall      Remove GRU953-Studio. Leaves your projects alone.
 
 Nothing here changes your computer without telling you what it did.
@@ -514,21 +492,12 @@ async function main() {
         case 'status':
             printStatus();
             break;
-        case 'models':
-            await cmdModels(rest);
-            break;
         case 'update':
             cmdUpdate();
             break;
         case 'autoupdate':
             cmdAutoupdate(rest);
             break;
-        case 'init': {
-            console.log('Setting up the rule files for every other AI coding tool...');
-            const { initializeUniversalRules } = require('./universal-init');
-            initializeUniversalRules();
-            break;
-        }
         case 'help':
         case undefined:
         default:

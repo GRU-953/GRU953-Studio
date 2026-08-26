@@ -52,14 +52,13 @@ If your change touches anything under `tools/`, also build the release assets �
 CI does this on every pull request, so a packaging defect fails the build:
 
 ```
-cd clients/vscode && npm ci && cd ../..
 node tools/build-release-assets.mjs --out dist
 ```
 
-If your change touches `clients/cli`, `clients/antigravity`, or `clients/vscode`,
-also run that package's own `npm ci && npm test && npm run lint` (or, for the
-VS Code extension, `npm ci && npm run compile && npm run lint`) — see
-`.github/workflows/ci.yml`'s `clients` job for the exact commands.
+If your change touches `clients/cli`, also run that package's own
+`npm ci && npm test && npm run lint` — see `.github/workflows/ci.yml`'s `clients`
+job for the exact commands. (Until v7.0.0 there were three client packages; the
+Antigravity bridge and the VS Code extension were removed with the host adapters.)
 
 ## A note on dependencies
 
@@ -158,15 +157,16 @@ for a new role they start only once that RFC has been Accepted, not before.
 
 ## Publishing (maintainers only, one-time setup)
 
-`.github/workflows/publish.yml` publishes the two npm packages
-(`@gru953/studio-cli`, `@gru953/studio-antigravity`) and the VS Code
-extension whenever a version tag (`v5.0.1`, `v5.1.0`, etc.) is pushed. Three
-things need setting up once, before the first tag push, or that workflow
-will either fail outright or (worse) attempt a real publish with no pause:
+`.github/workflows/publish.yml` publishes the npm package
+`@gru953/studio-cli` whenever a version tag (`v7.0.1`, `v7.1.0`, etc.) is
+pushed. (Until v7.0.0 it also published `@gru953/studio-antigravity` and the VS
+Code extension; both were removed with the host adapters.) Some things need
+setting up once, before the first tag push, or that workflow will either fail
+outright or (worse) attempt a real publish with no pause:
 
-1. **Create the three GitHub Environments** the workflow references —
-   `publish-npm-cli`, `publish-npm-antigravity`, `publish-vscode-marketplace`
-   (Settings → Environments → New environment). For each, add yourself (or
+1. **Create the GitHub Environment** the workflow references —
+   `publish-npm-cli`
+   (Settings → Environments → New environment). Add yourself (or
    another maintainer) as a **required reviewer**. Without this, pushing a
    tag triggers each publish job with no human pause at all — the whole
    point of naming these Environments in the workflow.

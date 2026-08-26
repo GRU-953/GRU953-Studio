@@ -27,52 +27,20 @@ or a mistake is costly to undo. It is the cheapest-first principle
 | **Opus** | Hard reasoning — architecture, independent correctness review, safety/fairness judgement, and any decision that is costly and hard to undo. |
 | **Fable** | The frontier tier: the **most capable and most expensive** model of the four (above Opus, with always-on deeper thinking and slower responses). Reserved only for the very hardest problems where Opus is genuinely not enough — **never** for routine drafting, which is cheap work. |
 
-> **Verify before relying on this cost ordering (2026-07-26 recheck; last corrected
-> 2026-07-21).** Model names, tiers, context sizes and prices change. Fable is the
-> top tier here because it is both the most capable and the most expensive —
-> confirm the current cheapest→most-capable order and each model's context window
-> against Anthropic's own current documentation before treating this table as
-> authoritative, the same currency discipline `gemini-integration`,
-> `google-antigravity-integration` and `ollama-integration` already apply.
-> (2026-07-21 audit finding, still true: Fable had been mis-listed as a cheap
-> second tier, which routed the cheapest kind of work — drafting/ideation — to the
-> single most expensive model, inverting the cheapest-first principle. 2026-07-26
-> recheck, found while comparing against an earlier release: this section had at
-> one point been replaced by a fictional "capability registry" describing routing
-> across Groq/OpenRouter/Bedrock/Vertex/Azure via a `capability-registry.yaml`
-> file that was never created and that no hook or code path implements — and that
-> version had silently dropped Haiku from this document entirely, even though
-> three real agents still declare `model: haiku` in their own frontmatter. This
-> plugin has zero third-party runtime dependencies and does not route its OWN
-> specialists to any non-Claude provider; restored to the concrete,
-> roster-consistent Claude-only guidance below.)
+> **Verify before relying on this cost ordering.** Model names, tiers, context
+> sizes and prices change. Fable is the top tier here because it is both the most
+> capable and the most expensive — confirm the current cheapest-to-most-capable
+> order and each model's context window against Anthropic's own current
+> documentation before treating this table as authoritative.
 
-> **What changed on 2026-08-10, and what did not.** The sentence above used to
-> end "and no multi-provider routing code anywhere". The first half stays true;
-> the second half needed narrowing, and the difference matters because getting
-> it wrong in either direction repeats a past mistake.
->
-> What is now real: `openrouter-integration` is a genuine, implemented
-> integration — `hooks/openrouter-models.mjs` calls OpenRouter's live catalogue,
-> tells free models from paid ones by their actual prices, and is covered by
-> tests. It is a backend option for an app **the studio BUILDS**, exactly as
-> `ollama-integration` and `gemini-integration` already are.
->
-> What is still not real, and is not a GRU953-Studio limitation:
-> **this router does not, and cannot, route the studio's own 38 specialists to a
-> non-Claude model.** Claude Code's own documentation states that Anthropic
-> "doesn't support routing Claude Code to non-Claude models through any
-> gateway", that `ANTHROPIC_BASE_URL` "changes where requests are sent, not
-> which model answers them", and that the `model` setting accepts only an
-> Anthropic API model name or a named deployment on Bedrock / Microsoft Foundry
-> / Google Cloud's Agent Platform (both pages read 2026-08-10 — see
-> `skills/openrouter-integration/SKILL.md`, which records the quotes and their
-> sources). So the tables in this file remain Claude-only on purpose, and that
-> is a fact about the host, not a gap to be filled later.
->
-> Under Google Antigravity the studio's own specialists do run on Gemini tiers —
-> that mapping lives in `google-antigravity-integration`, a separate harness,
-> and is not affected by any of the above.)
+**This router is Claude-only, and that is a fact about the host, not a gap.**
+Claude Code's own documentation states that Anthropic "doesn't support routing
+Claude Code to non-Claude models through any gateway", and that
+`ANTHROPIC_BASE_URL` "changes where requests are sent, not which model answers
+them" — the `model` setting accepts only an Anthropic API model name or a named
+deployment on Bedrock, Microsoft Foundry or Google Cloud's Agent Platform (both
+pages read 2026-08-10). So the studio's own specialists cannot be routed
+elsewhere, and the tables in this file are Claude-only for that reason.
 
 **Effort levels** map the owner's requested names to what the platform exposes:
 `low` → low, `medium` → medium, `high` → high, **`extra` → xhigh**, `max` → max.
@@ -146,21 +114,16 @@ way the code side does:
 - **Text content** (Bangla/English copy) uses Claude tiers/effort by the same
   six signals above — routine copy runs cheap, nuanced or safety-relevant
   wording spends up — and runs **inline**, like any other Claude task.
-- **Image/audio/video** uses the **Gemini capability registry** (the
-  `gemini-integration` skill): the router picks the model for the capability
-  (image/video/audio) and the quality level, trading cost against fidelity, and
-  may switch models between drafts. But media generation is **not silent**: each
-  generation still passes through the confirm-before-generate step (cost + "sent
-  to Google"), because it spends real money and leaves the user's machine. Media
-  cost is subject to the same `cost-guard` judgment-based pause; `cost-monitor`
-  logs each media generation's model and spend.
+- **Image/audio/video** is not routed at all, because v7 generates no media.
+  `media-content-specialist` writes an asset brief and a step-by-step guide for
+  the owner, and that work is ordinary Claude text — routed by the same six
+  signals as anything else.
 
-So the one automatic router covers Claude (code + text) and Gemini (media),
-cheapest-capable per task — with media carrying the extra per-generation
-approval its cost and privacy warrant. When operating under Google Antigravity,
-the Gemini model tier mapping used is `google-antigravity-integration`'s own —
-kept in that one skill rather than duplicated here a second time, so the two
-can't drift out of agreement with each other.
+So the router covers exactly one provider's models, cheapest-capable per task.
+(Until v7.0.0 it also routed a paid media provider and carried a per-generation
+cost-and-privacy approval. Removing it removed a prompt as well as a cost, which
+matters more than it sounds: a prompt is something an unattended run cannot
+answer.)
 
 ## Logging (so an automatic choice stays reviewable)
 

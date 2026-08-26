@@ -749,7 +749,7 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   let readme = fs.readFileSync(readmePath, 'utf8');
   const before = readme;
   readme = readme.replace(
-    '38 specialist roles in total',
+    '36 specialist roles in total',
     'We once evaluated 38 specialist roles for a sibling product; 99 specialist roles in total'
   );
   // 2026-08-12: assert the fixture actually changed. This test and its sibling
@@ -761,7 +761,7 @@ test('repo-integrity.mjs INV5: a later, wrong role count is no longer masked by 
   // test further down this file was already bitten by exactly this and fixed by
   // appending a phrase it fully controls; these two still need the literal
   // phrase, so they assert the mutation landed instead.
-  assert.notEqual(readme, before, 'fixture did not mutate — README no longer contains "38 specialist roles in total"');
+  assert.notEqual(readme, before, 'fixture did not mutate — README no longer contains "36 specialist roles in total"');
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a conflicting later role-count mention must not be masked by an earlier correct one');
@@ -776,13 +776,13 @@ test('repo-integrity.mjs INV5: an unrelated historical "<n> roles" mention does 
   let readme = fs.readFileSync(readmePath, 'utf8');
   const before = readme;
   readme = readme.replace(
-    '38 specialist roles in total',
-    '(the studio grew from 16 roles in early versions) 38 specialist roles in total'
+    '36 specialist roles in total',
+    '(the studio grew from 16 roles in early versions) 36 specialist roles in total'
   );
   // Without this the decoy is never inserted and the test passes on an unmodified
   // README — asserting `clean` about a fixture containing nothing to be clean
   // about. See the fuller note on the sibling test above.
-  assert.notEqual(readme, before, 'fixture did not mutate — README no longer contains "38 specialist roles in total"');
+  assert.notEqual(readme, before, 'fixture did not mutate — README no longer contains "36 specialist roles in total"');
   fs.writeFileSync(readmePath, readme);
   const r = runRepoIntegrity(dir);
   assert.equal(r.json && r.json.status, 'clean', `an unrelated "16 roles" history mention (no "specialist") must not trip this check: ${r.stdout}`);
@@ -1841,6 +1841,108 @@ const FULL_DOD = [
 // tamper-evident was blind to the tampering that would matter most, because C1 checks HEADINGS
 // and the guarantee does not live under one of the eight `CHARTER-CLAUSE:` headings.
 // ---------------------------------------------------------------------------
+// The replacement for the C3/C4 tests removed in v7.0.0. Those proved that TWO copies of the
+// charter agreed — the canonical skill and universal-init.js's generated template — and that
+// each committed host rule file still carried it. With Claude Code as the only host there is one
+// copy, so drift is impossible rather than merely detected. The new C3 inverts the check: it
+// proves the charter is not reproduced anywhere else, because a second copy pasted in "so the
+// agent definitely sees it" is how the two-copy problem would come back.
+// INV23 — the roster's non-overlap rule, enforced (v7 Phase 4).
+//
+// ROSTER.md has always required every role to fill "a named, specific, NON-OVERLAPPING gap", and
+// nothing enforced it: a live violation (three media roles differing only in their nouns) sat in
+// the roster for four months. The threshold was calibrated against this roster rather than
+// borrowed — known-bad 0.284 (the pair v7 merged), known-good 0.037 (the highest non-language
+// pair after the merge) — so both references below are measurements, not citations.
+test('repo-integrity.mjs INV23: two roles that differ only in their nouns are caught', () => {
+  const dir = mkTmp('gru-inv23-dupe-');
+  copyRepoTo(dir);
+  const agents = path.join(dir, 'plugins', 'gru953-studio', 'agents');
+  // Build the known-bad deliberately, the way it actually occurred: one role copied and the
+  // subject noun swapped. The role's own name words are removed before comparison, so the
+  // swapped noun cannot disguise it — which is the whole point of the neutralisation.
+  const base = fs.readFileSync(path.join(agents, 'media-content-specialist.md'), 'utf8');
+  fs.writeFileSync(
+    path.join(agents, 'sound-content-specialist.md'),
+    base
+      .replace(/media-content-specialist/g, 'sound-content-specialist')
+      .replace(/Media Content Specialist/g, 'Sound Content Specialist'),
+  );
+  // ROSTER.md's baseline must allow the extra role, or the run blocks on the count instead and
+  // this test would pass while proving nothing about INV23.
+  const rosterPath = path.join(dir, 'plugins', 'gru953-studio', 'ROSTER.md');
+  fs.writeFileSync(
+    rosterPath,
+    fs.readFileSync(rosterPath, 'utf8').replace('**role count: 36**', '**role count: 37**'),
+  );
+
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', `a near-duplicate role must be caught: ${r.stdout}`);
+  assert.match(
+    JSON.stringify(r.json.problems),
+    /are \d+\.\d% similar once their own names are removed/,
+    'the message must report the measured similarity, so the number can be checked',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV23: the language pack is exempt, so ten legitimate roles do not trip it', () => {
+  // The control that keeps this gate switched on. `*-developer` roles score 0.30-0.55 against
+  // each other because a language pack IS the same protocol per language — their
+  // non-overlapping gap is the language. Without the exemption this invariant would fire on
+  // correct work from the day it shipped, and a gate that fires on correct work gets disabled.
+  const langs = fs
+    .readdirSync(path.join(HERE, '..', 'agents'))
+    .filter((f) => /-developer\.md$/.test(f));
+  assert.ok(langs.length >= 10, `expected the language pack to still exist, found ${langs.length}`);
+  const r = spawnSync(NODE, [path.join(HERE, 'repo-integrity.mjs'), REPO_ROOT], { encoding: 'utf8' });
+  assert.equal(r.status, 0, `the real roster, language pack included, must be clean: ${r.stdout}`);
+});
+
+test('charter-check.mjs: C3 refuses a SECOND copy of a charter clause anywhere in the plugin', () => {
+  const pluginSrc = path.join(HERE, '..');
+  const dir = mkTmp('gru-charter-c3-');
+  const plug = path.join(dir, 'plugins', 'gru953-studio');
+  fs.mkdirSync(path.join(plug, 'hooks'), { recursive: true });
+  for (const f of ['charter-check.mjs', 'lib.mjs']) {
+    fs.copyFileSync(path.join(HERE, f), path.join(plug, 'hooks', f));
+  }
+  fs.cpSync(path.join(pluginSrc, 'skills'), path.join(plug, 'skills'), { recursive: true });
+
+  const run = () => {
+    const r = spawnSync(NODE, [path.join(plug, 'hooks', 'charter-check.mjs'), dir], { encoding: 'utf8' });
+    return { code: r.status, stdout: r.stdout };
+  };
+
+  const control = run();
+  assert.equal(control.code, 0, `control: one copy of the charter must be clean, got: ${control.stdout}`);
+
+  // A second copy, in the shape someone would actually create it.
+  const victim = path.join(plug, 'skills', 'yagni-rules', 'SKILL.md');
+  const original = fs.readFileSync(victim, 'utf8');
+  fs.writeFileSync(
+    victim,
+    original + '\n## CHARTER-CLAUSE: HOW TO WORK\n\nPasted here so the agent definitely sees it.\n',
+  );
+  const r = run();
+  assert.notEqual(r.code, 0, 'a second copy of a charter clause must be refused');
+  assert.match(r.stdout, /restates the charter clause heading/);
+  assert.match(r.stdout, /yagni-rules/, 'the message must name the file that reproduced it');
+
+  fs.writeFileSync(victim, original);
+  assert.equal(run().code, 0, 'removing the second copy must return the gate to clean');
+
+  // And the coordinator naming the charter is NOT a second copy — C2 requires it to.
+  const studio = path.join(plug, 'skills', 'studio', 'SKILL.md');
+  assert.match(
+    fs.readFileSync(studio, 'utf8'),
+    /operating-charter/,
+    'studio/SKILL.md must still point at the charter, which is what makes the exemption necessary',
+  );
+  assert.equal(run().code, 0, 'pointing at the charter must never be mistaken for reproducing it');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('charter-check.mjs: C5 refuses a charter whose load-bearing guarantees have been removed or narrowed', () => {
   // HERE is the hooks directory; skills/ is its sibling and the repo root is three up.
   const pluginSrc = path.join(HERE, '..');
@@ -5328,7 +5430,6 @@ test('build-release-assets: builds every installer, each in the layout its own h
   for (const expected of [
     `gru953-studio-claude-code-${version}.zip`,
     `gru953-studio-claude-desktop-${version}.zip`,
-    `gru953-studio-antigravity-${version}.zip`,
     'install.sh',
     'install.ps1',
     'SHA256SUMS.txt',
@@ -5376,13 +5477,6 @@ test('build-release-assets: builds every installer, each in the layout its own h
       assert.ok(names.some((n) => n.startsWith('gru953-studio/agents/')), `${z} must carry the specialists`);
       assert.ok(!names.some((n) => n.includes('node_modules') || n.endsWith('.DS_Store')), `${z} must not ship build or platform litter`);
     }
-    const ag = list(`gru953-studio-antigravity-${version}.zip`);
-    assert.ok(ag.includes('gru953-studio/plugin.json'), 'the Antigravity package needs plugin.json at its root, not .claude-plugin/');
-    assert.ok(ag.includes('gru953-studio/rules/gru953-roster.md'), 'the roster must be projected into rules/');
-    assert.ok(ag.some((n) => n.startsWith('gru953-studio/skills/')), 'skills must be present');
-    // The point of the whole Antigravity layout: it has no agents/ or commands/
-    // component, so shipping either would be a directory it silently ignores.
-    assert.ok(!ag.some((n) => /^gru953-studio\/(agents|commands)\//.test(n)), 'the Antigravity package must contain no agents/ or commands/ directory');
   } else {
     console.log('    (no `unzip` on this machine — package contents not inspected)');
   }
@@ -5401,51 +5495,6 @@ test('build-release-assets: builds every installer, each in the layout its own h
 // implementations must produce the same directory structure. If it fails, the two
 // have diverged and one of them is now wrong — which is exactly the situation
 // nothing would otherwise notice.
-test('the two Antigravity installers produce the same layout (guarding a deliberate duplication)', async () => {
-  const { createRequire } = await import('node:module');
-  const req = createRequire(import.meta.url);
-  const cli = req(path.join(REPO_ROOT, 'clients', 'cli', 'src', 'install-targets.js'));
-  const bridge = req(path.join(REPO_ROOT, 'clients', 'antigravity', 'src', 'install.js'));
-
-  const pluginSourceDir = path.join(REPO_ROOT, 'plugins', 'gru953-studio');
-  const homeA = mkTmp('gru-agparity-cli-');
-  const homeB = mkTmp('gru-agparity-bridge-');
-
-  const targetA = path.join(homeA, '.gemini', 'config', 'plugins', 'gru953-studio');
-  const rA = cli.installAntigravity(
-    { installDir: targetA, kind: 'antigravity', name: 'Google Antigravity' },
-    { pluginSourceDir },
-  );
-  const rB = bridge.installForAntigravity({ pluginSourceDir, homeDir: homeB });
-  assert.equal(rA.ok, true, `the CLI installer failed: ${rA.message}`);
-  assert.equal(rB.ok, true, `the bridge installer failed: ${(rB.errors || []).join('; ')}`);
-
-  // Compare the shape, not the file contents: `skills` is a symlink in both, and
-  // following it would just compare the same source directory with itself.
-  const shapeOf = (root) =>
-    fs
-      .readdirSync(root, { withFileTypes: true })
-      .map((d) => `${d.name}${d.isDirectory() || d.isSymbolicLink() ? '/' : ''}`)
-      .sort();
-  assert.deepEqual(shapeOf(targetA), shapeOf(rB.target), 'the two installers must lay out the same top-level entries');
-  assert.deepEqual(
-    fs.readdirSync(path.join(targetA, 'rules')).sort(),
-    fs.readdirSync(path.join(rB.target, 'rules')).sort(),
-    'the two installers must write the same rules files',
-  );
-  // The roster projection is the piece most likely to drift, since each has its
-  // own copy of the generator. Compare the role names both produced.
-  const rolesIn = (p) => [...fs.readFileSync(p, 'utf8').matchAll(/^\| `([a-z0-9-]+)` \|/gm)].map((m) => m[1]);
-  assert.deepEqual(
-    rolesIn(path.join(targetA, 'rules', 'gru953-roster.md')),
-    rolesIn(path.join(rB.target, 'rules', 'gru953-roster.md')),
-    'both roster projections must name the same specialists, in the same order',
-  );
-  assert.ok(rolesIn(path.join(targetA, 'rules', 'gru953-roster.md')).length > 0, 'and must actually contain roles');
-
-  fs.rmSync(homeA, RM_OPTS);
-  fs.rmSync(homeB, RM_OPTS);
-});
 
 // ---------------------------------------------------------------------------
 // openrouter-models.mjs — 2026-08-10, added with openrouter-integration.
@@ -5493,117 +5542,18 @@ function fakeFetch(body, { ok = true, status = 200, throws = null, badJson = fal
   };
 }
 
-test('openrouter-models: a free model is identified by PRICE, not by a ":free" name (the detail that costs money to get wrong)', async () => {
-  const { isFreeModel } = await import('./openrouter-models.mjs');
-  const byId = Object.fromEntries(OR_FIXTURE.data.map((m) => [m.id, m]));
-  // Free with NO ":free" suffix — a suffix test would miss this one, and in the
-  // real catalogue this is the largest-context free model available.
-  assert.equal(isFreeModel(byId['google/lyria-3-pro-preview']), true);
-  // ":free" in the name but a real price — a suffix test would spend money here.
-  assert.equal(isFreeModel(byId['acme/looks-free:free']), false);
-  assert.equal(isFreeModel(byId['acme/premium-1']), false);
-});
 
-test('openrouter-models: EVERY pricing field is checked, so free-per-token-but-charges-for-images is not called free', async () => {
-  const { isFreeModel } = await import('./openrouter-models.mjs');
-  const mixed = OR_FIXTURE.data.find((m) => m.id === 'acme/free-text-paid-images');
-  assert.equal(isFreeModel(mixed), false, 'a non-zero image_output price must disqualify a model');
-  // Prove the fixture would have passed a naive two-field check, or this test
-  // is not actually testing the thing it claims to test.
-  assert.equal(parseFloat(mixed.pricing.prompt), 0);
-  assert.equal(parseFloat(mixed.pricing.completion), 0);
-});
 
-test('openrouter-models: a model with NO pricing information is treated as not free (unknown must never read as free)', async () => {
-  const { isFreeModel } = await import('./openrouter-models.mjs');
-  assert.equal(isFreeModel(OR_FIXTURE.data.find((m) => m.id === 'acme/unknown-price')), false);
-  assert.equal(isFreeModel({ id: 'x', pricing: {} }), false, 'an empty pricing object is unknown, not free');
-  assert.equal(isFreeModel(null), false);
-  assert.equal(isFreeModel({ id: 'x', pricing: { prompt: 'not-a-number', completion: '0' } }), false);
-});
 
-test('openrouter-models: selection is free-only by default, and --all includes paid models', async () => {
-  const { selectModels } = await import('./openrouter-models.mjs');
-  const free = selectModels(OR_FIXTURE.data);
-  assert.deepEqual(
-    free.map((m) => m.id),
-    ['google/lyria-3-pro-preview', 'nvidia/nemotron-3-nano-30b-a3b:free', 'openai/gpt-oss-20b:free'],
-    'only the three genuinely free entries, sorted by context length descending',
-  );
-  assert.equal(selectModels(OR_FIXTURE.data, { all: true }).length, OR_FIXTURE.data.length);
-});
 
-test('openrouter-models: search matches id, name and description, case-insensitively', async () => {
-  const { selectModels } = await import('./openrouter-models.mjs');
-  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'NEMOTRON' }).map((m) => m.id), ['nvidia/nemotron-3-nano-30b-a3b:free'], 'matches the id regardless of case');
-  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'coder' }).map((m) => m.id), ['openai/gpt-oss-20b:free'], 'matches a word only present in the description');
-  assert.deepEqual(selectModels(OR_FIXTURE.data, { search: 'nothing-matches-this' }), [], 'no match is an empty list, not an error');
-});
 
-test('openrouter-models: the order is stable between runs (an unstable list looks like the catalogue changed)', async () => {
-  const { selectModels } = await import('./openrouter-models.mjs');
-  const tied = [
-    { id: 'b/second', context_length: 1000, pricing: { prompt: '0', completion: '0' } },
-    { id: 'a/first', context_length: 1000, pricing: { prompt: '0', completion: '0' } },
-  ];
-  assert.deepEqual(selectModels(tied).map((m) => m.id), ['a/first', 'b/second']);
-  assert.deepEqual(selectModels(tied.slice().reverse()).map((m) => m.id), ['a/first', 'b/second']);
-});
 
-test('openrouter-models: --limit caps the list', async () => {
-  const { selectModels } = await import('./openrouter-models.mjs');
-  assert.equal(selectModels(OR_FIXTURE.data, { limit: 2 }).length, 2);
-});
 
-test('openrouter-models: argument parsing handles both "--search x" and "--search=x" forms', async () => {
-  const { parseArgs } = await import('./openrouter-models.mjs');
-  assert.equal(parseArgs(['--search', 'coder']).search, 'coder');
-  assert.equal(parseArgs(['--search=coder']).search, 'coder');
-  assert.equal(parseArgs(['coder']).search, 'coder', 'a bare word is treated as the search term');
-  assert.equal(parseArgs(['--limit', '5']).limit, 5);
-  assert.equal(parseArgs(['--limit=5']).limit, 5);
-  assert.equal(parseArgs(['--all', '--json']).all && parseArgs(['--all', '--json']).json, true);
-});
 
-test('openrouter-models: no network gives a plain-English message, never a raw stack trace', async () => {
-  const { fetchModels } = await import('./openrouter-models.mjs');
-  await assert.rejects(
-    () => fetchModels({ fetchImpl: fakeFetch(null, { throws: 'getaddrinfo ENOTFOUND openrouter.ai' }) }),
-    (e) => {
-      assert.match(e.message, /Could not reach OpenRouter/);
-      assert.match(e.message, /nothing was changed/, 'a non-technical reader needs to know their project is untouched');
-      return true;
-    },
-  );
-});
 
-test('openrouter-models: an HTTP error, unreadable JSON, and an unexpected shape each fail readably', async () => {
-  const { fetchModels } = await import('./openrouter-models.mjs');
-  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({}, { ok: false, status: 503 }) }), /HTTP status 503/);
-  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({}, { badJson: true }) }), /not readable as JSON/);
-  await assert.rejects(() => fetchModels({ fetchImpl: fakeFetch({ nope: true }) }), /did not have the expected shape/);
-});
 
-test('openrouter-models: a successful fetch returns the catalogue array', async () => {
-  const { fetchModels } = await import('./openrouter-models.mjs');
-  const models = await fetchModels({ fetchImpl: fakeFetch(OR_FIXTURE) });
-  assert.equal(models.length, 7);
-});
 
-test('openrouter-models: an empty free list tells the user what to do rather than reporting an error', async () => {
-  const { formatTable } = await import('./openrouter-models.mjs');
-  const msg = formatTable([], { all: false });
-  assert.match(msg, /No FREE models/);
-  assert.match(msg, /--all/, 'the message must name the way to see paid models');
-  assert.match(msg, /cost money/, 'and must say plainly that those cost money');
-});
 
-test('openrouter-models: the table marks paid models as paid, so cost is never invisible', async () => {
-  const { formatTable, selectModels } = await import('./openrouter-models.mjs');
-  const table = formatTable(selectModels(OR_FIXTURE.data, { all: true }), { all: true });
-  assert.match(table, /acme\/premium-1\s+\S+\s+paid/);
-  assert.match(table, /acme\/looks-free:free\s+\S+\s+paid/, 'a misleading ":free" name must still print as paid');
-});
 
 // 2026-08-10. An OpenRouter key looks like `sk-or-v1-…`. scan.mjs's existing
 // secret pattern (`sk-[A-Za-z0-9-]{20,}`) already covers that shape, so NO new
@@ -5682,34 +5632,7 @@ test('charter-check.mjs: the real repository is clean, and reports all eight cla
   assert.equal(r.json.clauses, 8, 'the charter is made of eight clauses');
 });
 
-test('charter-check.mjs: a clause whose WORDING drifts between the two copies is caught', () => {
-  const dir = mkTmp('gru-charter-drift-');
-  copyRepoTo(dir);
-  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
-  // Change the generated copy's meaning, leaving the canonical one alone —
-  // exactly what a careless edit to one of the two files looks like.
-  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace('Use UK English.', 'Use American English.'));
-  const r = runCharterCheck(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a drifted clause must be caught');
-  assert.ok(r.json.problems.some((p) => p.includes('DRIFTED') && p.includes('ABOUT ME')), `expected a drift problem naming the clause, got: ${JSON.stringify(r.json && r.json.problems)}`);
-  fs.rmSync(dir, RM_OPTS);
-});
 
-test('charter-check.mjs: re-wrapping a clause without changing its meaning is NOT reported (no false positive)', () => {
-  const dir = mkTmp('gru-charter-rewrap-');
-  copyRepoTo(dir);
-  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
-  // Same words, different line breaks. A layout-sensitive comparison would
-  // wrongly BLOCK here, which would make maintainers distrust the gate — the
-  // reason normaliseBody() collapses whitespace.
-  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace(
-    'technical term is unavoidable, explain it in one plain sentence. Use UK English.',
-    'technical term is unavoidable,\nexplain it in one plain sentence.\nUse UK English.',
-  ));
-  const r = runCharterCheck(dir);
-  assert.equal(r.json && r.json.status, 'clean', `re-wrapping must not be treated as drift, got: ${JSON.stringify(r.json && r.json.problems)}`);
-  fs.rmSync(dir, RM_OPTS);
-});
 
 test('charter-check.mjs: a clause DELETED from the canonical charter is caught', () => {
   const dir = mkTmp('gru-charter-deleted-');
@@ -5759,38 +5682,8 @@ test('charter-check.mjs: the coordinator no longer loading the charter is caught
   fs.rmSync(dir, RM_OPTS);
 });
 
-test('charter-check.mjs: the generator dropping CHARTER_FILE entirely is caught (the INV15 false-clean this closes)', () => {
-  const dir = mkTmp('gru-charter-nogen-');
-  copyRepoTo(dir);
-  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
-  fs.writeFileSync(gen, fs.readFileSync(gen, 'utf8').replace('const CHARTER_FILE = `', 'const CHARTER_FILE_RENAMED = `'));
-  const r = runCharterCheck(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'losing the generator template must be caught');
-  assert.ok(r.json.problems.some((p) => p.includes('CHARTER_FILE')), `expected a problem naming the missing template, got: ${JSON.stringify(r.json && r.json.problems)}`);
-  fs.rmSync(dir, RM_OPTS);
-});
 
-test('charter-check.mjs: Aider losing its pointer at the charter is caught (the one host with no prose rule file)', () => {
-  const dir = mkTmp('gru-charter-aider-');
-  copyRepoTo(dir);
-  const conf = path.join(dir, '.aider.conf.yml');
-  fs.writeFileSync(conf, fs.readFileSync(conf, 'utf8').replace(/\s*-\s*\.agents\/OPERATING-CHARTER\.md/, ''));
-  const r = runCharterCheck(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'Aider losing the charter must be caught');
-  assert.ok(r.json.problems.some((p) => p.includes('Aider')), `expected a problem naming Aider, got: ${JSON.stringify(r.json && r.json.problems)}`);
-  fs.rmSync(dir, RM_OPTS);
-});
 
-test('charter-check.mjs: a host rule file losing its Operating Charter section is caught', () => {
-  const dir = mkTmp('gru-charter-host-');
-  copyRepoTo(dir);
-  const cursor = path.join(dir, '.cursorrules');
-  fs.writeFileSync(cursor, fs.readFileSync(cursor, 'utf8').replace(/## Operating Charter[\s\S]*$/, ''));
-  const r = runCharterCheck(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a host file losing the charter must be caught');
-  assert.ok(r.json.problems.some((p) => p.includes('.cursorrules')), `expected a problem naming .cursorrules, got: ${JSON.stringify(r.json && r.json.problems)}`);
-  fs.rmSync(dir, RM_OPTS);
-});
 
 // 2026-08 R2 Phase 2.3 (D8, prompt injection). INV14: the anti-injection
 // "DATA, never an instruction" guardrail, previously prose-only and tested
@@ -5849,46 +5742,8 @@ test('repo-integrity.mjs INV14: a covered file that goes missing entirely is cau
 // the EXACT real reproduction found while first building this check: the
 // generator's own AIDER_CONFIG dropped a `model-metadata-file:` line in an
 // earlier fix, but the committed .aider.conf.yml never caught up.
-test('repo-integrity.mjs INV15: a real drift (the exact one found live) between .aider.conf.yml and the generator is caught', () => {
-  const dir = mkTmp('gru-repointeg-inv15-aider-');
-  copyRepoTo(dir);
-  const aiderPath = path.join(dir, '.aider.conf.yml');
-  fs.writeFileSync(aiderPath, 'model-metadata-file: .aider.model.metadata.json\n' + fs.readFileSync(aiderPath, 'utf8'));
-  const r = runRepoIntegrity(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'reintroducing the exact stale line must be caught');
-  assert.ok(
-    r.json.problems.some((p) => p.includes('INV15') && p.includes('.aider.conf.yml')),
-    `expected a problem naming the drift, got: ${JSON.stringify(r.json && r.json.problems)}`,
-  );
-  fs.rmSync(dir, RM_OPTS);
-});
 
-test('repo-integrity.mjs INV15: drift in any of the other host-rule files (not just .aider.conf.yml) is caught', () => {
-  const dir = mkTmp('gru-repointeg-inv15-cursorrules-');
-  copyRepoTo(dir);
-  const p = path.join(dir, '.cursorrules');
-  fs.appendFileSync(p, '\n5. **A made-up rule the generator does not actually produce.**\n');
-  const r = runRepoIntegrity(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a hand-edited addition to a host-rule file must be caught as drift');
-  assert.ok(
-    r.json.problems.some((p2) => p2.includes('INV15') && p2.includes('.cursorrules')),
-    `expected a problem naming the drift, got: ${JSON.stringify(r.json && r.json.problems)}`,
-  );
-  fs.rmSync(dir, RM_OPTS);
-});
 
-test('repo-integrity.mjs INV15: a host-rule file deleted from the repo root while the generator still produces it is caught', () => {
-  const dir = mkTmp('gru-repointeg-inv15-missing-');
-  copyRepoTo(dir);
-  fs.rmSync(path.join(dir, '.roomodes'));
-  const r = runRepoIntegrity(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a deleted host-rule file must be caught, not silently skipped');
-  assert.ok(
-    r.json.problems.some((p) => p.includes('INV15') && p.includes('.roomodes') && p.includes('missing from the repo root')),
-    `expected a problem naming the missing file, got: ${JSON.stringify(r.json && r.json.problems)}`,
-  );
-  fs.rmSync(dir, RM_OPTS);
-});
 
 // This is what actually matters: proving the check produces PURE JSON on
 // stdout even though it runs universal-init.js's own console.log-heavy
@@ -5896,34 +5751,12 @@ test('repo-integrity.mjs INV15: a host-rule file deleted from the repo root whil
 // it: stdout began with "Initializing GRU953-Studio rules..."
 // and every JSON.parse(stdout) caller, including this test harness's own
 // runRepoIntegrity() helper above, failed on invalid JSON.
-test('repo-integrity.mjs INV15: running the generator internally does not pollute stdout with its own console.log output', () => {
-  const r = spawnSync(NODE, [path.join(HERE, 'repo-integrity.mjs'), REPO_ROOT], { encoding: 'utf8' });
-  assert.doesNotMatch(r.stdout, /Initializing GRU953-Studio rules/, `stdout must be pure JSON, not generator log noise: ${r.stdout.slice(0, 200)}`);
-  assert.doesNotThrow(() => JSON.parse(r.stdout), 'stdout must parse as JSON with no leading noise');
-});
 
 // 2026-08-05 further-pass audit finding (verified by execution): checkHostRuleFiles()
 // had only a `finally`, so a throw from initializeUniversalRules() propagated
 // up as an unhandled rejection — a raw Node stack trace on stderr and NO JSON
 // on stdout at all, losing the whole structured report. The throw is now caught
 // and surfaced as one ordinary BLOCKED problem.
-test('repo-integrity.mjs INV15: a generator throw still yields structured BLOCKED JSON, never a raw crash (2026-08-05 further-pass finding)', () => {
-  const dir = mkTmp('gru-repointeg-inv15-throw-');
-  copyRepoTo(dir);
-  const gen = path.join(dir, 'clients', 'cli', 'src', 'universal-init.js');
-  const src = fs.readFileSync(gen, 'utf8');
-  const braceIdx = src.indexOf('{', src.indexOf('function initializeUniversalRules'));
-  fs.writeFileSync(gen, src.slice(0, braceIdx + 1) + ' if (true) { throw new Error("boom from generator"); } ' + src.slice(braceIdx + 1), 'utf8');
-  const r = runRepoIntegrity(dir);
-  assert.doesNotThrow(() => JSON.parse(r.stdout), `stdout must be parseable JSON, got stderr: ${r.stderr}`);
-  assert.equal(r.json && r.json.status, 'BLOCKED', `a generator throw must surface as BLOCKED, got: ${r.stdout.slice(0, 200)}`);
-  assert.ok(
-    r.json.problems.some((p) => p.includes('boom from generator')),
-    `the thrown error message must appear in the problems list: ${JSON.stringify(r.json && r.json.problems)}`,
-  );
-  assert.equal(r.stderr.trim(), '', `stderr must stay empty (no raw stack trace), got: ${r.stderr}`);
-  fs.rmSync(dir, RM_OPTS);
-});
 
 // ---------------------------------------------------------------------------
 // docs-consistency.mjs — 2026-07-26 audit stage 5. A new sibling to
@@ -6679,7 +6512,14 @@ test('licence-scan.mjs: the actual repo is scanned and clean — locks in findin
   const r = spawnSync(NODE, [path.join(HERE, 'licence-scan.mjs'), REPO_ROOT], { encoding: 'utf8' });
   const json = JSON.parse(r.stdout);
   assert.notEqual(json.reason, 'no recognised dependency manifests found', `the real repo has real manifests under clients/ — this must never regress to vacuous again: ${r.stdout}`);
-  assert.ok(json.results.length >= 3, `expected at least the three clients/ npm manifests to be found, got: ${JSON.stringify(json.results)}`);
+  // v7.0.0: was `>= 3` for three clients/ manifests. Two of the three client packages
+  // (antigravity, vscode) were removed with the host adapters, leaving clients/cli and the
+  // repo root. The number is what changed; the point of the assertion has not — it exists so
+  // this test can never quietly pass on a scan that found nothing.
+  assert.ok(
+    json.results.length >= 2,
+    `expected at least the repo root and clients/cli npm manifests to be found, got: ${JSON.stringify(json.results)}`,
+  );
   assert.equal(json.status, 'clean', r.stdout);
 });
 
@@ -7587,18 +7427,6 @@ test('traceability-check.mjs: a decorated "met" status still requires verificati
   fs.rmSync(dir, RM_OPTS);
 });
 
-test('google-antigravity-integration: skill exists and satisfies repo-integrity invariants (2026-07-26 feature)', () => {
-  const pluginRoot = path.join(HERE, '..');
-  const skillFile = path.join(pluginRoot, 'skills', 'google-antigravity-integration', 'SKILL.md');
-  assert.equal(fs.existsSync(skillFile), true, 'google-antigravity-integration/SKILL.md must exist');
-  const text = fs.readFileSync(skillFile, 'utf8');
-  assert.match(text, /^name:\s*google-antigravity-integration/m, 'SKILL.md frontmatter must contain correct name');
-  assert.match(text, /^description:/m, 'SKILL.md frontmatter must contain description');
-  
-  const repoRoot = path.join(pluginRoot, '..', '..');
-  const r = spawnSync(NODE, [path.join(HERE, 'repo-integrity.mjs'), repoRoot], { encoding: 'utf8' });
-  assert.equal(r.status, 0, `repo-integrity must pass with google-antigravity-integration added: ${r.stdout}`);
-});
 
 // ---------------------------------------------------------------------------
 // 2026-08 R2 Phase 2.1 (D4, end-to-end promise) — the golden Dev-Memory
@@ -8439,8 +8267,6 @@ test('docs-consistency.mjs DC9: a consistent bump of the changelog and every man
   for (const rel of [
     ['plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'],
     ['clients', 'cli', 'package.json'],
-    ['clients', 'antigravity', 'package.json'],
-    ['clients', 'vscode', 'package.json'],
   ]) {
     const p = path.join(dir, ...rel);
     const j = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -9019,7 +8845,6 @@ for (const script of [
   'X5-X6-X15-resolve-not-guess.mjs',
   'X281-missing-recall-index.mjs',
   'X119-dimension-evidence-binding.mjs',
-  'X41-X42-X44-peer-tool-targets.mjs',
   'X182-backup-claim-overstated.mjs',
   'X214-push-safety-narrowed.mjs',
   // INV4 could not tell a live reference from a record of a deleted one
@@ -9266,7 +9091,6 @@ for (const script of [
   // discarding the response's own contradicting count. The controls are the half that matters:
   // genuine zero prices in all three spellings the API uses must STILL be free, or the fix would
   // pass by calling nothing free at all.
-  'X242-catalogue-trust.mjs',
   // 2026-08-22, X243: five defects in the macOS/Linux one-line installer - the first thing a new
   // user runs. Its header promised "asking before it changes anything" about a step with no prompt
   // anywhere in it; `set -e` let a failing setup abort the script before the closing instructions,
@@ -9340,7 +9164,6 @@ for (const script of [
   // test - true for any importer named models.mjs, r-models.mjs, s.mjs. The fix's own controls
   // earned their place twice: case B caught the filter letting a bare ARRAY through (typeof [] is
   // 'object'), and case D had to be taught to REPORT a throw rather than die on it.
-  'X250-outbound-call-hardening.mjs',
   // 2026-08-25, X349: the push scan built its would-ship file list from three `git` calls and threw
   // away whether any of them SUCCEEDED. A failed enumeration produced an empty set, the scan found
   // nothing in it, and the verdict told the owner it had "checked what this would send ... and found

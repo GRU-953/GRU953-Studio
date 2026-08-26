@@ -57,10 +57,12 @@ only when you say the word — publishes it** to your own GitHub account.
 You never write or read a single line of code. You answer questions, one clear
 pop-up at a time, each with a recommended answer already marked.
 
-**In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **40 skills** (the internal playbooks the team follows) · **11 simple
-commands** · **two automatic push-time safety hooks** (plus a suite of
-pre-publish and CI integrity checks) · **zero third-party code dependencies**.
+**In numbers:** one coordinator you talk to · a team of up to **36 specialist
+roles** · **35 skills** (the internal playbooks the team follows) · **10 simple
+commands** · **two automatic safety hooks** that run as you work — one scans for
+secrets before anything is sent out, one refuses edits to the checks that measure
+the work (plus a suite of pre-publish and CI integrity checks) · **zero
+third-party code dependencies** · **no outbound network calls at all**.
 
 ### Latest version: 6.1.0
 
@@ -218,7 +220,7 @@ the studio builds for you, not for the studio itself.
 You only ever talk to **one** friendly coordinator — the **Project Lead**. It
 quietly brings in only the specialists your particular project needs and hides all
 the machinery. A tiny website wakes a handful; a bigger app with logins, data and
-content wakes more. There are **38 specialist roles in total**, and you never
+content wakes more. There are **36 specialist roles in total**, and you never
 manage any of them yourself.
 
 | Group | Roles |
