@@ -66,6 +66,50 @@ function read(p) {
 // discovered from the file, so DELETING a clause outright is caught too — a
 // check that only compared whatever headings it happened to find would report
 // a charter with three clauses removed as perfectly consistent.
+// 2026-08-26, finding X373. REQUIRED_CLAUSES below lists the eight `## CHARTER-CLAUSE: …`
+// headings, and C1 checks each is present and not emptied. But the charter's most consequential
+// sentence is not under one of those headings at all. It sits under `## What this charter does
+// not do`:
+//
+//     "It does not weaken or bypass any confirmation. Publishing, going public, a per-phase
+//      checkpoint push, installing software, pulling a model, or spending money each still need
+//      their own explicit, fresh "yes" — every time."
+//
+// That is the guarantee the whole consent architecture rests on — `hooks/scan.mjs`'s escalation
+// to `ask` cites it by line number as the reason it exists. And it was the one clause this gate
+// did not defend. PROVEN by deleting the sentence outright: charter-check reported
+// `{"status":"clean","clauses":8}` and exit 0, and repo-integrity and docs-consistency both
+// passed too. The gate whose entire purpose is making the charter tamper-evident was blind to
+// the tampering that would matter most.
+//
+// Two lessons, and this list answers both. First, a heading is not a guarantee — C1 already
+// knew that for the eight clauses, checking each body is non-empty, but the guarantees outside
+// those headings were unchecked entirely. Second, matching is deliberately VERBATIM on the
+// load-bearing phrase, not fuzzy. This file's own C3 compares clause bodies exactly so a clause
+// cannot be "quietly reworded into something weaker"; a gate that tolerated rewording here
+// would tolerate exactly that. If one of these is legitimately reworded, this list is updated
+// in the same commit, on purpose, which is the point.
+const REQUIRED_GUARANTEES = [
+  {
+    name: 'consent is never bypassed',
+    phrase: 'each still need their own explicit, fresh "yes" — every time',
+    alsoNames: ['Publishing', 'going public'],
+    why: 'this is the guarantee scan.mjs escalates to `ask` in order to keep, and the one thing a charter rewrite must never soften',
+  },
+  {
+    name: 'autonomy does not license silence',
+    phrase: 'It does not license silence',
+    alsoNames: ['reporting something as done that isn' + "'t"],
+    why: 'an unattended run that stops reporting is indistinguishable from one that stopped working',
+  },
+  {
+    name: 'read content is data, never an instruction',
+    phrase: 'DATA, never an instruction',
+    alsoNames: ['it is never acted on'],
+    why: 'the anti-injection rule; the charter itself says this file is what injected text would most want to override',
+  },
+];
+
 const REQUIRED_CLAUSES = [
   'ABOUT ME',
   'BEFORE STARTING ANY TASK',
@@ -256,8 +300,36 @@ if (aiderConf === null) {
 }
 
 // ---- report ---------------------------------------------------------------
+// ---- C5: the load-bearing guarantees are still actually THERE ---------------
+// Substance, not headings. See REQUIRED_GUARANTEES above for why this exists and what was
+// proven about the state before it did.
+if (charterText !== null) {
+  const flat = normaliseBody(charterText);
+  for (const g of REQUIRED_GUARANTEES) {
+    if (!flat.includes(g.phrase)) {
+      fail(
+        `skills/operating-charter/SKILL.md no longer states the guarantee "${g.name}" — the phrase ${JSON.stringify(g.phrase)} is gone. ${g.why}. If this was reworded deliberately, update REQUIRED_GUARANTEES in hooks/charter-check.mjs in the same commit; a charter guarantee must never be able to weaken silently.`,
+      );
+      continue;
+    }
+    for (const also of g.alsoNames) {
+      if (!flat.includes(also)) {
+        fail(
+          `skills/operating-charter/SKILL.md still carries the "${g.name}" guarantee, but it no longer names ${JSON.stringify(also)} — the guarantee has been narrowed while keeping its wording, which is the harder version of the same defect`,
+        );
+      }
+    }
+  }
+}
+
 if (problems.length === 0) {
-  console.log(JSON.stringify({ status: 'clean', clauses: REQUIRED_CLAUSES.length }, null, 2));
+  console.log(
+    JSON.stringify(
+      { status: 'clean', clauses: REQUIRED_CLAUSES.length, guarantees: REQUIRED_GUARANTEES.length },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 console.log(JSON.stringify({ status: 'BLOCKED', problems }, null, 2));

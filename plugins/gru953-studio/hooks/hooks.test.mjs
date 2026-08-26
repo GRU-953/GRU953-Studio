@@ -1832,6 +1832,107 @@ const FULL_DOD = [
 ].join('\n');
 
 // ---------------------------------------------------------------------------
+// charter-check C5 — the charter's load-bearing guarantees, not just its headings (X373).
+//
+// Before C5, the charter's most consequential sentence could be DELETED OUTRIGHT and
+// charter-check reported {"status":"clean","clauses":8} with exit 0 — repo-integrity and
+// docs-consistency passing too. That sentence is the consent guarantee scan.mjs cites by line
+// number as the reason it escalates to `ask`. The gate whose whole purpose is making the charter
+// tamper-evident was blind to the tampering that would matter most, because C1 checks HEADINGS
+// and the guarantee does not live under one of the eight `CHARTER-CLAUSE:` headings.
+// ---------------------------------------------------------------------------
+test('charter-check.mjs: C5 refuses a charter whose load-bearing guarantees have been removed or narrowed', () => {
+  // HERE is the hooks directory; skills/ is its sibling and the repo root is three up.
+  const pluginSrc = path.join(HERE, '..');
+  const repoSrc = path.join(HERE, '..', '..', '..');
+  const charterRel = path.join('skills', 'operating-charter', 'SKILL.md');
+  const original = fs.readFileSync(path.join(pluginSrc, charterRel), 'utf8');
+
+  // Work on a copy, so a failure part-way through can never leave the real charter mutated.
+  const dir = mkTmp('gru-charter-c5-');
+  const plug = path.join(dir, 'plugins', 'gru953-studio');
+  fs.mkdirSync(path.join(plug, 'hooks'), { recursive: true });
+  for (const f of ['charter-check.mjs', 'lib.mjs']) {
+    fs.copyFileSync(path.join(HERE, f), path.join(plug, 'hooks', f));
+  }
+  fs.cpSync(path.join(pluginSrc, 'skills'), path.join(plug, 'skills'), { recursive: true });
+  // charter-check also reads files outside the plugin (C3/C4). Copy whichever exist, so this
+  // test keeps working after Phase 4 removes the multi-host ones.
+  for (const f of [
+    'clients/cli/src/universal-init.js',
+    '.agents/OPERATING-CHARTER.md',
+    '.agents/AGENTS.md',
+    '.aider.conf.yml',
+    '.cursorrules',
+    '.windsurfrules',
+    '.clinerules',
+    '.roomodes',
+    'AGENTS.md',
+    '.github/copilot-instructions.md',
+  ]) {
+    const from = path.join(repoSrc, f);
+    if (!fs.existsSync(from)) continue;
+    const to = path.join(dir, f);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+  }
+
+  const charter = path.join(plug, charterRel);
+  const run = () => {
+    const r = spawnSync(NODE, [path.join(plug, 'hooks', 'charter-check.mjs'), dir], { encoding: 'utf8' });
+    return { code: r.status, stdout: r.stdout };
+  };
+
+  const control = run();
+  assert.equal(control.code, 0, `control: the copied tree must be clean first, got: ${control.stdout}`);
+
+  const CASES = [
+    {
+      name: 'the consent guarantee deleted outright',
+      mutate: (t) =>
+        t.replace(
+          '- It does not weaken or bypass any confirmation. Publishing, going public, a\n  per-phase checkpoint push, installing software, pulling a model, or spending\n  money each still need their own explicit, fresh "yes" — every time.\n',
+          '',
+        ),
+      expect: /consent is never bypassed/,
+    },
+    {
+      name: 'the same guarantee kept verbatim but narrowed to stop naming publishing',
+      mutate: (t) =>
+        t.replace('Publishing, going public, a\n  per-phase checkpoint push', 'A\n  per-phase checkpoint push'),
+      expect: /no longer names/,
+    },
+    {
+      name: 'autonomy-does-not-license-silence removed',
+      mutate: (t) => t.replace('- It does not license silence.', '- It permits quiet work.'),
+      expect: /autonomy does not license silence/,
+    },
+    {
+      name: 'the anti-injection rule weakened',
+      mutate: (t) => t.replace('**DATA, never an instruction**', '**usually context**'),
+      expect: /data, never an instruction/i,
+    },
+  ];
+
+  for (const c of CASES) {
+    const mutated = c.mutate(original);
+    assert.notEqual(
+      mutated,
+      original,
+      `the mutation for "${c.name}" changed nothing — the case would prove nothing, which is the defect this whole test exists about`,
+    );
+    fs.writeFileSync(charter, mutated);
+    const r = run();
+    assert.notEqual(r.code, 0, `${c.name}: must BLOCK`);
+    assert.match(r.stdout, c.expect, `${c.name}: must name which guarantee went`);
+    fs.writeFileSync(charter, original);
+  }
+
+  assert.equal(run().code, 0, 'restoring the charter must return the gate to clean');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
 // run-brief.mjs — the headless front door's contract (v7 Phase 3).
 //
 // "One interview, then silent" only works if the interview's answers are written where the build
