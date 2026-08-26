@@ -1380,16 +1380,32 @@ if (ciYmlText === null) {
 // WHOLE names, compared exactly. A check asking "does either name contain the other" would flag the
 // command `studio-start` against the skill `studio` and so fail the very repair it protects — L15
 // again, where the changed thing shares a name with things kept. X221's control C pins that.
+//
+// 2026-08-26, v7 Phase 5. WIDENED to agents as well as commands, which was the cheap route the
+// adversarial review pointed out: the same one-namespace argument applies to a name declared as
+// both a role and a skill, and this check already had the machinery. It immediately found one —
+// `devops-engineer` was declared as `agents/devops-engineer.md` AND `skills/devops-engineer/`,
+// the only role of the then-38 whose protocol existed twice. The two were not complementary: the
+// skill was a near-verbatim expansion of the agent's own six-step Method, nothing loaded it
+// except one historical ROSTER.md line, and it carried a section headed "Required Command
+// Families (for repo-integrity.mjs INV11)" — a claim of mechanical enforcement that was false,
+// because INV11 skips every skill whose directory name does not begin with `lang-`. The skill was
+// deleted and the agent, where the other 35 roles keep their protocol, is now the single home.
+//
+// Building the widening BEFORE resolving that duplication would have meant exempting the one case
+// it exists to catch, so the order was: find it, fix it, then close the class.
 {
   const commandNames = new Set(commandFiles.map((f) => f.replace(/\.md$/, '')));
-  const collisions = skillDirs.filter((s) => commandNames.has(s)).sort();
-  for (const name of collisions) {
-    fail(
-      `INV19: '${name}' is declared BOTH as commands/${name}.md and as skills/${name}/. Commands and ` +
-        'skills share one namespace and which one answers is undocumented platform behaviour, so this ' +
-        'is ambiguous rather than merely untidy. Rename whichever side is referenced less — usually the ' +
-        'command, since skill names are referenced across many more files.',
-    );
+  const agentNamesForCollision = new Set(agentFiles.map((f) => f.replace(/\.md$/, '')));
+  for (const name of skillDirs.slice().sort()) {
+    const alsoCommand = commandNames.has(name);
+    const alsoAgent = agentNamesForCollision.has(name);
+    if (!alsoCommand && !alsoAgent) continue;
+    const other = alsoCommand ? `commands/${name}.md` : `agents/${name}.md`;
+    const why = alsoCommand
+      ? 'Commands and skills share one namespace and which one answers is undocumented platform behaviour, so this is ambiguous rather than merely untidy. Rename whichever side is referenced less — usually the command, since skill names are referenced across many more files.'
+      : "A role's protocol has exactly one home, and for the other roles that home is the agent file. A skill of the same name is a second copy of the same protocol, and two copies of a protocol drift — usually while both still look authoritative. Merge anything unique into the agent file and delete the skill.";
+    fail(`INV19: '${name}' is declared BOTH as ${other} and as skills/${name}/. ${why}`);
   }
 }
 
@@ -1705,6 +1721,79 @@ if (fs.existsSync(packagedRoot)) {
       if (score >= SIMILARITY_LIMIT) {
         fail(
           `agents/${a} and agents/${b} are ${(score * 100).toFixed(1)}% similar once their own names are removed (limit ${(SIMILARITY_LIMIT * 100).toFixed(0)}%). ROSTER.md requires every role to fill a named, specific, NON-OVERLAPPING gap: either state in ROSTER.md what distinguishes these two, or merge them and record the merge in a consolidation table. This is the check the three media roles went unnoticed by for four months.`,
+        );
+      }
+    }
+  }
+}
+
+// ---- INV 24: nothing publishes from a tree that has not passed the gates ----------
+// 2026-08-26, finding X376. Until v7.0.0 `.github/workflows/publish.yml` had no `needs:`
+// anywhere and referenced none of the plugin's own checks: pushing a `v*.*.*` tag published
+// straight to npm and attached release assets with nothing verified. CI ran seven gates and a
+// 500-plus-test suite on every push, and the one path that reaches other people's machines ran
+// none of them.
+//
+// A `gates` job now re-runs them and every publishing job depends on it. This invariant is what
+// stops that quietly coming undone: a `needs:` line is one word to delete, and its absence looks
+// exactly like a workflow that never had one. Same reason INV16 exists for charter-check's
+// wiring — the lesson this repository keeps relearning is that a control nothing invokes is a
+// control that does nothing, and the wiring needs guarding as much as the control.
+{
+  const wf = read(path.join(repoRoot, '.github', 'workflows', 'publish.yml'));
+  if (wf === null) {
+    fail(
+      '.github/workflows/publish.yml is missing or unreadable — cannot verify that publishing is gated',
+    );
+  } else {
+    // Job headers are two-space-indented keys inside `jobs:`. Each job's block runs to the next
+    // such header, which is enough structure to read `needs:` per job without a YAML parser (this
+    // plugin ships zero dependencies, so there is no parser to use).
+    const headerRe = /^ {2}([a-z][a-z0-9-]*):[ \t]*$/gm;
+    const headers = [...wf.matchAll(headerRe)];
+    const jobs = headers.map((m, i) => ({
+      name: m[1],
+      body: wf.slice(
+        m.index + m[0].length,
+        i + 1 < headers.length ? headers[i + 1].index : wf.length,
+      ),
+    }));
+    const gatesJob = jobs.find((j) => j.name === 'gates');
+    if (!gatesJob) {
+      fail(
+        '.github/workflows/publish.yml has no `gates` job — the release path would publish without running any of the checks CI runs on every ordinary push',
+      );
+    } else {
+      // The gate job must actually RUN the gates, not merely be named after them. A job called
+      // `gates` that runs nothing is the shape of defect this whole repository is a record of.
+      const REQUIRED = [
+        'hooks.test.mjs',
+        'repo-integrity.mjs',
+        'roster-check.mjs',
+        'licence-scan.mjs',
+        'docs-consistency.mjs',
+        'charter-check.mjs',
+        'npm run lint',
+        'npm run format:check',
+      ];
+      const missing = REQUIRED.filter((r) => !gatesJob.body.includes(r));
+      if (missing.length > 0) {
+        fail(
+          `.github/workflows/publish.yml's \`gates\` job does not run ${missing.join(', ')} — it is named after the checks without performing them, so a release would pass a gate that measured nothing`,
+        );
+      }
+    }
+    // Every job that publishes or attaches anything must depend on it.
+    for (const j of jobs) {
+      if (j.name === 'gates') continue;
+      const publishes =
+        /npm publish|softprops\/action-gh-release|gh release (create|upload)|vsce publish/.test(
+          j.body,
+        );
+      if (!publishes) continue;
+      if (!/^ {4}needs:.*\bgates\b/m.test(j.body)) {
+        fail(
+          `.github/workflows/publish.yml's \`${j.name}\` job publishes or attaches release artefacts but does not declare \`needs: gates\` — a tag could ship it from a tree that failed every check`,
         );
       }
     }

@@ -1847,6 +1847,100 @@ const FULL_DOD = [
 // copy, so drift is impossible rather than merely detected. The new C3 inverts the check: it
 // proves the charter is not reproduced anywhere else, because a second copy pasted in "so the
 // agent definitely sees it" is how the two-copy problem would come back.
+// INV24 — nothing publishes from a tree that has not passed the gates (v7 Phase 5, X376).
+//
+// Until v7.0.0 publish.yml had no `needs:` anywhere and referenced none of the plugin's own
+// checks: pushing a v*.*.* tag published straight to npm with nothing verified, while CI ran
+// seven gates and a 500-plus-test suite on every ordinary push. A `needs:` line is one word to
+// delete and its absence looks exactly like a workflow that never had one, so the wiring needs
+// guarding as much as the gate does — the same reason INV16 exists.
+test('repo-integrity.mjs INV24: a publishing job that does not depend on the gates job is caught', () => {
+  const dir = mkTmp('gru-inv24-needs-');
+  copyRepoTo(dir);
+  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
+  const before = fs.readFileSync(wf, 'utf8');
+  const after = before.replace(
+    '    name: Publish @gru953/studio-cli to npm\n    needs: gates\n',
+    '    name: Publish @gru953/studio-cli to npm\n',
+  );
+  assert.notEqual(after, before, 'fixture did not mutate — the needs: line is no longer where this test expects it');
+  fs.writeFileSync(wf, after);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'an ungated publish job must be caught');
+  assert.match(JSON.stringify(r.json.problems), /does not declare/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV24: a gates job NAMED after the checks but not running them is caught', () => {
+  const dir = mkTmp('gru-inv24-hollow-');
+  copyRepoTo(dir);
+  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
+  const before = fs.readFileSync(wf, 'utf8');
+  // Remove two of the commands the gate job must run, leaving the job itself in place. This is
+  // the shape of defect this whole repository is a record of: a control named after a check,
+  // reporting on work it never did.
+  const after = before
+    .replace('      - name: Behavioural test suite\n        run: node plugins/gru953-studio/hooks/hooks.test.mjs\n', '')
+    .replace('      - name: Repository integrity check\n        run: node plugins/gru953-studio/hooks/repo-integrity.mjs .\n', '');
+  assert.notEqual(after, before, 'fixture did not mutate');
+  fs.writeFileSync(wf, after);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.match(JSON.stringify(r.json.problems), /named after the checks without performing them/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV24: removing the gates job entirely is caught', () => {
+  const dir = mkTmp('gru-inv24-gone-');
+  copyRepoTo(dir);
+  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
+  const before = fs.readFileSync(wf, 'utf8');
+  const after = before.slice(0, before.indexOf('  gates:')) + before.slice(before.indexOf('  publish-npm-cli:'));
+  assert.notEqual(after, before, 'fixture did not mutate');
+  fs.writeFileSync(wf, after);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.match(JSON.stringify(r.json.problems), /has no `gates` job/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// INV19, widened in v7 Phase 5 from command<->skill to agent<->skill as well. It immediately
+// found one: devops-engineer was the only role of the then-38 whose protocol existed twice, as
+// both an agent file and a same-named skill that nothing loaded — and that skill carried a
+// section claiming enforcement by INV11, which skips every skill not named `lang-*`.
+test('repo-integrity.mjs INV19: a role declared as BOTH an agent and a skill is caught', () => {
+  const dir = mkTmp('gru-inv19-agentskill-');
+  copyRepoTo(dir);
+  const skillDir = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'reviewer');
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(skillDir, 'SKILL.md'),
+    '---\nname: reviewer\ndescription: A second copy of the reviewer protocol.\n---\n\n# Reviewer\n\nDuplicate.\n',
+  );
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a role whose protocol exists twice must be caught');
+  assert.match(
+    JSON.stringify(r.json.problems),
+    /INV19: 'reviewer' is declared BOTH as agents\/reviewer\.md/,
+    'the message must name both homes, so the reader knows which to merge',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV19: a command and skill sharing a name is still caught (the original case)', () => {
+  const dir = mkTmp('gru-inv19-cmdskill-');
+  copyRepoTo(dir);
+  // `studio` is a skill; declaring a command of the same name recreates X35 exactly.
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'commands', 'studio.md'),
+    '---\ndescription: A colliding command.\n---\n\nCollides with the studio skill.\n',
+  );
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.match(JSON.stringify(r.json.problems), /INV19: 'studio' is declared BOTH as commands\/studio\.md/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // INV23 — the roster's non-overlap rule, enforced (v7 Phase 4).
 //
 // ROSTER.md has always required every role to fill "a named, specific, NON-OVERLAPPING gap", and
@@ -5865,10 +5959,16 @@ test('docs-consistency.mjs: a stale "skill count to N" claim is caught (finding 
   // failure that had nothing to do with DC1 being broken. The fixture now
   // APPENDS a phrase this test fully controls, so it proves what it claims to
   // prove regardless of how README's prose is worded.
-  fs.writeFileSync(readmePath, fs.readFileSync(readmePath, 'utf8') + '\n\nThis release brings the skill count to 34.\n');
+  //
+  // 2026-08-26: and the number is now 999 rather than a plausible one. The fixture said "34",
+  // which was stale when written — until v7 deleted five skills and 34 became the REAL count, at
+  // which point the "stale" fixture was accurate and the test failed for the second time on the
+  // same coupling its comment above describes. A count that can never coincide with reality
+  // cannot be overtaken by it.
+  fs.writeFileSync(readmePath, fs.readFileSync(readmePath, 'utf8') + '\n\nThis release brings the skill count to 999.\n');
   const r = runDocsConsistency(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', 'a stale "skill count to N" claim must be caught');
-  assert.ok(r.json.problems.some((p) => p.includes('skill count to 34')), `expected a problem naming the stale count, got: ${JSON.stringify(r.json && r.json.problems)}`);
+  assert.ok(r.json.problems.some((p) => p.includes('skill count to 999')), `expected a problem naming the stale count, got: ${JSON.stringify(r.json && r.json.problems)}`);
   fs.rmSync(dir, RM_OPTS);
 });
 
@@ -8301,6 +8401,9 @@ test('docs-consistency.mjs: a dated AUDIT-YYYY-MM.md register quoting its own th
   const auditPath = path.join(dir, 'AUDIT-2026-08.md');
   fs.writeFileSync(
     auditPath,
+    // Deliberately a PLAUSIBLE count here, unlike the inverse test below: the point of this one
+    // is that a dated register quoting its own then-current figure is evidence, not a live
+    // claim, so it must be tolerated whether or not it matches today.
     fs.readFileSync(auditPath, 'utf8') + '\n\nAt the time of this programme the team stood at 34 skills.\n',
   );
   const r = runDocsConsistency(dir);
@@ -8313,7 +8416,10 @@ test('docs-consistency.mjs: a dated AUDIT-YYYY-MM.md register quoting its own th
 test('docs-consistency.mjs: the audit-register exemption does not blind the check to a stale count in an ordinary file', () => {
   const dir = mkTmp('gru-docsconsist-auditexempt-inverse-');
   copyRepoTo(dir);
-  fs.writeFileSync(path.join(dir, 'NOTES-2026-08.md'), 'The team has 34 skills today.\n');
+  // 999 rather than a plausible number: this fixture must be WRONG to prove anything, and a
+  // plausible one becomes right the moment the real count reaches it — which is exactly what
+  // happened to its sibling above when v7 removed five skills.
+  fs.writeFileSync(path.join(dir, 'NOTES-2026-08.md'), 'The team has 999 skills today.\n');
   const r = runDocsConsistency(dir);
   assert.equal(r.json && r.json.status, 'BLOCKED', `a stale live count outside a dated audit register must still be caught: ${r.stdout}`);
   fs.rmSync(dir, RM_OPTS);

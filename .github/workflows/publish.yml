@@ -39,8 +39,51 @@ on:
       - 'v*.*.*'
 
 jobs:
+  # 2026-08-26, finding X376. Until v7.0.0 this workflow had NO `needs:` anywhere and referenced
+  # none of the plugin's own gates: pushing a `v*.*.*` tag published straight to npm with nothing
+  # checked. CI runs seven gates and a 500-plus-test suite on every push and pull request, and the
+  # release path — the one that reaches other people's machines — ran none of them.
+  #
+  # This RE-RUNS them against the tagged tree rather than looking up CI's conclusion for the
+  # commit. That is deliberate: a tag can be pushed at any commit, including one CI never saw, and
+  # a Checks API lookup that finds no run is easy to misread as a run that passed. Re-running costs
+  # a few minutes on a release and cannot be satisfied by an absence.
+  #
+  # The commands are the ones CLAUDE.md documents for every commit, kept in the same order, so a
+  # contributor reading either place sees the same list.
+  gates:
+    name: gates (must pass before anything is published)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Install repo dev tooling (ESLint, Prettier — dev-only, never shipped)
+        run: npm ci
+      - name: Syntax-check every hook script
+        run: |
+          for f in plugins/gru953-studio/hooks/*.mjs; do node --check "$f"; done
+      - name: Behavioural test suite
+        run: node plugins/gru953-studio/hooks/hooks.test.mjs
+      - name: Repository integrity check
+        run: node plugins/gru953-studio/hooks/repo-integrity.mjs .
+      - name: Roster check
+        run: node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
+      - name: Licence scan
+        run: node plugins/gru953-studio/hooks/licence-scan.mjs .
+      - name: Documentation-consistency check
+        run: node plugins/gru953-studio/hooks/docs-consistency.mjs .
+      - name: Operating-charter consistency check
+        run: node plugins/gru953-studio/hooks/charter-check.mjs .
+      - name: Lint
+        run: npm run lint
+      - name: Formatting
+        run: npm run format:check
+
   publish-npm-cli:
     name: Publish @gru953/studio-cli to npm
+    needs: gates
     runs-on: ubuntu-latest
     environment: publish-npm-cli
     permissions:
@@ -107,6 +150,10 @@ jobs:
 
   release-assets:
     name: Build and attach the downloadable installers
+    # The release attachments are what a person downloads from the release page, so they are
+    # gated exactly like the npm publish: no asset is attached to a release built from a tree
+    # that has not passed the plugin's own checks.
+    needs: gates
     runs-on: ubuntu-latest
     permissions:
       # Job-scoped only, never repository-wide — the same discipline the
