@@ -569,6 +569,25 @@ if (mcpPackageJsonRaw !== null) {
 // one of which is the real tree.
 const PERMITTED_EXTENSIONS = new Set(['.md', '.mjs', '.json']);
 const PERMITTED_FILENAMES = new Set(['LICENSE', 'LICENCE']);
+
+// 2026-08-26, finding X377. Operating-system artefacts, skipped by NAME because they have no
+// extension to permit — so the remedy this check's own message offers ("add its extension to
+// PERMITTED_EXTENSIONS") cannot be applied to them, and there was no other way out.
+//
+// Found by the owner: opening the repository in macOS Finder scatters `.DS_Store` files through
+// the tree, and this gate then BLOCKED on two of them inside the plugin, taking thirteen tests
+// with it. Every macOS contributor who has ever looked at the folder hits this, for a file that
+// provably cannot reach anybody: it is in `.gitignore` so it is never committed, in the
+// bundler's own EXCLUDE set so it is never copied into the packaged plugin, and in
+// `clients/cli/.npmignore` so it is never published. Three independent exclusions already stop
+// it shipping, and this check was the only thing treating it as a hazard.
+//
+// A gate that fails on ordinary local state gets switched off, and its absence is then
+// invisible — the same reason hooks/stall-check.mjs suppresses an alert on a run that carried
+// on. Named exclusions rather than a blanket dotfile rule, deliberately: the point of the check
+// is that an unexpected file type in the shipped tree may be vendored third-party code, and
+// waving through everything beginning with a dot would give that away for nothing.
+const OS_ARTEFACTS = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
 const VENDOR_DIRECTORY_NAMES = new Set(['node_modules', 'vendor', 'third_party', 'third-party']);
 
 function collectForeignArtefacts(dir, rel, foreign, vendorDirs) {
@@ -593,6 +612,10 @@ function collectForeignArtefacts(dir, rel, foreign, vendorDirs) {
       continue;
     }
     if (!entry.isFile()) continue;
+    // X377: an operating-system artefact cannot ship (gitignored, excluded by the bundler, named
+    // in .npmignore), so it is not a hazard and must not fail this gate on a contributor's own
+    // machine. See OS_ARTEFACTS above for the full reasoning.
+    if (OS_ARTEFACTS.has(entry.name)) continue;
     if (PERMITTED_FILENAMES.has(entry.name)) continue;
     const ext = path.extname(entry.name);
     if (PERMITTED_EXTENSIONS.has(ext)) continue;

@@ -1847,6 +1847,42 @@ const FULL_DOD = [
 // copy, so drift is impossible rather than merely detected. The new C3 inverts the check: it
 // proves the charter is not reproduced anywhere else, because a second copy pasted in "so the
 // agent definitely sees it" is how the two-copy problem would come back.
+// X377 — an operating-system artefact must not fail the vendored-code check.
+//
+// Found by the owner opening the repository in macOS Finder: the scattered `.DS_Store` files made
+// docs-consistency BLOCK and took thirteen tests with it, for a file that cannot reach anybody —
+// it is gitignored, excluded by the bundler's own EXCLUDE set, and named in .npmignore. Every
+// macOS contributor hit this, and the remedy the message offered ("add its extension to
+// PERMITTED_EXTENSIONS") could not be applied, because `.DS_Store` has no extension.
+test('docs-consistency.mjs: an OS artefact in the plugin tree does not fail the vendored-code check (X377)', () => {
+  const dir = mkTmp('gru-docsconsist-osartefact-');
+  copyRepoTo(dir);
+  const skills = path.join(dir, 'plugins', 'gru953-studio', 'skills');
+  for (const name of ['.DS_Store', 'Thumbs.db', 'desktop.ini']) {
+    fs.writeFileSync(path.join(skills, name), 'os artefact\n');
+  }
+  const r = runDocsConsistency(dir);
+  assert.equal(
+    r.json && r.json.status,
+    'clean',
+    `an artefact that cannot ship must not block a contributor's own machine: ${r.stdout}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: the vendored-code check still catches a real foreign file (X377 control)', () => {
+  // The control that keeps the exclusion honest. Waving through OS artefacts must not have
+  // weakened the check itself — its purpose is that an unexpected file type in the shipped tree
+  // may be vendored third-party code, which the zero-dependency property forbids.
+  const dir = mkTmp('gru-docsconsist-realforeign-');
+  copyRepoTo(dir);
+  fs.writeFileSync(path.join(dir, 'plugins', 'gru953-studio', 'skills', 'vendored.so'), 'binary\n');
+  const r = runDocsConsistency(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED');
+  assert.match(JSON.stringify(r.json.problems), /vendored\.so/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // INV25 — a build request must be able to reach the studio (v7 Phase 5).
 //
 // Nothing in this repository had ever checked that the product can be STARTED. Every other
