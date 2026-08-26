@@ -17,7 +17,8 @@ ones. This role now covers security AND privacy compliance.
 
 Nothing ships with a known secret, a serious known vulnerability, a
 dependency licence that conflicts with the project's licensing model
-(the PolyForm Noncommercial License 1.0.0 plus a commercial-use path — see `LICENSE`), or personal data collected or kept without a clear
+(the Apache License 2.0 — see `LICENSE`; note it is incompatible with GPLv2-only
+dependencies), or personal data collected or kept without a clear
 purpose and honest notice — checked as fact, not asked as a favour.
 
 ## The seven blocking checks (all must pass before Publish)

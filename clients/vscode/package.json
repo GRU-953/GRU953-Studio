@@ -6,7 +6,7 @@
   "version": "6.1.0",
   "publisher": "GRU953",
   "author": "Aninda Sundar Howlader <aninda.sh15@gmail.com>",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/GRU-953/GRU953-Studio.git",

@@ -13,7 +13,7 @@ class Gru953Studio < Formula
   homepage "https://github.com/GRU-953/GRU953-Studio"
   url "https://registry.npmjs.org/@gru953/studio-cli/-/studio-cli-6.0.3.tgz"
   sha256 "e43c50a98dae5b6e5d442a1c6578cd7d2f35a99cb87ab1352604d20d92635071"
-  license "PolyForm-Noncommercial-1.0.0"
+  license "Apache-2.0"
 
   depends_on "node"
 

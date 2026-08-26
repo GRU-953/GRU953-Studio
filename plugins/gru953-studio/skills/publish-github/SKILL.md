@@ -164,18 +164,14 @@ names now instead of numbers, so this can't drift again.)
    never an arbitrary custom folder name), plus `governance/TRADEMARKS.md`,
    `governance/LOGO-USAGE.md`, and `governance/GOVERNANCE.md` (brand/project
    governance documents with no special GitHub recognition, kept in their
-   own folder for clarity). Licence: **PolyForm Noncommercial License
-   1.0.0** plus a commercial-use contact path — a professionally drafted,
-   independently reviewed licence template (2026-07-11: chosen over a
-   GRU953-branded custom licence specifically because it's recognised by
-   name by dependency-compliance tooling, which matters for a
-   publicly-distributed developer tool). Now that `LICENSE` lives at the
-   root, GitHub's own licence detector picks it up and shows a real
-   result instead of "no license detected" — but PolyForm isn't one of
-   GitHub's own named SPDX templates, so the badge itself shows generic
-   "Other" rather than the exact licence name (verified live via `gh repo
-   view --json licenseInfo` 2026-07-17); that's a GitHub-detector
-   limitation, not a sign anything is set up wrong.
+   own folder for clarity). Licence: the licence **the user chooses for
+   their own project** — never GRU953-Studio's own. (2026-08-26, v7: this
+   step used to specify PolyForm Noncommercial 1.0.0 "plus a commercial-use
+   contact path", which put the studio's licence, and the studio author's
+   commercial-contact address, on software the USER owns. Ask the user, and
+   default to Apache-2.0 only if they express no preference.) `Apache-2.0`
+   and every other SPDX-named licence are recognised by GitHub's own
+   detector, so the repository badge shows the real licence name.
 7. Push: `git -C <temp-clone-path> push -u origin main` — never
    create-and-push in one step. (The downloadable zip is attached later, in
    section 6, as part of the real Release.)

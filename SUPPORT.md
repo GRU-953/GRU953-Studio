@@ -26,10 +26,10 @@ are simple, guided forms — just fill in the plain-English boxes.
 Please **don't** post a security problem in public. Follow the private steps in
 the **[Security policy](SECURITY.md)** instead.
 
-### 5. Commercial licensing
-To use GRU953-Studio commercially, see
-**[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md)** or email
-**aninda.sh15@gmail.com**.
+### 5. Commercial use
+No permission needed. From 7.0.0 GRU953-Studio is licensed under the
+**[Apache License 2.0](LICENSE)**, so commercial use is free — including selling
+software you build with it. Nothing to buy, nobody to ask.
 
 ---
 

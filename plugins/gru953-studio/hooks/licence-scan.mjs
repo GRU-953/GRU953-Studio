@@ -38,9 +38,20 @@ const ALLOWED = new Set([
   'WTFPL',
 ]);
 // Licences that require sharing your own source back ("copyleft") — these
-// conflict with this project's own licence (Polyform Noncommercial +
-// separate paid commercial licence) and are always flagged, never
-// allow-listed.
+// conflict with this project's own licence (Apache-2.0) and are always
+// flagged, never allow-listed.
+//
+// 2026-08-26, v7 relicensing: this comment used to name "Polyform Noncommercial
+// + separate paid commercial licence". The flag list itself is unchanged and
+// still correct, but the REASON moved: under the old licence the objection was
+// that copyleft terms clashed with a noncommercial-plus-paid model; under
+// Apache-2.0 the objection is narrower and more concrete — Apache-2.0 is
+// one-way incompatible with GPLv2-only, and taking any strong-copyleft
+// dependency into a permissively-licensed product would impose obligations on
+// everyone downstream that this licence promises they do not have. LGPL, MPL,
+// EPL, CDDL and CPAL are weak or file-level copyleft and would not all
+// strictly conflict; they stay flagged deliberately, because "flagged" here
+// means a human looks, not that the dependency is refused.
 const FLAG_SUBSTRINGS = ['GPL', 'AGPL', 'LGPL', 'MPL', 'EPL', 'CDDL', 'SSPL', 'CPAL'];
 
 function isAllowed(licenceStr) {

@@ -221,7 +221,7 @@ Signed-off-by: Your Name <your.email@example.com>
 ## Licensing (inbound = outbound)
 
 Contributions are accepted under the same licence as the project itself
-(**inbound = outbound**): the PolyForm Noncommercial License 1.0.0 (see
+(**inbound = outbound**): the Apache License 2.0 (see
 `LICENSE`). By contributing, you agree your work is provided
 under these terms, with a DCO 1.1 sign-off.
 

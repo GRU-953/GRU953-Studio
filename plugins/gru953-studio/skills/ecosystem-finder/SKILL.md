@@ -18,10 +18,11 @@ narrower, task-aware layer is what this skill adds, native to
 GRU953-Studio, using no other project's code.
 
 **Nothing found this way is ever bundled into GRU953-Studio's own repo.**
-GRU953-Studio ships under one licence (PolyForm Noncommercial License
-1.0.0); mixing in another project's code — even a permissively-licensed
-one — would mean re-doing this project's own security hardening on
-someone else's code, and some ecosystem tools carry a copyleft licence
+GRU953-Studio ships under the Apache License 2.0, so a permissive
+dependency no longer conflicts on licence terms — but the reason for the
+rule never was only the licence: mixing in another project's code means
+re-doing this project's own security hardening on someone else's code, and
+some ecosystem tools carry a copyleft licence
 (e.g. AGPL) that would create a real conflict if ever copied in rather
 than just installed separately. This skill only ever recommends something
 the user installs into their *own* Claude Code setup, never code that

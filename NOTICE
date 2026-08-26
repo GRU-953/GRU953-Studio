@@ -1,31 +1,38 @@
 GRU953-Studio
 Copyright 2026 Aninda Sundar Howlader
 
-This product includes original work created and maintained solely by
-Aninda Sundar Howlader <aninda.sh15@gmail.com>.
+Licensed under the Apache License, Version 2.0 (the "License"); you may not
+use this file except in compliance with the License. You may obtain a copy of
+the License at
 
-Licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE):
-free for any noncommercial purpose — personal use, research, hobby
-projects, and use by charities, schools, and public-benefit
-organisations. Commercial use requires a separate paid licence — see
-COMMERCIAL-LICENCE.md, or contact aninda.sh15@gmail.com.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-Why this licence: PolyForm Noncommercial 1.0.0 is a professionally
-drafted, independently reviewed licence template with a stable SPDX
-identifier (PolyForm-Noncommercial-1.0.0), which matters for a publicly
-distributed developer tool. Note: GitHub's automatic licence detector
-recognises only the ~47 licences in its built-in catalogue, which does
-not include PolyForm, so GitHub may label this repository's licence
-"Other". This is a display limitation on GitHub's side, not a defect in
-this file — the LICENSE text is the exact, canonical PolyForm Noncommercial
-1.0.0. The full plain-English explanation of what the licence allows lives
-in README.md and COMMERCIAL-LICENCE.md.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations under
+the License.
 
-The GRU953 name and the Soaring Bird logo are brand identifiers and are
-not licensed for identity use; see governance/TRADEMARKS.md and
+Free for everyone, including commercial use. Versions up to and including
+6.1.0 were released under the PolyForm Noncommercial License 1.0.0, which
+required a separate paid licence for commercial use; from 7.0.0 that
+requirement is removed and the paid commercial licence is retired. See
+MIGRATION.md.
+
+Third-party material
+--------------------
+Where this product incorporates third-party work, that work and its required
+attributions are recorded in THIRD-PARTY-NOTICES.md, which forms part of this
+NOTICE. Everything not listed there is original work by the copyright holder
+above.
+
+Trademarks
+----------
+The GRU953 name and the Soaring Bird logo are brand identifiers and are NOT
+licensed for identity use by the Apache License 2.0, which grants no trademark
+rights (see section 6 of the License). See governance/TRADEMARKS.md and
 governance/LOGO-USAGE.md.
 
 "Claude" and "Claude Code" are trademarks of Anthropic PBC. "Gemini" is a
-trademark of Google LLC. GRU953-Studio is an independent, unofficial
-plugin and is not affiliated with, sponsored by, or endorsed by Anthropic
-or Google.
+trademark of Google LLC. GRU953-Studio is an independent, unofficial plugin and
+is not affiliated with, sponsored by, or endorsed by Anthropic or Google.

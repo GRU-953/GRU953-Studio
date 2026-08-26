@@ -12,7 +12,7 @@
   <a href="https://github.com/GRU-953/GRU953-Studio/wiki"><img alt="Guide" src="https://img.shields.io/badge/guide-the%20wiki-2E4F8E"></a>
   <a href="https://github.com/GRU-953/GRU953-Studio/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/GRU-953/GRU953-Studio?color=157E47&label=release"></a>
   <a href="https://github.com/GRU-953/homebrew-tap"><img alt="Homebrew tap" src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FGRU-953%2Fhomebrew-tap%2Fmain%2FFormula%2Fgru953-studio.rb&search=studio-cli-%28%5B0-9.%5D%2B%29.tgz&replace=v%241&label=homebrew&color=00769E"></a>
-  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-PolyForm%20Noncommercial%201.0.0-6F4900"></a>
+  <a href="LICENSE"><img alt="Licence" src="https://img.shields.io/badge/licence-Apache--2.0-6F4900"></a>
   <a href="CODE_OF_CONDUCT.md"><img alt="Contributor Covenant" src="https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant%202.1-873831"></a>
 </p>
 
@@ -300,20 +300,20 @@ by Anthropic (the makers of Claude) or Google (the makers of Gemini).
 
 ## Licence & trademark, in plain terms
 
-**Free for non-commercial use** — personal projects, learning, research, hobbies,
-and use by charities, schools and public-benefit organisations — under the
-[PolyForm Noncommercial License 1.0.0](LICENSE), a professionally drafted, widely
-recognised licence.
+**Free for everyone, including commercial use** — under the
+[Apache License 2.0](LICENSE). You may use, modify, distribute and sell software
+you build with GRU953-Studio, with no payment and no separate licence to ask for.
+The licence also grants you a patent licence from the contributors, which is why
+many organisations prefer it.
 
-**Selling something built with it?** Commercial use (including apps you build with
-GRU953-Studio and then sell) needs a separate paid licence — see
-[COMMERCIAL-LICENCE.md](COMMERCIAL-LICENCE.md), or email **aninda.sh15@gmail.com**.
+What it asks of you, if you redistribute GRU953-Studio itself (not apps you build
+with it): keep the licence and copyright notice, keep the [NOTICE](NOTICE) file,
+and state what you changed. That is all.
 
-> **A note on the GitHub licence label.** GitHub's automatic licence detector only
-> recognises the licences in its built-in catalogue, which does not include
-> PolyForm — so GitHub may show this repository's licence as "Other". That is a
-> display limitation on GitHub's side; the [LICENSE](LICENSE) file is the exact,
-> official PolyForm Noncommercial 1.0.0 text. See [NOTICE](NOTICE) for detail.
+> **Changed in 7.0.0.** Versions up to and including 6.1.0 were released under the
+> PolyForm Noncommercial License 1.0.0, which required a separate paid licence for
+> commercial use. From 7.0.0 the project is Apache-2.0 and commercial use is free.
+> See [MIGRATION.md](MIGRATION.md).
 
 The **GRU953 name and Soaring Bird logo** are protected separately — see
 [governance/TRADEMARKS.md](governance/TRADEMARKS.md) and

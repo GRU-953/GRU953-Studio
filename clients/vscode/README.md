@@ -33,5 +33,5 @@ for what the studio itself does.
 
 ## Licence
 
-See [LICENSE](LICENSE) — PolyForm Noncommercial License 1.0.0, the same
+See [LICENSE](LICENSE) — Apache License 2.0, the same
 licence as the rest of GRU953-Studio.

@@ -829,6 +829,173 @@ if (changelogText !== null) {
   }
 }
 
+// ---- DC10: every licence declaration agrees with the LICENSE file (2026-08-26, v7 relicensing) --
+//
+// Why this exists, measured rather than imagined. Relicensing 6.1.0 from PolyForm
+// Noncommercial to Apache-2.0 meant correcting sixteen files. Every one of the seven
+// repo gates stayed GREEN throughout — including this one — while the root LICENSE
+// said Apache-2.0 and README.md still told the user the project was noncommercial and
+// that selling anything required buying a licence. Nothing in the repository compared
+// the licence to the claims made about it: `licence-scan.mjs` reads DEPENDENCY
+// manifests, and the vendored-code rule in this file is an extension allowlist, not a
+// notice check. So the single most legally consequential fact about the product was
+// the one fact no gate held.
+//
+// Two of those sixteen were missed by a hand grep over `--include='*.md' --include='*.yml'`
+// and found only by a second, wider sweep: a Homebrew formula (`.rb`) and a winget
+// manifest (`.yaml`, not `.yml`). That is this repository's own enumeration-blindness
+// class — X349's shape — committed while fixing something else. Hence the rule below
+// enumerates by DECLARATION SHAPE across every tracked file, not by a curated file list:
+// a packaging manifest added later is covered on the day it appears, with nobody
+// remembering to add it here.
+//
+// It asserts agreement POSITIVELY (every declaration equals the LICENSE's identifier)
+// rather than banning the old licence's name. A ban would be wrong twice over: it would
+// fire on the deliberate "versions up to 6.1.0 were PolyForm" notes that MIGRATION.md,
+// NOTICE and README.md are obliged to carry, and it would fall silent the moment the
+// licence changed again to something the ban did not enumerate.
+{
+  const spdxOf = (text) => {
+    if (!text) return null;
+    if (/Apache License/.test(text) && /Version 2\.0/.test(text)) return 'Apache-2.0';
+    if (/PolyForm Noncommercial License 1\.0\.0/.test(text)) return 'PolyForm-Noncommercial-1.0.0';
+    if (/MIT License/.test(text)) return 'MIT';
+    return null;
+  };
+  // Human-readable forms NOTICE is allowed to use for each identifier.
+  const NOTICE_PHRASE = {
+    'Apache-2.0': /Apache License, Version 2\.0|Apache License 2\.0/,
+    'PolyForm-Noncommercial-1.0.0': /PolyForm Noncommercial License 1\.0\.0/,
+    MIT: /MIT License/,
+  };
+
+  const rootLicensePath = path.join(repoRoot, 'LICENSE');
+  const rootLicenceText = read(rootLicensePath);
+
+  if (rootLicenceText === null) {
+    // Fail closed. X113/X115's lesson: an input this check cannot read is the one
+    // state that must never report clean, because "no LICENSE" is itself the defect.
+    fail(
+      'LICENSE is missing or unreadable at the repository root — the licence every other declaration is checked against cannot be determined, so no declaration can be verified',
+    );
+  } else {
+    const truth = spdxOf(rootLicenceText);
+    if (truth === null) {
+      fail(
+        'LICENSE exists but its text matches no licence this check recognises — add the new licence to spdxOf() in docs-consistency.mjs rather than leaving every declaration unverified',
+      );
+    } else {
+      // (a) Every other LICENSE/LICENCE copy must be byte-identical to the root one.
+      // They are shipped copies: a stale one is a different licence reaching a user.
+      for (const f of allFiles) {
+        const base = path.basename(f);
+        if (base !== 'LICENSE' && base !== 'LICENCE') continue;
+        if (f === rootLicensePath) continue;
+        const rel = repoRel(f);
+        if (/(^|\/)(fixtures|test)\//.test(rel)) continue; // deliberate test data
+        if (read(f) !== rootLicenceText) {
+          fail(
+            `${rel} is not byte-identical to the root LICENSE — this copy is shipped, so a user installing it receives different terms from the ones the repository declares`,
+          );
+        }
+      }
+
+      // (b) Declarations, enumerated by SHAPE across the whole tree.
+      // A lockfile records the licence of every DEPENDENCY, which is licence-scan.mjs's
+      // subject, not this one's — those licences legitimately differ from ours and
+      // flagging them would make this check noise and get it switched off. For JSON the
+      // project's OWN declaration is the ROOT `license` key, so parse and read exactly
+      // that: npm writes a lockfile's own package entry under `packages[""]`, never at
+      // the root, so parsing structurally excludes dependency data without needing a
+      // filename denylist that a future lockfile format could slip past.
+      const declarations = [];
+      for (const f of allFiles) {
+        const rel = repoRel(f);
+        if (/(^|\/)(fixtures|test)\//.test(rel)) continue;
+        const text = read(f);
+        if (text === null) continue;
+        const ext = path.extname(f);
+        if (ext === '.json') {
+          let obj;
+          try {
+            obj = JSON.parse(text);
+          } catch {
+            continue; // DC4 already reports unparseable manifests
+          }
+          if (obj && typeof obj === 'object' && typeof obj.license === 'string') {
+            declarations.push([rel, obj.license.trim(), 'JSON "license" field']);
+          }
+        } else if (ext === '.rb') {
+          for (const m of text.matchAll(/^\s*license\s+"([^"]+)"/gm)) {
+            declarations.push([rel, m[1].trim(), 'Homebrew formula licence']);
+          }
+        } else if (ext === '.yaml' || ext === '.yml') {
+          for (const m of text.matchAll(/^License:\s*(.+?)\s*$/gm)) {
+            declarations.push([rel, m[1].trim(), 'YAML License field']);
+          }
+        }
+      }
+      for (const [rel, stated, what] of declarations) {
+        if (stated === truth) continue;
+        fail(
+          `${rel} declares its licence as "${stated}" (${what}), but LICENSE is ${truth} — a published manifest that names the wrong licence misinforms every tool and person that reads it`,
+        );
+      }
+
+      // (c) NOTICE must name the same licence, and must not promise a file that is absent.
+      const noticePath = path.join(repoRoot, 'NOTICE');
+      const noticeText = read(noticePath);
+      if (noticeText === null) {
+        fail(
+          'NOTICE is missing or unreadable at the repository root, but LICENSE exists — a licence whose notice file is absent cannot be complied with by anyone redistributing it',
+        );
+      } else {
+        // Two-part predicate, deliberately. Requiring only that the licence's name
+        // appears SOMEWHERE in NOTICE is satisfied by prose — this file mentions the
+        // licence again in its trademark paragraph, so a NOTICE whose actual
+        // "Licensed under" statement had been changed to a different licence still
+        // passed a mere-mention test. That is finding X206's shape (a guardrail
+        // satisfied by text talking ABOUT the rule), caught here by deliberately
+        // mutating NOTICE and watching this check stay green. So: the name must be
+        // present AND the operative "Licensed under ..." statement must not name a
+        // DIFFERENT recognised licence.
+        const phrase = NOTICE_PHRASE[truth];
+        if (phrase && !phrase.test(noticeText)) {
+          fail(
+            `NOTICE does not name the licence in LICENSE (${truth}) — the two files a redistributor is required to keep together disagree about what the licence is`,
+          );
+        }
+        // Assert POSITIVELY: at least one "Licensed under ..." statement must name OUR
+        // licence. Two earlier attempts at this failed on first contact and are worth
+        // recording, because both failed by staying GREEN:
+        //   1. Requiring the name to appear anywhere in NOTICE was satisfied by the
+        //      trademark paragraph, which mentions the licence for a different reason.
+        //   2. Requiring that no OTHER *recognised* licence be named could not see a
+        //      swap to a licence absent from the recognised set (MPL, tried live).
+        // A third defect sat inside attempt 2: the capture stopped at the first `.`,
+        // so "Apache License, Version 2.0" was truncated to "Apache License, Version 2"
+        // and did not match even the TRUTHFUL statement. Capturing to end of line and
+        // demanding a positive match fixes all three — and cannot be satisfied by a
+        // licence nobody enumerated, because an unrecognised name simply fails to match.
+        const operative = [...noticeText.matchAll(/Licensed under (?:the )?([^\n]{0,80})/g)].map(
+          (m) => m[1].trim(),
+        );
+        if (operative.length > 0 && phrase && !operative.some((o) => phrase.test(o))) {
+          fail(
+            `NOTICE contains ${operative.length} "Licensed under ..." statement(s) and none of them names ${truth}, the licence in LICENSE (found: ${operative.map((o) => JSON.stringify(o.slice(0, 48))).join(', ')}) — the operative licence statement disagrees with the licence actually shipped`,
+          );
+        }
+        const refsThirdParty = /THIRD-PARTY-NOTICES\.md/.test(noticeText);
+        if (refsThirdParty && read(path.join(repoRoot, 'THIRD-PARTY-NOTICES.md')) === null) {
+          fail(
+            'NOTICE states that third-party attributions live in THIRD-PARTY-NOTICES.md, but that file does not exist — the notice points at attributions nobody can read',
+          );
+        }
+      }
+    }
+  }
+}
+
 // ---- report -------------------------------------------------------------
 if (problems.length === 0) {
   console.log(JSON.stringify({ status: 'clean' }, null, 2));
