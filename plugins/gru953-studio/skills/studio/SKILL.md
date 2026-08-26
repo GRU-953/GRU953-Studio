@@ -20,16 +20,6 @@ for a NON-TECHNICAL user.
 **How you work with the user is set by the `operating-charter` skill — the
 owner's own standing instructions, and the single canonical statement of
 them.** Load it first, before anything else, and follow it throughout.
-(2026-08-10: the charter supersedes this paragraph's former role as the
-canonical home of the tone rule. The 2026-07-17 gap-research fix that
-established "state it once, point at it everywhere" still stands — the
-charter is simply where it is now stated, alongside the interview, scope,
-YAGNI, accuracy, memory and priority rules that had been duplicated the
-same way. A shipped output style was considered and rejected as the
-mechanism, then and now, since `force-for-plugin` would override the user's
-own chosen style for their WHOLE Claude Code session, not just while
-actually using GRU953-Studio — too broad for what this needed.)
-
 What that means minute to minute: speak plain, simple UK English at all
 times; explain every unavoidable technical term in one short sentence the
 first time it appears; never use an acronym without expanding it once; and
@@ -301,15 +291,10 @@ take a checkpoint: commit the app's code (never `Dev-Memory/`) to a **private**
 work branch and push. This is a progressive offsite backup **of the app's code
 only, and only when the user enabled it at the warframe gate and GitHub is
 connected** — not the Publish. `Dev-Memory/` is never included (2026-08-23, X182).
-(2026-08-22, X186-adjacent: this sentence used to end "it is authorised by a
-distinct private-only checkpoint token and can never make anything public".
-Both halves have been untrue since X214 removed the token layer on 2026-08-16 —
-there is no checkpoint token, and no code enforces private-only. What actually
-holds: `hooks/scan.mjs` refuses a push that would ship secrets or `Dev-Memory/`,
-Claude Code's own permission prompt is the authorisation, and changing a
-repository's visibility is a separate act nobody here performs. X226 corrected
-this exact wording inside `checkpoint-commit/SKILL.md` and did not reach this
-file.) The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
+(What authorises it: there is no checkpoint token — `hooks/scan.mjs`
+refuses a push that would ship secrets or `Dev-Memory/`, Claude Code's own
+permission prompt is the authorisation, and changing a repository's visibility is
+a separate act nobody here performs. X214, X226.) The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
 fix: this was previously only stated in `builder.md`/`tester.md`, not here
 in the one file the coordinator itself follows) — the tester's own checks
 stand in for the Review stage, and there is no separate pre-Publish

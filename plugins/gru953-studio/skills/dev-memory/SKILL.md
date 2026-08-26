@@ -19,14 +19,7 @@ Project Lead reads five specific files directly — `FOCUS.md`, `OBJECTIVE.md`,
 delegate-never-do-specialist-work rule, because it needs the resume point
 before it can decide who to delegate to. `memory-keeper` owns everything
 else: every write, the mandatory secrets-scan on each one, and growing these
-files as the project continues. (2026-07-11 Round 9 fix: this paragraph and
-the "Read before acting" section below used to disagree with each other, and
-with `project-lead.md` and `studio/SKILL.md`, about who does this initial
-read — settled on one consistent story, matching those two files. Count
-corrected 2026-07-26: this paragraph still said "three specific files" even
-though "Read before acting" below already listed five (`OBJECTIVE.md` was
-already there, and `FOCUS.md` was added 2026-07-19) — the two sections had
-silently drifted apart again after the Round 9 fix above.)
+files as the project continues.
 
 ## The files
 
