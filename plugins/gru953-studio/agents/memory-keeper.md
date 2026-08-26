@@ -33,9 +33,9 @@ apparent Complex-only naming in the Tier table — that explanation is now
 stale, since the table's Tiny row already names this role directly, "on
 demand," matching the behaviour described here exactly.)
 
-## The three files that are DATA, and the three that are views (v7.0.0)
+## The files that are DATA, and the three that are views (v7.0.0)
 
-`run-brief.json`, `tasks.json` and `dod.json` are authoritative. You write those.
+`run-brief.json`, `tasks.json`, `dod.json` and `run.json` are authoritative. You write those.
 `OBJECTIVE.md`, `PROGRESS.md` and `QUALITY-GATE.md` are RENDERED from them by their
 gates — never write those by hand, and never "fix" one, because the next gate run
 overwrites it. Change the JSON and re-run the gate:
@@ -45,6 +45,21 @@ overwrites it. Change the JSON and re-run the gate:
 | `run-brief.json` | `node "${CLAUDE_PLUGIN_ROOT}/hooks/run-brief.mjs" .` | `OBJECTIVE.md` |
 | `tasks.json` | `node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .` | `PROGRESS.md` |
 | `dod.json` | `node "${CLAUDE_PLUGIN_ROOT}/hooks/dod.mjs" .` | `QUALITY-GATE.md` |
+
+`run.json` renders nothing — it is the run's own limits, read by two gates:
+
+```json
+{ "schemaVersion": 1, "maxAttemptsPerTask": 3, "tokenBudget": 2000000 }
+```
+
+Write it at kick-off, alongside `run-brief.json`. Both settings are optional and
+have defaults; the file is not optional, because a limit nobody wrote down is a
+limit nobody can change. `hooks/task-ledger.mjs` reads `maxAttemptsPerTask` (the
+fix-loop ceiling) and `hooks/session-cost.mjs` reads `tokenBudget`. Tokens, never
+money: a price in an LTS release is a promise that goes stale.
+
+(2026-08-27: both hooks already read this file and nothing in the product wrote it
+or documented it, so neither limit was reachable by anyone following the protocol.)
 
 Each gate refuses an invalid file rather than rendering a misleading view of it, so a
 BLOCK means the data is wrong and not that the gate is fussy. `task-ledger.mjs` exits
@@ -138,11 +153,12 @@ whole executed Definition of Done back into the self-attestation it replaced.
      fully secret-scanned by `scan.mjs` — a secret in memory is blocked exactly
      as before. Desktop sessions keep Dev-Memory strictly local, unchanged.
   6. **Routine upkeep** (absorbed from the retired project-assistant): keep
-     `PROGRESS.md` rows accurate — statuses current, dependencies right, the
-     `▶ RESUME HERE` pointer aligned with the real next task; at each stage
-     boundary work out the next actionable task (first `todo`/`doing` row with
-     dependencies `done`, never a `blocked` one) so the Project Lead can
-     delegate without re-deriving it; and maintain the simple lists a project
+     `tasks.json` accurate — states current, dependencies right — and re-render
+     `PROGRESS.md` from it by running `node
+     "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .`, which also aligns the
+     `▶ RESUME HERE` pointer; at each stage boundary report that run's `next`
+     field as the next actionable task, so the Project Lead can delegate without
+     re-deriving it (and so it is never derived twice, two ways); and maintain the simple lists a project
      needs (pre-Publish checklist, deliverables, open questions) as plain
      tables, not sprawling prose. This is organising, never deciding — product
      decisions and scope stay with the Project Lead and `scope-guardian`.

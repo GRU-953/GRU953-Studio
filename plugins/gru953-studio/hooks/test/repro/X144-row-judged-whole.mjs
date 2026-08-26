@@ -37,7 +37,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { readGate, refuseCrash } from './_verdict.mjs';
+import { readGate, refuseCrash, writeMeasuredGate } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,11 +51,16 @@ function die(msg) {
 function verdict(qg) {
   const dir = mkdtempSync(join(tmpdir(), 'x144-'));
   try {
-    mkdirSync(join(dir, 'Dev-Memory'), { recursive: true });
-    writeFileSync(join(dir, 'Dev-Memory', 'QUALITY-GATE.md'), qg);
+    // Written as a MEASURED record (see _verdict.mjs). quality-gate.mjs asks where a table
+    // came from as well as what it says, and this reproduction is about what it says.
+    writeMeasuredGate(dir, qg);
     // A crash is not a verdict. readGate() names it; refuseCrash() refuses to
     // let this reproduction reason about it. See _verdict.mjs.
-    const v = refuseCrash(readGate(process.execPath, join(HOOKS, 'quality-gate.mjs'), [dir]), 'X144-row-judged-whole.mjs', die);
+    const v = refuseCrash(
+      readGate(process.execPath, join(HOOKS, 'quality-gate.mjs'), [dir]),
+      'X144-row-judged-whole.mjs',
+      die,
+    );
     return { status: v.status, problems: v.problems, raw: v.raw.slice(0, 200) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -73,27 +78,46 @@ const ROWS =
   '| reproducible build | pass | `npm run build` -> exit 0 |\n';
 
 const A = verdict(HDR + ROWS);
-if (A.status !== 'clean') die(`control A failed: a complete passing table must be clean, got ${A.status}: ${A.problems[0] || ''}`);
+if (A.status !== 'clean')
+  die(
+    `control A failed: a complete passing table must be clean, got ${A.status}: ${A.problems[0] || ''}`,
+  );
 console.log('  A  a complete passing table ..................... clean   (control)');
 
 // ---- D3 ----------------------------------------------------------------------
-const B = verdict(HDR + ROWS.replace('| tests pass | pass |', '| tests pass | pass, but 3 still failing |'));
+const B = verdict(
+  HDR + ROWS.replace('| tests pass | pass |', '| tests pass | pass, but 3 still failing |'),
+);
 const bCaught = B.status !== 'clean';
-console.log(`  B  status "pass, but 3 still failing" ........... ${bCaught ? 'BLOCKED' : 'clean  '}${bCaught ? '' : '  <- D3'}`);
+console.log(
+  `  B  status "pass, but 3 still failing" ........... ${bCaught ? 'BLOCKED' : 'clean  '}${bCaught ? '' : '  <- D3'}`,
+);
 
 // ---- D4 ----------------------------------------------------------------------
 const HDR4 = '# Quality Gate\n\n| Item | Status | Evidence | Notes |\n| :-- | :-- | :-- | :-- |\n';
-const ROWS4 = ROWS.split('\n').filter(Boolean).map((r) => `${r} — |`).join('\n') + '\n';
+const ROWS4 =
+  ROWS.split('\n')
+    .filter(Boolean)
+    .map((r) => `${r} — |`)
+    .join('\n') + '\n';
 const C = verdict(
-  HDR4 + ROWS4.replace('| tests pass | pass | `npm test` -> exit 0 | — |', '| tests pass | pass | `npm test` -> exit 0 | re-run today: exit code 1, 3 failing |'),
+  HDR4 +
+    ROWS4.replace(
+      '| tests pass | pass | `npm test` -> exit 0 | — |',
+      '| tests pass | pass | `npm test` -> exit 0 | re-run today: exit code 1, 3 failing |',
+    ),
 );
 const cCaught = C.status !== 'clean';
-console.log(`  C  a 4th "Notes" column recording exit code 1 ... ${cCaught ? 'BLOCKED' : 'clean  '}${cCaught ? '' : '  <- D4'}`);
+console.log(
+  `  C  a 4th "Notes" column recording exit code 1 ... ${cCaught ? 'BLOCKED' : 'clean  '}${cCaught ? '' : '  <- D4'}`,
+);
 
 // ---- D2 ----------------------------------------------------------------------
 const D = verdict(HDR + ROWS + '|  | fail | e2e suite: exit code 1, 3 failing |\n');
 const dCaught = D.status !== 'clean';
-console.log(`  D  a blank-Item row recording exit code 1 ....... ${dCaught ? 'BLOCKED' : 'clean  '}${dCaught ? '' : '  <- D2'}`);
+console.log(
+  `  D  a blank-Item row recording exit code 1 ....... ${dCaught ? 'BLOCKED' : 'clean  '}${dCaught ? '' : '  <- D2'}`,
+);
 
 // ---- E: the 2026-08-05 fix must survive --------------------------------------
 const E = verdict(HDR + ROWS.replace('| tests pass | pass |', '| Regression tests | pass |'));
@@ -109,7 +133,9 @@ console.log('  E  item named "Regression tests", green ......... clean   (contro
 // ---- F: an ordinary spacer row must not be flagged ---------------------------
 const F = verdict(HDR + ROWS + '|  |  | (spacer row) |\n');
 if (F.status !== 'clean') {
-  die(`control F failed: a blank-Item spacer row saying nothing alarming was blocked: ${F.problems[0] || ''}`);
+  die(
+    `control F failed: a blank-Item spacer row saying nothing alarming was blocked: ${F.problems[0] || ''}`,
+  );
 }
 console.log('  F  a blank-Item spacer row ...................... clean   (control)');
 
@@ -119,13 +145,18 @@ if (!cCaught) open.push('D4 (extra columns unread)');
 if (!dCaught) open.push('D2 (blank-Item rows dropped)');
 
 if (expectBug) {
-  if (open.length === 0) die('expected these defects and found none. If they were fixed, delete this --expect-bug branch deliberately.');
+  if (open.length === 0)
+    die(
+      'expected these defects and found none. If they were fixed, delete this --expect-bug branch deliberately.',
+    );
   console.log(`\nREPRODUCED: ${open.join(', ')}.`);
   process.exit(0);
 }
 
 if (open.length === 0) {
-  console.log('\nPASS: every cell but the item\'s name is a claim and is read; the name is still only a label.');
+  console.log(
+    "\nPASS: every cell but the item's name is a claim and is read; the name is still only a label.",
+  );
   process.exit(0);
 }
 

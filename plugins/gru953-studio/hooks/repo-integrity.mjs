@@ -732,7 +732,17 @@ if (hooksJsonText === null) {
       },
       {
         script: 'config-protection.mjs',
-        tools: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'],
+        // 2026-08-27: the shell tools were added. This hook guarded the four file-editing tools
+        // only, so every file it protects was one redirection away from being written anyway —
+        // `echo '{"verdict":"pass"}' > Dev-Memory/evidence/tests.json` was refused as an Edit and
+        // allowed as a Bash command. A guard on four of the five ways to write a file is not a
+        // guard, and nothing here noticed, because this list described the four.
+        //
+        // The UNION, written out rather than reusing REQUIRED_TOOLS — which is the shell tools
+        // only, so assigning it here would have silently DROPPED the file-editing requirement
+        // while appearing to widen it. That is the mistake the note above warns about, made
+        // while fixing the thing the note is about.
+        tools: [...REQUIRED_TOOLS, 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'],
         why: 'an agent could then edit the linter config, the Definition of Done, or its own recorded evidence through the unguarded tool, and every downstream gate would report green while measuring nothing',
       },
     ];
@@ -817,7 +827,7 @@ for (const s of skillDirs) {
     );
 }
 
-// ---- INV 12: the publish protocol enumerates all seven pre-flight checks -----
+// ---- INV 12: the publish protocol enumerates every pre-flight check ---------
 // 2026-07-21 audit fix: publish-github/SKILL.md listed only FOUR pre-flight
 // checks while security-compliance-auditor.md (the gate's owner) declares SEVEN
 // — quality-gate.mjs, traceability-check.mjs and content-check.mjs were never
@@ -829,18 +839,26 @@ const publishSkill = read(path.join(pluginRoot, 'skills', 'publish-github', 'SKI
 if (publishSkill === null) {
   fail('skills/publish-github/SKILL.md is missing or unreadable — cannot verify the Publish gate');
 } else {
+  // 2026-08-27: `dod.mjs` and `task-ledger.mjs` added. This list had been pinned at the same
+  // seven hooks it held before v7, so the gate that EXECUTES the Definition of Done — the whole
+  // point of the rebuild — was in no pre-flight list, in no checkpoint list, and required by
+  // nothing. Publish therefore cleared the Definition of Done from a table the graded agents had
+  // written, which reproduces exactly as described. An invariant that enumerates the old product
+  // is worse than none: it reads like coverage.
   for (const h of [
     'scan.mjs',
     'licence-scan.mjs',
     'verify-progress.mjs',
+    'dod.mjs',
     'quality-gate.mjs',
+    'task-ledger.mjs',
     'traceability-check.mjs',
     'content-check.mjs',
     'roster-check.mjs',
   ]) {
     if (!publishSkill.includes(h)) {
       fail(
-        `publish-github/SKILL.md no longer references ${h} — the Publish protocol must enumerate all seven blocking checks plus the roster check (2026-07-21 reconciliation regressed)`,
+        `publish-github/SKILL.md no longer references ${h} — the Publish protocol must enumerate EVERY blocking check by filename, including the ones that measure rather than verify (2026-07-21 reconciliation regressed; 2026-08-27 dod.mjs and task-ledger.mjs added)`,
       );
     }
   }

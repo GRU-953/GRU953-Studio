@@ -53,7 +53,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { readStdin, deny, stepAside } from './lib.mjs';
+import { readStdin, deny, stepAside, shellSegments, shellTokens } from './lib.mjs';
 
 // Matched on the BASENAME, lowercased. A curated list is the whole intellectual content here:
 // the value is in knowing that `eslint.config.mts` and `.eslintrc.cjs` are both real and both
@@ -148,7 +148,12 @@ function isGuardedPath(abs) {
   if (/(^|\/)Dev-Memory\/dod\.json$/.test(posix)) {
     return "this project's Definition of Done (Dev-Memory/dod.json)";
   }
-  if (/(^|\/)Dev-Memory\/evidence\//.test(posix)) {
+  // Matched with the trailing slash OPTIONAL. With it required, `Dev-Memory/evidence` named as a
+  // whole — which is how a directory is deleted — matched nothing, so `rm -rf Dev-Memory/evidence`
+  // removed every measurement at once while each individual file inside it was protected. Found
+  // 2026-08-27 while reviewing the fix that added the shell arm: the arm guarded writes to files
+  // and the commonest destructive spelling names a directory.
+  if (/(^|\/)Dev-Memory\/evidence(\/|$)/.test(posix)) {
     return 'recorded Definition-of-Done evidence (Dev-Memory/evidence/)';
   }
   if (/(^|\/)Dev-Memory\/QUALITY-GATE\.md$/.test(posix)) {
@@ -190,6 +195,14 @@ const ti =
     ? payload.tool_input
     : {};
 
+// The directory the tool call is being made FROM. A relative path in a tool payload is relative
+// to the session's working directory, not to wherever this hook happens to be executed — and
+// resolving against the wrong root silently produced "that file does not exist", which this hook
+// reads as first-time creation and waves through. Measured 2026-08-27: an Edit of an EXISTING
+// Dev-Memory/evidence/tests.json was stepped aside, because the path resolved against the plugin
+// directory instead of the project. The guard was failing open on its own commonest input.
+const cwd = typeof payload.cwd === 'string' && payload.cwd !== '' ? payload.cwd : process.cwd();
+
 // Write/Edit/MultiEdit/NotebookEdit all name their target the same way. A payload with no
 // path is not an edit this hook has an opinion about.
 const target =
@@ -197,9 +210,117 @@ const target =
   (typeof ti.notebook_path === 'string' && ti.notebook_path) ||
   '';
 
+// ---- the shell surface --------------------------------------------------------------------
+// This hook was wired to the four file-editing tools only, so every guarded file was one
+// redirection away from being written anyway: `echo '{"verdict":"pass"}' > Dev-Memory/evidence/
+// tests.json` was refused as an Edit and allowed as a Bash command. Found 2026-08-27 (contract
+// sweep). The thing being protected is a MEASUREMENT, and it does not matter which tool
+// overwrites it.
+//
+// WHAT THIS DOES AND DOES NOT CLAIM. It enumerates the ways a write is ordinarily spelled —
+// redirection, `tee`, an in-place editor, a copy or move onto the path, a deletion. It is not a
+// shell interpreter and does not pretend to be one. `python -c "open('Dev-Memory/dod.json','w')"`
+// is not caught, nor is a write from inside a script file. That residual is stated rather than
+// papered over, and it is the reason this hook is one layer and not the whole answer: the other
+// layer is that quality-gate.mjs now reads the evidence back and cross-checks it against the
+// table, so a forged file has to be forged consistently, in several places, on purpose.
+//
+// It never ALLOWS anything: every path here ends in either deny() or stepAside(), so a command
+// this cannot parse is left to the other hooks exactly as before.
+function writeTargetsIn(command) {
+  const found = [];
+  for (const seg of shellSegments(command)) {
+    const toks = shellTokens(seg);
+    if (toks.length === 0) continue;
+    const program = path.basename(toks[0]).toLowerCase();
+    const isFlag = (t) => t.startsWith('-') && t !== '-';
+
+    // Redirection, whether spaced (`> path`) or attached (`>path`, `2>path`).
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      const m = /^\d*>>?(.*)$/.exec(t);
+      if (!m) continue;
+      if (m[1] !== '') found.push(m[1]);
+      else if (toks[i + 1] && !isFlag(toks[i + 1])) found.push(toks[i + 1]);
+    }
+
+    const rest = toks.slice(1).filter((t) => !isFlag(t) && !/^\d*>>?/.test(t));
+    switch (program) {
+      case 'tee':
+      case 'rm':
+      case 'truncate':
+      case 'shred':
+      case 'unlink':
+        found.push(...rest);
+        break;
+      case 'sed':
+      case 'perl':
+      case 'ruby':
+        // Only in-place editing writes a file. `sed -i ''` on BSD takes a suffix argument, which
+        // the filter above already dropped as a non-flag token only if it were a flag — it is
+        // an empty string, so it never survives shellTokens. Both spellings land here.
+        if (toks.some((t) => t === '-i' || /^-i\S/.test(t) || t === '--in-place')) {
+          found.push(...rest);
+        }
+        break;
+      case 'mv':
+        // EVERY operand. A move writes its destination and REMOVES its sources, so
+        // `mv Dev-Memory/evidence /tmp/gone` destroys the measurements just as surely as deleting
+        // them — and checking only the destination, as the copy family below correctly does,
+        // waved it straight through.
+        found.push(...rest);
+        break;
+      case 'cp':
+      case 'install':
+      case 'ln':
+        // The destination is the last operand; the others are only READ.
+        if (rest.length >= 1) found.push(rest[rest.length - 1]);
+        break;
+      case 'dd': {
+        for (const t of toks) {
+          const of = /^of=(.+)$/.exec(t);
+          if (of) found.push(of[1]);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return found;
+}
+
+const shellCommand = typeof ti.command === 'string' ? ti.command : '';
+if (target === '' && shellCommand !== '') {
+  for (const candidate of writeTargetsIn(shellCommand)) {
+    const abs = path.resolve(cwd, candidate);
+    const what = isGuardedPath(abs);
+    if (!what) continue;
+    // A file OR a directory. `rm -rf Dev-Memory/evidence` is a write to the substrate however it
+    // is spelled, and requiring isFile() here would have let the most destructive form through.
+    let exists;
+    try {
+      const st = fs.statSync(abs);
+      exists = st.isFile() || st.isDirectory();
+    } catch {
+      exists = false;
+    }
+    if (!exists) continue;
+    deny(
+      `studio config protection: this command writes to ${what} — ${path.basename(abs)}. ` +
+        'That file is part of how this project is MEASURED, so changing it changes the result ' +
+        'rather than the work. Going through the shell rather than an edit tool makes no ' +
+        'difference to that. If a check is failing, fix what it is reporting; if the standard ' +
+        'itself genuinely needs to change, that is a deliberate decision for the person who owns ' +
+        'the project, not an adjustment made in passing while trying to get a build green.',
+    );
+  }
+  stepAside();
+}
+
 if (target === '') stepAside();
 
-const abs = path.resolve(target);
+const abs = path.resolve(cwd, target);
 const what = isGuardedPath(abs);
 if (!what) stepAside();
 

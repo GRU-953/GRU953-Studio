@@ -57,8 +57,9 @@ back.
 | File | What it holds |
 | :-- | :-- |
 | **`run-brief.json`** | **Authoritative. Schema-versioned.** The kick-off interview's answers as DATA: the idea, `mustHave`, `nonGoals` (present even when empty), `targetPlatform`, `stack`, and `tier` carrying both the assigned Tier and the three answers it was derived from. Written once, at the end of Brainstorm, by `memory-keeper`. `hooks/run-brief.mjs` validates it — refusing a placeholder, a missing field, or a Tier that does not follow from its own answers — and RENDERS `OBJECTIVE.md` from it. |
-| **`tasks.json`** | **Authoritative. Schema-versioned.** The task ledger as DATA: each task's `id`, `title`, `state`, optional `dependsOn`, `attempts`, and — for a `done` task — an `evidence` object carrying the exact `command`, its `exitCode` (which must be 0) and `at`. States are `todo`, `in-progress`, `done`, `blocked-on-defect`, `blocked-on-human`. **There is no bare `blocked`.** `hooks/task-ledger.mjs` validates it, answers whether the run can continue, and RENDERS `PROGRESS.md` from it. |
+| **`tasks.json`** | **Authoritative. Schema-versioned.** The task ledger as DATA: each task's `id`, `title`, `state`, optional `dependsOn`, `attempts`, and — for a `done` task — an `evidence` object carrying `command` as an **argv array** (e.g. `["npm","test"]`, never a string — the same rule `dod.json` uses, and for the same reason: a string has to reach a shell to run), its `exitCode` (which must be 0), `at` as a readable ISO 8601 timestamp, and optionally `cwd` relative to the project root. The point of this record is that a reader can RE-RUN it and get the same answer, so each field has to be the kind of thing that can be re-run. States are `todo`, `in-progress`, `done`, `blocked-on-defect`, `blocked-on-human`, plus the three set-aside states a person asks for via the command-centre (`paused`, `skipped`, `scheduled`). **There is no bare `blocked`.** `hooks/task-ledger.mjs` validates it, answers whether the run can continue, and RENDERS `PROGRESS.md` from it. |
 | **`dod.json`** | **Authoritative. Schema-versioned.** The Definition of Done as DATA: per dimension, either the argv command that proves it or `notApplicable` with a reason. Written before Build begins. `hooks/dod.mjs` EXECUTES each one, records the real exit code under `evidence/`, and RENDERS `QUALITY-GATE.md` from that. |
+| **`run.json`** | **Authoritative. Schema-versioned.** The run's own limits, as DATA: `schemaVersion` (1), optional `maxAttemptsPerTask` (a whole number, default 3 — the fix-loop ceiling `hooks/task-ledger.mjs` enforces) and optional `tokenBudget` (a positive number of tokens, the ceiling `hooks/session-cost.mjs` compares against). Both are optional; the file is not. Written by `memory-keeper` at kick-off alongside `run-brief.json`. (2026-08-27: these two hooks READ this file and nothing in the product wrote it or said it existed — so the fix-loop cap and the token budget were configurable by a file no one knew to create, which is the same as not being configurable.) |
 | `evidence/*.json` | Written by `hooks/dod.mjs` only, never by hand — one file per dimension holding the command run, its exit code, its output and a verdict. `hooks/config-protection.mjs` refuses edits to this directory: an agent that can hand-write an evidence file can hand-write a pass. |
 | `OBJECTIVE.md` | **GENERATED from `run-brief.json` by `hooks/run-brief.mjs`. Do not edit.** The human-readable brief, including the Tier as one exact line (`**Tier:** Tiny`/`Standard`/`Complex`) so `hooks/traceability-check.mjs` can tell a genuine Tiny-Tier project from one that has lost its `REQUIREMENTS.md`. Change the brief by changing the JSON and re-running the gate. |
 | `FOCUS.md` | (2026-07-19, see `focus-guard` skill) The tiny always-current anchor — objective, active phase, active task, top constraints — rewritten in place, read first every session so the team re-orients in almost no tokens even after a summarised or brand-new session. |
@@ -82,10 +83,22 @@ back.
 ## The ▶ RESUME HERE pointer
 
 `PROGRESS.md` always contains exactly one line beginning `▶ RESUME HERE`,
-pointing at the next thing to do. It is a **human-friendly hint** — if it
-ever disagrees with the Status column, the Status column wins (the next
-task is the first `todo`/`doing` row whose dependencies are all `done`; a
-`blocked` row is never picked until a human unblocks it).
+pointing at the next thing to do. Both it and the table are **rendered from
+`tasks.json`** — so nothing here should be re-derived by reading them. Ask the
+ledger instead:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .
+```
+
+Its `next` field is the next task, already resolved for dependencies and for
+every state that is not runnable (`blocked-on-defect`, `blocked-on-human`,
+`paused`, `skipped`, `scheduled`). Exit 2 means the ledger is valid and nothing
+is runnable — a real answer, not an error.
+
+(2026-08-27: this paragraph used to state the next-task rule in prose, in the
+old `todo`/`doing`/`blocked` vocabulary that `task-ledger.mjs` no longer
+accepts. A rule written twice is a rule that will be applied two ways.)
 
 ## Read before acting — every session
 

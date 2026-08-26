@@ -1,0 +1,19 @@
+{
+  "dimension": "tests",
+  "row": "Automated tests",
+  "verdict": "pass",
+  "kind": "executed",
+  "command": [
+    "npm",
+    "test"
+  ],
+  "cwd": ".",
+  "exitCode": 0,
+  "signal": null,
+  "why": "exit 0",
+  "startedAt": "2026-07-21T18:39:00.000Z",
+  "endedAt": "2026-07-21T18:39:30.000Z",
+  "durationMs": 30000,
+  "stdout": "",
+  "stderr": ""
+}

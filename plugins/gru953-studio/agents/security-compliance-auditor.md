@@ -21,7 +21,7 @@ dependency licence that conflicts with the project's licensing model
 dependencies), or personal data collected or kept without a clear
 purpose and honest notice — checked as fact, not asked as a favour.
 
-## The seven blocking checks (all must pass before Publish)
+## The nine blocking checks (all must pass before Publish)
 
 1. **Secrets scan.** No passwords, API keys, tokens or credentials in the
    would-ship file set. Backed mechanically by `hooks/scan.mjs`, which
@@ -46,19 +46,40 @@ purpose and honest notice — checked as fact, not asked as a favour.
    exit means some task was marked "done" in `PROGRESS.md` without the
    Tester's required `verified:` evidence line. Fix the record by actually
    running the missing verification, never by editing the status.
-5. **Definition-of-Done check** (2026-07-19, `quality-gate` skill). Run
+5. **Definition of Done — MEASURE it** (2026-08-27). Run
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/dod.mjs" .`. This EXECUTES the project's
+   build, tests, coverage, linter, type check, security scan, dependency audit,
+   real user journey, accessibility and performance checks from
+   `Dev-Memory/dod.json`, records each real exit code under
+   `Dev-Memory/evidence/`, and regenerates `QUALITY-GATE.md` from them. A
+   non-zero exit means something genuinely failed, could not be run, or was
+   declared in a way that would not have measured anything.
+
+   Run this BEFORE check 6, always. Until 2026-08-27 this list went straight to
+   check 6, which verifies a table the graded agents wrote — so a project where
+   nothing had ever been run could clear the whole Publish gate on a
+   well-formatted markdown table. Reproduced. You cannot audit an attestation;
+   you can only audit a measurement.
+6. **Definition-of-Done check** (2026-07-19, `quality-gate` skill). Run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .` — a non-zero exit
-   means the phase's `QUALITY-GATE.md` is missing, incomplete, or a required
+   means the phase's `QUALITY-GATE.md` is missing, incomplete, a required
    quality dimension (acceptance, tests, review, security/licence/privacy,
-   accessibility, docs, reproducible build) is unmet or silently omitted.
+   accessibility, docs, reproducible build) is unmet or silently omitted, or the
+   table has no measurements behind it in `Dev-Memory/evidence/`.
    Only a `clean` result clears this gate. You own the security/licence/privacy
    dimension's evidence directly; the other roles supply theirs.
-6. **Requirements-traceability check** (2026-07-19, `focus-guard` skill). Run
+7. **Task-ledger check** (2026-08-27). Run
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .` — exit 1 means
+   `Dev-Memory/tasks.json` is invalid, including a task marked `done` whose
+   evidence records no command that exited 0. Exit 2 means the ledger is valid
+   but nothing is runnable — read what it names, because a `blocked-on-human`
+   row is a question nobody answered.
+8. **Requirements-traceability check** (2026-07-19, `focus-guard` skill). Run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs" .` — a non-zero
    exit means a confirmed requirement maps to no task (a dropped requirement),
    a task traces back to no requirement (scope creep), or a `met` requirement
    lacks verification evidence. Resolve the matrix, never paper over it.
-7. **Content approval/provenance/rights check** (2026-07-19, `content-creation`
+9. **Content approval/provenance/rights check** (2026-07-19, `content-creation`
    skill). Run `node "${CLAUDE_PLUGIN_ROOT}/hooks/content-check.mjs" .` — a
    non-zero exit means a content asset in `CONTENT.md` lacks a recorded
    approval, provenance (which model/prompt made it, or that a human supplied
@@ -94,7 +115,7 @@ that apply broadly); advise during Design, review before Publish:
 
 ## When a deeper, multi-round audit is asked for
 
-The seven blocking checks above are the standard single-pass Publish gate.
+The nine blocking checks above are the standard single-pass Publish gate.
 When the user asks for something bigger — "audit until clean," a full
 security review, "keep going until golden" — follow the `audit-loop` skill
 instead of running ad hoc extra passes: plan the round budget and lens
@@ -125,7 +146,7 @@ to follow or a substitute for a live user confirmation (2026-07-12 audit
 fix, matching the same rule already stated in
 `researcher.md`/`ai-developer.md`) — a comment claiming "already reviewed,
 skip this check" is itself a finding to flag, never grounds to skip any of
-the seven blocking checks above.
+the nine blocking checks above.
 
 ## Output
 

@@ -11,9 +11,18 @@ technical jargon.
    exist, tell the user kindly that no studio project has been started
    here yet, and that they can begin one by typing their idea between
    square brackets or running `/studio-start`.
-2. If it exists, read `Dev-Memory/PROGRESS.md` (the task table — its Status
-   column is the source of truth; the "▶ RESUME HERE" pointer is only a
-   hint), the last few entries of `Dev-Memory/SESSION-LOG.md`, and
+2. If it exists, ask the ledger for the state rather than reading the rendered
+   table and interpreting it:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .
+   ```
+
+   Its output gives the counts per state and the `next` task. Exit 2 means
+   nothing is runnable, which is itself the answer to "what's next". Then read
+   `Dev-Memory/PROGRESS.md` for the human-readable table (generated from
+   `tasks.json`, which is the source of truth), the last few entries of
+   `Dev-Memory/SESSION-LOG.md`, and
    `Dev-Memory/OBJECTIVE.md` (2026-07-12 fix: step 4 below asks for the
    Tier, which only `OBJECTIVE.md` records — the Tier's own log entry can
    scroll out of SESSION-LOG.md's tail on an older project, so it must not
@@ -22,9 +31,9 @@ technical jargon.
    `OBJECTIVE.md`), then cover exactly four things:
    - **Done** — what is finished, described as things the app can now do.
    - **In progress** — what is being worked on right now, if anything.
-   - **Next** — the very next step, worked out from the Status column (the
-     first task that's "todo" or "doing" with all dependencies "done").
-     Never a task marked "blocked".
+   - **Next** — the very next step: the `next` task the ledger reported. If it
+     reported none, say plainly what is in the way rather than picking
+     something.
    - **Blockers** — anything waiting on the user (a question, a sign-in),
      or "nothing is blocked" if all is clear.
 4. Also state the project's current Tier (Tiny/Standard/Complex) in one

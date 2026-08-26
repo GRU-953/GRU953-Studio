@@ -52,6 +52,10 @@ import {
 } from './lib.mjs';
 
 const root = process.argv[2] || process.cwd();
+// Resolved separately: `root` is echoed back verbatim so a caller sees the path it passed, but a
+// containment test has to be made on the absolute, normalised form. A prefix test against '.'
+// admits every relative path there is.
+const rootAbs = path.resolve(root);
 const problems = [];
 const fail = (msg) => problems.push(msg);
 
@@ -253,17 +257,54 @@ for (const [i, t] of tasks.entries()) {
         `${id}: marked done with no evidence object. A task is done when something was run and passed, not when it is described as finished`,
       );
     } else {
-      if (typeof ev.command !== 'string' || ev.command.trim() === '') {
-        fail(`${id}: evidence has no command — there is nothing to re-run to check this claim`);
+      // 2026-08-27. `command`, `exitCode` and `at` were three unvalidated values: any non-empty
+      // string was a command, and any non-empty string was a date. So "ran the tests" and
+      // "2019-13-45" both satisfied a claim that something had been run and had passed. The
+      // whole point of this evidence is that a reader can RE-RUN it and get the same answer, and
+      // none of that was checkable.
+      //
+      // An argv ARRAY, matching dod.mjs, for the same reason dod.mjs uses one: a string has to
+      // reach a shell to run, and this record is data. It also removes the ambiguity that made
+      // the old field useless — `npm test` and `npm "test"` and `npm test # in ../other` are all
+      // valid strings and only one of them is a command.
+      if (
+        !Array.isArray(ev.command) ||
+        ev.command.length === 0 ||
+        !ev.command.every((a) => typeof a === 'string' && a.trim() !== '')
+      ) {
+        fail(
+          `${id}: evidence.command must be a non-empty argv array of strings (e.g. ["npm","test"]), so this claim can actually be re-run. Got ${JSON.stringify(ev.command)}`,
+        );
       }
       if (ev.exitCode !== 0) {
         fail(
           `${id}: marked done but its evidence records exitCode ${JSON.stringify(ev.exitCode)}. Only exit 0 is a pass`,
         );
       }
+      // WHERE it ran. A command that passed in a different directory proves something about that
+      // directory. Optional, defaulting to the project root, but if stated it must stay inside
+      // it — the same containment dod.mjs applies to its own cwd.
+      if (ev.cwd !== undefined) {
+        if (typeof ev.cwd !== 'string' || ev.cwd.trim() === '') {
+          fail(`${id}: evidence.cwd, when present, must be a path relative to the project root`);
+        } else {
+          const abs = path.resolve(rootAbs, ev.cwd);
+          if (!(abs === rootAbs || abs.startsWith(rootAbs + path.sep))) {
+            fail(
+              `${id}: evidence.cwd resolves to ${abs}, outside the project root ${rootAbs}. A command that passed somewhere else did not pass here`,
+            );
+          }
+        }
+      }
+      // A timestamp that is not a date cannot distinguish this run from an older one, which is
+      // the only thing the field is for.
       if (typeof ev.at !== 'string' || ev.at.trim() === '') {
         fail(
           `${id}: evidence has no timestamp, so it cannot be told from an older run of the same command`,
+        );
+      } else if (!Number.isFinite(Date.parse(ev.at))) {
+        fail(
+          `${id}: evidence.at is ${JSON.stringify(ev.at)}, which is not a date this gate can read. Use an ISO 8601 timestamp (e.g. 2026-08-27T09:15:00Z) — an unreadable date is the same as none`,
         );
       }
     }
@@ -359,7 +400,7 @@ const setAside = all.filter((t) => SET_ASIDE.has(t.state));
     const notes = [];
     if (t.state === 'done' && t.evidence) {
       notes.push(
-        `verified: \`${t.evidence.command}\` -> exit ${t.evidence.exitCode} (${t.evidence.at})`,
+        `verified: \`${Array.isArray(t.evidence.command) ? t.evidence.command.join(' ') : t.evidence.command}\` -> exit ${t.evidence.exitCode} (${t.evidence.at})`,
       );
     }
     if (BLOCKED.has(t.state)) notes.push(t.blockedReason);

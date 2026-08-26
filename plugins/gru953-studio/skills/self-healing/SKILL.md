@@ -61,6 +61,31 @@ skill only ever touches local Build/Test/Fix work, never the Publish gate.
    guardrail against the classic derailment where a team burns a whole session
    re-fixing the same thing without ever stepping back.
 
+6. **Is the run still working, or silently wedged?** (2026-08-27.) At each task
+   boundary — and always before concluding a task is merely slow — run:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/hooks/stall-check.mjs" .
+   ```
+
+   Exit 0 means the run looks healthy or has finished cleanly. **Exit 2 means it
+   appears wedged**: treat that exactly as a self-heal ceiling breach and invoke
+   the Stuck Protocol, naming what the check reported. Exit 1 means it could not
+   determine — no transcript, or nothing in it this gate understands — which is
+   not the same as healthy and must not be reported as such.
+
+   *Why this step exists.* Everything above bounds a failure that ANNOUNCES
+   itself: a command exits non-zero and the fix loop starts. Nothing bounded a
+   run that stops making progress without failing — the case an unattended build
+   is uniquely exposed to, because there is no person watching to notice. The
+   detector for it shipped in v7 and, until this step was written, was invoked by
+   nothing in the product: not by a skill, an agent, a command or any CLI path.
+
+   The check's suppression rule is the reason it is worth running rather than
+   eyeballing: an unanswered tool call is only reported if no later activity
+   follows it, so an ordinary slow call does not trip it. A watchdog that cries
+   wolf is a watchdog somebody turns off, and its silence then means nothing.
+
 ## (b) Self-recovery for a built app (`devops-engineer`'s remit — Standard/Complex Tier, live/long-lived services only)
 
 Not for a one-off script or static page — nothing runs continuously there

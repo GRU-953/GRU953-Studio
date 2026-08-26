@@ -48,10 +48,12 @@ const PUSH = ['git', 'push', 'origin', 'main'].join(' ');
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 function golden(dir) {
-  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
-  for (const f of fs.readdirSync(GOLDEN)) {
-    fs.copyFileSync(path.join(GOLDEN, f), path.join(dir, 'Dev-Memory', f));
-  }
+  // Recursive on purpose. This used to copy the fixture entry by entry with copyFileSync, which
+  // works only while the fixture is FLAT — and 2026-08-27 it stopped being flat: it gained an
+  // `evidence/` directory, because quality-gate.mjs now requires the measurements behind a
+  // Definition-of-Done table to exist. A flat copy would have dropped that directory silently and
+  // every case here would have failed on the missing evidence rather than on the defect it seeds.
+  fs.cpSync(GOLDEN, path.join(dir, 'Dev-Memory'), { recursive: true });
 }
 function die(msg) {
   console.error(`FAIL: ${msg}`);
@@ -61,7 +63,8 @@ function die(msg) {
 // This used to be `status === 0 ? 'clean' : 'blocked'` — the exit code and nothing else, so a
 // gate that THREW was reported as one that objected. See _verdict.mjs for the measurement.
 const gateVerdict = (hook, root) =>
-  refuseCrash(readGate(NODE, path.join(HOOKS, hook), [root]), `${hook} in review-findings.mjs`, die).kind === 'clean'
+  refuseCrash(readGate(NODE, path.join(HOOKS, hook), [root]), `${hook} in review-findings.mjs`, die)
+    .kind === 'clean'
     ? 'clean'
     : 'blocked';
 

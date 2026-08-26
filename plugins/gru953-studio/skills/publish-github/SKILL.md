@@ -47,7 +47,7 @@ git config user.email "<email from gh api user>"
 ```
 If any field is empty, STOP and ask the user to confirm it — never assume.
 
-## 3. Pre-flight blocking checks (seven via security-compliance-auditor, plus a roster check via scope-guardian)
+## 3. Pre-flight blocking checks (nine via security-compliance-auditor, plus a roster check via scope-guardian)
 
 <!-- 2026-07-21 audit fix: this section listed only FOUR checks while
 security-compliance-auditor.md (the role that OWNS the gate) declares SEVEN —
@@ -84,22 +84,46 @@ full seven, matching security-compliance-auditor.md, studio/SKILL.md and CLAUDE.
    means something was marked done without evidence — fix the record (by
    actually running the missing verification) before publishing, never by
    editing the status back to make the check pass.
-5. **Definition-of-Done check** (2026-07-19, `quality-gate` skill) —
+5. **Definition-of-Done — MEASURE it** (2026-08-27) —
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/dod.mjs" .`. This is the step that actually
+   RUNS the project's build, tests, coverage, linter, type check, security scan,
+   dependency audit, real user journey, accessibility and performance checks, and
+   records each one's real exit code under `Dev-Memory/evidence/`. It then
+   regenerates `Dev-Memory/QUALITY-GATE.md` from those results. Only exit 0 clears
+   it.
+
+   *Why this step exists.* Until 2026-08-27 this pre-flight went straight to check
+   6 below, which VERIFIES the table — and the table was written by the agents
+   being graded. A Definition of Done copied verbatim out of the `quality-gate`
+   skill's own worked example, in a project with no `dod.json` and nothing ever
+   run, cleared the publish gate with exit 0. Reproduced. Publishing on an
+   attestation is the whole failure this product's v7 exists to end, so the
+   measurement comes first and the verification checks its output.
+
+6. **Definition-of-Done check** (2026-07-19, `quality-gate` skill) —
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .`. A non-zero exit means
-   `Dev-Memory/QUALITY-GATE.md` is missing, incomplete, or a required quality
+   `Dev-Memory/QUALITY-GATE.md` is missing, incomplete, a required quality
    dimension (acceptance, tests, review, security/licence/privacy, accessibility,
-   docs, reproducible build) is unmet or silently omitted. Only `clean` clears it.
-6. **Requirements-traceability check** (2026-07-19, `focus-guard` skill) —
+   docs, reproducible build) is unmet or silently omitted, or — since 2026-08-27 —
+   the table has no measurements behind it. Only `clean` clears it.
+
+7. **Task-ledger check** (2026-08-27) —
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .`. Exit 1 means
+   `Dev-Memory/tasks.json` is invalid — including a task marked `done` whose
+   evidence does not record a command that exited 0. Exit 2 means the ledger is
+   valid but nothing is runnable; read what it names before publishing, because a
+   `blocked-on-human` row is a question nobody answered.
+8. **Requirements-traceability check** (2026-07-19, `focus-guard` skill) —
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs" .`. A non-zero exit
    means a confirmed requirement maps to no task (a dropped requirement), a task
    traces back to no requirement (scope creep), or a `met` requirement lacks
    verification evidence. Resolve the matrix, never paper over it.
-7. **Content approval/provenance/rights check** (2026-07-19, `content-creation`
+9. **Content approval/provenance/rights check** (2026-07-19, `content-creation`
    skill) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/content-check.mjs" .`. A non-zero
    exit means a `CONTENT.md` asset lacks a recorded approval, provenance, a
    rights/licence note, or — for media — alt-text/caption. No-op when the project
    declares no content.
-8. **Roster check, via `scope-guardian`** (2026-07-12 fix: this file — the
+10. **Roster check, via `scope-guardian`** (2026-07-12 fix: this file — the
    role's own declared "single source of truth" — used to omit this step
    even though `publisher.md` and `/studio-publish` both treat it as
    mandatory) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .`. A

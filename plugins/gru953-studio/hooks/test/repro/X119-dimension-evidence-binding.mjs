@@ -62,6 +62,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { resyncEvidence } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -88,6 +89,12 @@ function fixture(mutate) {
   if (mutate) {
     const p = join(dir, 'Dev-Memory', 'QUALITY-GATE.md');
     writeFileSync(p, mutate(readFileSync(p, 'utf8')), 'utf8');
+    // A row this reproduction RENAMED has no evidence file naming it, and quality-gate.mjs now
+    // says so — truthfully about the fixture, and irrelevantly to what is under test here, which
+    // is whether one label can vouch for two dimensions. A real project that renamed a row would
+    // have regenerated the evidence and the table together, since dod.mjs writes both. So put the
+    // fixture into that state before asking the question.
+    resyncEvidence(dir);
   }
   return dir;
 }

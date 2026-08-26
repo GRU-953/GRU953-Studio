@@ -45,10 +45,9 @@ const expectBug = process.argv.includes('--expect-bug');
 
 function freshProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gru-p1-'));
-  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
-  for (const f of fs.readdirSync(GOLDEN)) {
-    fs.copyFileSync(path.join(GOLDEN, f), path.join(dir, 'Dev-Memory', f));
-  }
+  // Recursive: the golden fixture gained an `evidence/` directory on 2026-08-27, and an
+  // entry-by-entry copyFileSync throws ENOTSUP on a directory (it did, immediately).
+  fs.cpSync(GOLDEN, path.join(dir, 'Dev-Memory'), { recursive: true });
   return dir;
 }
 
@@ -67,7 +66,11 @@ function die(msg) {
 //
 // The verdict now comes from the gate's own parsed report, and a crash is named as a crash.
 function verdict(hook, args) {
-  const v = refuseCrash(readGate(NODE, path.join(HOOKS, hook), args), `${hook} in phase1-gate-honesty.mjs`, die);
+  const v = refuseCrash(
+    readGate(NODE, path.join(HOOKS, hook), args),
+    `${hook} in phase1-gate-honesty.mjs`,
+    die,
+  );
   return v.kind === 'clean' ? 'clean' : 'blocked';
 }
 

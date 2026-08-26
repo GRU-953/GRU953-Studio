@@ -40,7 +40,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { readGate, refuseCrash } from './_verdict.mjs';
+import { readGate, refuseCrash, writeMeasuredGate } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,11 +54,16 @@ function die(msg) {
 function verdict(qualityGate) {
   const dir = mkdtempSync(join(tmpdir(), 'x143-'));
   try {
-    mkdirSync(join(dir, 'Dev-Memory'), { recursive: true });
-    writeFileSync(join(dir, 'Dev-Memory', 'QUALITY-GATE.md'), qualityGate);
+    // Measured record — see writeMeasuredGate in _verdict.mjs. This reproduction is about
+    // whether the gate RECOGNISES what a row says, not about where the table came from.
+    writeMeasuredGate(dir, qualityGate);
     // A crash is not a verdict. readGate() names it; refuseCrash() refuses to
     // let this reproduction reason about it. See _verdict.mjs.
-    const v = refuseCrash(readGate(process.execPath, join(HOOKS, 'quality-gate.mjs'), [dir]), 'X143-quality-gate-recognition.mjs', die);
+    const v = refuseCrash(
+      readGate(process.execPath, join(HOOKS, 'quality-gate.mjs'), [dir]),
+      'X143-quality-gate-recognition.mjs',
+      die,
+    );
     return { status: v.status, problems: v.problems, code: v.code, raw: v.raw.slice(0, 200) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -78,29 +83,41 @@ const GOOD = `# Quality Gate
 | reproducible build | pass | \`npm run build\` -> exit 0 |
 `;
 
-const withEvidence = (ev) => GOOD.replace('| tests pass | pass | `npm test` -> exit 0 |', `| tests pass | pass | ${ev} |`);
+const withEvidence = (ev) =>
+  GOOD.replace('| tests pass | pass | `npm test` -> exit 0 |', `| tests pass | pass | ${ev} |`);
 
 // ---- A: the baseline must pass -----------------------------------------------
 const A = verdict(GOOD);
-if (A.status !== 'clean') die(`control A failed: a complete passing table must be clean, got ${A.status}: ${A.problems[0] || ''}`);
+if (A.status !== 'clean')
+  die(
+    `control A failed: a complete passing table must be clean, got ${A.status}: ${A.problems[0] || ''}`,
+  );
 console.log('  A  a complete passing DoD table ................. clean   (control)');
 
 // ---- B: D1 -------------------------------------------------------------------
 const B = verdict(
-  GOOD + '\n## Re-run after the fix\n\n| Item | Result | Evidence |\n| :-- | :-- | :-- |\n| Automated tests | fail | npm test -> exit 1, 3 failing |\n',
+  GOOD +
+    '\n## Re-run after the fix\n\n| Item | Result | Evidence |\n| :-- | :-- | :-- |\n| Automated tests | fail | npm test -> exit 1, 3 failing |\n',
 );
 const bCaught = B.status !== 'clean';
-console.log(`  B  + a second table headed "Result", failing .... ${bCaught ? 'BLOCKED' : 'clean  '}${bCaught ? '' : '  <- D1'}`);
+console.log(
+  `  B  + a second table headed "Result", failing .... ${bCaught ? 'BLOCKED' : 'clean  '}${bCaught ? '' : '  <- D1'}`,
+);
 
 // ---- C: the placeholder check demonstrably works -----------------------------
 const C = verdict(withEvidence('tbd'));
-if (C.status === 'clean') die('control C failed: a bare "tbd" as evidence must be caught — the placeholder check is not working at all.');
+if (C.status === 'clean')
+  die(
+    'control C failed: a bare "tbd" as evidence must be caught — the placeholder check is not working at all.',
+  );
 console.log('  C  evidence "tbd" .............................. BLOCKED (control)');
 
 // ---- D: D7 -------------------------------------------------------------------
 const D = verdict(withEvidence('tbd - will attach the proof after the demo'));
 const dCaught = D.status !== 'clean';
-console.log(`  D  evidence "tbd - will attach ..." ............. ${dCaught ? 'BLOCKED' : 'clean  '}${dCaught ? '' : '  <- D7'}`);
+console.log(
+  `  D  evidence "tbd - will attach ..." ............. ${dCaught ? 'BLOCKED' : 'clean  '}${dCaught ? '' : '  <- D7'}`,
+);
 
 // ---- E: an ordinary sentence must survive ------------------------------------
 const E = verdict(withEvidence('none of the tests failed'));
@@ -118,13 +135,18 @@ if (!bCaught) open.push('D1 (a second DoD table is skipped in silence)');
 if (!dCaught) open.push('D7 (a placeholder with an excuse attached passes)');
 
 if (expectBug) {
-  if (open.length === 0) die('expected the quality-gate defects and found none. If they were fixed, delete this --expect-bug branch deliberately.');
+  if (open.length === 0)
+    die(
+      'expected the quality-gate defects and found none. If they were fixed, delete this --expect-bug branch deliberately.',
+    );
   console.log(`\nREPRODUCED: ${open.join(' and ')}.`);
   process.exit(0);
 }
 
 if (open.length === 0) {
-  console.log('\nPASS: every Definition-of-Done table is read, an excuse does not turn a placeholder into evidence, and real sentences survive.');
+  console.log(
+    '\nPASS: every Definition-of-Done table is read, an excuse does not turn a placeholder into evidence, and real sentences survive.',
+  );
   process.exit(0);
 }
 

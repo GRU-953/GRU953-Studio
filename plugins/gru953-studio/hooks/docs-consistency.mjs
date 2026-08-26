@@ -1028,6 +1028,69 @@ if (changelogText !== null) {
   }
 }
 
+// ---- DC11: the task states the product INSTRUCTS must be states the ledger accepts ------
+// 2026-08-27 (contract sweep). `commands/studio-resume.md` told the studio to "set its Status back
+// to `doing`" — and `doing` is not a state `hooks/task-ledger.mjs` accepts, so obeying the resume
+// command produced a ledger the next gate BLOCKED on. The whole pause/resume cycle dead-ended at
+// the step whose only job was to undo the pause. Four other command files and three skills carried
+// the same retired vocabulary, including one skill that announced the rename on line 26 and then
+// used the old word on line 127.
+//
+// Nothing could have caught it: the accepted states live in a Set inside a hook, the instructed
+// states live in prose, and no gate compared the two. This does — reading the accepted set FROM
+// task-ledger.mjs, so there is one source and this check cannot itself go stale when the states
+// change.
+//
+// A retired state may still be MENTIONED — explaining a rename is useful, and the alternative is a
+// product that cannot describe its own history. What it may not be is mentioned silently: the line
+// must carry one of the retirement words below, which is exactly the sentence a reader needs
+// anyway. That is the enumerated-exemption discipline the rest of these gates use: to keep the
+// word, say it is retired.
+{
+  const ledger = read(path.join(pluginRoot, 'hooks', 'task-ledger.mjs'));
+  if (ledger === null) {
+    fail(
+      'hooks/task-ledger.mjs is missing, so the task states this product instructs cannot be checked against the states it accepts (DC11)',
+    );
+  } else {
+    const block = /const STATES = new Set\(\[([\s\S]*?)\]\)/.exec(ledger);
+    if (!block) {
+      fail(
+        'hooks/task-ledger.mjs no longer declares its states as `const STATES = new Set([...])`, so DC11 cannot read them. Restore that shape or update this check — do not leave it reading nothing, which is a gate that passes because it measured nothing.',
+      );
+    } else {
+      const accepted = new Set([...block[1].matchAll(/'([a-z-]+)'/g)].map((m) => m[1]));
+      if (accepted.size === 0) {
+        fail('DC11 read hooks/task-ledger.mjs but extracted no state names from its STATES set');
+      }
+      // Retired states, named explicitly rather than inferred. `blocked` is here because it was
+      // deliberately SPLIT (blocked-on-defect parks a task and the run continues;
+      // blocked-on-human stops it) and collapsing them back is the specific regression to catch.
+      const RETIRED = ['doing', 'blocked'];
+      // Saying, in any of the ways the product actually says it, that the word is retired.
+      const RETIREMENT_WORDS =
+        /\b(?:is now|used to|no longer|no bare|not a state|never|old|retired|renamed|REFUSES|instead of|rather than)\b/i;
+      for (const file of walk(pluginRoot)) {
+        if (!file.endsWith('.md')) continue;
+        const rel = path.relative(repoRoot, file);
+        const text = read(file);
+        if (text === null) continue;
+        const lines = text.split(/\r?\n/);
+        for (const [i, line] of lines.entries()) {
+          for (const dead of RETIRED) {
+            if (accepted.has(dead)) continue; // still a real state — nothing to say
+            if (!new RegExp('`' + dead + '`').test(line)) continue;
+            if (RETIREMENT_WORDS.test(line)) continue;
+            fail(
+              `${rel}:${i + 1} names the task state \`${dead}\`, which hooks/task-ledger.mjs does not accept (it accepts ${[...accepted].map((a) => `\`${a}\``).join(', ')}). Following this instruction writes a ledger the gate blocks on — which is how the pause/resume cycle dead-ended. Use the current state name, or, if this line is explaining the rename, say so on the line (DC11 looks for words like "no longer", "used to", "is now") (DC11)`,
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
 // ---- report -------------------------------------------------------------
 if (problems.length === 0) {
   console.log(JSON.stringify({ status: 'clean' }, null, 2));

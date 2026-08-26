@@ -56,8 +56,14 @@ protected by this and never was. Plain-English rule is as set in the
 
 ## The protocol (per phase, once the phase is green)
 
-1. Confirm the phase's quality gate is clean (`quality-gate.mjs`) and the licence
-   scan passes (`licence-scan.mjs`).
+1. MEASURE the Definition of Done, then confirm it:
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/dod.mjs" .` runs each dimension and records
+   its real exit code under `Dev-Memory/evidence/`, regenerating
+   `Dev-Memory/QUALITY-GATE.md` from the results; `quality-gate.mjs` then confirms
+   nothing is missing from that record. Run them in that order — running only the
+   second one grades a table rather than the software, which is how a checkpoint
+   could be taken on work that had never been built. Then confirm the licence scan
+   passes (`licence-scan.mjs`).
 2. Ensure `Dev-Memory/` is `.gitignore`d; stage the app's code only.
 3. Record the per-phase backup authorisation: run
    nothing — the confirmation script was removed on 2026-08-16 (X214) and a

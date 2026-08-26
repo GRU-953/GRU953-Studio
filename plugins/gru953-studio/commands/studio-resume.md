@@ -14,7 +14,20 @@ Speak plain, simple UK English.
    and restate the single active goal in one plain line — so you pick the
    thread back up from memory, not guesswork.
 3. Find the `paused` (or due `scheduled`) task. Via `memory-keeper`, set its
-   Status back to `doing`, refresh `Dev-Memory/STATUS-BOARD.md`, and append a
-   one-line note to `SESSION-LOG.md`.
+   state back to `in-progress` in `Dev-Memory/tasks.json`, re-render
+   `PROGRESS.md` by running:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .
+   ```
+
+   then refresh `Dev-Memory/STATUS-BOARD.md` and append a one-line note to
+   `SESSION-LOG.md`.
+
+   (2026-08-27: this said `doing`, which `task-ledger.mjs` REFUSES — the
+   accepted states are `todo`, `in-progress`, `done`, `blocked-on-defect`,
+   `blocked-on-human`, `paused`, `skipped`, `scheduled`. So following this
+   command wrote a ledger the next gate blocked on, and the whole pause/resume
+   cycle dead-ended at the step meant to undo the pause.)
 4. Tell the user in one or two sentences where things stood and what happens
    next, then continue the work. Never auto-publish on resume.

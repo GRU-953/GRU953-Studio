@@ -55,6 +55,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { writeMeasuredGate } from './_verdict.mjs';
 
 const expectBug = process.argv.includes('--expect-bug');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -92,7 +93,9 @@ function hooksCopy(conditional) {
     const src = readFileSync(p, 'utf8');
     // Insert after the last import so the module's own imports are already bound.
     const imports = [...src.matchAll(/^import .*?;\s*$/gm)];
-    const at = imports.length ? imports[imports.length - 1].index + imports[imports.length - 1][0].length : 0;
+    const at = imports.length
+      ? imports[imports.length - 1].index + imports[imports.length - 1][0].length
+      : 0;
     const inject = `
 // --- injected by X188's reproduction; not part of the product ---
 import { readFileSync as __x188read } from 'node:fs';
@@ -151,8 +154,10 @@ let dControlsHeld;
 try {
   // C first: show the gate produces exactly the shape that used to read as a block.
   const proj = mkdtempSync(join(tmpdir(), 'x188p-'));
-  mkdirSync(join(proj, 'Dev-Memory'), { recursive: true });
-  writeFileSync(join(proj, 'Dev-Memory', 'QUALITY-GATE.md'), DENT);
+  // Measured record — see writeMeasuredGate in _verdict.mjs. What this reproduction needs from
+  // the fixture is a gate that RUNS and prints; whether its verdict is clean or blocked is not
+  // what is under test here (a crash versus a verdict is).
+  writeMeasuredGate(proj, DENT);
   const g = spawnSync(NODE, [join(crashing.h, 'quality-gate.mjs'), proj], { encoding: 'utf8' });
   C = { code: g.status, stdout: `${g.stdout || ''}`, stderr: `${g.stderr || ''}` };
   rmSync(proj, { recursive: true, force: true });
@@ -175,7 +180,9 @@ if (!(C.code !== 0 && C.stdout.trim() === '')) {
 if (!/ReferenceError/.test(C.stderr)) {
   die(`control C failed: expected a ReferenceError on stderr, got:\n${C.stderr.slice(0, 300)}`);
 }
-console.log('  C  the crashing gate, run directly ............. exit non-zero, stdout empty (control)');
+console.log(
+  '  C  the crashing gate, run directly ............. exit non-zero, stdout empty (control)',
+);
 
 if (!dControlsHeld) {
   die(
@@ -184,7 +191,9 @@ if (!dControlsHeld) {
       'conditional one, and the case must be built that way to mean anything.',
   );
 }
-console.log('  D  X144\'s own controls still ran ............... true    (the crash is conditional)');
+console.log(
+  "  D  X144's own controls still ran ............... true    (the crash is conditional)",
+);
 
 const refused = B.code !== 0 && B.out.includes(REFUSAL);
 console.log(
@@ -199,12 +208,16 @@ if (expectBug) {
         'can no longer detect anything.',
     );
   }
-  console.log(`\nX188 REPRODUCED: X144 exited ${B.code} on a gate that threw, treating the crash as a verdict.`);
+  console.log(
+    `\nX188 REPRODUCED: X144 exited ${B.code} on a gate that threw, treating the crash as a verdict.`,
+  );
   process.exit(0);
 }
 
 if (refused) {
-  console.log('\nPASS: a gate that throws is named as a crash and refused; it can no longer be read as a block.');
+  console.log(
+    '\nPASS: a gate that throws is named as a crash and refused; it can no longer be read as a block.',
+  );
   process.exit(0);
 }
 

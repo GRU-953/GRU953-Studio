@@ -1,0 +1,11 @@
+{
+  "dimension": "review",
+  "row": "Independent code review",
+  "verdict": "pass",
+  "kind": "judged",
+  "artefact": "commit 9c1f0a2",
+  "by": "reviewer",
+  "why": "judged pass by reviewer against artefact commit 9c1f0a2 \u2014 a judgement, not a measurement",
+  "caveat": "a judgement, not a measurement \u2014 this row was not produced by running anything",
+  "recordedAt": "2026-07-21T18:39:45.000Z"
+}

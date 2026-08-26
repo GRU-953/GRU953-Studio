@@ -1038,6 +1038,43 @@ export function parseTables(text) {
   return tables;
 }
 
+/**
+ * Split a shell command line into the segments a shell would run separately.
+ *
+ * Added 2026-08-27 for config-protection.mjs's Bash arm. A guard that inspects only the FIRST
+ * command in `npm test && sed -i "" s/80/0/ Dev-Memory/dod.json` inspects the harmless half.
+ *
+ * Deliberately syntactic and shallow: this splits on the operators, it does not understand the
+ * shell. What it is FOR is finding the write targets a person or an agent would plausibly type,
+ * not for deciding that a command is safe — nothing here is ever the basis of an allow.
+ */
+export function shellSegments(cmd) {
+  return String(cmd == null ? '' : cmd)
+    .split(/&&|\|\||[;\n|&]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Tokenise one segment, keeping quoted spans together and stripping one surrounding quote pair.
+ *
+ * The same quote-aware discipline scan.mjs applies to git pathspecs, and for the same reason: a
+ * plain whitespace split tears `"Dev-Memory/my project/dod.json"` into two tokens that match
+ * nothing, and filenames with spaces are ordinary rather than exotic.
+ */
+export function shellTokens(segment) {
+  const out = [];
+  for (const raw of String(segment == null ? '' : segment).match(/"[^"]*"|'[^']*'|[^\s'"]+/g) ||
+    []) {
+    let tok = raw;
+    if ((tok.startsWith('"') && tok.endsWith('"')) || (tok.startsWith("'") && tok.endsWith("'"))) {
+      tok = tok.slice(1, -1);
+    }
+    if (tok !== '') out.push(tok);
+  }
+  return out;
+}
+
 export function splitPipeCells(line) {
   return line.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|'));
 }

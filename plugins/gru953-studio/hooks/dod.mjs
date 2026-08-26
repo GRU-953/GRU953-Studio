@@ -44,6 +44,11 @@ import { spawnSync } from 'node:child_process';
 import { classifyStudioRoot, formatFsError, readOrBlock, MISSING } from './lib.mjs';
 
 const root = process.argv[2] || process.cwd();
+// Resolved separately from `root`, which is reported verbatim in this gate's output so a caller
+// sees the path it passed. Containment must be decided on the absolute, normalised form: a
+// prefix test against a relative root ('.') would admit any path that happens to start with a
+// dot, which is every relative path there is.
+const rootAbs = path.resolve(root);
 const problems = [];
 const fail = (msg) => problems.push(msg);
 
@@ -60,6 +65,32 @@ const MAX_CAPTURED_OUTPUT = 20000; // per stream, per dimension
 // drive a real user journey. It is the single most important row here, because it is the only
 // one that can fail while every other one passes — which is exactly what "the tests are green
 // but the app does not work" means.
+// The lowest coverage floor this product will accept as a measurement. A project may state a
+// floor; it may not state one so low that the dimension stops discriminating. Found 2026-08-27
+// (contract sweep): `{"coverage":{"command":[...],"minPercent":0,"reportPath":"c.json"}}` produced
+// the row "coverage 0% meets the 0% floor" and a clean exit — the gate rendering its own
+// vacuousness as a pass. The old check only required 0 <= minPercent <= 100, so 0 was in range.
+//
+// A floor BELOW this is not silently raised, because silently measuring something other than what
+// the project declared is its own defect. It is refused, and the refusal names both numbers. A
+// project with a real reason (a spike, a generated-code package) may go lower by declaring
+// `floorBelowProductMinimumBecause`, which makes the exception a recorded decision rather than a
+// quiet number. Zero is refused even then: at 0% the dimension cannot fail, so it is not a check.
+const MIN_COVERAGE_FLOOR = 60;
+
+// Programs that cannot measure anything, whatever they are declared against. `["true"]` satisfied
+// all ten executed dimensions before this existed — ten green rows, nothing run. Enumerated rather
+// than pattern-matched, the same discipline scan.mjs applies to catastrophic commands: a list of
+// named programs is auditable, a regex over command text is a guess.
+//
+// RESIDUAL, STATED: this catches the obvious vacuity, not a determined one. `["node","-e","0"]` or
+// a script whose body is `exit 0` still passes, and no static check can tell a real test runner
+// from a program that pretends to be one. What closes that gap is not this list but the artefacts
+// the other checks demand — a coverage report with a real percentage, a report file that has to
+// exist and parse. This list exists because the vacuous case was reachable by accident, not only
+// by intent.
+const VACUOUS_PROGRAMS = new Set(['true', ':', 'echo', 'printf', 'exit', 'sleep', 'pwd', 'false']);
+
 const EXECUTED = [
   { key: 'build', label: 'build succeeds', row: 'Reproducible build' },
   { key: 'tests', label: 'test suite passes', row: 'Automated tests' },
@@ -246,7 +277,25 @@ function execute(key, spec) {
     );
     return null;
   }
-  const cwd = path.resolve(root, typeof spec.cwd === 'string' ? spec.cwd : '.');
+  const program = path.basename(argv[0]);
+  if (VACUOUS_PROGRAMS.has(program)) {
+    fail(
+      `${key}: \`${argv.join(' ')}\` cannot measure ${key}. \`${program}\` produces an exit code without inspecting anything, so this row would be green whatever the state of the code. Declare the command that actually checks this dimension, or mark it \`notApplicable\` with a reason.`,
+    );
+    return null;
+  }
+
+  // The directory a check runs in is part of what it measures. Unconfined, `"cwd": "../.."` runs
+  // the parent repository's green test suite and records it as this project's — and the generated
+  // table said nothing about where anything ran, so the substitution was invisible in the output
+  // as well as unchecked in the input. Confined to the project, and surfaced in the row below.
+  const cwd = path.resolve(rootAbs, typeof spec.cwd === 'string' ? spec.cwd : '.');
+  if (!(cwd === rootAbs || cwd.startsWith(rootAbs + path.sep))) {
+    fail(
+      `${key}: \`cwd\` resolves to ${cwd}, which is outside the project root ${rootAbs}. A check that runs somewhere else measures somewhere else — most usefully for whoever wanted a green row, since the parent repository's suite probably passes.`,
+    );
+    return null;
+  }
   const timeout =
     Number.isInteger(spec.timeoutMs) && spec.timeoutMs > 0 ? spec.timeoutMs : DEFAULT_TIMEOUT_MS;
   const startedAt = Date.now();
@@ -310,13 +359,38 @@ function checkCoverageFloor(spec, res) {
     );
     return res;
   }
+  if (floor <= 0) {
+    fail(
+      'coverage: `minPercent` is 0, so this dimension cannot fail and therefore is not a check. A floor of zero is refused outright — no reason makes a measurement that always passes into a measurement. Either state a real floor or mark coverage `notApplicable` with a reason, which is at least honest about not measuring it.',
+    );
+    return res;
+  }
+  if (floor < MIN_COVERAGE_FLOOR) {
+    const because =
+      typeof spec.floorBelowProductMinimumBecause === 'string'
+        ? spec.floorBelowProductMinimumBecause.trim()
+        : '';
+    if (because === '') {
+      fail(
+        `coverage: \`minPercent\` is ${floor}, below this product's minimum floor of ${MIN_COVERAGE_FLOOR}. A floor set beneath the bar is the bar being lowered by the work being graded. If the project genuinely needs a lower one, declare \`floorBelowProductMinimumBecause\` with the reason, so the exception is a recorded decision rather than a quiet number.`,
+      );
+      return res;
+    }
+    res.floorBelowProductMinimum = { floor, productMinimum: MIN_COVERAGE_FLOOR, because };
+  }
   if (typeof spec.reportPath !== 'string' || spec.reportPath === '') {
     fail(
       "coverage: `reportPath` must name the coverage tool's machine-readable report. The percentage is never scraped from stdout — prose is not a measurement",
     );
     return res;
   }
-  const rp = path.resolve(root, spec.reportPath);
+  const rp = path.resolve(rootAbs, spec.reportPath);
+  if (!(rp === rootAbs || rp.startsWith(rootAbs + path.sep))) {
+    fail(
+      `coverage: \`reportPath\` resolves to ${rp}, which is outside the project root ${rootAbs}. A coverage figure read from another repository is that repository's figure.`,
+    );
+    return res;
+  }
   const raw = readOrBlock(rp);
   if (raw === MISSING) {
     res.verdict = 'could-not-run';
@@ -353,6 +427,91 @@ function checkCoverageFloor(spec, res) {
   return res;
 }
 
+// ---- an n/a the project itself contradicts ------------------------------------------------
+// `notApplicable` was any non-empty string, and any non-empty string was accepted. So the whole
+// Definition of Done could be waived one sentence at a time — twelve reasons, nothing run, exit 0
+// and a clean table — and the reasons never had to be true. Found 2026-08-27 (contract sweep).
+//
+// The fix is not to judge the prose. It is to notice when the TREE disagrees with it: "no tests in
+// this project" is a checkable claim, and a project with a test suite has just made a false one.
+// Only the dimensions with a cheap, unambiguous refutation are listed. `accessibility`,
+// `performance`, `runs` and `security` are legitimately n/a for many real projects and have no
+// mechanical refutation that would not fire on honest configurations, so they are NOT here — a
+// gate that cries wolf on a correct project is a gate that gets switched off.
+//
+// `coverage` was drafted into this list and then removed, deliberately: "we have tests but no
+// coverage instrumentation" is an ordinary, honest state for a small project, and refusing it
+// would force coverage tooling onto every Tiny-Tier build just to satisfy a check. Coverage is
+// held honest in checkCoverageFloor instead — which acts when the project says it IS measuring,
+// and that is the claim capable of being hollow.
+function refuteNotApplicable(key) {
+  const has = (rel) => {
+    try {
+      return fs.existsSync(path.join(rootAbs, rel));
+    } catch {
+      return false;
+    }
+  };
+  let pkg = null;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(rootAbs, 'package.json'), 'utf8'));
+  } catch {
+    pkg = null;
+  }
+  const script = (name) =>
+    pkg && pkg.scripts && typeof pkg.scripts[name] === 'string' && pkg.scripts[name].trim() !== '';
+
+  // Test files, found without walking the whole tree: the conventional directories plus the
+  // conventional suffixes one level down. A project hiding tests somewhere unconventional is not
+  // what this is for — an honest project marking `tests` n/a while `npm test` works is.
+  const testEvidence = () => {
+    if (script('test')) return 'package.json declares a `test` script';
+    for (const d of ['test', 'tests', '__tests__', 'spec']) {
+      if (has(d)) return `a ${d}/ directory exists`;
+    }
+    let names = [];
+    try {
+      names = fs.readdirSync(rootAbs);
+    } catch {
+      names = [];
+    }
+    const hit = names.find((n) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(n) || /_test\.py$/.test(n));
+    return hit ? `${hit} is a test file` : null;
+  };
+
+  switch (key) {
+    case 'tests':
+      return testEvidence();
+    case 'build':
+      return script('build') ? 'package.json declares a `build` script' : null;
+    case 'lint': {
+      if (script('lint')) return 'package.json declares a `lint` script';
+      for (const c of [
+        'eslint.config.js',
+        'eslint.config.mjs',
+        '.eslintrc',
+        '.eslintrc.json',
+        '.eslintrc.cjs',
+        'ruff.toml',
+        '.flake8',
+      ]) {
+        if (has(c)) return `${c} exists, so this project has a linter`;
+      }
+      return null;
+    }
+    case 'types':
+      return has('tsconfig.json') ? 'tsconfig.json exists, so this project is type-checked' : null;
+    case 'dependencies':
+      return pkg &&
+        ((pkg.dependencies && Object.keys(pkg.dependencies).length) ||
+          (pkg.devDependencies && Object.keys(pkg.devDependencies).length))
+        ? 'package.json declares dependencies, so there is a dependency tree to audit'
+        : null;
+    default:
+      return null;
+  }
+}
+
 // ---- run the executed dimensions ----------------------------------------------------------
 for (const dim of EXECUTED) {
   const spec = declared[dim.key];
@@ -363,8 +522,16 @@ for (const dim of EXECUTED) {
     continue;
   }
   if (spec && typeof spec.notApplicable === 'string' && spec.notApplicable.trim() !== '') {
+    const refutation = refuteNotApplicable(dim.key);
+    if (refutation) {
+      fail(
+        `${dim.key}: marked notApplicable ("${spec.notApplicable.trim()}"), but ${refutation}. A dimension is not waived by saying it does not apply — if it can be measured here, measure it. Give this dimension a command, or correct the claim.`,
+      );
+      continue;
+    }
     const res = {
       dimension: dim.key,
+      row: dim.row,
       kind: 'executed',
       verdict: 'n/a',
       why: spec.notApplicable.trim(),
@@ -384,6 +551,10 @@ for (const dim of EXECUTED) {
   let res = execute(dim.key, spec || {});
   if (!res) continue;
   if (dim.key === 'coverage') res = checkCoverageFloor(spec, res);
+  // The row this dimension renders as, recorded IN the evidence. That is what lets
+  // quality-gate.mjs check the table against the evidence without keeping a second copy of this
+  // vocabulary — and a second copy is how two gates come to disagree about what a row means.
+  res.row = dim.row;
   writeEvidence(dim.key, res);
   results.push(res);
   if (res.verdict !== 'pass' && res.verdict !== 'n/a') {
@@ -401,6 +572,7 @@ for (const dim of JUDGED) {
   if (spec && typeof spec.notApplicable === 'string' && spec.notApplicable.trim() !== '') {
     const res = {
       dimension: dim.key,
+      row: dim.row,
       kind: 'judged',
       verdict: 'n/a',
       why: spec.notApplicable.trim(),
@@ -426,6 +598,7 @@ for (const dim of JUDGED) {
   }
   const res = {
     dimension: dim.key,
+    row: dim.row,
     kind: 'judged',
     verdict: 'pass',
     artefact,
@@ -485,7 +658,14 @@ for (const dim of JUDGED) {
       );
       continue;
     }
-    const evidence = rawEvidence.replace(/\r?\n/g, ' ').replace(/\|/g, '¦').slice(0, 300);
+    // WHERE it ran, when that is not the project root. The directory was checked on the way in
+    // and then omitted from the output, so a reader of the table could not tell a check of this
+    // project from a check of somewhere else. Both halves were needed: confine it, and say so.
+    const where = r.cwd && r.cwd !== rootAbs ? `[in ${path.relative(rootAbs, r.cwd) || '.'}] ` : '';
+    const evidence = `${where}${rawEvidence}`
+      .replace(/\r?\n/g, ' ')
+      .replace(/\|/g, '¦')
+      .slice(0, 300);
     lines.push(`| ${dim.row} | ${status} | ${evidence} |`);
   }
   lines.push('');

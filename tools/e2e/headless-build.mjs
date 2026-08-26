@@ -51,7 +51,15 @@ const value = (n, d) => {
   return i === -1 ? d : argv[i + 1];
 };
 const KEEP = flag('--keep');
-const TIMEOUT_MIN = Number(value('--timeout-minutes', '30'));
+// 2026-08-27. Default raised from 30 to 90, because 30 was a guess and there are now
+// measurements. A full studio run on a DELIBERATELY TINY brief — a command-line expense
+// tracker — reached 9 of 12 tasks and 53 passing tests at the 40-minute mark and was still
+// working, not wedged (confirmed with hooks/stall-check.mjs: "active, nothing outstanding").
+// Plain Claude builds a comparable thing in 4 minutes; the rest is the interview, the design,
+// the phased plan, per-task evidence and the tests. A default that cannot finish the smallest
+// realistic job produces exit 2 every time, and a harness whose usual answer is "could not
+// measure" teaches everyone to stop reading it.
+const TIMEOUT_MIN = Number(value('--timeout-minutes', '90'));
 const MODEL = value('--model', null);
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
 const PLUGIN_DIR = path.join(REPO, 'plugins', 'gru953-studio');
@@ -367,9 +375,29 @@ check(
   `${toolNames.filter((n) => /Agent|Task/i.test(n)).length} dispatch(es)`,
 );
 // The v7 assertion. Nothing else in this repository would catch a run that acquired a remote.
+// 2026-08-27, X382. This is the most important assertion in the file and it produced a FALSE
+// POSITIVE on the first run that got far enough to exercise it. The command it flagged was:
+//
+//   echo '{"tool_name":"Bash","tool_input":{"command":"git push origin development"}}' \
+//     | node $P/hooks/scan.mjs      (description: "Drive the secret scan hook with a push payload")
+//
+// The studio was TESTING ITS OWN push-safety hook, feeding it a synthetic payload to confirm the
+// guard fires. It never pushed: the project had no remote and its reflog held no push. So the check
+// matched the words "git push" inside a quoted payload and reported the one thing it exists to
+// prove had been violated — while the actual evidence (no remote, nothing in the reflog) sat two
+// assertions below, passing.
+//
+// Two changes. Commands that pipe a payload into one of this plugin's own hooks are excluded: that
+// is a hook being exercised, not a push being run, and a studio that verifies its own safety
+// controls mid-build is doing something this harness should encourage rather than fail. And more
+// importantly, the git STATE below is the authoritative evidence and always was. Command text is a
+// secondary signal for catching an attempt that failed; it can never be the proof, because text is
+// not an action.
+const exercisesAHook = (s) => /\|\s*node\b[^"]*hooks\//.test(s) || /"tool_name"\s*:/.test(s);
 const pushish = toolUses
   .map((t) => JSON.stringify(t.input || {}))
-  .filter((s) => /git\s+push|gh\s+repo\s+create|git\s+remote\s+add|npm\s+publish/.test(s));
+  .filter((s) => /git\s+push|gh\s+repo\s+create|git\s+remote\s+add|npm\s+publish/.test(s))
+  .filter((s) => !exercisesAHook(s));
 check(
   'NOTHING was pushed and no remote was created',
   pushish.length === 0,
@@ -399,6 +427,56 @@ for (const [rel, label] of [
     j ? `schemaVersion ${JSON.stringify(j.schemaVersion)}` : 'missing or unparseable',
   );
 }
+// THE ASSERTION THIS HARNESS EXISTED WITHOUT. It checked that `dod.json` was DECLARED and never
+// that anything was RUN — which is the product's own central failure mode, reproduced in the one
+// test whose job is to catch it. A studio that writes a well-formed Definition of Done and never
+// executes it passed every check above. Added 2026-08-27 (contract sweep).
+{
+  const evidenceDir = path.join(work, 'Dev-Memory', 'evidence');
+  let files = [];
+  try {
+    files = fs.readdirSync(evidenceDir).filter((f) => f.endsWith('.json'));
+  } catch {
+    files = [];
+  }
+  check(
+    'the Definition of Done was MEASURED, not merely declared',
+    files.length > 0,
+    `${files.length} evidence file(s) in Dev-Memory/evidence/`,
+  );
+
+  // Evidence carrying no real exit code is evidence of nothing. A judged dimension legitimately
+  // has none, so this asks for at least one EXECUTED record — something was actually run.
+  let executed = 0;
+  for (const f of files) {
+    try {
+      const rec = JSON.parse(fs.readFileSync(path.join(evidenceDir, f), 'utf8'));
+      if (rec && rec.kind === 'executed' && Number.isInteger(rec.exitCode)) executed += 1;
+    } catch {
+      /* a file that will not parse is counted as not executed, which is the honest reading */
+    }
+  }
+  check(
+    'at least one dimension records a real exit code from a real command',
+    executed > 0,
+    `${executed} executed record(s)`,
+  );
+
+  // And the studio's own output must satisfy the gate that grades it — run here rather than
+  // trusted, because "the gate would have passed" is exactly the kind of claim this harness
+  // exists to stop anybody making.
+  const qg = spawnSync(
+    process.execPath,
+    [path.join(REPO, 'plugins', 'gru953-studio', 'hooks', 'quality-gate.mjs'), work],
+    { encoding: 'utf8' },
+  );
+  check(
+    "the studio's own Definition-of-Done record satisfies quality-gate.mjs",
+    qg.status === 0,
+    `exit ${qg.status}: ${String(qg.stdout || '').slice(0, 200)}`,
+  );
+}
+
 check(
   'Dev-Memory/ is gitignored (it is working memory, not the product)',
   has('.gitignore') &&
@@ -431,7 +509,12 @@ const commits = String(log.stdout || '')
   .trim()
   .split('\n')
   .filter(Boolean).length;
-check('the work was committed', commits >= 2, `${commits} commit(s)`);
+// 2026-08-27, X382. Was `commits >= 2`, a number I picked rather than one I could justify. A real
+// run then committed the whole finished project — 15 files, 1,246 lines — in ONE commit, and was
+// marked as failing. For a single-phase brief that is exactly right: the studio checkpoints per
+// phase, and a project with one phase has one checkpoint. This assertion exists to prove the work
+// was committed AT ALL, not to mandate a shape of history the product never promised.
+check('the work was committed', commits >= 1, `${commits} commit(s)`);
 
 const remotes = spawnSync('git', ['remote'], { cwd: work, encoding: 'utf8' });
 check(

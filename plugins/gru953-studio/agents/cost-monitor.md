@@ -48,18 +48,30 @@ spend. Enforce that, not a generic "be efficient" instinct.
    rather than generating them, so that spend no longer exists — and neither does
    the per-generation approval prompt, which an unattended run could never have
    answered.)
-3. **Check for real numbers first** (2026-07-17 gap-research fix, see
-   `cost-guard`): if `~/.gru953-studio/cost-snapshot.json` exists and is
-   recent, read the actual `cost.total_cost_usd` and (if present —
-   Pro/Max only) `rate_limits.*` figures from it instead of guessing.
-   Otherwise, fall back to the session's own transcript size as a rough
-   local signal of how much of the current window has been used — check
-   the file's byte size cheaply (e.g. `wc -c` via Bash) rather than
-   reading its full content, which would defeat the point of a cheap
-   signal (2026-07-10 Round 4 fix: added Bash to this role's tools for
-   exactly this). See the `cost-guard` skill for the exact planning
-   rules; checkpoint Dev-Memory at every stage boundary so nothing is
-   lost if the session ends.
+3. **Measure it, do not estimate it** (2026-08-27). Run:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/hooks/session-cost.mjs" . --json
+   ```
+
+   It reads the session transcript and totals the **tokens** actually used,
+   keyed by `message.id` so a streamed message is counted once rather than once
+   per line. Exit 0 means measured and within budget; exit 1 means it could not
+   measure, or the budget in `Dev-Memory/run.json` is exceeded — say which.
+
+   *Why this replaced what was here.* This step used to say: read
+   `~/.gru953-studio/cost-snapshot.json` if it is recent, and otherwise fall back
+   to "the session's own transcript size as a rough local signal … check the
+   file's byte size cheaply (e.g. `wc -c`)". Transcript BYTES are not tokens —
+   one long pasted file inflates the figure, a long reasoning pass barely moves
+   it — so the fallback measured the wrong quantity and the role that owns cost
+   had no way to know it. Meanwhile `hooks/session-cost.mjs`, which does the real
+   accounting, was invoked by nothing in the product at all.
+
+   Costs are reported in **tokens, never money**: a price table shipped in an LTS
+   release is a promise that goes stale. Checkpoint Dev-Memory at every stage
+   boundary so nothing is lost if the session ends. See the `cost-guard` skill
+   for the planning rules.
 4. **The real-numbers upgrade offer belongs to `first-run`, not this role**
    (2026-07-26 correction: this step previously had cost-monitor make the
    same "offer this once, ever" pop-up that `cost-guard`/`first-run` already

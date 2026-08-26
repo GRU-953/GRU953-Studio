@@ -266,7 +266,22 @@ function main() {
     };
     wantNonEmptyString('taskId');
     wantNonEmptyString('criterion');
-    wantNonEmptyString('command');
+    // 2026-08-27: an argv ARRAY is accepted alongside the documented string, so this format and
+    // `tasks.json`'s evidence agree about how a command is written down. task-ledger.mjs now
+    // REQUIRES the array (a string has to reach a shell to run, and a record is data); this is a
+    // widening rather than a change, so nothing already written stops validating. Two shapes for
+    // "the command that proved it", in one product, is how a producer and a consumer come to
+    // disagree — the divergence is closed here rather than documented as a quirk.
+    if (
+      !(typeof obj.command === 'string' && obj.command.length > 0) &&
+      !(
+        Array.isArray(obj.command) &&
+        obj.command.length > 0 &&
+        obj.command.every((a) => typeof a === 'string' && a.trim() !== '')
+      )
+    ) {
+      missing.push('command');
+    }
     wantFiniteNumber('exitCode');
     wantString('stdout');
     wantString('stderr');

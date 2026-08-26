@@ -76,7 +76,7 @@ track mid-session:
 2. `OBJECTIVE.md` — the confirmed brief and Tier (the source of truth FOCUS.md
    summarises).
 3. The `▶ RESUME HERE` pointer in `PROGRESS.md`.
-4. Any `blocked` rows / open blockers.
+4. Any `blocked-on-defect` or `blocked-on-human` rows / open blockers.
 
 Either way, **restate the single active goal in one plain line** before doing
 anything else. This is what makes the build survive a summarised or

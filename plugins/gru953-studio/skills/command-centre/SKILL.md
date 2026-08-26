@@ -23,10 +23,11 @@ new session. Plain-English rule is exactly as set in the
 into the JSON and re-run that gate; editing the rendered table achieves nothing, because
 the next run overwrites it.
 
-Two vocabulary changes came with it. `doing` is now **`in-progress`**, and there is no
-bare **`blocked`** — a task is `blocked-on-defect` (parked; the run carries on with
-anything else it can finish) or `blocked-on-human` (it genuinely stops). One word could
-not say both, and an unattended run has to know which it is looking at.
+Two vocabulary changes came with it. `doing` is now **`in-progress`**.
+There is no bare **`blocked`** any more either — a task is `blocked-on-defect`
+(parked; the run carries on with anything else it can finish) or `blocked-on-human`
+(it genuinely stops). One word could not say both, and an unattended run has to know
+which it is looking at.
 
 The command centre adds three control states on top, each of which only a person can
 ask for:
@@ -124,7 +125,7 @@ Five commands drive the machine (see `commands/studio-*.md`). Each: reads
 
 - **/studio-pause** — pause the active task (→ `paused`); everything freezes,
   resumable exactly. Safe to close the session after.
-- **/studio-resume** — resume the paused/scheduled task (→ `doing`) and carry
+- **/studio-resume** — resume the paused/scheduled task (→ `in-progress`) and carry
   on, after the usual `focus-guard` re-orientation read.
 - **/studio-stop** — stop work now and set the project down cleanly: revert the
   active task to `todo` (never a half-finished `done`), checkpoint memory, and

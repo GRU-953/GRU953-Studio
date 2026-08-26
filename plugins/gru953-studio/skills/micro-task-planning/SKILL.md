@@ -54,10 +54,17 @@ that was always implicitly needed between Design and Build.
      plainly to the user and handed to the single builder in order — no
      separate file. Formal tracking would be more process than a one-off
      script needs.
-   - **Standard/Complex:** recorded in `Dev-Memory/PLAN.md` (see the
-     `dev-memory` skill), with the same `todo`/`doing`/`done`/`blocked`
-     Status convention `PROGRESS.md` already uses, so it's auditable and
-     resumable the same way.
+   - **Standard/Complex:** recorded in `Dev-Memory/tasks.json` (see the
+     `dev-memory` skill), using the states `hooks/task-ledger.mjs` accepts —
+     `todo`, `in-progress`, `done`, `blocked-on-defect`, `blocked-on-human`,
+     plus the three set-aside states the command-centre owns (`paused`,
+     `skipped`, `scheduled`). `PROGRESS.md` and `PLAN.md` are rendered from it,
+     so it's auditable and resumable the same way.
+
+     There is deliberately no bare `blocked`: `blocked-on-defect` parks a task
+     and the run carries on with anything whose dependencies are satisfied,
+     while `blocked-on-human` stops the run. Collapsing the two is what made a
+     single hard failure end an unattended run permanently.
 4. **Sequential means dependency-correct, not one-at-a-time.** Tasks with
    no dependency on each other may still run together in the existing
    parallel Build Swarm (2 builders, Standard/Complex Tier — unchanged,
@@ -88,8 +95,8 @@ anything else, `memory-keeper` records it in the same write cycle: set the
 pointer, update the recall layer (`INDEX.md` and, on Standard/Complex, the
 `GRAPH.md` node/links — the `memory-graph` skill), and append any real lesson to
 `LESSONS.md`. Only then does `project-lead` read the plan for the next
-unblocked task (first `todo`/`doing` whose dependencies are all `done`, never a
-`blocked` one) and continue. This keeps an interrupted session losing nothing
+unblocked task — the `next` field of `node hooks/task-ledger.mjs .`, never
+re-derived by reading the rendered table — and continue. This keeps an interrupted session losing nothing
 and the recall memory always current — never a batch of updates saved up for
 later, which is exactly what goes missing when a session ends unexpectedly.
 
