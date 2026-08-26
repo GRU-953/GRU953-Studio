@@ -4,7 +4,7 @@
 // Zero dependencies (Node stdlib only). Self-contained: no external state store.
 //
 // Internally gated twice: first to push-capable commands — matched by
-// isPushCapable(), shared with gate.mjs via lib.mjs so both hooks judge the
+// isPushCapable(), which lived in lib.mjs so that this hook and gate.mjs judged the
 // same command set — and then to an active studio run (a Dev-Memory folder
 // somewhere up the tree, also resolved via lib.mjs). When no studio project
 // is found the hook allows and stands down, so a user/global-scope install
@@ -21,9 +21,9 @@
 // stdout is reserved for the decision JSON.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import crypto from 'node:crypto';
 // 2026-07-26 audit finding 4: this was `require('node:zlib')` inside
 // decodeAndNormalize, which is a ReferenceError in an ESM module — so the
 // gzip-obfuscation defence had never run. A module-scope import is the only
@@ -40,13 +40,17 @@ const HOOKS_DIR = path.dirname(fileURLToPath(import.meta.url));
 import {
   stepAside,
   deny,
+  escalate,
+  sendsCommitsToRemote,
+  resolveScriptChain,
+  carriesThisPlugin,
+  pipesRemoteCodeIntoAnInterpreter,
   readStdin,
   extractCommand,
   extractCwd,
   findStudioRoot,
   isPushCapable,
   normalizeForPushCheck,
-  tokenConfirmedWithinTtl,
 } from './lib.mjs';
 
 // 2026-07-19 (Phase 4 — opt-in cloud memory persistence, see the `dev-memory`
@@ -55,7 +59,7 @@ import {
 // the push — but the full secret/key-file scan below STILL runs on those files,
 // so Dev-Memory persists to a private branch only if it carries no secret. This
 // is the ONLY effect of the token here; it never relaxes the secret scan, and
-// gate.mjs still confines the token to a private (never public) push.
+// gate.mjs confined the token to a private (never public) push, until X214 deleted both.
 //
 // 2026-07-26 further-pass audit fix (confirmed by execution): this used to
 // carry its OWN independent copy of the token/TTL check — match the token
@@ -64,20 +68,26 @@ import {
 // gate.mjs, reintroduced here because scan.mjs never picked up that fix.
 // Reproduced: a record with an unrelated fresh `ISSUED:` line placed BEFORE
 // the real (expired) token+its own real issued line still returned allowed.
-// Now shares gate.mjs's already-fixed tokenConfirmedWithinTtl from lib.mjs,
+// Shared gate.mjs's tokenConfirmedWithinTtl from lib.mjs while both existed;
 // so there is exactly one implementation and the two hooks cannot drift
 // apart on this again.
 function memoryPersistAllowed(studioRoot) {
-  const record = path.join(studioRoot, 'Dev-Memory', 'MEMORY-PERSIST-APPROVED');
-  let text;
+  // 2026-08-16, X214. This used to require a sha256 token with a TTL, minted by
+  // confirm-memory-persist.mjs. X91 established that such a token proves nothing: anything this
+  // hook can read, an agent on the same machine can write. It was ceremony, and it cost a whole
+  // script, a TTL, and two findings.
+  //
+  // What actually matters is that the person whose private memory it is has said so ON PURPOSE.
+  // A file they create by name does that, and — unlike a hash — they can see it, understand it,
+  // and delete it. The secret scan below still runs over those files regardless, so this opt-in
+  // never ships a credential; it only stops the working-memory rule from refusing a push the
+  // owner deliberately intends.
+  const marker = path.join(studioRoot, 'Dev-Memory', 'SHIP-MEMORY-DELIBERATELY');
   try {
-    fs.accessSync(record, fs.constants.R_OK);
-    text = fs.readFileSync(record, 'utf8');
+    return fs.statSync(marker).isFile();
   } catch {
     return false;
   }
-  const expected = `STUDIO-MEMORY-PERSIST-CONFIRMED:${crypto.createHash('sha256').update(`studio-memory-persist:${studioRoot}`).digest('hex')}`;
-  return tokenConfirmedWithinTtl(text, expected);
 }
 
 // ---- Dev-Memory content probe (2026-07-31 maintenance fix) -------------------
@@ -124,11 +134,42 @@ function devMemoryHasAnyFile(devMemoryPath) {
 }
 
 // ---- push-tree resolution ------------------------------------------------------
+// expandTilde() — `~` is the shell's, not a path component.
+//
+// 2026-08-25, X295. `resolvePushTree()` returned a `git -C` or `cd` path VERBATIM, so a tilde was
+// never expanded: `path.resolve(SESSION_DIR, '~/repo')` yields `<session>/~/repo`, a directory that
+// does not exist. Measured at the parent, from a studio session against a target repo holding a
+// tracked AWS-shaped key:
+//
+//   git -C ~/target push origin main   ->  deny, "not a git work tree; cannot prove the push set is clean"
+//   git -C /Users/…/target push …      ->  deny, naming the secret
+//
+// So this was NOT a leak — the fail-closed layer caught it — and that is why it is graded Medium
+// rather than High. It is a FALSE REFUSAL with an untrue explanation: the tree it named is a perfectly
+// good git work tree, and the user is told otherwise about their own repository. A gate that blocks
+// honest work while explaining itself wrongly is the L5 risk, which is how gates get switched off.
+//
+// PROVENANCE, because it is the point of X296. This fix already existed. It was written on 15 August
+// and it survived only inside an uncommitted copy of scan.mjs in a folder that both a delivered
+// instruction document and my own summary had called disposable — in no commit, on no branch, one
+// deletion from gone. It was found by three reviewers refuting the sentence "it is safe to bin that
+// folder". The reasoning below is that author's, kept because it is right; the file it came from is
+// NOT restored, because the same copy also emits a blanket `allow` (finding X1).
+//
+// `~otheruser/` is deliberately NOT expanded: resolving it portably needs a passwd-database lookup
+// this project's Node-stdlib-only design has no call for, and nobody legitimately pushes from another
+// user's home directory on a single-user dev machine. Such a path is returned unexpanded — no worse
+// than before, just not improved either.
+function expandTilde(p) {
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
 function resolvePushTree(cmd, fallback) {
   let m = /(?:^|[^A-Za-z0-9_])git[ \t]+-C[ \t]+(?:"([^"]+)"|'([^']+)'|([^ \t]+))/.exec(cmd);
-  if (m) return m[1] || m[2] || m[3];
+  if (m) return expandTilde(m[1] || m[2] || m[3]);
   m = /^[ \t]*cd[ \t]+(?:"([^"]+)"|'([^']+)'|([^ \t;&|]+))[ \t]*(?:&&|;)/.exec(cmd);
-  if (m) return m[1] || m[2] || m[3];
+  if (m) return expandTilde(m[1] || m[2] || m[3]);
   return fallback;
 }
 
@@ -316,6 +357,139 @@ function decodeAndNormalize(buf) {
   return [...new Set(results)];
 }
 
+// 2026-08-24, X8. These two patterns were declared inside main(), which was fine while the only
+// thing that scanned was a push. They are hoisted to module scope so the Write/Edit content scan
+// added below uses the SAME definitions. A second copy of a security regex is exactly how this
+// project's SEPARATOR_ROW_RE drifted out of sync with its siblings — one definition cannot drift.
+//
+// The reasoning behind each pattern is left in place at its original site inside main(), because it
+// is long, dated and worth reading where it was written.
+const SECRET_RE =
+  /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+// 2026-08-24, X287. The push scan's secret SHAPE had been held at one vendor pattern and one quoted
+// assignment since the beginning, and an axis-enumeration lens showed what that missed. Every shape
+// below was measured live: a committed studio repo, one credential file, `git push origin main`, and
+// every one returned `ask` carrying the sentence "no secrets, keys or private Dev-Memory files were
+// found in what this would ship".
+//
+// THAT IS WORSE THAN SILENCE, and it is why this is a High rather than a gap. A silent miss leaves the
+// user no worse informed. A POSITIVE ASSURANCE, given to a non-technical owner, about a scan that had
+// no pattern for the thing sitting in the tree, actively misleads them — and it sits on the product's
+// last line of push defence, X214 having removed the layer above it. The wording is corrected too, at
+// the escalate() below: both halves were the owner's decision of 2026-08-24, taken together on the
+// reasoning that adding patterns narrows the gap while correcting the wording stops the product ever
+// claiming a completeness it cannot have.
+//
+// EACH ENTRY IS A HIGH-CONFIDENCE SHAPE, not a keyword. L15 in this project is "enumerate, never
+// sweep", and the temptation here is to match the word `password` anywhere — which would fire on
+// every login form, every prompt string and every piece of documentation in an ordinary repository,
+// and be switched off within the week. So each of these requires STRUCTURE: a registry key beside the
+// npm token, all three words on a netrc line, the literal AWS key name, a JWT's three base64url
+// segments.
+const SECRET_SHAPES = [
+  // npm auth token in .npmrc — `//registry.npmjs.org/:_authToken=npm_…`. The `_authToken` key is
+  // unambiguous; nothing else in software uses it.
+  /_authToken\s*=\s*\S{16,}/i,
+  // .netrc — all three words on one line, which the format requires and prose does not… except that
+  // prose CAN: the false-alarm corpus caught this on "machine learning login page password strength
+  // meter", which is a plausible sentence in any documentation about authentication. So the shape is
+  // pinned to the format instead: a netrc entry BEGINS its line with `machine`, and the password is
+  // the last token on it or is followed by another netrc keyword. Prose continues past it.
+  /^[ \t]*machine[ \t]+\S+[ \t]+login[ \t]+\S+[ \t]+password[ \t]+\S+[ \t]*(?:$|account[ \t]|port[ \t]|macdef[ \t])/im,
+  // AWS's own key name, which SECRETVAR_RE missed because the value is conventionally UNQUOTED.
+  /aws_secret_access_key\s*[:=]\s*\S{20,}/i,
+  // A JWT: three base64url segments, the first of which is a JSON header already encoded — `{"`
+  // becomes `eyJ` — so this is structure rather than a guess.
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+  // A database URL carrying its password inline. The password can only sit between `:` and `@`, so a
+  // URL with no credentials cannot match. The negative lookahead is not a workaround: writing
+  // `postgres://user:${DB_PASSWORD}@host/db` is the CORRECT way to write this line, and flagging it
+  // would refuse good practice. Found the honest way — the first version of this pattern refused this
+  // project's own push, naming the reproduction that was being written for it.
+  /\b(postgres(ql)?|mysql|mongodb(\+srv)?|redis|amqp|mssql):\/\/[^\s:/@]+:(?![$%{<]|\{\{)[^\s:/@]{6,}@/i,
+  // An UNQUOTED secret assignment. SECRETVAR_RE requires quotes around the value, so
+  // `password: s3cr3tpassword123` in a YAML file did not match it. Kept narrow: at least 12
+  // characters, no spaces, and the value must not open with a quote, a `$`, a `<` or a `{` — which
+  // is what a placeholder, a variable reference or a template hole looks like.
+  /(?:^|[\s{,])(?:secret|token|password|passwd|apikey|api[_-]key|access[_-]key|auth[_-]token|client[_-]secret)[a-z0-9_-]{0,32}\s*[:=]\s*(?!["'`$<{])[A-Za-z0-9/+_.=-]{12,}\s*$/im,
+];
+const SECRETVAR_RE =
+  /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
+// One place that asks "does this line hold a secret", so the push scan and the write scan cannot
+// answer it differently — which is exactly what happened for four days after X8, and is why this is
+// a function rather than three call sites each repeating the disjunction.
+const looksLikeASecret = (ln) => SECRET_RE.test(ln) || SECRET_SHAPES.some((re) => re.test(ln));
+
+// Hoisted with the two patterns above, and for the same reason: the write-content scan must honour
+// the SAME opt-out marker as the push scan, or a line the project has deliberately exempted would
+// be exempt in one scan and flagged in the other.
+const SCAN_ALLOW_MARKER = '// scan-allow: known test fixture';
+// 2026-08-24, X286. `isScanAllowed` was `trimEnd().endsWith(SCAN_ALLOW_MARKER)` and asked nothing
+// about the FILE, so `//` was treated as a comment introducer in every file on disk. The opt-out is
+// documented as "a maintainer annotating a deliberate test vector"; in a Kubernetes secret manifest,
+// a Makefile, a shell script or a JSON config, `//` is not an annotation at all — it is ordinary
+// payload text that happens to sit at the end of the line, and the whole justification for the
+// exemption fails. Measured at the parent: five such files, five real AWS-shaped keys, all exempted.
+//
+// The rule now: the marker counts only when it follows a comment sigil VALID FOR THAT FILE'S TYPE.
+// On the owner's decision of 2026-08-24, chosen over restricting the opt-out to a list of code
+// extensions, because a `#` comment in a shell test fixture is perfectly legitimate.
+//
+// FAIL CLOSED ON AN UNKNOWN TYPE, and that is the deliberate half. If the comment syntax cannot be
+// established there is no way to establish that the marker is an annotation, so the opt-out does not
+// apply and the secret is reported. A file format with no comments at all — JSON — therefore has no
+// opt-out, which is correct: there is nowhere in a JSON file to write an annotation.
+//
+// NOTHING IN THIS PROJECT BREAKS, and that was checked before the change rather than hoped for: all
+// five files carrying the marker are `.mjs`, where `//` is exactly right. X218 control D pins the
+// whole tree, so a regression here fails the suite.
+const COMMENT_SIGILS = (file) => {
+  const f = String(file || '').toLowerCase();
+  const base = f.split(/[/\\]/).pop() || '';
+  const ext = (base.match(/\.([a-z0-9]+)$/) || [, ''])[1];
+  // C-family and its descendants: `//`.
+  if (
+    /^(mjs|cjs|js|jsx|ts|tsx|java|c|h|cc|cpp|hpp|go|rs|swift|kt|kts|scala|php|cs|m|mm|dart|zig)$/.test(
+      ext,
+    )
+  )
+    return ['//'];
+  // Shell, scripting and configuration: `#`.
+  if (
+    /^(sh|bash|zsh|fish|ps1|psm1|py|rb|pl|pm|r|yml|yaml|toml|ini|cfg|conf|env|tf|tfvars|gradle|properties|awk|sed)$/.test(
+      ext,
+    )
+  )
+    return ['#'];
+  // SQL and the ML family: `--`.
+  if (/^(sql|hs|lhs|lua|elm|ada|vhd)$/.test(ext)) return ['--'];
+  // Extensionless or dot-prefixed files whose comment syntax is `#` by convention.
+  if (
+    /^(makefile|gnumakefile|dockerfile|containerfile|rakefile|gemfile|procfile|\.env|\.npmrc|\.netrc|\.gitignore|\.dockerignore|\.editorconfig|\.bashrc|\.zshrc|\.profile)$/.test(
+      base,
+    )
+  )
+    return ['#'];
+  if (/^\.env\./.test(base) || /\.env$/.test(base)) return ['#'];
+  // Everything else — including json, md, html, csv and any unknown extension — has no established
+  // line-comment syntax here, so no marker in it can be shown to be an annotation.
+  return [];
+};
+// AUTHORED_TEXT is the sentinel for input with no file type: a commit message, a tag message. There
+// is no file to establish a comment syntax from, and the person wrote that text deliberately — nobody's
+// Kubernetes manifest becomes a commit message by accident — so any of the three sigils is accepted
+// there. This is the one place the old loose behaviour is kept, and it is kept on purpose.
+const AUTHORED_TEXT = Symbol('authored text with no file type');
+const isScanAllowed = (ln, file) => {
+  const text = String(ln).trimEnd();
+  const body = SCAN_ALLOW_MARKER.replace(/^\/\/\s*/, '');
+  const sigils = file === AUTHORED_TEXT ? ['//', '#', '--'] : COMMENT_SIGILS(file);
+  for (const sigil of sigils) {
+    if (text.endsWith(`${sigil} ${body}`)) return true;
+  }
+  return false;
+};
+
 function main() {
   // 2026-07-31 maintenance fix (F1): readStdin() now throws StdinReadFailure
   // rather than returning '' when it could not reliably read the tool-call
@@ -362,12 +536,414 @@ function main() {
   }
   const CMD = extractCommand(INPUT);
 
-  if (!isPushCapable(CMD)) {
-    // Not push-capable: nothing to scan. Emit NO decision (X1).
-    stepAside();
+  // ---- X8 / X7: scan what is being WRITTEN, not only what is being pushed ---------
+  //
+  // `dev-memory/SKILL.md` carries a section headed "Scan before every write — never skip". Nothing
+  // enforced it. The only PreToolUse matcher was `Bash|PowerShell|Monitor|run_command`, so no
+  // `Write`, `Edit`, `MultiEdit` or `NotebookEdit` call ever reached this hook, and no `mcp__*` tool
+  // did either unless its name happened to contain one of those four words (X7).
+  //
+  // WIDENING THE MATCHER ALONE WOULD HAVE BEEN A DISASTER, and measuring before changing it is the
+  // only reason that is known rather than discovered afterwards. With the matcher widened and this
+  // branch absent, a `Write` falls straight through to the push path — `isPushCapable('')` fails
+  // closed to true on an empty command — and comes back `ask`. Measured: a Write of "hello world"
+  // returned the PUBLISHING-CONSENT prompt, and a Write whose content held an AWS-shaped key
+  // returned that same prompt saying "no secrets ... were found", because the scan had looked at the
+  // git tree and never at the content. A consent prompt on every file write is the false alarm that
+  // gets a plugin switched off within the hour.
+  //
+  // So a tool call that writes content is answered HERE and never reaches the push logic. It is
+  // silent unless it finds something, which is what makes scanning every write affordable.
+  //
+  // 2026-08-24 — THIS BRANCH WAS GATED ON `if (!CMD)` AND THAT WAS WRONG THREE TIMES OVER. Found by
+  // an axis-enumeration lens, every case reproduced against this hook, and the mistake was a single
+  // false premise: that "carries a command" and "writes content" are mutually exclusive. They are
+  // not, and the gate turned that premise into a switch anyone could flip.
+  //
+  //   1. `extractCommand()` returns `tool_input.command`, else `.script`, else `.CommandLine`. So ANY
+  //      tool_input carrying one of those three field names made CMD truthy and skipped this entire
+  //      branch. Measured: a `Write` with `{command:"echo hi", content:"<AWS-shaped key>"}` was
+  //      SILENT, while the same payload without the command field denied. `command` is one of the
+  //      commonest MCP parameter names, and the mcp__ arm below exists precisely for tools whose
+  //      schema cannot be known — so the arm written to scan unknown tools was switched off by the
+  //      commonest field an unknown tool has.
+  //   2. Zero parts fell THROUGH to the push path, where `isPushCapable('')` fails closed to true.
+  //      Ordinary deletions — `new_string: ""`, `content: ""`, `edit_mode: "delete"` — drew the
+  //      publishing-consent prompt inside a git repo, and were DENIED outright in a studio project
+  //      that is not yet a git repository. My own commit message for this branch claimed cases B,
+  //      G1, G2, I and K locked exactly that out. They did not; see case K below.
+  //   3. The mcp__ whole-input scan was gated on `!parts.length`, so an unrelated `content` key
+  //      turned it off and a secret in any other field went unscanned.
+  //
+  // The shape of a call is now read from the TOOL, never from the absence of a command: the content
+  // scan always runs, and only a write-shaped tool with NO command answers the call here. Anything
+  // carrying a real command continues to the paths below, so X39's catastrophic-command refusal and
+  // the push scan still see it — a `Write` payload with a stray `rm -rf /` in a command field must
+  // not become unreachable in the course of fixing this.
+  {
+    // readStdin() returns the raw payload as a STRING — every helper here parses it internally — so
+    // this parses it once rather than assuming an object. Getting that wrong cost a debugging pass:
+    // `INPUT.tool_input` was silently `{}`, the branch fell through, and a Write kept returning the
+    // publishing prompt.
+    let payload = {};
+    try {
+      const parsed = JSON.parse(String(INPUT));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed;
+    } catch {
+      /* an unparseable payload is left to the paths below, which already refuse on a bad read */
+    }
+    const ti =
+      payload.tool_input &&
+      typeof payload.tool_input === 'object' &&
+      !Array.isArray(payload.tool_input)
+        ? payload.tool_input
+        : {};
+    const toolName = String(payload.tool_name || '');
+    const parts = [];
+    const take = (v) => {
+      if (typeof v === 'string' && v.length) parts.push(v);
+    };
+    take(ti.content); // Write
+    take(ti.new_string); // Edit
+    take(ti.new_source); // NotebookEdit
+    if (Array.isArray(ti.edits)) {
+      // MultiEdit. `typeof [] === 'object'`, so the array check is not redundant.
+      for (const e of ti.edits) {
+        if (e && typeof e === 'object' && !Array.isArray(e)) take(e.new_string);
+      }
+    }
+    // An MCP tool has no schema this hook can rely on, so its whole input is searched as text. That
+    // is deliberately cruder than the named fields above, and it can only ever over-look rather than
+    // over-claim: a hit is still a real pattern match on text the tool was about to send.
+    // NOT gated on `!parts.length` — that was defect 3 above. An MCP input carrying a harmless
+    // `content` key turned the whole-input scan off, so the same secret in the same field was
+    // denied or ignored depending on whether an unrelated key happened to be present.
+    const WRITE_TOOL = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/i.test(toolName);
+    const MCP_TOOL = /^mcp__/i.test(toolName);
+    if (MCP_TOOL) {
+      try {
+        parts.push(JSON.stringify(ti));
+      } catch {
+        /* an input that will not serialise is left to the paths below */
+      }
+    }
+    // A write-shaped tool with no command has nothing to do with pushing, so it is answered here
+    // whatever the scan finds — including when it finds nothing to scan at all. That is defect 2:
+    // falling through with zero parts is what put a publishing prompt on an ordinary deletion.
+    const answersHere = (WRITE_TOOL || MCP_TOOL) && !CMD;
+
+    // `findStudioRoot(...) === null` used to stepAside() from here. That is right for a call this
+    // branch answers and WRONG for one it is only inspecting: a Bash command in a non-studio
+    // directory would have had its push scan swallowed. So the not-a-studio-project case now skips
+    // the content scan and lets the decision fall to `answersHere` below.
+    const WRITE_DIR = extractCwd(INPUT) || process.cwd();
+    const inStudio = findStudioRoot(WRITE_DIR) !== null;
+    if (parts.length && inStudio) {
+      const found = [];
+      parts
+        .join('\n')
+        .split(/\r?\n/)
+        .forEach((ln, n) => {
+          if (isScanAllowed(ln, typeof ti.file_path === 'string' ? ti.file_path : '')) return;
+          if (looksLikeASecret(ln)) found.push(`line ${n + 1}: a vendor-shaped key or token`);
+          else if (SECRETVAR_RE.test(ln)) found.push(`line ${n + 1}: a secret-looking assignment`);
+        });
+      if (found.length) {
+        // Names the LINE and the SHAPE, never the value — the same rule the push scan follows, so a
+        // refusal message can never itself leak the thing it refused.
+        deny(
+          `studio scan: refusing to write — this ${toolName || 'edit'} would put ` +
+            `${found.length === 1 ? 'a secret' : `${found.length} secrets`} into ` +
+            `${typeof ti.file_path === 'string' ? ti.file_path : 'a file'}. ${found.join('; ')}. ` +
+            'Nothing has been written. Put the value in an environment variable, or in a file your ' +
+            'project ignores, and reference it from the code instead. If it is a deliberate test ' +
+            'fixture, end that line with a comment saying `scan-allow: known test fixture` — using the ' +
+            'comment character your file actually uses (`//` in JavaScript and TypeScript, `#` in shell, ' +
+            'YAML, Makefiles and .env files, `--` in SQL). It must be a real comment in that kind of ' +
+            'file, or it is ignored — and a JSON file has no comments, so there is nowhere in one to ' +
+            'put it.',
+        );
+      }
+    }
+    if (answersHere) stepAside();
   }
 
+  // ---- X39: refuse the irreversible ------------------------------------------------
+  //
+  // 2026-08-17. Until now nothing in this product refused `rm -rf /`, a raw write to a whole
+  // disk, `mkfs` over a partition, or a history rewrite. Measured at the parent commit: all nine
+  // such commands reached the machine with no decision from anything.
+  //
+  // WHY THIS IS NOT THE LAYER X214 REMOVED, because that distinction is the whole design. The
+  // token layer was authorisation theatre — it tried to establish that a person had agreed, from
+  // a file an agent could write, and X91 proved that cannot work. Here the evidence is IN THE
+  // COMMAND TEXT: `rm -rf /` says what it does. Nothing is inferred about intent, nothing is
+  // trusted, and there is no token to forge. Same basis as the secret scan that was kept: refuse
+  // on evidence, never on a claim.
+  //
+  // WHY IT IS WORTH HAVING when Claude Code already prompts: the prompt protects an ATTENDED
+  // session. In auto-accept it is absent, which is precisely when an inexperienced user — this
+  // product's stated audience — is least able to catch `rm -rf /` scrolling past.
+  //
+  // WHY NAMED RULES AND NOT ONE REGEX. Four fixes this week over-reached by widening a pattern
+  // past the case in front of it (L15: enumerate, never sweep). Each rule below is a named
+  // predicate over TOKENS, so it can be read, and its reason is reported to the user rather than
+  // a pattern being quoted at them. `rm -rf ./build` and `rm -rf node_modules` are among the most
+  // common commands in software work; a block that caught either would be switched off and take
+  // the real protection with it (L5). X39's reproduction holds 14 such commands as controls.
+  // Each shell segment is judged on its OWN command position. Tokenising the whole line and
+  // asking "does `mkfs` appear anywhere" cannot tell a command from a quotation: the hunt for
+  // false alarms caught `echo "do not run mkfs.ext4 /dev/sda1"` and `echo rm -rf / > notes.txt`,
+  // both of which only TALK about the danger. Same confusion as X206 (prose about the guardrail
+  // satisfying the check for the guardrail) and X207 (commentary read as data).
+  const PREFIXES = new Set(['sudo', 'env', 'time', 'nice', 'ionice', 'command', 'exec', 'xargs']);
+  // 2026-08-18, X224: this split the RAW command text, so every bypass the canonicaliser exists to
+  // close was open here — `r""m -rf /` and `\rm -rf /` both reached the machine with no decision at
+  // all. normalizeForPushCheck is imported by this very file and relied on by its two other security
+  // callers since July; the catastrophic rules were simply never routed through it.
+  // 2026-08-18, X227: the SEPARATOR SET was incomplete and shell wrappers were absent entirely.
+  // X223 varied POSITION and X224 varied SPELLING; neither varied the separator, so a lone
+  // background `&`, a command substitution, and a `bash -c` / `sh -c` / `eval` wrapper were not
+  // separators to this splitter at all. Six forms reached the machine with NO decision, and
+  // `bash -c "rm -rf /"` defeated all four rules at once because the dangerous text was never a
+  // segment.
+  //
+  // The correct set was already written down. X107's requirement, verbatim in the register: "a
+  // separator, a pipe, a background `&`, a newline, or a substitution". X107 went `not-applicable`
+  // when X214 deleted gate.mjs — the file that requirement lived in — so the knowledge was retired
+  // with the file and this guard was never re-asked. L15 compounding L14.
+  //
+  // `&&` precedes `&` in the alternation so a logical-and is never split into two backgrounds.
+  const SEGMENT_SEPARATORS = /(?:&&|\|\||[;|\n&])/;
+  // Text inside a substitution or a shell wrapper is a command in its own right. Bounded at three
+  // levels so a pathological nesting cannot spin; the bound is a real limit, not a claim of
+  // completeness, and is disclosed in X227's reproduction.
+  const unwrapShellText = (text, depth = 0) => {
+    const out = [text];
+    if (depth >= 3) return out;
+    for (const m of String(text).matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)) {
+      const inner = m[1] ?? m[2];
+      if (inner && inner.trim()) out.push(...unwrapShellText(inner, depth + 1));
+    }
+    // `bash -c "..."`, `sh -c '...'`, and `eval "..."`. The wrapper binary is matched at a command
+    // position, so prose merely mentioning it contributes nothing (the X39 false-alarm lesson).
+    for (const m of String(text).matchAll(
+      /(?:^|[\s;&|(])(?:(?:ba|z|k|da)?sh\s+(?:--?[A-Za-z][A-Za-z0-9-]*\s+)*-[A-Za-z]*c|eval)\s+(['"])([\s\S]*?)\1/g,
+    )) {
+      const inner = m[2];
+      if (inner && inner.trim()) out.push(...unwrapShellText(inner, depth + 1));
+    }
+    // 2026-08-24, X285: the flag was `(?:-[A-Za-z]+\s+)*-c`, which requires `-c` to stand ALONE as
+    // its own token. `bash -lc "rm -rf /"` and `bash --login -c "rm -rf /"` therefore reached the
+    // machine with no decision from the only guard that exists to stop it being destroyed — and
+    // `bash -lc` is one of the commonest spellings of `bash -c` in existence. Now: any run of short
+    // or long options, then a cluster whose LAST letter is `c`, because `-c` consumes the argument
+    // after it and so must be last in its cluster. `-cl` is deliberately not matched.
+    //
+    // And the UNQUOTED payload, `bash -c rm\ -rf\ /`, which the pattern above cannot see at all
+    // because it requires a quote pair. Everything after the flag is taken as the payload; the
+    // canonicaliser resolves the escapes when the payload is re-normalised on the next pass.
+    for (const m of String(text).matchAll(
+      /(?:^|[\s;&|(])(?:(?:ba|z|k|da)?sh\s+(?:--?[A-Za-z][A-Za-z0-9-]*\s+)*-[A-Za-z]*c|eval)\s+([^'"\s][^\n]*)/g,
+    )) {
+      const inner = m[1];
+      if (inner && inner.trim()) out.push(...unwrapShellText(inner, depth + 1));
+    }
+    return out;
+  };
+  // Each unwrapped payload is canonicalised in its own right, not just the outer command. Found by
+  // testing the CROSS PRODUCT of the four axes rather than each alone: `bash -c "\rm -rf /"` slipped
+  // through because the outer normalisation does not reach an escape inside quotes, so the payload had
+  // to be normalised after unwrapping. 54 cross cases now hold; three did not before this line.
+  const segments = unwrapShellText(String(normalizeForPushCheck(String(CMD || '')) || ''))
+    .flatMap((text) =>
+      String(normalizeForPushCheck(String(text)) || text).split(SEGMENT_SEPARATORS),
+    )
+    .map((seg) => seg.trim().split(/\s+/).filter(Boolean))
+    .filter((t) => t.length > 0);
+  // The tokens of every segment whose command position is one we care about; a segment led by
+  // `echo`, `grep` or `man` contributes nothing.
+  const commandSegments = segments.map((t) => {
+    let i = 0;
+    while (i < t.length && (PREFIXES.has(t[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i]))) i += 1;
+    return t.slice(i);
+  });
+  // 2026-08-18, X224: the command word is stripped of surrounding quotes before matching, because
+  // `"rm" -rf /` and `'rm' -rf /` are the same command to a shell and were silent here. The
+  // canonicaliser above resolves splicing and escapes but leaves a wholly quoted word intact.
+  const cmdWord = (t) =>
+    String(t[0] || '')
+      .replace(/^['"]+/, '')
+      .replace(/['"]+$/, '');
+  // 2026-08-24, X285: the command WORD was canonicalised here since X224 and the OPERAND never was,
+  // so the danger simply moved one token to the right. `rm -rf //`, `rm -rf /.`, `rm -rf "/*"`,
+  // `dd if=/dev/zero of="/dev/disk0"` and `mkfs.ext4 "/dev/sda1"` all rendered NO DECISION while
+  // their unquoted, single-slash twins were refused. Found by an axis-enumeration lens: X39 varied
+  // position, separator, wrapper and command-word spelling — four axes, thoroughly, with 24
+  // false-alarm controls — and held the operand at exactly one canonical form throughout.
+  //
+  // Quotes off, then the path RESOLVED: `//`, `/.`, `/./`, `/..` and `/foo/..` all name the root
+  // directory to a shell and must be judged as the root. `.` and `..` segments are resolved rather
+  // than stripped, so `/tmp/..` collapses to `/` and is caught while `/tmp/x` does not.
+  //
+  // WHAT MUST NOT CHANGE, and the reason this is a resolver and not a looser pattern: `./build`,
+  // `node_modules`, `../x` and `/tmp/x` are among the commonest operands in software work. Each
+  // resolves to itself or to a relative path, never to `/`. A rule that caught any of them would be
+  // switched off within the week and take the real protection with it (L5). X39 holds 24 such
+  // commands as controls and every one of them still passes.
+  const pathWord = (raw) => {
+    const bare = String(raw || '')
+      .replace(/^['"]+/, '')
+      .replace(/['"]+$/, '');
+    if (!bare.startsWith('/')) return bare;
+    const kept = [];
+    for (const seg of bare.split('/')) {
+      if (seg === '' || seg === '.') continue;
+      if (seg === '..') {
+        kept.pop();
+        continue;
+      }
+      kept.push(seg);
+    }
+    return '/' + kept.join('/');
+  };
+  const leads = (re) => commandSegments.filter((t) => t.length && re.test(cmdWord(t)));
+  // 2026-08-18, X223: `const tokens = commandSegments.flat()` and `const has = (t) =>
+  // tokens.includes(t)` stood here, computed for exactly the job below and never consumed once —
+  // eslint had been reporting "'has' is assigned a value but never used" throughout. Removed rather
+  // than wired in: a variable that LOOKS like it inspects the whole command, sitting beside code that
+  // inspects one segment of it, is how a reader concludes the compound case is covered.
+  const CATASTROPHIC_RULES = [
+    {
+      why: 'this deletes the entire filesystem, not a directory in your project',
+      lead: /^(.*\/)?rm$/i,
+      judge: (seg) => {
+        const f = seg.filter((t) => /^-[a-zA-Z]+$/.test(t)).join('');
+        const recursive = /r/i.test(f) || seg.includes('--recursive');
+        // 2026-08-18, X224: `-RF` is the same flag set as `-rf` to rm, and the recursive test was
+        // already case-insensitive while the force test was not — so the pair disagreed with itself.
+        const forced = /f/i.test(f) || seg.includes('--force');
+        const targets = seg.slice(1).filter((t) => !t.startsWith('-'));
+        // The ROOT itself, or the root glob — never /tmp/x, ./build or node_modules. Both are now
+        // read through pathWord, so `//`, `/.`, `/./`, `"/"`, `'/*'` and `/tmp/..` are the same
+        // target as `/`, which is what they are to a shell.
+        const root = targets.some((t) => {
+          const p = pathWord(t);
+          return p === '/' || p === '/*';
+        });
+        return recursive && (forced || seg.includes('--no-preserve-root')) && root;
+      },
+    },
+    {
+      why: 'this writes raw bytes over a whole disk device, destroying every partition on it',
+      lead: /^(.*\/)?dd$/i,
+      judge: (seg) => {
+        // of=/dev/<device>. The pseudo-devices are ordinary and stay allowed.
+        const SAFE = /^\/dev\/(null|zero|random|urandom|stdout|stderr|tty|fd\/\d+)$/;
+        return seg.some((t) => {
+          // The quotes may sit around the whole assignment or only its value — `"of=/dev/disk0"`
+          // and `of="/dev/disk0"` are the same to a shell, and neither was seen before.
+          const m = pathWord(t).match(/^of=(.+)$/) || String(t).match(/^of=(.+)$/);
+          if (!m) return false;
+          const dev = pathWord(m[1]);
+          return dev.startsWith('/dev/') && !SAFE.test(dev);
+        });
+      },
+    },
+    {
+      why: 'this formats a disk device, erasing everything already on it',
+      lead: /^(.*\/)?mkfs(\.[a-z0-9]+)?$/i,
+      judge: (seg) => {
+        if (seg.includes('--help') || seg.includes('-h')) return false;
+        return seg.some((t) => pathWord(t).startsWith('/dev/'));
+      },
+    },
+    {
+      why: 'this rewrites the whole history of the repository and cannot be undone',
+      lead: /^(.*\/)?git$/i,
+      judge: (seg) => {
+        if (!seg.includes('filter-branch')) return false;
+        return !(seg.includes('--help') || seg.includes('-h'));
+      },
+    },
+  ];
+
+  for (const rule of CATASTROPHIC_RULES) {
+    let fired = false;
+    try {
+      // 2026-08-18, X223: this was `rule.hit()`, and each rule resolved its own segment with
+      // `leads(re)[0]` — the FIRST segment led by that binary, every later one discarded. So
+      // `rm -rf ./build && rm -rf /` produced NO DECISION AT ALL while `rm -rf /` alone was
+      // refused, and the same held for dd, mkfs and filter-branch: six holes, verified. The
+      // splitter above was written precisely to handle compounds, and then the enumeration stopped
+      // at index 0 — L15 in its purest form, and L14 because all four rules carried it.
+      //
+      // Every matching segment is now judged, in ONE place, so the four rules cannot drift apart.
+      fired = leads(rule.lead).some((seg) => rule.judge(seg));
+    } catch {
+      fired = false; // a rule that throws must never become a denial of ordinary work
+    }
+    if (fired) {
+      deny(
+        `studio: refusing to run this — ${rule.why}.\n\n` +
+          `    ${CMD}\n\n` +
+          'This is one of a very short list of commands the studio will not run, because they ' +
+          'destroy work irreversibly and no confirmation can undo them. If you genuinely intend ' +
+          'it, run it yourself in a terminal outside this session.',
+      );
+    }
+  }
+
+  // 2026-08-24, X5 / X6 / X15 — Phase 3, "escalate instead of guess". PROGRESS.md gated this on
+  // Phase 0's effect being measured first; that measurement was taken on 2026-08-22 (RESIDUALS gap 9).
+  //
+  // Before standing aside, RESOLVE the indirection rather than guessing at it from the command's
+  // wording. `isPushCapable` decides whether `npm run build` might publish by testing the string
+  // against six words (deploy|release|publish|ship|public|visibility), so `npm run deploy` was
+  // scanned and `npm run build` was not — on nothing but the name someone gave the script. Measured
+  // at HEAD before this change, the three commands X5 names — `bash build.sh`, `npm run build`,
+  // `make all` — reached the network with no scan whatever.
+  //
+  // Widening the word list is the move that has already failed eleven times, and X15 says why: you
+  // cannot enumerate what people call their scripts. So the script is READ instead. A resolved script
+  // that does not push stays silent, which is what makes this safe to turn on — it is not a new guess
+  // that can be wrong in a new direction, it is the same question asked of the real content.
   const SESSION_DIR = extractCwd(INPUT) || process.cwd();
+  let indirection = null;
+
+  if (!isPushCapable(CMD)) {
+    indirection = resolveScriptChain(CMD, SESSION_DIR);
+    if (indirection === null || !isPushCapable(indirection.text)) {
+      // X6's unresolvable half. `curl … | sh` runs code that does not exist on this machine until the
+      // moment it runs, so no amount of reading finds it, and the ratified architecture — fail closed
+      // to `ask` on anything that cannot be classified — is the only honest answer. Narrow on purpose:
+      // an ask on every pipeline would be the false alarm that gets a guard switched off.
+      if (pipesRemoteCodeIntoAnInterpreter(CMD) && findStudioRoot(SESSION_DIR) !== null) {
+        escalate(
+          'studio scan: this downloads a script from the internet and runs it straight away, so there ' +
+            'is no moment at which anyone — including me — can read what it will do. I cannot tell you ' +
+            'whether it publishes anything, changes your files or sends anything out. If you know and ' +
+            'trust the source, say yes. If you would rather look first, save it to a file, read it, ' +
+            'then run that file.',
+        );
+      }
+      // Not push-capable, and nothing resolvable says otherwise: nothing to scan. NO decision (X1).
+      stepAside();
+    }
+  }
+  // 2026-08-24, X288: the two refusals below said "refusing to push" whatever the command was, and
+  // once scp, rsync, curl and `aws s3 cp` became reasons to scan, that sentence stopped being true of
+  // the thing in front of the user. Telling a non-technical owner their PUSH was refused when they
+  // typed `scp` is a message they cannot act on — and this product's whole argument for refusing on
+  // evidence is that the evidence is in the command text, so the message must describe that text.
+  const SEND_VERB = /(^|[^A-Za-z0-9_])(scp|sftp|rsync)([^A-Za-z0-9_]|$)/i.test(String(CMD || ''))
+    ? 'copy this to another machine'
+    : /(^|[^A-Za-z0-9_])curl([^A-Za-z0-9_]|$)/i.test(String(CMD || ''))
+      ? 'upload this'
+      : /(^|[^A-Za-z0-9_])aws([^A-Za-z0-9_]|$)/i.test(String(CMD || ''))
+        ? 'copy this to S3'
+        : 'push';
+
   const STUDIO_ROOT = findStudioRoot(SESSION_DIR);
   if (STUDIO_ROOT === null) {
     // Not a studio project: never interfere.
@@ -487,7 +1063,8 @@ function main() {
         const ignoreCheck = git(['check-ignore', '-q', '--', 'Dev-Memory'], STUDIO_ROOT);
         if (ignoreCheck.status === 1) {
           deny(
-            'studio scan: refusing to push — Dev-Memory/ exists in this project but is not ' +
+            `studio scan: refusing to ${SEND_VERB} — Dev-Memory/ exists in this project but is not ` +
+              '' +
               "excluded by .gitignore, so it would ship. This project's rule is that Dev-Memory/ " +
               'never ships and always stays local-only (see the dev-memory and checkpoint-commit ' +
               'skills). Fix: add Dev-Memory/ to .gitignore at the project root, then retry.',
@@ -549,17 +1126,38 @@ function main() {
       .split('\0')
       .filter((s) => s.length > 0);
   const fileSet = new Set();
-  for (const p of nulParts(git(['ls-files', '-z', '--', ':/'], REPO, 'buffer').stdout))
-    fileSet.add(p);
-  for (const p of nulParts(git(['diff', '--cached', '--name-only', '-z'], REPO, 'buffer').stdout)) {
+  // 2026-08-25, X349. These three enumerations read `.stdout` and threw `.ok` away, so ANY git
+  // failure - an unreadable index, a permissions problem, a repository in a state git refuses to
+  // read - contributed zero paths. `FILES` came out empty, the scan found nothing, and the verdict
+  // at the bottom of this file then told the owner, in plain words, that it "checked what this would
+  // send ... and found none". A scan that enumerated NOTHING reporting that it FOUND nothing is the
+  // reassuring answer from a check that could not check: the class already filed here as X113, X115,
+  // X118, X281, X283, X328 and X348. The force-add branch fourteen lines below always had the
+  // correct form - `if (out.ok)` - so this file knew the right shape in one place and not in the
+  // other three. That is L14 exactly: fix every place carrying the shape.
+  const enumErrors = [];
+  const enumerate = (args, label) => {
+    const r = git(args, REPO, 'buffer');
+    if (!r.ok) {
+      const first = String(r.stderr || '')
+        .trim()
+        .split('\n')[0];
+      enumErrors.push(`${label}: ${first || `git exited ${r.status}`}`);
+      return [];
+    }
+    return nulParts(r.stdout);
+  };
+  for (const p of enumerate(['ls-files', '-z', '--', ':/'], 'the tracked files')) fileSet.add(p);
+  for (const p of enumerate(['diff', '--cached', '--name-only', '-z'], 'the staged changes')) {
     if (repoToplevelForDiff.ok) {
       fileSet.add(path.relative(REPO, path.join(repoToplevelForDiff.stdout.trim(), p)));
     } else {
       fileSet.add(p); // couldn't resolve toplevel; fall back to the raw (possibly wrong) path rather than dropping it
     }
   }
-  for (const p of nulParts(
-    git(['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'], REPO, 'buffer').stdout,
+  for (const p of enumerate(
+    ['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'],
+    'the untracked files',
   ))
     fileSet.add(p);
   // 2026-07-21 Round 13 audit fix (HIGH): if THIS command force-adds ignored
@@ -601,8 +1199,10 @@ function main() {
   // 2026-07-10 audit fix (MINOR): sk-[A-Za-z0-9]{20,} required contiguous
   // alphanumerics right after "sk-", missing today's hyphenated key formats
   // (sk-ant-api03-..., sk-proj-...). Loosened to tolerate internal hyphens.
-  const SECRET_RE =
-    /AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk_live_[0-9A-Za-z]{16,}|sk-[A-Za-z0-9-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+  // SECRET_RE is now defined at module scope — see the note above main(). Moved
+  // 2026-08-24 (X8) so the write-content scan uses the SAME pattern rather than a
+  // second copy; a hand-maintained duplicate of a security regex is how this project
+  // found SEPARATOR_ROW_RE drifted out of sync with its siblings.
   // 2026-07-11 fix (found live, pushing this very repo): this project's own
   // test fixtures (hooks.test.mjs) deliberately embed a realistic-looking
   // fake secret (AWS's own reserved "EXAMPLE"-suffixed placeholder key) so
@@ -614,7 +1214,26 @@ function main() {
   // break that real detection case too. Instead, only a line ending in the
   // explicit marker `// scan-allow: known test fixture` is exempt — this
   // marks ONE deliberately-annotated source line, not the string itself.
-  const SCAN_ALLOW_MARKER = '// scan-allow: known test fixture';
+  // SCAN_ALLOW_MARKER is now at module scope (X8, 2026-08-24) so the write-content scan shares it.
+  // 2026-08-17 X218 fix (the code half of X205): ten enforcement sites each asked
+  // whether the line merely CONTAINED the marker, which is not the question the
+  // comment above states. Containment honours the marker ANYWHERE on the line — inside a JSON
+  // string value, inside a `/* */` block, or with further code after it — so a real
+  // secret sharing such a line went unreported. Now one named helper asks the
+  // documented question, in one place, for all ten: is the marker the LAST thing on
+  // the line?
+  //
+  // Measured before tightening, because a fix that withdraws a real exemption is
+  // worse than the loose test it replaces: 16 lines in this repository carry the
+  // marker, 12 as a trailing comment (the genuine exemptions, all in test files) and
+  // 4 inside scan.mjs's own definition and comments — and those four carry no
+  // secret, so they never needed exempting. The tightening therefore costs nothing
+  // real. X218 control A pins the trailing case and control D pins the whole tree.
+  //
+  // The register recorded SIX sites; there are ten. That miscount is precisely why
+  // this is a helper and not ten corrected call sites (L14): sites that each carry
+  // their own copy of a rule are sites that drift.
+  // isScanAllowed is now at module scope (X8, 2026-08-24) so the write-content scan shares it.
   // Widened variable-name class to [A-Z0-9_-] so hyphenated header/field
   // names like "x-api-key" are also caught, not just underscore_case.
   // 2026-07-10 Round 2 fix: also allow an optional closing quote between the
@@ -631,8 +1250,10 @@ function main() {
   // actually be quoted eliminates this whole class of false positive
   // without losing real detections (every example in this file's own
   // security review used a quoted literal).
-  const SECRETVAR_RE =
-    /(SECRET|TOKEN|PASSWORD|PASSWD|APIKEY|API[_-]KEY|ACCESS[_-]KEY|PRIVATE[_-]KEY)[A-Z0-9_-]{0,64}["']?[ \t]*[:=][ \t]*["'][A-Za-z0-9/+_.=-]{16,}["']/i;
+  // SECRETVAR_RE is now defined at module scope — see the note above main(). Moved
+  // 2026-08-24 (X8) so the write-content scan uses the SAME pattern rather than a
+  // second copy; a hand-maintained duplicate of a security regex is how this project
+  // found SEPARATOR_ROW_RE drifted out of sync with its siblings.
   // 2026-07-26 further-pass audit fix (false-allow, confirmed by execution):
   // no `/i` flag, and — unlike DEVMEMORY_RE just below, whose case
   // sensitivity is explained and deliberate — nothing here says this was on
@@ -660,8 +1281,13 @@ function main() {
   //
   // The `$` anchor is load-bearing and deliberately kept: `id_ed25519.pub` is a
   // PUBLIC key and must stay clear, exactly as `id_rsa.pub` already did.
+  // 2026-08-24, X287: `.jks`, `.p12`, `.pfx` and `.ppk` are private-key CONTAINERS — a Java keystore,
+  // two PKCS#12 bundles and a PuTTY key. Each holds exactly what `.pem` and `.key` hold and neither
+  // was named, so a keystore committed to a repository shipped while `server.key` beside it did not.
+  // Added by NAME rather than by content because these are binary formats: the content patterns above
+  // cannot read them, so the filename is the only evidence available.
   const KEYFILE_RE =
-    /(^|\/)(\.env(\..+)?|.+\.env|id_(rsa|dsa|ecdsa|ed25519|ed448)|.+\.pem|.+\.key)$/i;
+    /(^|\/)(\.env(\..+)?|.+\.env|id_(rsa|dsa|ecdsa|ed25519|ed448)|.+\.pem|.+\.key|.+\.jks|.+\.p12|.+\.pfx|.+\.ppk)$/i;
   // 2026-07-11 Round 5 audit fix (case-sensitive ON PURPOSE — the `/i` flag
   // was removed): the studio always creates a project's private working
   // memory as `Dev-Memory` (capital D, capital M — see findStudioRoot,
@@ -723,16 +1349,78 @@ function main() {
   // bug. Normalised on win32 only, so nothing changes on Linux or macOS where case
   // genuinely distinguishes two different files.
   const samePathCase = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
-  const OWN_FIXTURE_DIR = samePathCase(
-    path.resolve(HOOKS_DIR, 'test', 'fixtures', 'dev-memory', 'golden', 'Dev-Memory') + path.sep,
+  // 2026-08-24, X38/X40 — THE ANCHOR MOVED, and this is the change that closes them.
+  //
+  // This used to be `path.resolve(HOOKS_DIR, 'test', 'fixtures', …)` — built from the directory of
+  // the RUNNING HOOK. So the exemption only lined up with the files being scanned when the hook
+  // happened to live inside the very checkout it was scanning. Any other copy pointed the exemption
+  // at a tree that was not being scanned, matched nothing, and refused a clean repository: X22's
+  // whole defect, reached by geometry rather than by staleness.
+  //
+  // Verified this way round rather than assumed: a byte-identical copy of scan.mjs in a different
+  // directory reproduced the full refusal, so being STALE was sufficient and never necessary. That
+  // is why deleting stale folders could not have closed these findings, and why the earlier framing
+  // — "only the owner can refresh what is installed" — was looking for the wrong thing entirely.
+  //
+  // The exemption is now a property of the REPOSITORY BEING SCANNED, which is what it always meant:
+  // "this repository is allowed to ship its own test fixtures." Whichever copy of the hook runs, the
+  // answer is the same.
+  //
+  // GATED ON IDENTITY, because anchoring to the scanned repository widens the exemption on its own.
+  // `carriesThisPlugin()` — the same predicate the updater uses, one definition in lib.mjs — means
+  // only a tree that actually holds this plugin's manifest may claim it.
+  //
+  // RESIDUAL, disclosed — and MEASURED, which made it narrower than it first looked. The theoretical
+  // risk is a repository that installs this plugin's manifest AND recreates this exact fixture path to
+  // hide secrets under the exemption. Built and tried: it was still REFUSED, by a different check —
+  // its `Dev-Memory/` was not gitignored, which is its own finding. So claiming the exemption takes
+  // more than the manifest alone, and the honest statement is "narrow, and not the only layer", not
+  // "wide open". Either way it is a repository its own owner built: this scan protects someone from
+  // shipping their own secrets by accident, not from a tree constructed to defeat it.
+  const OWN_FIXTURE_REL = path.join(
+    'plugins',
+    'gru953-studio',
+    'hooks',
+    'test',
+    'fixtures',
+    'dev-memory',
+    'golden',
+    'Dev-Memory',
   );
-  const isOwnTestFixture = (f) => {
+  // 2026-08-17 X217 fix (HIGH): `base` is a REQUIRED argument, because the two callers
+  // below hold paths measured from DIFFERENT directories and this helper cannot tell
+  // which it was handed. It previously resolved everything against REPO — the directory
+  // the command was issued from — which is right for the working-tree scan and wrong for
+  // the history scan, whose paths `git diff` prints relative to the repository TOPLEVEL.
+  // From the repo root the two coincide, so the exemption worked; from a subdirectory they
+  // do not, and this plugin's own committed fixture was refused. Naming the base at each
+  // call site is what stops that being assumed again. Omitting it makes `path.resolve`
+  // throw, which lands in the `catch` and refuses — the safe direction, never a silent
+  // exemption.
+  // The repository ROOT, which is not always `base`. `base` is whatever git printed its paths relative
+  // to — `REPO` for the working-tree scan, the toplevel for the history scan — and `REPO` is the
+  // session's directory, which may be a SUBDIRECTORY of the repository. X217 exists because those two
+  // were conflated once already.
+  //
+  // 2026-08-24: and the first version of this fix conflated them again, in the other direction. It
+  // asked `carriesThisPlugin(base)`, which is false whenever `base` is a subdirectory — so a push from
+  // `hooks/` lost the exemption and X217 reopened within the hour. Both facts belong to the ROOT: where
+  // the fixture is, and whether this repository is ours. Only the resolution of `f` belongs to `base`.
+  const OWN_FIXTURE_ROOT = repoToplevelForDiff.ok ? repoToplevelForDiff.stdout.trim() : REPO;
+  const isOwnTestFixture = (f, base) => {
     try {
-      return samePathCase(path.resolve(REPO, String(f)) + path.sep).startsWith(OWN_FIXTURE_DIR);
+      if (!carriesThisPlugin(OWN_FIXTURE_ROOT)) return false;
+      const dir = samePathCase(path.resolve(OWN_FIXTURE_ROOT, OWN_FIXTURE_REL) + path.sep);
+      return samePathCase(path.resolve(base, String(f)) + path.sep).startsWith(dir);
     } catch {
       return false; // unresolvable path is never exempt
     }
   };
+  // Where a HISTORY path is measured from. `git diff` prints paths relative to the
+  // repository toplevel regardless of cwd. If the toplevel cannot be read the fallback is
+  // REPO, which is exactly the old behaviour: correct from the root, over-strict from a
+  // subdirectory — so an unreadable toplevel costs an exemption, never a missed secret.
+  const HISTORY_PATH_BASE = repoToplevelForDiff.ok ? repoToplevelForDiff.stdout.trim() : REPO;
 
   // Opt-in cloud memory persistence: with a valid token, a Dev-Memory path is
   // no longer an automatic finding — but the secret/key-file scan below still
@@ -755,7 +1443,7 @@ function main() {
       if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+        if (looksLikeASecret(ln) && !isScanAllowed(ln, file))
           addFinding('secret', file, String(i + 1));
         // 2026-08-13, found while fixing X22. The SCAN_ALLOW_MARKER check was
         // applied to SECRET_RE but NOT to SECRETVAR_RE, so the project's own
@@ -766,7 +1454,7 @@ function main() {
         // deliberate test vector had no way to tell which half of the scanner
         // would honour the annotation. Reproduced: line 6167 of hooks.test.mjs
         // carried the marker and was still reported. Both halves now honour it.
-        if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, file))
           addFinding('secret-var', file, String(i + 1));
       }
     }
@@ -797,9 +1485,9 @@ function main() {
       let n;
       const scanLine = (ln) => {
         lineNo++;
-        if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+        if (looksLikeASecret(ln) && !isScanAllowed(ln, file))
           addFinding('secret', file, String(lineNo));
-        if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+        if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, file))
           addFinding('secret-var', file, String(lineNo));
       };
       while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
@@ -931,9 +1619,9 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(content, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split(String.fromCharCode(0)).join('\n').split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (looksLikeASecret(ln) && !isScanAllowed(ln, file))
             addFinding('secret-history', file, '0');
-          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, file))
             addFinding('secret-var-history', file, '0');
         }
       }
@@ -966,7 +1654,11 @@ function main() {
           // file or Dev-Memory path committed then removed is still caught in history.
           if (file !== '/dev/null') {
             if (KEYFILE_RE.test(file)) addFinding('key-file-history', file, '0');
-            if (DEVMEMORY_RE.test(file) && !allowDevMemory && !isOwnTestFixture(file))
+            if (
+              DEVMEMORY_RE.test(file) &&
+              !allowDevMemory &&
+              !isOwnTestFixture(file, HISTORY_PATH_BASE)
+            )
               addFinding('dev-memory-history', file, '0');
           }
           continue;
@@ -1014,9 +1706,9 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(message, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (looksLikeASecret(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-commit-message', sha, '0');
-          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-var-commit-message', sha, '0');
         }
       }
@@ -1056,9 +1748,9 @@ function main() {
       const variants = decodeAndNormalize(Buffer.from(msg.stdout, 'utf8'));
       for (const variant of variants) {
         for (const ln of variant.split('\n')) {
-          if (SECRET_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (looksLikeASecret(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-tag-message', tag, '0');
-          if (SECRETVAR_RE.test(ln) && !ln.includes(SCAN_ALLOW_MARKER))
+          if (SECRETVAR_RE.test(ln) && !isScanAllowed(ln, AUTHORED_TEXT))
             addFinding('secret-var-tag-message', tag, '0');
         }
       }
@@ -1070,7 +1762,8 @@ function main() {
     if (KEYFILE_RE.test(f)) {
       addFinding('key-file', f, '0');
     }
-    if (DEVMEMORY_RE.test(f) && !allowDevMemory && !isOwnTestFixture(f)) {
+    // FILES entries are REPO-relative — proved by `path.join(REPO, f)` four lines below.
+    if (DEVMEMORY_RE.test(f) && !allowDevMemory && !isOwnTestFixture(f, REPO)) {
       addFinding('dev-memory', f, '0');
     }
     const abs = path.join(REPO, f);
@@ -1270,10 +1963,90 @@ function main() {
   scanTagMessages();
 
   if (findings.length === 0) {
-    // No secrets found. This scanner is VETO-ONLY: finding nothing means it has
-    // no objection, which is not the same as approving the push. Authorisation
-    // is gate.mjs's job and requires a confirmed token (X1).
-    stepAside();
+    // No secrets found — so this scanner has no OBJECTION. That has never been the same thing as
+    // approving the push, and until now nothing filled the gap.
+    //
+    // 2026-08-23, X272. Authorisation was gate.mjs's job and required a confirmed token (X1). X214
+    // deleted both on 2026-08-16, and its own decision note gives the reason: "The token layer was
+    // reimplementing the permission prompt Claude Code" already provides. That premise has since
+    // been MEASURED, and it does not hold in the mode that is now the default.
+    //
+    // The live-runtime measurement of 2026-08-22 (RESIDUALS gap 9) established two things from a real
+    // session transcript: a `deny` from this hook genuinely blocks a tool call, AND the session ran
+    // in `auto` mode, where a hook that stays silent produces NO user prompt — auto mode makes its
+    // own risk assessment and may simply proceed. So after X214 a clean push had nothing asking
+    // anybody, in the default mode, which is precisely what X214 assumed the platform would do.
+    //
+    // `operating-charter/SKILL.md:133-135` is unambiguous that it must: "Publishing, going public, a
+    // per-phase checkpoint push … each still need their own explicit, fresh \"yes\" — every time."
+    // `escalate()` has existed in lib.mjs since that layer was removed and NO hook has ever called
+    // it, so the charter's rule has been enforced by nothing.
+    //
+    // This is NOT a return to the token layer. It records no state, proves nothing about a past
+    // answer, and cannot be satisfied by a file on disk — the three properties X91 and X110 deleted
+    // authorise() for. It asks the person, once, at the moment the charter names. And `ask` is not
+    // `deny`: a user who wants the push says yes and it proceeds, so this does not block honest work.
+    //
+    // Gated on `sendsCommitsToRemote`, NOT on the `isPushCapable` that decided whether to scan. The
+    // first version of this fix used the latter and X214's own controls caught it: `gh repo clone`
+    // (read-only) and `node scripts/build.mjs --outdir public` are both push-CAPABLE, because that
+    // classifier is deliberately wide so the scan errs on the side of looking. Neither publishes
+    // anything, and both were being handed a prompt whose text claims "this command sends code out
+    // of your machine". Asking a false question is not a small cosmetic fault — it is how a guard
+    // earns the reputation that gets it switched off (L5).
+    //
+    // 2026-08-24, X5: the RESOLVED text counts as well as the command itself. Without this the hook
+    // was incoherent in a way a user would notice — `git push` asked for consent on a clean tree
+    // while `bash build.sh`, whose script does nothing but push, was silent. The charter's rule is
+    // about publishing, and a script that publishes is publishing.
+    const publishes = sendsCommitsToRemote(CMD)
+      ? null
+      : indirection && sendsCommitsToRemote(indirection.text)
+        ? indirection
+        : undefined;
+    // 2026-08-25, X349, second half. If the file list could not be built then nothing was scanned,
+    // and NEITHER available answer below may be given: not the "found none" wording, and not the
+    // silence that `stepAside()` produces. Fail closed to `ask` - the permission architecture this
+    // project settled on - with the git error named, so the owner is deciding with the truth in
+    // front of them. Deliberately NOT `deny`: a transient git failure denying a push is a gate
+    // crying wolf, and a gate that cries wolf gets switched off (L5).
+    if (enumErrors.length) {
+      escalate(
+        `studio scan: I could NOT list the files this would ${SEND_VERB} - ${enumErrors.join('; ')}. ` +
+          'So nothing was scanned for secrets. Treat this as UNCHECKED, not as clean: the check did ' +
+          'not run, which is not the same as it having found nothing. ' +
+          (publishes !== undefined
+            ? 'Your operating charter also needs your own fresh "yes" before anything is published. '
+            : '') +
+          'Say yes only if you are content to send this with the secret check having not run at all.',
+      );
+    }
+    if (publishes !== undefined) {
+      // 2026-08-24, X287. This said "no secrets, keys or private Dev-Memory files were found in what
+      // this would ship" — a flat positive assurance, given to a non-technical owner, about a scan
+      // that only ever knew a fixed list of shapes. Measured at the time: an .npmrc auth token, a
+      // .netrc password, `aws_secret_access_key`, a kubeconfig token, a JWT, an unquoted
+      // `password: value`, a database URL carrying its password and three private-key containers all
+      // produced this exact sentence. Patterns for most of those were added the same day, and the
+      // wording still has to change, because the list will never be complete and the sentence would
+      // go on over-claiming for whatever is not yet on it. X195's shape: a verdict claiming coverage
+      // it does not have. Saying what was checked is both truer and more useful than saying nothing
+      // was found.
+      escalate(
+        'studio scan: I checked what this would send for the kinds of secret I know how to ' +
+          'recognise — vendor keys and tokens, private keys, credential files, and passwords written ' +
+          'into settings — and found none. That is not the same as there being none: I can only ' +
+          'match shapes I have been taught, so treat this as "nothing known turned up", not "the ' +
+          'code is clean". ' +
+          'On the publishing side: ' +
+          (publishes === null
+            ? 'this command sends code out of your machine'
+            : `this runs ${publishes.source}, which sends code out of your machine`) +
+          ', and your operating charter says publishing needs your own fresh "yes" every time. ' +
+          'Say yes to go ahead.',
+      );
+    }
+    return stepAside();
   }
   // 2026-07-19 audit fix (real gap, found by execution): `findings` was fully
   // computed (each entry already redacted to {type,file,line} by redact() —
@@ -1283,7 +2056,7 @@ function main() {
   // On a repo with many files this left no lead on where to look. Now
   // included, still secret-safe (redact() never emits the matched value).
   deny(
-    `studio scan: refusing to push — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set. Findings (redacted to type+location, never the actual value):\n${findings.join('\n')}\nRemove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.`,
+    `studio scan: refusing to ${SEND_VERB} — high-signal secrets, key files or the private Dev-Memory folder detected in the would-ship set. Findings (redacted to type+location, never the actual value):\n${findings.join('\n')}\nRemove them, move values to environment variables, add key files and Dev-Memory to .gitignore, then retry.`,
   );
 }
 

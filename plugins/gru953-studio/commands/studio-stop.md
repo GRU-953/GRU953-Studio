@@ -1,6 +1,7 @@
 ---
 description: Stop work now and set the GRU953-Studio project down cleanly, losing nothing.
 argument-hint: (no arguments needed)
+disable-model-invocation: true
 ---
 
 Stop the current project's work cleanly, following the `command-centre` skill.
@@ -17,4 +18,4 @@ Speak plain, simple UK English.
 3. Give a short, calm report: what is finished so far, what was in progress
    (now safely set back to not-started), and that everything is saved. Make
    clear the difference from pausing: this ends the work session; they can
-   start again any time with `/studio` or `/studio-resume`.
+   start again any time with `/studio-start` or `/studio-resume`.

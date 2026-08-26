@@ -46,12 +46,38 @@ Show a warm, plain-English welcome:
 1. Auto-run simplified interview (project type: CLI tool, no data, no integrations → Tiny).
 2. Auto-generate a tiny CLI script (prints greeting with user's name).
 3. Auto-run smoke test (runs the script, checks output).
-4. Auto-publish to user's GitHub (guided: runs `gh auth login` if needed, creates private repo, pushes, tags, creates Release with downloadable zip).
-5. Show the live repo URL.
+4. **Offer** to publish the demo — and publish it ONLY on a fresh, explicit
+   yes. Follow the `publish-github` skill from its confirmation step onward: its
+   own AskUserQuestion pop-up using the "permanent and irreversible" wording,
+   then `gh repo create --private`, then push, tag and Release. Running
+   `gh auth login` first is fine and is genuinely a first-run concern; creating a
+   repository or pushing is not, and neither may happen before the answer.
+   If the user declines, say so plainly and carry on to step 5 without it — a
+   first run that publishes nothing is a complete first run.
+5. Show the live repo URL **if it was published**; otherwise say where the demo
+   lives on their own machine.
+
+> **Corrected 2026-08-22 (finding X14).** Step 4 used to read "Auto-publish to
+> user's GitHub (guided: …creates private repo, pushes, tags, creates Release…)".
+> It contained no confirmation step and never named `publish-github`, so it
+> instructed an autonomous push of a user's work to GitHub on their very first
+> session — while three other shipped files forbid exactly that:
+> `operating-charter/SKILL.md` says publishing needs "their own explicit, fresh
+> 'yes' — every time"; `publish-github/SKILL.md` puts its pop-up BEFORE
+> `gh repo create`; and that skill's own description says publishing is "never
+> auto-invoked by Claude on its own initiative". It was reachable on the most
+> ordinary path there is — `studio/SKILL.md` sends a new user here "before
+> anything else" — and since X214 removed the token layer, nothing mechanical
+> stops it either: the one wired `PreToolUse` hook returns no decision for
+> `gh repo create`, `git push -u origin main` or `gh release create` on a clean
+> tree. Documented autonomy plus no code gate is the whole finding.
 
 ### Phase 4: Celebration + Dashboard Tour
 
-"🎉 Published at github.com/you/hello-world
+"🎉 Published at github.com/you/hello-world  — say this ONLY if step 4 actually
+published. If the user declined, open with "Your Hello World is built and
+working" and name the folder it is in. Never announce a repository that was not
+created (X14).
 
 Here's your dashboard — it shows project status, tasks, and quality gates. Next: build your real idea."
 

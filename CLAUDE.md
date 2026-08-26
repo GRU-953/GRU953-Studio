@@ -23,7 +23,38 @@ node plugins/gru953-studio/hooks/roster-check.mjs plugins/gru953-studio .
 node plugins/gru953-studio/hooks/licence-scan.mjs .
 node plugins/gru953-studio/hooks/docs-consistency.mjs .
 node plugins/gru953-studio/hooks/charter-check.mjs .
+npm run lint
+npm run format:check
 ```
+
+(2026-08-22, X178: `npm run lint` and `npm run format:check` were missing from this
+block although CI runs both — so a contributor following these instructions would
+not have run the two steps that were, at the time X178 was raised, the failing
+ones. Both pass now; the omission was that nothing here told you to check.)
+
+**If `repo-integrity.mjs` reports INV18, you have DELETED a file from
+`plugins/gru953-studio/` without rebundling.** Run this and re-run the gate; it
+takes a fifth of a second and loses nothing, because the directory it rebuilds
+is build output:
+
+```
+cd clients/cli && node scripts/bundle-plugin.mjs
+```
+
+INV18 (added 2026-08-17, finding X220) guards `clients/cli/plugin/` — the copy
+`npm pack` ships, so the copy an installing user receives. It had gone two days
+stale still carrying five hooks that had been deleted, and twice in one day that
+stale copy was mistaken for the truth: once answering "does this hook exist?"
+for another check, once being what a live session's hook actually ran.
+
+**It deliberately does NOT complain about ordinary staleness.** Editing a hook
+leaves the copy out of date, and that is the state you are in every time you
+touch one — a gate that fired then would interrupt normal work constantly and
+end up switched off, and `prepack` runs the bundler anyway, so drifted content
+is regenerated before anything is published. Only a file the copy carries that
+source no longer has will fail it, because editing cannot produce that: deleting
+without rebundling can, and that is deleted code still shipping. A checkout with
+no packaged copy at all reports nothing, so a fresh clone needs none of this.
 
 `repo-integrity.mjs` is the guard that stops a file referencing a skill,
 hook, or role count that doesn't actually exist — if you add or rename any

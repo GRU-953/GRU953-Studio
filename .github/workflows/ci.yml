@@ -376,6 +376,33 @@ jobs:
         run: |
           npm ci
           npm test
+      # 2026-08-25, X355. NOTHING in this repository has ever executed, parsed or linted
+      # tools/installers/install.ps1 — which is why the X258 fix (prefer the just-installed shim over
+      # whatever PATH resolves to) was applied to install.sh on 22 August and to its Windows twin not
+      # at all, for three days, on the route README.md:166 tells Windows users to take. A file on a
+      # documented install path that no check has ever read is the same shape as a test that never
+      # runs. This parses it with PowerShell's own parser, which is the cheapest check that would have
+      # caught a syntax error in the repair — and the repair could not otherwise be verified at all,
+      # since the development machine is a Mac with no pwsh.
+      - name: the PowerShell installer parses (nothing has ever checked this file)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $errs = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'tools/installers/install.ps1'), [ref]$null, [ref]$errs)
+          if ($errs) { $errs | ForEach-Object { Write-Host "::error::$($_.Message)" }; exit 1 }
+          Write-Host 'install.ps1 parses.'
+          # And the X258/X355 resolution order, asserted rather than assumed: the npm prefix must be
+          # consulted before PATH, or the installer configures the machine with whatever older build
+          # happens to be first on PATH and says nothing about it.
+          $t = Get-Content -Raw 'tools/installers/install.ps1'
+          $iPrefix = $t.IndexOf('npm prefix -g')
+          $iPath   = $t.IndexOf('Get-Command gru953-studio')
+          if ($iPrefix -lt 0 -or $iPath -lt 0) { Write-Host '::error::both resolution steps must be present'; exit 1 }
+          if ($iPrefix -gt $iPath) { Write-Host '::error::PATH is consulted before the npm prefix - that is X258, reintroduced'; exit 1 }
+          Write-Host 'install.ps1 prefers the just-installed shim over PATH.'
+
       - name: doctor runs and reports, on a machine with no AI tools installed
         shell: bash
         run: |

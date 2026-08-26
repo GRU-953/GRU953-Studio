@@ -74,6 +74,19 @@ for you; it lets two builders edit at once without stepping on each other.
    an already-recorded "install it" answer for that specific tool; a
    recommendation on its own is not a confirmation.
 
+   **If `claude` is not on PATH, that is an install difference, not an error
+   to route around** (added 2026-08-22, finding X236). The CLI is on `PATH`
+   when Claude Code was installed with `npm i -g`; it is NOT when it was
+   installed as the desktop app, where the binary sits inside the
+   application bundle. Do not hunt for that path or construct one — say
+   plainly that the shell route is unavailable on this host, and hand the
+   user the in-session route instead: `/plugin > Discover` to browse,
+   `/plugin` to install, neither of which needs a shell. This applies to
+   (a) as much as (b): if the listing command is not found, report **that**,
+   never "nothing is installed" — an absent tool and an empty result are
+   different answers, and reporting one as the other is the same mistake as
+   a checker that calls a failed read a clean result.
+
 ## Build Swarm worktree isolation (2026-07-10 audit: made concrete, was prose-only)
 
 **Deliberately manual, not Claude Code's native `isolation: worktree` field**

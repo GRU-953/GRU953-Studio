@@ -25,45 +25,103 @@ const { installInto } = require('./install-targets');
 const pathSetup = require('./path-setup');
 const autoupdate = require('./autoupdate');
 
-/**
- * The plugin directory to install FROM — the studio itself, not this command.
- *
- * Two places it can legitimately be, checked in this order:
- *
- *   1. `../plugin`, inside this package. That is where scripts/bundle-plugin.mjs
- *      copies it at pack time so the published package carries the studio. Checked
- *      FIRST because a published install is the common case for real users.
- *   2. `../../../plugins/gru953-studio`, i.e. the repository checkout this file
- *      lives in during development.
- *
- * Returns null when neither exists, and every caller then says so plainly rather
- * than installing an empty directory — the same trap a previous version of the
- * Antigravity bridge fell into, reporting success over an empty folder.
- *
- * 2026-08-11: the bundled location is new. Before it, an npm or Homebrew install
- * had no studio to install at all, so `install` and `models` could not do their
- * jobs — while the README, the Homebrew caveats and the wiki all said they could.
- * Found by running the real Homebrew-installed command instead of the checkout;
- * every test passed beforehand because every test ran from a checkout, where the
- * plugin is always a few directories up.
- */
-function findPluginSource() {
-    const candidates = [
-        path.join(__dirname, '..', 'plugin'),
-        path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio'),
-    ];
-    for (const c of candidates) {
-        if (fs.existsSync(path.join(c, '.claude-plugin', 'plugin.json'))) return c;
-    }
-    return null;
-}
+  /**
+   * Where the studio itself lives, relative to this file.
+   *
+   * Two places it can legitimately be:
+   *
+   *   1. `../plugin`, inside this package. Where scripts/bundle-plugin.mjs copies it at pack time, so
+   *      a published package carries the studio. In a published install this is the ONLY candidate.
+   *   2. `../../../plugins/gru953-studio`, the repository checkout this file lives in during
+   *      development. In a checkout BOTH exist.
+   *
+   * 2026-08-24, finding X38. This used to return the FIRST of those that existed, with the packaged
+   * copy first and the comment here arguing for that order — "checked FIRST because a published
+   * install is the common case for real users". The argument was sound for a published install, where
+   * only one candidate exists and the order cannot matter, and wrong for a checkout, where both exist
+   * and the packaged copy is build output that goes stale the moment anyone edits a hook. So in the one
+   * situation where the order decides anything, it chose the stale answer, and no comparison of dates,
+   * versions or contents was made. That is X38's literal statement.
+   *
+   * Now: SOURCE WINS when both are present and real, and a difference between them is reported rather
+   * than silently resolved. The old comment is rewritten rather than left in place, because as written
+   * it invited the next reader to put the order back.
+   *
+   * IDENTITY-GUARDED, and this is not polish. The second candidate is three directories up — outside
+   * this package — and it is not merely copied from; it is a directory the tool RUNS CODE out of and
+   * hands to the updater. Promoting it from "never reached" to "consulted first" without checking what
+   * it is would be a real widening: in a global npm install that path can land in a shared directory
+   * whose contents change when the user installs any other package. So a candidate counts only if its
+   * manifest actually names this plugin. Three independent reviewers refused to certify the reorder
+   * without this, and they were right to.
+   */
+  function pluginManifestName(dir) {
+      try {
+          const raw = fs.readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8');
+          const j = JSON.parse(raw);
+          return typeof j.name === 'string' ? j.name : null;
+      } catch {
+          return null; // unreadable or unparseable is not an identity
+      }
+  }
+
+  function findPluginSource() {
+      const packaged = path.join(__dirname, '..', 'plugin');
+      const checkout = path.join(__dirname, '..', '..', '..', 'plugins', 'gru953-studio');
+      // Only a directory whose manifest names THIS plugin is a candidate.
+      const valid = [checkout, packaged].filter((d) => pluginManifestName(d) === 'gru953-studio');
+      if (valid.length === 0) return null;
+      const chosen = valid[0]; // checkout first — source is the truth when both are real
+      if (valid.length > 1) {
+          // Both exist. They are meant to be identical: the bundler regenerates the packaged copy on
+          // prepack. A difference means the packaged copy is stale, which is the defect X38 names, so
+          // it is said out loud instead of being resolved in silence.
+          const a = pluginVersion(checkout);
+          const b = pluginVersion(packaged);
+          if (a && b && a !== b) {
+              console.error(
+                  `GRU953-Studio: the packaged copy in this checkout is version ${b} while the source ` +
+                      `is ${a}. Using the source. Run "node clients/cli/scripts/bundle-plugin.mjs" to ` +
+                      'refresh the packaged copy.',
+              );
+          }
+      }
+      return chosen;
+  }
+
+  /** The version string from a plugin manifest, or null if it cannot be read. */
+  function pluginVersion(dir) {
+      try {
+          const j = JSON.parse(
+              fs.readFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), 'utf8'),
+          );
+          return (j.metadata && j.metadata.version) || j.version || null;
+      } catch {
+          return null;
+      }
+  }
 
 /** A downloaded .vsix sitting next to the checkout's dist/, if one was built. */
+// 2026-08-22, X261: this took the LAST entry of a plain alphabetical sort, which is not the newest
+// version — "gru953-studio-10.0.0.vsix" sorts before "gru953-studio-9.0.0.vsix", so the first time a
+// major version reaches double digits the installer would silently pick the older file. It is
+// installed with `--force`, so nothing downstream would object. Sorted by parsed version now, with
+// the alphabetical order kept only as the tie-break for names that carry no version at all.
 function findVsix() {
     const distDir = path.join(__dirname, '..', '..', '..', 'dist');
+    const versionKey = (name) => {
+        const m = /(\d+)\.(\d+)\.(\d+)/.exec(name);
+        return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [-1, -1, -1];
+    };
     try {
-        const vsix = fs.readdirSync(distDir).filter((f) => f.endsWith('.vsix')).sort();
-        return vsix.length ? path.join(distDir, vsix[vsix.length - 1]) : null;
+        const vsix = fs.readdirSync(distDir).filter((f) => f.endsWith('.vsix'));
+        if (!vsix.length) return null;
+        vsix.sort((a, b) => {
+            const [aM, aN, aP] = versionKey(a);
+            const [bM, bN, bP] = versionKey(b);
+            return aM - bM || aN - bN || aP - bP || a.localeCompare(b);
+        });
+        return path.join(distDir, vsix[vsix.length - 1]);
     } catch {
         return null;
     }
@@ -200,8 +258,14 @@ function cmdInstall(argv) {
 
     console.log('');
     if (failures === 0) {
-        console.log('Finished. In Claude Code, type /studio to begin.');
-        console.log('Updates: GRU953-Studio checks once a day, the first time you use it.');
+        console.log('Finished. In Claude Code, type /studio-start to begin.');
+        // 2026-08-22, X247: this said "GRU953-Studio checks once a day, the first time you use
+        // it." No code does that. X233 corrected the same falsehood in four places on 2026-08-18
+        // and missed this one — which is the line printed at the END of `install`, so it was the
+        // first thing a new user was told about updates. The same binary already says the opposite
+        // 75 lines further down (`autoupdate` prints "nothing checks on its own"), so it
+        // contradicted itself.
+        console.log('Updates: nothing checks on its own. Run `gru953-studio update` when you want one.');
         console.log('For a scheduled daily check instead, run: gru953-studio autoupdate on');
     } else {
         console.log(`Finished, but ${failures} of the tools above did not install. See the messages for what to do.`);
@@ -275,7 +339,12 @@ function cmdAutoupdate(argv) {
     if (sub === 'off') {
         const r = autoupdate.disable();
         console.log(`  ${r.message}`);
-        console.log('  GRU953-Studio will still check for an update the first time you use it each day.');
+        // 2026-08-22, X233: this promised a daily default check that NO code performs. Only two
+        // call sites invoke auto-update.mjs and both pass --force (index.js cmdUpdate and
+        // studio-update.md); it is not in hooks.json, and session-start.mjs stopped running it
+        // (its own comment records that removal). The 24-hour .last-update-check window inside
+        // auto-update.mjs is therefore unreachable.
+        console.log('  Nothing will check on its own. Run `gru953-studio update` when you want one.');
         return;
     }
     console.log(`  ${autoupdate.status().message}`);
@@ -318,12 +387,46 @@ function cmdUpdate() {
     process.exitCode = r.status === null ? 1 : r.status;
 }
 
+// 2026-08-22, X251: read from clients/vscode/package.json where it can be, rather than hardcoded,
+// because a printed command that goes stale is worse than no command — the user would run it, see it
+// fail, and have no idea why. Falls back to the current literal if that file is not in the package,
+// which is the normal case for an installed copy.
+const VSCODE_EXTENSION_ID = (() => {
+    const fallback = 'GRU953.gru953-studio';
+    try {
+        const pkg = JSON.parse(
+            fs.readFileSync(path.join(__dirname, '..', '..', 'vscode', 'package.json'), 'utf8'),
+        );
+        return pkg.publisher && pkg.name ? `${pkg.publisher}.${pkg.name}` : fallback;
+    } catch {
+        return fallback;
+    }
+})();
+
 function cmdUninstall() {
     heading('Removing GRU953-Studio from this computer');
     const { found } = detectHosts();
     let removed = 0;
+    let left = 0;
     for (const host of found) {
-        if (!host.installDir) continue;
+        // 2026-08-22, X251: this was a bare `continue`. The three VS Code-family hosts are built
+        // with a configDir and NO installDir (detect.js:109-117), so every one of them was skipped
+        // in complete silence — and then the closing line reported how many places it had removed
+        // from, with no mention of the editor extension still sitting installed. `install` sets
+        // those hosts up; `uninstall` cannot, because there is no directory of ours to delete: the
+        // extension is managed by the editor. So the honest answer is to say so and give the command.
+        //
+        // The command is PRINTED, never run. Running `--uninstall-extension` would be a new
+        // destructive action against the user's editor, and that needs their explicit say-so rather
+        // than being folded into a fix for a missing message.
+        if (!host.installDir) {
+            if (host.kind === 'vscode-family') {
+                console.log(`  left      ${host.name} — the extension is still installed.`);
+                console.log(`            Remove it with: ${host.command} --uninstall-extension ${VSCODE_EXTENSION_ID}`);
+                left++;
+            }
+            continue;
+        }
         if (!fs.existsSync(host.installDir)) {
             console.log(`  nothing   ${host.name} — was not installed there.`);
             continue;
@@ -339,10 +442,19 @@ function cmdUninstall() {
             console.log(`  FAILED    ${host.name}: ${e.message}`);
         }
     }
+    // 2026-08-25, X348: `known === false` means status() could not read the crontab, so it does not
+    // know whether a nightly job is there. Skipping the removal on that would leave a scheduled job
+    // that pulls and runs upstream code on a machine the owner has just uninstalled from — while this
+    // command printed nothing about it. disable() reports honestly in either case, so it is called.
     const au = autoupdate.status();
-    if (au.enabled) console.log(`  ${autoupdate.disable().message}`);
+    if (au.enabled || au.known === false) console.log(`  ${autoupdate.disable().message}`);
     console.log('');
     console.log(`Removed from ${removed} place${removed === 1 ? '' : 's'}. Your projects and their files are untouched.`);
+    if (left > 0) {
+        console.log(
+            `${left} editor extension${left === 1 ? '' : 's'} ${left === 1 ? 'is' : 'are'} still installed — see the "left" line${left === 1 ? '' : 's'} above. This command does not remove them for you.`,
+        );
+    }
     console.log('Any line added to your shell profile was left alone — remove the GRU953-STUDIO block by hand if you want it gone.');
 }
 

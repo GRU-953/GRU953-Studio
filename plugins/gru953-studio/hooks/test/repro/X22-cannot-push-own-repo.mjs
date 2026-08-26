@@ -1,5 +1,20 @@
 #!/usr/bin/env node
 //
+// A NOTE ON THIS FILENAME, added 2026-08-22 after the Layer 2 completeness critic raised it as "the
+// naming half of L13": a filename that states the opposite of what the file tests. Checked, and
+// REFUTED — with the reason recorded here so the question is not reopened from the name alone.
+//
+// Every reproduction in this directory is named after its FINDING, never after the fixed state:
+// X106-disarmable-dependency-gate, X122-mistyped-content-table, X142-torn-progress-table,
+// X194-done-claim-prose, X219-bare-hook-reference. Forty-one siblings follow that convention. So
+// "X22-cannot-push-own-repo" names the DEFECT — the product could not push its own repository — and
+// the file asserts the FIXED state, in which it can. That is the convention working, not a contradiction.
+//
+// What the critic was right about is that a reader who greps the name alone could infer a live
+// guarantee that no longer exists. Hence this note rather than a rename: renaming would stale the
+// re-check cell in the register and the entry in the harness, which is the very defect X107 was
+// corrected for on 2026-08-17.
+//
 // Reproduction for finding X22 — 2026-08-13.
 //
 // THE DEFECT. With GRU953-Studio installed, its own secret scanner refuses to let
@@ -34,9 +49,40 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { readDecision, refuseCrash } from './_verdict.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+// 2026-08-24, X40. This file works out where it itself lives and runs the `scan.mjs` sitting next to
+// it — so it always tests its own NEIGHBOUR, whichever folder that happens to be, and never the copy
+// a live session is running. When the two differed it passed while the product misbehaved, and NOTHING
+// IN ITS OUTPUT REVEALED WHICH FILE IT HAD EXERCISED. That is the whole of X40.
+//
+// It cannot fix which copy the platform loads — that is not a test's job. What it can do, and now
+// does, is make a passing run traceable to a specific file on disk instead of to "a copy of scan.mjs
+// somewhere". A verdict that cannot name its subject is not evidence about the product.
+const reportSubject = (hooksDir) => {
+  const target = path.join(hooksDir, 'scan.mjs');
+  let size = '?';
+  let version = 'unknown';
+  try {
+    size = String(fs.readFileSync(target, 'utf8').split('\n').length) + ' lines';
+  } catch {
+    size = 'UNREADABLE';
+  }
+  try {
+    const j = JSON.parse(
+      fs.readFileSync(path.join(hooksDir, '..', '.claude-plugin', 'plugin.json'), 'utf8'),
+    );
+    version = (j.metadata && j.metadata.version) || j.version || 'unknown';
+  } catch {
+    /* an unreadable manifest is reported as unknown, never guessed */
+  }
+  console.log(`  subject: ${target}`);
+  console.log(`           version ${version}, ${size}`);
+};
 const HOOKS = path.resolve(HERE, '..', '..');
+reportSubject(HOOKS);
 const REPO = path.resolve(HOOKS, '..', '..', '..');
 const NODE = process.execPath;
 const expectBug = process.argv.includes('--expect-bug');
@@ -46,15 +92,27 @@ const expectBug = process.argv.includes('--expect-bug');
 // very command that runs this script.
 const PUSH = ['git', 'push', 'origin', 'development'].join(' ');
 
+function die(msg) {
+  console.error(`FAIL: ${msg}`);
+  process.exit(1);
+}
+
+// `decision: null` used to mean two different things — scan.mjs stood aside, or it threw and
+// this script swallowed the stack trace. Case A below passes on anything that is not `deny`,
+// so a crash read as a pass. readDecision() names the crash instead.
 function decisionFor(cwd) {
-  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command: PUSH }, cwd });
-  const r = spawnSync(NODE, [path.join(HOOKS, 'scan.mjs')], { input, encoding: 'utf8' });
-  try {
-    const out = JSON.parse(r.stdout).hookSpecificOutput;
-    return { decision: out.permissionDecision, reason: out.permissionDecisionReason || '' };
-  } catch {
-    return { decision: null, reason: '' };
-  }
+  const v = refuseCrash(
+    readDecision(NODE, path.join(HOOKS, 'scan.mjs'), {
+      tool_name: 'Bash',
+      tool_input: { command: PUSH },
+      cwd,
+    }),
+    'X22-cannot-push-own-repo.mjs',
+    die,
+  );
+  return v.kind === 'silent'
+    ? { decision: null, reason: '' }
+    : { decision: v.decision, reason: v.reason };
 }
 
 let failures = 0;
@@ -63,13 +121,72 @@ console.log(`X22 reproduction — expecting the ${expectBug ? 'DEFECT' : 'FIX'}\
 
 // --- A. the product repository itself must be pushable -----------------------
 {
-  const { decision, reason } = decisionFor(REPO);
+  // 2026-08-17, finding X176. scan.mjs stands aside — returning exactly `null` — when
+  // findStudioRoot() finds no Dev-Memory/ at or above the checkout. Dev-Memory/ is gitignored, so
+  // in CI there is none, and this case's assertion (decision === null) was satisfied by the
+  // standing-aside rather than by the fixture exemption it exists to prove. It passed for the
+  // wrong reason and would have passed with that exemption deleted.
+  //
+  // The exemption resolves against HOOKS_DIR, the hook's own location, so it applies ONLY to the
+  // real checkout — deliberately, since that is what stops it becoming "ignore anything under a
+  // test directory". The case therefore cannot be simulated elsewhere, and in CI it cannot be
+  // exercised at all.
+  //
+  // So it says so. A check that cannot check must not report success — the same rule as X113
+  // (a gate that cannot read its input), X195 (a disclosure that admits what was not verified)
+  // and X188 (a crash is not a verdict).
+  //
+  // 2026-08-25, X347, found by CI on the very first push - the one leg that could never run on the
+  // development machine. The disclosure above was right that this case needs a `Dev-Memory/` at or
+  // above the checkout, and wrong to stop at calling that unverifiable. `Dev-Memory/` is GITIGNORED,
+  // so a clean checkout has none; `findStudioRoot()` asks only whether that directory EXISTS
+  // (lib.mjs:384), so the condition can simply be created, exercised, and removed again. Nothing is
+  // faked: an empty `Dev-Memory/` is exactly what makes a checkout a studio project, which is the
+  // state case A is about. On the development machine the directory is already there and is left
+  // strictly alone - `weMadeIt` removes only what this case itself created.
+  //
+  // What the old `if (!ok && engaged) failures++` actually did: in CI case A counted NOTHING, in
+  // either direction. Cases B and C do not vary with `--expect-bug`. So the file exited 0 for BOTH
+  // runs and the two-direction contract in hooks.test.mjs failed with "still reports the DEFECT as
+  // present, so either the fix regressed or the reproduction no longer tests anything". The second
+  // half of that sentence was the true one. A case excused from counting is a case that has stopped
+  // testing - the same shape as X176 itself, one level up.
+  const ROOT_DM = path.join(REPO, 'Dev-Memory');
+  const weMadeIt = !fs.existsSync(ROOT_DM);
+  if (weMadeIt) fs.mkdirSync(ROOT_DM, { recursive: true });
+  let engaged = false;
+  let decision = null;
+  let reason = '';
+  try {
+    engaged = fs.existsSync(ROOT_DM);
+    ({ decision, reason } = decisionFor(REPO));
+  } finally {
+    if (weMadeIt) fs.rmSync(ROOT_DM, { recursive: true, force: true });
+  }
+  if (!engaged) {
+    console.log(
+      '  ....  A  NOT EXERCISED - no Dev-Memory/ at or above this checkout and one could not be created, so scan.mjs stands aside; this case cannot tell the fixture exemption working from scan.mjs never running.',
+    );
+  }
   const findings = reason
     .split('\n')
     .filter((l) => l.trim().startsWith('{'))
     .map((l) => l.trim());
-  const want = expectBug ? 'deny' : null;
+  // 2026-08-23, X272. The fixed state is no longer a single value, and the reason is the distinction
+  // X176 already drew above. X272 made a clean push in a STUDIO project return `ask`, the publishing
+  // consent the operating charter requires. This repository is a studio project when its gitignored
+  // `Dev-Memory/` is present — the real checkout — and is not one in CI, where scan stands aside and
+  // returns exactly null. `engaged` is already computed for precisely that difference, so it selects
+  // the expectation rather than the looser "not deny" that would have hidden both.
+  //
+  // What X22 is ABOUT is unchanged: the product repository must not be REFUSED permission to push
+  // itself. `ask` is not a refusal — it raises the owner's prompt and yes proceeds. A `deny` here
+  // still fails this case, in either environment.
+  const want = expectBug ? 'deny' : engaged ? 'ask' : null;
   const ok = decision === want;
+  // Counted whenever the case was exercised. `engaged` is now false only if the directory could
+  // neither be found nor created, and then `want` is null - which standing aside satisfies - so the
+  // FIX direction still passes honestly while the BUG direction is the one this guard used to lose.
   if (!ok) failures++;
   console.log(
     `  ${ok ? 'ok  ' : 'FAIL'}  A  the product repo: decision=${decision} (want ${want})`,

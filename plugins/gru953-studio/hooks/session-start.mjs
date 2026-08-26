@@ -18,7 +18,9 @@
 // so the reminder is injected as context, not shown as a raw tool result.
 
 import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import { readStdin, extractCwd, findStudioRoot } from './lib.mjs';
 
 // Best-effort, honest detection of an ephemeral/cloud environment. Only ever
@@ -148,6 +150,48 @@ function main() {
     'If the user asks about updating GRU953-Studio, tell them to run',
     '`/studio-update`. Never fetch, pull, rebase or stash on their behalf',
     'without them asking for it first.',
+  );
+
+  // 2026-08-24, X38/X40 — SAY WHICH COPY IS GUARDING THIS SESSION.
+  //
+  // This is the smallest of the three changes and it is the one that would have saved nine days. X38
+  // was raised because the hook guarding a live session was a stale copy carrying none of that month's
+  // fixes; X40 was raised because a reproduction passed while the live hook behaved differently. Both
+  // took a week to locate, and both were hard to locate for one reason: NOTHING IN THE PRODUCT SAID
+  // WHICH COPY WAS RUNNING. The hook has always known — `import.meta.url` is right there, and scan.mjs
+  // used that knowledge only to build a path to test fixtures — and it never told anyone.
+  //
+  // The version is read from the manifest rather than hardcoded, so it cannot drift from the copy it
+  // describes. A copy whose manifest is unreadable says so rather than guessing, because "unknown" is
+  // information and a wrong version number is not.
+  //
+  // This is disclosure, not enforcement. It does not block anything and it cannot: which copy the
+  // platform loads is not the hook's decision. It just makes the answer visible in the one place
+  // anyone investigating would look first.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const pluginRoot = path.resolve(here, '..');
+  let selfVersion = 'unknown';
+  for (const rel of [
+    ['.claude-plugin', 'plugin.json'],
+    ['..', '..', '.claude-plugin', 'marketplace.json'],
+  ]) {
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(pluginRoot, ...rel), 'utf8'));
+      const v = (j.metadata && j.metadata.version) || j.version;
+      if (typeof v === 'string' && v) {
+        selfVersion = v;
+        break;
+      }
+    } catch {
+      /* try the next location; an unreadable manifest is reported as unknown, never guessed */
+    }
+  }
+  lines.push(
+    '',
+    `GRU953-Studio ${selfVersion} is guarding this session, loaded from:`,
+    `  ${pluginRoot}`,
+    'If that path or version is not what you expect, the hooks running are not the ones you think',
+    'you are editing — that is findings X38 and X40, and it took nine days to notice once.',
   );
 
   const additionalContext = lines.join('\n');

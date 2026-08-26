@@ -40,7 +40,20 @@ import process from 'node:process';
 //
 //   | "allow"    | Permit the tool call to proceed without a permission prompt |
 //   | "deny"     | Block the tool call ...                                     |
-//   | "escalate" | Show the permission prompt to the user, even in auto mode    |
+//   | "ask"      | Prompt the user to confirm                                  |
+//   | "defer"    | Exit gracefully so the tool can be resumed later            |
+//
+// Those four are the WHOLE set (hooks.md:987, :1708, :1717 — precedence runs
+// deny > defer > ask > allow). Corrected 2026-08-15: this table previously listed
+// a fifth value, "escalate", which does not exist. The word appears exactly once
+// in the entire document, at hooks.md:1021, inside prose DESCRIBING what "ask"
+// does — "allow, deny, or escalate to the user". That one descriptive word reads
+// exactly like a value name and sits in the events table, which is where an
+// implementer checking the API looks first. Do not reintroduce it: an
+// unrecognised value renders no decision at all, so the call falls through to
+// normal permission evaluation. Verified by fetching the raw hooks.md and
+// grepping it — three separate summarised fetches of that page each returned a
+// different answer for this field, so summaries are not evidence here.
 //
 //   "A hook that doesn't return JSON, or returns JSON without a
 //    permissionDecision, doesn't affect the permission flow; the call continues
@@ -64,7 +77,7 @@ import process from 'node:process';
 //                  must NEVER authorise anything.
 //   authorise()  — emits "allow". Legitimate ONLY where the user has explicitly
 //                  confirmed this exact action moments ago and a project-bound,
-//                  expiring token proves it. Only gate.mjs's two confirmed-token
+//                  expiring token proved it. Only gate.mjs's two confirmed-token
 //                  paths may call it.
 //
 // There is deliberately no "defer" value here: a peer review recommended one,
@@ -85,17 +98,31 @@ export function stepAside() {
 // That is precisely the hazard X1 was raised against, and it contradicts
 // authorise()'s own contract: legitimate only where the user confirmed THIS EXACT
 // action. Rather than deny such commands outright — which would break ordinary
-// `git add … && git commit … && git push …` flows — the gate now ESCALATES them.
-// Per the documented contract, "escalate" shows the permission prompt to the user
-// even in auto mode: the token still proves intent, but the extra segments get a
-// human's eyes instead of a silent approval. This is the same
-// "escalate rather than guess" principle chosen for the wider architecture.
+// `git add … && git commit … && git push …` flows — the gate now ESCALATES them:
+// the token still proves intent, but the extra segments get a human's eyes
+// instead of a silent approval. This is the same "escalate rather than guess"
+// principle chosen for the wider architecture.
+//
+// NAMING TRAP, and the reason this function was broken from the day it was
+// written (2026-08-13 to 2026-08-15): "escalate" is the name of the PRINCIPLE,
+// not of the wire value. The contract expresses escalation as "ask". This
+// function emitted 'escalate' — an undocumented value — so it rendered no
+// decision, and the call fell through to normal permission evaluation. In an
+// interactive session that still prompts, so the bug was invisible; in auto mode
+// it is exactly the silent approval finding F4 exists to prevent, which is the
+// one case the comment above claims to cover.
+//
+// The function keeps its conceptual name deliberately — it is what the
+// architecture calls this move — but the emitted value must stay 'ask'.
+// `test/repro/X37-invalid-permission-decision.mjs` asserts the general invariant
+// (no hook may emit a permissionDecision outside the documented set), so this
+// class cannot recur if the platform later renames or adds a value.
 export function escalate(reason) {
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        permissionDecision: 'escalate',
+        permissionDecision: 'ask',
         permissionDecisionReason: String(reason),
       },
     }) + '\n',
@@ -103,18 +130,28 @@ export function escalate(reason) {
   process.exit(0);
 }
 
-export function authorise(reason) {
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-        permissionDecisionReason: String(reason),
-      },
-    }) + '\n',
-  );
-  process.exit(0);
-}
+// 2026-08-15, findings X91 and X110. `authorise(reason)` used to live here and emit
+// `permissionDecision: 'allow'`, which does not mean "no objection" — it SUPPRESSES the
+// permission prompt the user would otherwise have seen.
+//
+// X91 removed its last caller. `gate.mjs` granted that on the strength of a record under
+// Dev-Memory/, and everything the gate can read, an agent on the same machine can write:
+// the token is a sha256 of the project path, and confirm-publish.mjs issued one with
+// stdin closed. So the record now downgrades a hard `deny` to an `ask` instead, and no
+// hook is entitled to emit `allow` at all.
+//
+// X110 then showed the invariant guarding this could only see one file — INV17 tested
+// `f === 'scan.mjs'`, while its own comment claimed "only gate.mjs may call it". Rather
+// than widen the guard, the capability is DELETED: a function whose only permitted number
+// of callers is zero is dead code that exists to be misused. Removing a dangerous
+// capability beats policing it, which is the lesson of this whole round of findings.
+//
+// INV17 now asserts this absence in both directions — no hook calls authorise(), and
+// lib.mjs does not export it. Reproduction: hooks/test/repro/X110-no-blanket-approval.mjs.
+//
+// If a genuine need for `allow` ever arises, re-adding it is a deliberate decision with
+// its own reasoning, not a one-line restoration: it means re-opening the permission
+// architecture recorded in decisions/2026-08-15-permission-architectures.md.
 export function deny(reason) {
   process.stdout.write(
     JSON.stringify({
@@ -574,6 +611,29 @@ export const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // unaffected — only a cell that says nothing else.
 export const PLACEHOLDER_RE = /^(|[-—–]+|tbd|tbc|todo|none|n\/?a|pending|\.\.\.)$/i;
 
+// 2026-08-15, finding X143 / quality-gate D7 (reproduced). PLACEHOLDER_RE above is whole-cell
+// anchored, so `tbd` is caught and `tbd - will attach the proof after the demo` is not. The
+// second is the one that actually gets written: the same empty claim with an apology attached.
+//
+// The obvious fix — treat any cell STARTING with a placeholder word as a placeholder — was
+// measured before being written, and it is wrong. `none of the tests failed` currently passes
+// and must keep passing: it is an ordinary English sentence reporting a real result. So the
+// prefix rule applies only to the words that cannot begin a genuine sentence of evidence:
+//
+//     tbd, tbc, todo, pending, placeholder   -> an excuse may follow, and it is still nothing
+//     none, n/a, dashes, ellipsis            -> whole-cell only; these DO start real sentences
+//
+// The separator after the word is required, so "todos are tracked in the issue tracker" and
+// "pending review by the security team" — both real statements — are untouched.
+export const PLACEHOLDER_WITH_EXCUSE_RE = /^(tbd|tbc|todo|pending|placeholder)\b\s*[-—–:,;(]/i;
+
+// True when a cell says nothing of substance: a bare placeholder, or a placeholder with an
+// excuse attached. Callers that judge evidence should use this rather than PLACEHOLDER_RE.
+export function isPlaceholderEvidence(cell) {
+  const t = String(cell == null ? '' : cell).trim();
+  return PLACEHOLDER_RE.test(t) || PLACEHOLDER_WITH_EXCUSE_RE.test(t);
+}
+
 // ---- text/frontmatter primitive (CRLF/BOM tolerant) --------------------------
 // 2026-07-26 audit finding 9 (MAJOR). repo-integrity.mjs (and mcp-server.js)
 // each read frontmatter with `text.match(/^---\n([\s\S]*?)\n---/)` — an
@@ -760,11 +820,44 @@ export function readOrBlock(p) {
 // claimed as done here.
 //
 // Returns: [{ headerCells, rows: [{ raw, cells, ragged }] }]
-//   ragged === true means the row's column count disagrees with the header, so
+//   ragged === true means the row's column count disagrees with the header, in EITHER direction.
+//   Prefer `overlong` (a literal pipe shifted the values — untrustworthy) or `short` (legal GFM, a
+//   trailing column is merely absent) when wording a message; see the note at the push site. So
 //   its cells cannot be trusted positionally. A caller must fail closed on a
 //   ragged row that makes any claim, never skip it silently.
 export function parseTables(text) {
   const lines = String(text).split(/\r?\n/);
+  // 2026-08-15, the shared-table-reader build (traceability-check D3, and the same shape
+  // found in content-check). A fenced block is documentation, not data: a `​```markdown`
+  // example of "what a row looks like" was read as a live table, and in traceability-check
+  // it was taken as THE requirements matrix — so the real matrix below it went unread and
+  // its defects unexamined.
+  //
+  // Fenced lines are blanked rather than removed, so every index this function reports
+  // (headerLine, and any line number a caller derives from it) still refers to the real
+  // line in the real file. Silently renumbering a file's lines would be a worse defect
+  // than the one being fixed.
+  const inFence = new Array(lines.length).fill(false);
+  {
+    let fence = null; // the opening delimiter, so ``` does not close ~~~ or a longer run
+    for (let i = 0; i < lines.length; i++) {
+      const m = /^\s*(`{3,}|~{3,})/.exec(lines[i]);
+      if (fence === null) {
+        if (m) {
+          fence = m[1][0].repeat(3);
+          inFence[i] = true;
+        }
+      } else {
+        inFence[i] = true;
+        if (m && m[1][0].repeat(3) === fence) fence = null;
+      }
+    }
+    // An unterminated fence would otherwise swallow the rest of the file. A file that ends
+    // mid-fence is malformed, and treating everything after it as documentation would hide
+    // real tables — so the run is abandoned rather than trusted.
+    if (fence !== null) inFence.fill(false);
+  }
+  for (let i = 0; i < lines.length; i++) if (inFence[i]) lines[i] = '';
   const normCells = (line) => {
     const cells = splitPipeCells(line).map((c) => c.trim());
     const t = line.trim();
@@ -806,7 +899,27 @@ export function parseTables(text) {
       if (!looksLikeRow(row)) break; // this line is not part of THIS table
       if (SEPARATOR_ROW_RE.test(row)) continue; // the `| :-- | :-- |` divider
       const cells = normCells(row);
-      rows.push({ raw: row, cells, ragged: cells.length !== headerCells.length });
+      // 2026-08-22, X201: `ragged` alone conflates two opposite problems, and every consumer
+      // reported the wrong one for half its inputs.
+      //
+      //   overlong (cells > header) — usually a literal `|` inside a cell. The values really are
+      //     shifted, so "escape it as \|" is correct advice and the row cannot be trusted.
+      //   short (cells < header)    — LEGAL GitHub-flavoured markdown. GFM fills the missing
+      //     trailing cells as empty. Nothing is shifted; a trailing column is simply absent. Telling
+      //     the user to escape a pipe that is not there sends them looking for a defect that does
+      //     not exist, in a message that blocks their Publish.
+      //
+      // `ragged` keeps its exact old meaning so no consumer's BEHAVIOUR changes by accident; the two
+      // new flags let each one say the true thing. Reproduced on this project's own golden fixture:
+      // deleting one trailing cell from an INDEX.md row blocked memory-integrity, and the same
+      // deletion in PROGRESS.md blocked three gates at once, each with a different wrong explanation.
+      rows.push({
+        raw: row,
+        cells,
+        ragged: cells.length !== headerCells.length,
+        overlong: cells.length > headerCells.length,
+        short: cells.length < headerCells.length,
+      });
     }
     // headerLine lets a caller inspect the lines ABOVE a table — needed for
     // quality-gate.mjs's explicit opt-out marker (finding F1).
@@ -910,6 +1023,13 @@ export function deEmphasise(c) {
 }
 
 export const LEXICAL_BOUNDARY = '(?![A-Za-z0-9_])';
+
+// 2026-08-23, X272. Hoisted to module scope from inside isPushCapable, where it was a local, so the
+// narrow consent predicate below and the wide classifier share ONE definition. A hyphen CONTINUES a
+// program name, so `git-push-helper` is a different program from `git-push` — the distinction X179's
+// controls exist to protect. Two hand-maintained copies of a regex constant is how this project's
+// SEPARATOR_ROW_RE drifted out of sync with its siblings; one definition cannot drift.
+export const DASHED_BOUNDARY = '(?![A-Za-z0-9_-])';
 // ---- bounded assignment resolution (2026-08-07 audit fix) --------------------
 // The scalar-assignment resolution below is superlinear in the NUMBER of
 // assignments in one command: each new assignment is re-resolved against every
@@ -1853,7 +1973,7 @@ function unescapeBackslashesRespectingQuotes(s) {
 // project carries (see SECURITY.md). Requiring the resolved path to also
 // live under a fixed directory was considered and rejected: the legitimate
 // invocation form varies by design (an absolute `${CLAUDE_PLUGIN_ROOT}/...`
-// path from the plugin cache, or a relative `hooks/confirm-publish.mjs` from
+// path from the plugin cache, or a relative `confirm-publish.mjs` from
 // within the project root), so no single directory prefix covers every real
 // use without also blocking it.
 // 2026-07-11 Round 4 audit fix: the closing anchor only tolerated trailing
@@ -1930,6 +2050,20 @@ function isConfirmScriptOnly(c) {
   // filename contains no push keyword, but it is exempted here for the same
   // reason (it only writes a local marker file, never pushes), so running it to
   // RECORD a checkpoint authorisation is never itself mistaken for a push.
+  //
+  // **2026-08-18 (X229): ALL FOUR OF THESE FILES ARE GONE.** X214 deleted them on
+  // 2026-08-16, so this exemption now names nothing that exists — dead code in a
+  // security decision path, which is worth saying out loud rather than leaving to
+  // be rediscovered. Kept rather than removed because two committed unit tests
+  // (hooks.test.mjs, the 2026-07-11 Round 3 and Round 4 audit fixes) pin its exact
+  // matching behaviour, and deleting a security function plus its tests is a wider
+  // change than this finding warrants.
+  //
+  // NO BYPASS IS REACHABLE, verified rather than assumed: the regex above is
+  // anchored to end-of-string and admits at most ONE further token, so a command
+  // that also pushes can never match it. `node confirm-publish.mjs & git push …`
+  // fails the anchor; `node confirm-publish.mjs &` matches but runs a file that
+  // does not exist. Recorded as a disclosed residual in RESIDUALS.md.
   return (
     base === 'confirm-publish.mjs' ||
     base === 'confirm-go-public.mjs' ||
@@ -1937,14 +2071,385 @@ function isConfirmScriptOnly(c) {
     base === 'confirm-memory-persist.mjs'
   );
 }
+// 2026-08-24, X5 / X6 / X15 — Phase 3, "escalate instead of guess".
+//
+// X15 is the architectural finding and it is correct: deciding what a shell command does by
+// pattern-matching its TEXT cannot converge, and twelve audit rounds are the evidence. The proof sits
+// in this very file. `isPushCapable` decides whether `npm run build` might publish by testing the
+// command string against six words — SCRIPT_INDIRECTION_KEYWORDS = deploy|release|publish|ship|
+// public|visibility. So `npm run deploy` is scanned and `npm run build` is not, on nothing but the
+// name someone gave the script. Measured at HEAD: `bash build.sh`, `npm run build` and `make all` —
+// the three commands X5 names — reach the network with no scan at all.
+//
+// Widening the word list is the move that has failed eleven times. You cannot enumerate what people
+// call their scripts. THE ANSWER IS TO STOP GUESSING AND READ THE SCRIPT. That converges, because it
+// replaces an unbounded guess about naming with a bounded fact about content.
+//
+// resolveScriptIndirection() takes a command and a working directory and returns the TEXT the command
+// would actually run, for the three indirections that are resolvable from disk:
+//
+//   bash x.sh / sh x.sh / node x.mjs / python x.py / ./x.sh   ->  the file's contents
+//   npm|pnpm|yarn run <name>                                  ->  package.json scripts[<name>]
+//   make <target>                                             ->  that target's recipe lines
+//
+// The caller then applies the ordinary predicates to that text. A resolved script that does not push
+// is silent, exactly as before, so this adds NO false alarms — which is the property that makes it
+// safe to turn on. It is not a guess that might be wrong in either direction; it is the same question
+// asked of the real content.
+//
+// DELIBERATE LIMITS, disclosed rather than hidden:
+//   * ONE LEVEL. A script that runs another script is not followed. Recursion here would need a cycle
+//     guard and a depth budget inside a PreToolUse hook, and the honest first version is bounded.
+//   * Local files only, resolved against the command's own cwd, capped at MAX_RESOLVE_BYTES.
+//   * No shell semantics. Variables, globs and conditionals inside the script are not evaluated; the
+//     text is read, not interpreted. This finds a push that is written down. It does not find one
+//     assembled at run time — and nothing that reads text ever will, which is X15 restated rather
+//     than solved.
+const MAX_RESOLVE_BYTES = 256 * 1024;
+
+function readCapped(file) {
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile() || st.size > MAX_RESOLVE_BYTES) return null;
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+export function resolveScriptIndirection(rawC, cwd) {
+  if (!rawC || !cwd) return null;
+  const c = normalizeForPushCheck(rawC);
+  const base = String(cwd);
+
+  // ---- an interpreter, or ./, invoked on a path -----------------------------------
+  const direct = new RegExp(
+    `(?:^|[^A-Za-z0-9_])(?:\\.\\/|(?:ba|z)?sh[ \\t]+|node[ \\t]+|python3?[ \\t]+|ruby[ \\t]+|perl[ \\t]+|source[ \\t]+|\\.[ \\t]+)([^ \\t;&|'"]+\\.(?:sh|bash|zsh|mjs|cjs|js|py|rb|pl))${LEXICAL_BOUNDARY}`,
+    'i',
+  ).exec(c);
+  if (direct) {
+    const rel = direct[1].replace(/^\.\//, '');
+    const text = readCapped(path.resolve(base, rel));
+    if (text !== null) return { kind: 'script', source: rel, text };
+  }
+
+  // ---- a file piped or redirected INTO an interpreter -----------------------------
+  //
+  // 2026-08-24, X6's local half. `cat x.sh | bash` and `bash < x.sh` run a local file just as surely
+  // as `bash x.sh` does, and none of the three orders was modelled: all of `cat build.sh | bash`,
+  // `cat build.sh|bash`, `bash < build.sh`, `bash <build.sh`, `< build.sh bash` and
+  // `cat build.sh | sudo bash` reached the network unscanned.
+  //
+  // Unlike the direct form above, NO FILE EXTENSION IS REQUIRED here, and that is deliberate rather
+  // than lax. `bash foo` is ambiguous — foo might be a subcommand — which is why the direct rule
+  // wants an extension it recognises. `| bash` and `< ` followed by an interpreter are not ambiguous:
+  // whatever that file holds is about to be executed, whatever it is called. A path that cannot be
+  // read resolves to nothing and the caller is left exactly as it was.
+  const INTERP = '(?:sudo[ \\t]+)?(?:(?:ba|z)?sh|node|python3?|ruby|perl)';
+  const PATHCH = '([^ \\t;&|\'"<>]+)';
+  for (const re of [
+    // cat FILE | [sudo] interpreter
+    new RegExp(
+      `(?:^|[^A-Za-z0-9_])(?:cat|type)[ \\t]+${PATHCH}[ \\t]*\\|[ \\t]*${INTERP}${LEXICAL_BOUNDARY}`,
+      'i',
+    ),
+    // interpreter < FILE
+    new RegExp(`(?:^|[^A-Za-z0-9_])${INTERP}[ \\t]*<[ \\t]*${PATHCH}`, 'i'),
+    // < FILE interpreter
+    new RegExp(`(?:^|[^A-Za-z0-9_])<[ \\t]*${PATHCH}[ \\t]+${INTERP}${LEXICAL_BOUNDARY}`, 'i'),
+  ]) {
+    const hit = re.exec(c);
+    if (!hit) continue;
+    const rel = hit[1].replace(/^\.\//, '');
+    const text = readCapped(path.resolve(base, rel));
+    if (text !== null) return { kind: 'piped-script', source: rel, text };
+  }
+
+  // ---- a package.json script -----------------------------------------------------
+  // 2026-08-24, X284: three spellings of the same thing were unmodelled, and the axis they sit on is
+  // "the runner", which the X5/X6/X15 reproduction held constant at `npm`.
+  //   * FLAGS BETWEEN `run` AND THE NAME — `npm run --silent build` is ordinary in CI output.
+  //   * `yarn build` with no `run` at all. Yarn omits it; pnpm accepts both. So `pnpm run build`
+  //     resolved and denied while `yarn build`, the same script by the same route, was silent.
+  // Being permissive about the NAME is safe here and deliberately so: a name that is not a key in
+  // `scripts` resolves to nothing and the caller is left exactly as it was, so `yarn install` and
+  // `yarn add x` cost a failed lookup and nothing else.
+  const run =
+    /(?:^|[^A-Za-z0-9_])(?:npm|pnpm|yarn|bun)[ \t]+run[ \t]+(?:-{1,2}[A-Za-z0-9-]+[ \t]+)*([A-Za-z0-9_:.-]+)/i.exec(
+      c,
+    ) || /(?:^|[^A-Za-z0-9_])yarn[ \t]+(?:-{1,2}[A-Za-z0-9-]+[ \t]+)*([A-Za-z0-9_:.-]+)/i.exec(c);
+  if (run) {
+    const raw = readCapped(path.resolve(base, 'package.json'));
+    if (raw !== null) {
+      try {
+        const pkg = JSON.parse(raw);
+        const body = pkg && pkg.scripts && pkg.scripts[run[1]];
+        if (typeof body === 'string') {
+          return { kind: 'npm-script', source: `package.json scripts.${run[1]}`, text: body };
+        }
+      } catch {
+        /* an unparseable package.json resolves to nothing, and the caller stays as it was */
+      }
+    }
+  }
+
+  // ---- a Makefile target ---------------------------------------------------------
+  const mk = /(?:^|[^A-Za-z0-9_])make[ \t]+([A-Za-z0-9_.-]+)/i.exec(c);
+  if (mk) {
+    for (const name of ['Makefile', 'makefile', 'GNUmakefile']) {
+      const raw = readCapped(path.resolve(base, name));
+      if (raw === null) continue;
+      // The recipe is the indented block following "<target>:". Tabs are the real delimiter, but
+      // spaces are accepted too so a space-indented Makefile is not silently unresolvable.
+      const lines = raw.split(/\r?\n/);
+      const at = lines.findIndex((l) =>
+        new RegExp(`^${mk[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \t]*:`).test(l),
+      );
+      if (at < 0) continue;
+      const recipe = [];
+      for (let i = at + 1; i < lines.length; i += 1) {
+        if (/^[\t ]+\S/.test(lines[i])) recipe.push(lines[i].trim());
+        else if (lines[i].trim() === '') continue;
+        else break;
+      }
+      if (recipe.length)
+        return { kind: 'make', source: `${name} target ${mk[1]}`, text: recipe.join('\n') };
+    }
+  }
+
+  return null;
+}
+
+// resolveScriptChain() follows indirection TRANSITIVELY, to a bounded depth.
+//
+// 2026-08-24, X284. `resolveScriptIndirection()` follows exactly one hop, and one hop is not the
+// shape of real deploy tooling: `deploy.sh` calls `build.sh`, `npm run release` calls `npm run push`.
+// Measured at the parent, against a committed studio repo with a tracked AWS-shaped key:
+//
+//   bash build.sh    deny        (one hop — build.sh pushes directly)
+//   bash outer.sh    NO DECISION  outer.sh is `bash build.sh`
+//   npm run chain    NO DECISION  scripts.chain is `npm run build`
+//   make chain       NO DECISION  the recipe is `bash build.sh`
+//
+// AND A MISS HERE IS NOT A WEAKER VERDICT. `isPushCapable` gates the whole content scan, so a command
+// it does not recognise is not scanned at all — the staged key reaches the network with the hook
+// silent. That is why depth mattered enough to find: the failure is total, not partial.
+//
+// This was DISCLOSED, which is the part worth being honest about. X15's row said "one level only (a
+// script that runs another script is not followed)" and SECURITY.md said the same. A disclosed
+// limitation is better than a hidden one and it is not a substitute for the fix when the fix is
+// eleven lines and the pattern for it was already in the same file — `unwrapShellText` has bounded
+// itself at three levels since X227, for exactly this reason and with exactly this reasoning.
+//
+// THE BOUND IS A REAL LIMIT, NOT A CLAIM OF COMPLETENESS. Three hops, and a chain longer than that
+// is followed as far as three and no further; a four-deep chain that only pushes at the fourth hop
+// is still missed, and that is the residual, disclosed here and in SECURITY.md rather than implied
+// to be closed. `seen` stops a script that runs itself from spinning — the ordinary shape being a
+// Makefile target that calls `make` again — and it is keyed on the resolved SOURCE, not the text, so
+// two different files holding identical content are still two hops.
+export function resolveScriptChain(rawC, cwd, maxDepth = 3) {
+  const seen = new Set();
+  const chain = [];
+  let text = rawC;
+  for (let d = 0; d < maxDepth; d += 1) {
+    const hop = resolveScriptIndirection(text, cwd);
+    if (hop === null) break;
+    const key = `${hop.kind}:${hop.source}`;
+    if (seen.has(key)) break;
+    seen.add(key);
+    chain.push(hop);
+    // Stop at the first hop that answers the question. Going deeper could only find a second reason
+    // for the same decision, and the caller reports the chain it actually followed.
+    if (isPushCapable(hop.text)) break;
+    text = hop.text;
+  }
+  if (!chain.length) return null;
+  const last = chain[chain.length - 1];
+  // The source names EVERY hop, because a refusal that says "build.sh pushes" when the user typed
+  // `bash outer.sh` is a refusal they cannot act on. The chain is what they need to see.
+  return {
+    kind: last.kind,
+    source: chain.map((h) => h.source).join(' → '),
+    text: last.text,
+    depth: chain.length,
+  };
+}
+
+// updateRootIsOurs() — the two-part test that establishes the git repository above this plugin IS
+// this plugin's, before anything is fetched or rebased.
+//
+// 2026-08-24, X292. This logic lived inline in `auto-update.mjs`, and X241's reproduction — the
+// CRITICAL finding about the nightly unattended updater rebasing a stranger's repository — said so
+// outright: "the guard, re-implemented here from the two properties it asserts rather than by
+// importing the module". All five of its cases called that local eight-line copy, and the SHIPPED
+// guard was touched only by four substring tests over the file's text.
+//
+// So `!crossesNodeModules && carriesThisPlugin` becoming `||`, or the boolean inverted, or
+// `relFromRoot` computed from the wrong pair of paths, would keep every substring present and all five
+// cases green while the updater rebased the user's Homebrew prefix again. The two copies agreed on the
+// day this was found; nothing in the file could have told anyone if they stopped.
+//
+// The fix is not a cleverer test, it is ONE implementation. `auto-update.mjs` calls this and the
+// reproduction imports this, so there is no second copy to drift. That is L14 in this project: sites
+// that each carry their own copy of a rule are sites that drift.
+//
+// THE TWO PROPERTIES, and why each is needed:
+//   * the path from the repository root down to the hook must not cross `node_modules` — if it does,
+//     this plugin is a DEPENDENCY of the repository above it, and that repository is someone else's;
+//   * the repository must actually carry this plugin's manifest, in either of the two layouts that
+//     are legitimate (a source checkout, or a marketplace tree with the plugin under `plugins/`).
+export function updateRootIsOurs(hookDir, studioRoot, exists) {
+  const relFromRoot = path.relative(String(studioRoot), String(hookDir));
+  const crossesNodeModules = relFromRoot.split(path.sep).some((seg) => seg === 'node_modules');
+  return !crossesNodeModules && carriesThisPlugin(studioRoot, exists);
+}
+
+// carriesThisPlugin() — does this directory hold THIS plugin's manifest, in either legitimate layout?
+//
+// 2026-08-24, X38/X40. Split out of updateRootIsOurs() because a second caller needs exactly this half
+// and nothing else: scan.mjs's "I am allowed to push my own repository" exemption. That exemption used
+// to be built from the RUNNING HOOK's own directory, so any copy of the hook sitting outside the
+// checkout it was scanning pointed the exemption at the wrong tree and refused a clean repository —
+// X22's defect, reinstated by geometry rather than by staleness.
+//
+// Anchoring the exemption to the SCANNED repository instead is only safe if that repository is
+// actually ours, and this is that test.
+//
+// ONE definition, two callers, deliberately. The alternative is two copies of a security predicate
+// that agree today — which is L14, and X292 was raised this same morning for exactly that shape: a
+// reproduction testing its own hand-copied duplicate of the guard it claimed to protect.
+//
+// Both layouts are real and both must pass: a source checkout carries the manifest under
+// `plugins/gru953-studio/`, and a packaged or installed copy carries it at its own root.
+export function carriesThisPlugin(root, exists) {
+  const stat = typeof exists === 'function' ? exists : (p) => fs.existsSync(p);
+  if (!root) return false;
+  try {
+    return (
+      stat(path.join(String(root), '.claude-plugin', 'plugin.json')) ||
+      stat(path.join(String(root), 'plugins', 'gru953-studio', '.claude-plugin', 'plugin.json'))
+    );
+  } catch {
+    return false; // an unresolvable root is never ours
+  }
+}
+
+// 2026-08-24, X6. The half of X6 that CANNOT be resolved, and therefore the one place where the
+// ratified architecture — "fail closed to ask on anything the tool cannot classify" — is the only
+// honest answer.
+//
+// `curl https://… | sh` runs code that does not exist on this machine until the moment it runs. No
+// amount of reading finds it. Measured at HEAD, both `cat s.sh | bash` and `curl -s … | sh` are
+// classified non-push and reach the network with no scan: the pipe form was never modelled.
+//
+// The local pipe (`cat s.sh | bash`) IS resolvable, and as of 2026-08-24 it is resolved — see the
+// piped-script form in resolveScriptIndirection above. This function covers only the case that can
+// never be resolved by anything, where asking costs almost nothing because fetching a script and
+// executing it unread is both rare in ordinary work and the exact idiom no amount of reading checks.
+// Keeping the rule this narrow is deliberate: an ask on every pipeline would be the false alarm that
+// gets a guard switched off (L5), and there is no version of that which is worth having.
+export function pipesRemoteCodeIntoAnInterpreter(rawC) {
+  if (!rawC) return false;
+  const c = normalizeForPushCheck(rawC);
+  const FETCH = /(?:^|[^A-Za-z0-9_])(?:curl|wget|fetch|http|https)(?:[ \t]|$)/i;
+  const INTERP = /\|[ \t]*(?:sudo[ \t]+)?(?:(?:ba|z)?sh|node|python3?|ruby|perl)(?:[ \t]|;|$)/i;
+  if (!INTERP.test(c)) return false;
+  // The fetch must be on the LEFT of the pipe that feeds the interpreter, so `sh -c "curl …"` and a
+  // command that merely mentions curl after the pipe are not swept in.
+  const at = c.search(INTERP);
+  return FETCH.test(c.slice(0, at < 0 ? c.length : at));
+}
+
+// 2026-08-23, X272. A NARROW companion to isPushCapable below, for exactly one purpose: deciding
+// whether a command actually SENDS COMMITS TO A REMOTE, so scan.mjs can ask for the publishing
+// consent the operating charter requires.
+//
+// These have to be two separate predicates, and conflating them was a real defect — caught by
+// X214's own controls, not by review. `isPushCapable` answers a different question: "might this
+// touch publishing, so should I SCAN it?" It is deliberately WIDE, and returns true for
+// `gh repo clone` (read-only) and for `node scripts/build.mjs --outdir public`. Erring wide is
+// correct there: scan more, not less. It is badly wrong for consent. X272's first attempt escalated
+// on isPushCapable, so a read-only clone raised a prompt asserting "this command sends code out of
+// your machine" — false, on a command that publishes nothing. That is this project's L5: a gate that
+// cries wolf gets routed around, and a routed-around gate is worse than no gate.
+//
+// SCOPE, stated rather than left implicit. This covers pushing commits to a remote, in every form
+// the wide classifier already recognises (spaced, quoted, case-varied, send-pack, and the dashed
+// builtins X179 added). It deliberately does NOT cover the `gh` publishing family — `gh release
+// create`, `gh repo create`, `gh repo edit --visibility public`. Those genuinely do publish, and in
+// `auto` mode they still raise no prompt: that is a DISCLOSED GAP filed with this finding, not an
+// oversight. Inventing a gh subcommand taxonomy here would mean guessing which ones are outbound
+// with no reproduction to bound the guess, which is precisely how the clone and build-script cases
+// broke. It is a decision for the owner, with evidence, rather than a silent widening.
+export function sendsCommitsToRemote(rawC) {
+  // 2026-08-25, X17 — and this is the most consequential consent gap found in the programme. Making a
+  // repository PUBLIC is the single most irreversible publishing act available, and it raised NOTHING.
+  // Measured at HEAD on a clean studio fixture: `gh repo edit --visibility public`,
+  // `gh api -X PATCH repos/o/r -f visibility=public` and the equivalent curl all returned zero bytes on
+  // stdout and stderr, exit 0 — while `git push origin main` on the same fixture returned `ask`.
+  //
+  // `skills/operating-charter/SKILL.md` promises the user's own explicit, fresh "yes" every time
+  // something is published. A private repository turned public publishes everything in it at once, and
+  // the product said nothing at all.
+  //
+  // NARROW ON PURPOSE, because a false prompt here would be the L5 failure on the one gate that most
+  // needs to keep working. It matches a visibility change TO public only: `--visibility private`,
+  // `gh repo view`, and a PATCH carrying no visibility key are all left silent.
+  {
+    const t = String(rawC || '');
+    const toPublic =
+      /--visibility[= \t]+["']?public\b/i.test(t) ||
+      /-f[ \t]+visibility[= \t]*["']?public\b/i.test(t) ||
+      /["']?visibility["']?\s*[:=]\s*["']?public\b/i.test(t);
+    if (toPublic && /(^|[^A-Za-z0-9_])(?:gh|curl|hub|glab)(?:[ \t]|$)/i.test(t)) return true;
+    // The dedicated subcommand form, which carries no `visibility` word at all.
+    if (/(^|[^A-Za-z0-9_])['"]?gh['"]?[ \t]+repo[ \t]+(?:create|edit)\b[^\n]*--public\b/i.test(t))
+      return true;
+  }
+  if (
+    /(^|[^A-Za-z0-9_])['"]?(?:npm|pnpm|yarn|bun|vsce|ovsx)['"]?[ \t]+publish\b/i.test(
+      String(rawC || ''),
+    ) &&
+    !/--dry-run\b/i.test(String(rawC || ''))
+  )
+    return true;
+  // 2026-08-25: `npm publish` and its siblings are added HERE as well as to the scan, and that is a
+  // judgement worth stating rather than burying. The owner's decision of 24 August was "scan the
+  // transports, never prompt on them" — because a deploy script copying a file should not stop and
+  // ask. Publishing a package is not that. It makes code PUBLIC, irreversibly, on a registry, and the
+  // operating charter says publishing needs the user's own fresh "yes" every time.
+  //
+  // `gh release create` and `gh repo create --public` are deliberately NOT here: the `publish-github`
+  // skill owns that flow and carries its own confirmation, so a second prompt would be the false
+  // alarm this predicate was narrowed to avoid. Nothing owns `npm publish`, which is why it is.
+  if (!rawC) return true;
+  // Unanalysable, therefore unclassifiable. The ratified permission architecture is "fail closed to
+  // `ask` on anything the tool cannot classify" — and this predicate's only caller IS the ask.
+  if (exceedsAssignmentBound(rawC)) return true;
+  const c = normalizeForPushCheck(rawC);
+  if (isConfirmScriptOnly(c)) return false;
+  return (
+    new RegExp(
+      `(^|[^A-Za-z0-9_])['"]?git['"]?(?:[ \\t]+[^ \\t]+)*?[ \\t]+['"]?push['"]?${LEXICAL_BOUNDARY}`,
+      'i',
+    ).test(c) ||
+    new RegExp(`(^|[^A-Za-z0-9_])git[ \\t]+send-pack${LEXICAL_BOUNDARY}`, 'i').test(c) ||
+    new RegExp(`(^|[^A-Za-z0-9_./\\\\-])git-(push|send-pack)${DASHED_BOUNDARY}`, 'i').test(c) ||
+    new RegExp(`[/\\\\]git-(push|send-pack)${DASHED_BOUNDARY}`, 'i').test(c)
+  );
+}
+
 export function isPushCapable(rawC) {
   if (!rawC) return true;
   // 2026-08-07 audit fix. Past MAX_RESOLVED_ASSIGNMENTS the variable resolution
   // is skipped (see normalizeForPushCheck), so any `$VAR` in this command is
   // unresolved text and this matcher cannot prove the command is NOT a push.
   // This function's own stated rule is "prove non-push or treat as push", so
-  // the answer here is true — which routes the command to gate.mjs's
-  // authorisation check rather than allowing it outright.
+  // the answer here is true. **Corrected 2026-08-18 (X229):** this said the answer
+  // "routes the command to gate.mjs's authorisation check rather than allowing it
+  // outright" — a present-tense claim about a hook X214 removed on 2026-08-16.
+  // There is no authorisation check; `true` routes it to `scan.mjs`'s secret and
+  // private-memory scan, which is the whole of push safety now.
   if (exceedsAssignmentBound(rawC)) return true;
   const c = normalizeForPushCheck(rawC);
   if (isConfirmScriptOnly(c)) return false;
@@ -2057,6 +2562,31 @@ export function isPushCapable(rawC) {
   )
     return true;
   // git plumbing command that performs a push without the word "push".
+  // 2026-08-22, X179: git's DASHED BUILTIN form. `git-push` and `git-send-pack` are real
+  // executables in `$(git --exec-path)` — on the machine this was found on both are symlinks to
+  // `git` — and they perform the push without the words `git push` ever appearing. So
+  // `isPushCapable` returned FALSE and the secret scan was skipped ENTIRELY, not downgraded: a
+  // fixture carrying a tracked `AKIA…`-shaped key and a non-gitignored `Dev-Memory/` got `deny` for
+  // `git push origin main` and NO DECISION for the absolute libexec path, `$(git --exec-path)/git-push`,
+  // a PATH-prefix form, `git-send-pack`, `--force`, and the bare name.
+  //
+  // This is NOT the text-obfuscation class disclosed in SECURITY.md. The command literally reads
+  // `git-push`; nothing is hidden or encoded. It is a documented invocation form the classifier had
+  // never modelled.
+  //
+  // The boundary matters: a longer hyphenated name like `git-push-helper` is a DIFFERENT program and
+  // must stay uncaught, or an ordinary install script gets swept up and the guard becomes the L5
+  // kind that gets switched off. Verified both ways.
+  //
+  // `(?![A-Za-z0-9_-])` rather than LEXICAL_BOUNDARY, because LEXICAL_BOUNDARY permits a following
+  // HYPHEN — so `git-push-helper` matched on the first run of this rule's own control. A hyphen
+  // continues the program name, so it has to end the match.
+  const DASHED_END = DASHED_BOUNDARY; // X272: one definition, at module scope
+  if (
+    new RegExp(`(^|[^A-Za-z0-9_./\\\\-])git-(push|send-pack)${DASHED_END}`, 'i').test(c) ||
+    new RegExp(`[/\\\\]git-(push|send-pack)${DASHED_END}`, 'i').test(c)
+  )
+    return true;
   if (new RegExp(`(^|[^A-Za-z0-9_])git[ \\t]+send-pack${LEXICAL_BOUNDARY}`, 'i').test(c))
     return true;
   // gh's own alias mechanism, same shape of risk as git aliases.
@@ -2121,6 +2651,145 @@ export function isPushCapable(rawC) {
   // reproduced live end-to-end with a real secret and zero confirmation
   // tokens recorded. Fixed with the same shared boundary as every other
   // regex in this function.
+  // ---- 2026-08-24, X288: transports that are not git ------------------------------
+  //
+  // Every clause above this one is `git` or `gh`. X179's insight was that a DOCUMENTED INVOCATION
+  // FORM had never been modelled — the dashed builtins `git-push` and `git-send-pack` — and the same
+  // sentence is true one step out of every non-git way of moving tracked bytes off this machine.
+  // Measured at the parent, all classified NOT push-capable, so the secret scan never ran at all:
+  //
+  //   scp creds.txt user@host:/tmp/        rsync -a . user@host:/srv/
+  //   curl -T creds.txt https://…          aws s3 cp creds.txt s3://bucket/
+  //   hub push origin main                 git svn dcommit
+  //   git-receive-pack .                   git-http-push url
+  //
+  // Each is an ordinary command a build or deploy step runs, and each moves the same bytes the push
+  // scan exists to look at.
+  //
+  // WHAT THIS DOES AND DELIBERATELY DOES NOT DO — the owner's decision of 2026-08-24, recorded
+  // because the alternative is defensible and was rejected on purpose. `isPushCapable` gates whether
+  // the tree is SCANNED; `sendsCommitsToRemote` gates the publishing-consent PROMPT, and these
+  // transports are added to the first and NOT the second. So a `scp` of a clean tree stays completely
+  // silent and only a real secret produces anything. Adding them to the consent prompt instead would
+  // have stopped every deploy script that copies a file, which is the L5 failure — a gate that
+  // interrupts honest work gets switched off and takes the real protection with it.
+  //
+  // NARROW ON PURPOSE, and this is where the false-alarm line sits. `scp` and `rsync` need a REMOTE
+  // TARGET (`user@host:` or `host:/path`), so a local `rsync -a src/ dst/` is not matched. `curl`
+  // needs an UPLOAD flag (`-T`, `--upload-file`, `-d`, `--data`, `-F`, `--form`), so an ordinary
+  // download is not matched. `aws s3` needs `cp`, `mv` or `sync` with an `s3://` destination, so
+  // `aws s3 ls` is not matched. Scanning is cheap and silent; being wrong here still costs, because
+  // a scan that runs on every `curl` would find test fixtures in ordinary repositories.
+  // 2026-08-25, found by the axis sweep as a residual of the X288 fix made the day before. The first
+  // version required `user@host:` or a dotted `host.tld:` — and an ssh_config Host ALIAS has neither.
+  // `Host myhost` is the ordinary way people name a machine they use often, so `scp creds.txt
+  // myhost:/tmp/` was unscanned while `scp creds.txt me@myhost:/tmp/` was caught. The alias form is
+  // the one a person actually types.
+  //
+  // The rule now matches what scp and rsync THEMSELVES do: a colon appearing before any slash makes
+  // the argument remote. That is their documented behaviour, so this cannot disagree with the tool
+  // about what is local — which is what the first version did.
+  //
+  // Two exclusions, both measured against the false-alarm corpus: a single-letter prefix is a Windows
+  // drive (`C:\path`), and a `scheme://` is a URL, not a host.
+  const REMOTE_TARGET =
+    '[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+:|(?:^|[ \\\\t])[A-Za-z0-9_.-]{2,}:(?!//)[^ \\\\t]*';
+  if (new RegExp(`(^|[^A-Za-z0-9_])['"]?(scp|rsync)['"]?[ \\t].*(${REMOTE_TARGET})`, 'i').test(c))
+    return true;
+  // `sftp` is separated from the pair above because the colon test is wrong for it. A colon is what
+  // distinguishes a remote target from a local one for scp and rsync — `rsync -a src/ dst/` is an
+  // ordinary local copy and must stay silent. sftp has NO local mode: `sftp user@host` is already a
+  // session with a remote, colon or no colon, so requiring one lost it.
+  // sftp has NO local mode: every invocation with a target is a remote session, whatever the target
+  // looks like. So the colon test the transports above rely on is simply wrong here — `sftp myhost`
+  // is remote and carries neither a colon nor an `@`. Any non-flag argument is the evidence; bare
+  // `sftp` and `sftp --help` are not.
+  if (/(^|[^A-Za-z0-9_])['"]?sftp['"]?[ \t]+(?!-)[^ \t]/i.test(c)) return true;
+  if (
+    /(^|[^A-Za-z0-9_])['"]?curl['"]?[ \t]/i.test(c) &&
+    /[ \t](-T|--upload-file|-d|--data(-raw|-binary|-urlencode)?|-F|--form)([ \t=]|$)/i.test(c)
+  )
+    return true;
+  if (
+    /(^|[^A-Za-z0-9_])['"]?aws['"]?[ \t]+s3[ \t]+(cp|mv|sync)[ \t]/i.test(c) &&
+    /s3:\/\//i.test(c)
+  )
+    return true;
+  // Third-party git front ends and the non-`push` git transports. `hub` and `glab` are the GitHub and
+  // GitLab equivalents of `gh`; `git svn dcommit` publishes to a Subversion remote; `git-receive-pack`
+  // and `git-http-push` are dashed builtins X179 did not reach because it enumerated the two that
+  // carry the word "push".
+  if (
+    new RegExp(
+      `(^|[^A-Za-z0-9_./\\\\-])['"]?(hub|glab|jj)['"]?[ \\t]+.*['"]?(push|mr[ \\t]+create|pr[ \\t]+create)['"]?${LEXICAL_BOUNDARY}`,
+      'i',
+    ).test(c)
+  )
+    return true;
+  // 2026-08-25, the second residual the sweep found. `npm publish` sends a package to a PUBLIC
+  // registry — the most direct contradiction of the owner's standing "publish nothing online"
+  // directive that a single command can express — and it was neither scanned nor prompted. Nor were
+  // pnpm, yarn, bun, or `vsce publish` for a VS Code extension.
+  //
+  // A `--dry-run` genuinely publishes nothing, so it is excluded rather than swept in.
+  if (
+    /(^|[^A-Za-z0-9_])['"]?(?:npm|pnpm|yarn|bun|vsce|ovsx)['"]?[ \t]+publish\b/i.test(c) &&
+    !/--dry-run\b/i.test(c)
+  )
+    return true;
+  // A pipe INTO ssh sends the local tree somewhere else — `tar czf - . | ssh host 'cat > b.tgz'` is
+  // the classic form. A bare `ssh host` is an interactive login and sends nothing, so the pipe is the
+  // evidence and a plain ssh is deliberately not matched.
+  if (/\|[ \t]*(?:sudo[ \t]+)?ssh[ \t]+/i.test(c)) return true;
+  // 2026-08-25, X200 — the THIRD round of the same gap, and the pattern is now the finding. X288 added
+  // scp/rsync/curl/aws, X297 added the ssh alias form, X298 added npm publish. Each time the list grew
+  // by the transports someone thought of. Measured at HEAD with an AWS key pair committed in the
+  // fixture, every one of these returned zero output and exit 0 — no scan at all:
+  //
+  //   vercel deploy --prod   netlify deploy --prod   firebase deploy   docker push me/img
+  //   vercel --prod          docker buildx build --push              gsutil rsync -r dist gs://b/
+  //   wrangler deploy        fly deploy                              kubectl apply -f k8s/
+  //
+  // These are the ordinary ways a build reaches the internet in 2026, and the secret scan never ran
+  // before any of them. Added to the SCAN gate only, not the consent gate, per the owner's decision of
+  // 24 August: a deploy step should not stop and ask, and scanning is silent unless it finds something.
+  //
+  // `--dry-run` is excluded throughout because it publishes nothing. `docker build` without `--push`
+  // is excluded because it produces a local image. `kubectl apply` IS included: a manifest is exactly
+  // where a secret rides to a cluster.
+  if (
+    /(^|[^A-Za-z0-9_])['"]?(?:vercel|netlify|firebase|wrangler|fly|flyctl|railway|render|heroku|now|surge|amplify)['"]?[ \t]+(?:deploy|publish|--prod\b)/i.test(
+      c,
+    ) &&
+    !/--dry-run\b/i.test(c)
+  )
+    return true;
+  // `vercel --prod` with no subcommand at all is a deploy.
+  if (/(^|[^A-Za-z0-9_])['"]?vercel['"]?[ \t]+(?:-[A-Za-z-]+[ \t]+)*--prod\b/i.test(c)) return true;
+  // Docker: a push, or a build that pushes as it goes.
+  if (/(^|[^A-Za-z0-9_])['"]?docker['"]?[ \t]+(?:image[ \t]+)?push\b/i.test(c)) return true;
+  if (/(^|[^A-Za-z0-9_])['"]?docker['"]?[ \t]+buildx?\b[^\n]*--push\b/i.test(c)) return true;
+  // Object stores other than S3, which X288 already covers.
+  if (/(^|[^A-Za-z0-9_])['"]?(?:gsutil|gcloud)['"]?[ \t]/i.test(c) && /gs:\/\//i.test(c))
+    return true;
+  if (/(^|[^A-Za-z0-9_])['"]?az['"]?[ \t]+storage[ \t]+blob[ \t]+(?:upload|sync)\b/i.test(c))
+    return true;
+  // A manifest applied to a cluster carries whatever is written in it.
+  if (
+    /(^|[^A-Za-z0-9_])['"]?kubectl['"]?[ \t]+(?:apply|create|replace)\b/i.test(c) &&
+    !/--dry-run\b/i.test(c)
+  )
+    return true;
+
+  if (/(^|[^A-Za-z0-9_])['"]?git['"]?[ \t]+svn[ \t]+dcommit/i.test(c)) return true;
+  if (
+    new RegExp(
+      `(^|[^A-Za-z0-9_./\\\\-])git-(receive-pack|http-push|upload-archive)${DASHED_END}`,
+      'i',
+    ).test(c)
+  )
+    return true;
+
   const SCRIPT_INDIRECTION_KEYWORDS = /(deploy|release|publish|ship|public|visibility)/i;
   if (
     new RegExp(

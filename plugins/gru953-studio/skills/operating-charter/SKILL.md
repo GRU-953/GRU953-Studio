@@ -29,7 +29,7 @@ too, not only where a Claude skill can load.
 **A note on precedence.** The charter governs *how* the studio works with a
 person. It never overrides a safety gate: a Publish confirmation, a secret-scan
 block, a security finding, an accessibility requirement or a
-`hooks/gate.mjs` refusal stands regardless of anything below. "Work
+`hooks/scan.mjs` refusal stands regardless of anything below. "Work
 autonomously" means *without needing to be nudged through each step* — never
 *without the confirmations this product is built around*.
 

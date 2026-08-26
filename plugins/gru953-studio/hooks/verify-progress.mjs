@@ -46,10 +46,53 @@ import {
 
 function main() {
   const root = process.argv[2] || process.cwd();
-  const file = path.join(root, 'Dev-Memory', 'PROGRESS.md');
-  if (!fs.existsSync(file)) {
-    console.log(JSON.stringify({ status: 'no PROGRESS.md found', file }));
+  const devMemory = path.join(root, 'Dev-Memory');
+  const file = path.join(devMemory, 'PROGRESS.md');
+
+  // 2026-08-15, finding X113 (High, reproduced). This used to be a single
+  // `if (!fs.existsSync(file))` that printed "no PROGRESS.md found" and exited 0. It
+  // collapsed two situations that are not the same:
+  //
+  //   * someone else's repository, where this gate must never interfere — correct to
+  //     stand down; and
+  //   * a real studio project whose PROGRESS.md is missing, where the gate cannot do the
+  //     job it exists for and said "fine" anyway.
+  //
+  // The second is the defect. A gate that cannot read its input must never claim its
+  // input is fine — the same rule as X106's swallowed parse error and X115/X118.
+  //
+  // The distinction is Dev-Memory/: its absence means "not a studio project", its
+  // presence means this IS one. Reproduction:
+  // hooks/test/repro/X113-X115-X118-absent-input.mjs, whose control proves the
+  // stand-down path still works — a fix that broke it would break the product for
+  // everyone who installs the plugin.
+  let inStudioProject = false;
+  try {
+    inStudioProject = fs.statSync(devMemory).isDirectory();
+  } catch {
+    inStudioProject = false;
+  }
+  if (!inStudioProject) {
+    console.log(
+      JSON.stringify({
+        status: 'not a studio project',
+        reason: 'no Dev-Memory/ directory — nothing to check',
+        root,
+      }),
+    );
     process.exit(0);
+  }
+  if (!fs.existsSync(file)) {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        problems: [
+          'Dev-Memory/ exists but Dev-Memory/PROGRESS.md is missing, so no task can be checked for the evidence a done task must carry. This gate cannot verify what it cannot read (finding X113)',
+        ],
+        file,
+      }),
+    );
+    process.exit(1);
   }
   // 2026-07-26, audit finding 26. Deliberate hardening, not a demonstrated-bug
   // fix — checked by execution rather than assumed: the table-row test below
@@ -290,8 +333,63 @@ function main() {
   // this gate failing OPEN. Strip surrounding emphasis, then any leading run of
   // non-alphanumeric decoration, before the "starts with the word done" test —
   // still rejecting "undone"/"donee" (Round 7) and tolerating "Done ✅"/"DONE!".
-  const isDoneValue = (c) =>
-    /^done\b/i.test(deEmphasise(String(c == null ? '' : c)).replace(/^[^A-Za-z0-9]+/, ''));
+  // 2026-08-15, finding X139 / verify-progress D1 (High, reproduced). This recognised
+  // completion by exactly one word: /^done\b/i. A task marked `Completed`, `Finished`,
+  // `Shipped`, `Delivered` or `✅` was therefore not a done row, was never evidence-checked,
+  // and contributed nothing — so the gate reported clean about a project whose tasks claimed
+  // to be finished with no proof at all. A false clean, not a fail-closed: the identical row
+  // marked `done` blocks.
+  //
+  // Widening this makes MORE rows evidence-checked, never fewer, so the risk here is a false
+  // alarm rather than a miss. Every accepted word therefore unambiguously means finished:
+  //
+  //   NOT accepted — "closed": ambiguous. A task closed as won't-do is not a task completed,
+  //     and demanding proof of completion for it would be exactly that false alarm.
+  //   NOT accepted — translations. The sweep suggested "Terminé". Guessing which languages
+  //     and which words would invent a vocabulary nobody agreed, and a wrong guess blocks a
+  //     healthy project. A project that needs one is a decision to record, not a synonym to
+  //     assume.
+  //   NOT accepted — typos ("doen"). Accepting near-misses is how a recogniser stops being
+  //     predictable, and an unpredictable gate is one people route around.
+  //
+  // The prefix anchor is load-bearing and is kept: it is what keeps "not done", "undone",
+  // "incomplete", "in progress" and "doing" out. A word-boundary match anywhere in the cell
+  // would accept "not done" and demand evidence for unfinished work.
+  //
+  // Reproduction: hooks/test/repro/X139-completion-synonyms.mjs, whose control D holds five
+  // unfinished statuses that must stay untouched.
+  const DONE_WORDS = /^(done|completed?|finished|shipped|delivered)\b/i;
+  // Symbols survive the decoration strip below, so they are tested on the de-emphasised
+  // cell before it: a bare tick or a ticked checkbox is a completion claim in every project
+  // that uses one.
+  // 2026-08-25: `✓` added here too. The same omission had two homes, and a fix that reached only one
+  // of them would be this project's L14 in the file that keeps finding it.
+  const DONE_SYMBOLS = /^\s*(✅|✔️?|✓|☑️?|\[x\]|100\s*%)\s*$/i;
+  const isDoneValue = (c) => {
+    const raw = deEmphasise(String(c == null ? '' : c)).trim();
+    if (DONE_SYMBOLS.test(raw)) return true;
+    return DONE_WORDS.test(raw.replace(/^[^A-Za-z0-9]+/, ''));
+  };
+  // 2026-08-16, finding X194: the same vocabulary, anchored to the WHOLE value.
+  //
+  // isDoneValue above is prefix-anchored on purpose — it reads a STATUS CELL, where "done
+  // (2026-07-20)" is a completion claim and the trailing note is incidental. The prose sweep
+  // near the end of this file used the same predicate on ordinary sentences, where a prefix
+  // match means only that the sentence begins with a completion word: "Delivered to staging on
+  // Tuesday." blocked the phase checkpoint.
+  //
+  // A status IS the value; prose merely starts with the word. Trailing sentence punctuation is
+  // stripped so "done." still counts, and the symbols are shared because they are already
+  // whole-value anchored.
+  const DONE_VALUE_ONLY = /^(done|completed?|finished|shipped|delivered)$/i;
+  const isDoneClaimValue = (c) => {
+    const raw = deEmphasise(String(c == null ? '' : c))
+      .trim()
+      .replace(/[.,;!?)\]]+$/, '')
+      .trim();
+    if (DONE_SYMBOLS.test(raw)) return true;
+    return DONE_VALUE_ONLY.test(raw.replace(/^[^A-Za-z0-9]+/, ''));
+  };
   // 2026-07-21 Round 12 audit fix (medium): GFM outer pipes are OPTIONAL per row,
   // so a piped `| a | b |` and a pipe-less `a | b` render identically but
   // splitPipeCells yields ['',a,b,''] vs [a,b]. If a data row's outer-pipe style
@@ -316,7 +414,15 @@ function main() {
   const unidentified = []; // task table(s) with a "done" claim we cannot verify (fail CLOSED)
   const failedEvidence = []; // "done" rows whose OWN structured evidence records a non-zero exit
   const malformedEvidence = []; // "done" rows whose structured evidence is missing required fields
-  let sawAnyTable = false; // X11a: a done claim with no table at all must not pass
+  // X11a: `sawAnyTable` was removed on 2026-08-15. It had been assigned and never read since
+  // the outside-table sweep stopped being conditional on it — see the note further down —
+  // so it was dead weight that read as a live guard. Confirmed unread at 752fb83 before
+  // removal, so this is not a consequence of today's changes to this file.
+  // X142: the header of the last table that HAD a Status column, so a later fragment of the
+  // same width carrying a completion claim can be recognised as a continuation of it rather
+  // than mistaken for a new table whose rows nobody checks.
+  let lastTaskHeaderCells = null;
+  let lastStatusColumnIndex = -1;
   const insideATable = new Set(); // F9: line indices belonging to a recognised table
 
   for (let i = 0; i < lines.length; i++) {
@@ -335,8 +441,71 @@ function main() {
 
     const headerCells = normCells(header);
     const statusColumnIndex = headerCells.findIndex(isStatusHeader);
+
+    // 2026-08-15, finding X142 / verify-progress D6 (reproduced). A blank line ends a table
+    // here, and the scanner then treats the next pipe-led line as a new HEADER. So a task
+    // table torn in two by one stray blank line has its first row below the tear consumed as
+    // a header — and a completion claim there is never evidence-checked. Proven to be the
+    // tear rather than the row: the identical line with no blank above it blocks.
+    //
+    // It is REPORTED rather than read as data. Reading it would mean deciding that a pipe-led
+    // line is data rather than a heading, and that guess produced a false-alarm regression in
+    // this codebase earlier today. The signal used instead is measured: a fragment with
+    // exactly as many columns as a real task table seen above it, carrying a completion
+    // claim, and with no Status column of its own, is a torn table.
+    //
+    // A genuine standalone table headed `| Task | Done | Notes |` has no such predecessor to
+    // match, so it is untouched — control D of the reproduction holds that exact shape, and
+    // control E holds a tear between two HEALTHY halves, which stays quiet because nothing
+    // below it goes unchecked.
+    //
+    // FIRST ATTEMPT, and why it was wrong: this originally REPORTED the fragment rather than
+    // reading it. Control E rejected that — a tear always leaves a row unchecked, whether or
+    // not that row happens to be fine, so reporting every tear would block healthy files over
+    // a stray blank line. A gate that nags about formatting is one people route around.
+    //
+    // Reading it is also the safer guess here, which it was not in traceability-check. The
+    // signal is narrow: the table above HAD a Status column at width N, and this fragment is
+    // width N with NO Status column of its own. A genuinely new task table would carry its
+    // own Status column — that is the only kind this gate reads at all. The alternative
+    // reading, a brand-new table that coincidentally matches the width, carries a completion
+    // word and has no Status column, is contrived.
+    //
+    // A standalone `| Task | Done | Notes |` is untouched because there is no previous task
+    // table to match against — control D holds exactly that.
+    let effectiveHeaderCells = headerCells;
+    let effectiveStatusIndex = statusColumnIndex;
+    let firstRowIndex = i + 1;
+    //
+    // P6 round 1, finding L2 — a regression this rule introduced the same day, together with
+    // X139's widening of what counts as a completion word. A perfectly ordinary SECOND task
+    // table headed `| Task | Done | Notes |` satisfied all three conditions: no Status column,
+    // the same width as the table above, and a cell reading "Done". Its HEADER was eaten as a
+    // data row and reported as an unevidenced completion — blocking a checkpoint and a Publish
+    // with a message naming a header as a row, which the owner cannot act on.
+    //
+    // The missing discriminator is markdown's own, and it is exact rather than heuristic: a
+    // line followed by a SEPARATOR ROW is a header. A torn continuation row never has one
+    // beneath it. Control G of the reproduction holds that fixture with matching column
+    // counts, which is the only shape in which this rule can fire at all.
+    const followedBySeparator = SEPARATOR_ROW_RE.test(next);
+    const isTornFragment =
+      !followedBySeparator &&
+      statusColumnIndex === -1 &&
+      lastTaskHeaderCells !== null &&
+      headerCells.length === lastTaskHeaderCells.length &&
+      headerCells.some(isDoneValue);
+    if (isTornFragment) {
+      effectiveHeaderCells = lastTaskHeaderCells;
+      effectiveStatusIndex = lastStatusColumnIndex;
+      firstRowIndex = i; // this line is a ROW of the table above, not a header
+    } else if (statusColumnIndex !== -1) {
+      lastTaskHeaderCells = headerCells;
+      lastStatusColumnIndex = statusColumnIndex;
+    }
+
     let sawDoneUnknown = false;
-    let j = i + 1;
+    let j = firstRowIndex;
     for (; j < lines.length; j++) {
       const row = lines[j];
       if (!looksLikeRow(row)) break; // a blank / pipe-less line ends the table
@@ -347,11 +516,20 @@ function main() {
       // header (a ragged/ambiguous row). If such a row makes a "done" claim we
       // record it as unverifiable rather than silently skipping it. A row with no
       // "done" claim is left alone (no false block).
-      if (statusColumnIndex === -1 || cells.length !== headerCells.length) {
+      // 2026-08-22, X201: this treated a SHORT row - legal GitHub-flavoured markdown, which fills the
+      // missing trailing cells as empty - exactly like an overlong one, whose values really are
+      // shifted. If the row is merely short and the status column is still within it, the status IS
+      // readable and there is nothing to fail closed about.
+      const shortButStatusReadable =
+        cells.length < effectiveHeaderCells.length && effectiveStatusIndex < cells.length;
+      if (
+        effectiveStatusIndex === -1 ||
+        (cells.length !== effectiveHeaderCells.length && !shortButStatusReadable)
+      ) {
         if (cells.some(isDoneValue)) sawDoneUnknown = true;
         continue;
       }
-      if (!isDoneValue(cells[statusColumnIndex])) continue;
+      if (!isDoneValue(cells[effectiveStatusIndex])) continue;
       const hasVerified = VERIFIED_RE.test(row);
       // 2026-07-26 audit finding 1: structured evidence only counts when the
       // command it records actually SUCCEEDED. A recorded non-zero exit code is
@@ -379,9 +557,31 @@ function main() {
       // recording a non-zero exit disqualifies the row, mirroring the prose
       // rule that a row may honestly narrate history but not also currently
       // claim to be failing and still count as done.
-      const jsonCandidates = extractJsonObjects(row).filter(
-        (o) => o && typeof o === 'object' && !Array.isArray(o) && 'taskId' in o,
-      );
+      // 2026-08-15, finding X146 (High, reproduced). This filtered on the key spelled exactly
+      // `taskId`, so a second object recording "exitCode": 1 but keyed `taskID`, `task_id`,
+      // `taskid` or `TaskId` was not evidence, was never examined, and the row passed on the
+      // strength of the first object alone. That is precisely the masking the multi-object
+      // check above was added to prevent, reopened through a spelling.
+      //
+      // The line this must not cross: an arbitrary JSON object does NOT become evidence just
+      // because it mentions an exit code. Recognition is limited to spellings of the task key
+      // itself — case and an optional underscore — and nothing else. Control E of the
+      // reproduction holds an object with no task key at all, which must stay ignored, or
+      // every stray snippet in a notes cell would start blocking releases.
+      //
+      // The canonical spelling is written back, so the field validation below — which asks for
+      // `taskId` — still reports a genuinely absent task id rather than being fooled by the
+      // rename. A mis-keyed object is therefore both COUNTED and reported as malformed, which
+      // is the honest outcome: it is evidence, and its shape is wrong.
+      const TASK_KEY_RE = /^task_?id$/i;
+      const jsonCandidates = extractJsonObjects(row)
+        .filter((o) => o && typeof o === 'object' && !Array.isArray(o))
+        .filter((o) => Object.keys(o).some((k) => TASK_KEY_RE.test(k)))
+        .map((o) => {
+          if ('taskId' in o) return o;
+          const actual = Object.keys(o).find((k) => TASK_KEY_RE.test(k));
+          return { ...o, taskId: o[actual] };
+        });
       let hasPassingJsonEvidence = false;
       if (jsonCandidates.length > 0) {
         const malformed = jsonCandidates
@@ -402,7 +602,6 @@ function main() {
         problems.push(row.trim());
     }
     if (sawDoneUnknown) unidentified.push(header.trim());
-    sawAnyTable = true;
     // 2026-08-13, independent-review finding F9: record which lines belong to a
     // recognised table, so the done-claim sweep below can examine everything
     // OUTSIDE one. Previously the sweep ran only when no table existed at all,
@@ -442,7 +641,146 @@ function main() {
       if (insideATable.has(k)) continue;
       const l = lines[k];
       if (l.trim() === '' || /^\s*#/.test(l)) continue;
-      if (l.split(/[|:—-]/).some((seg) => isDoneValue(seg.trim()))) claims.push(l);
+      // 2026-08-16, finding X194. This used to call isDoneValue on each segment, but that
+      // predicate is PREFIX-anchored (`/^(done|completed?|finished|shipped|delivered)\b/i`)
+      // because it was written to read a STATUS CELL, where the whole cell is the value.
+      // Pointed at prose it said yes to any sentence, or any colon/dash-separated fragment of
+      // one, that merely BEGINS with a completion word — so ordinary lines a person writes
+      // without a second thought blocked the phase checkpoint:
+      //
+      //     "Delivered to staging on Tuesday."       "Completed work: see the table."
+      //     "Done deals are recorded elsewhere."     "Shipped items are listed in the notes."
+      //
+      // 2026-08-16 AGAIN, finding X196 — found by P6 round 3, hours after the fix above. The
+      // "must BE the whole value" rule was too strict and traded the false alarm for a FALSE
+      // CLEAN, which is the worse direction and the exact trade this project had just warned
+      // itself against in the X193 commit. It silently stopped catching every real claim that
+      // carries a qualifier:
+      //
+      //     "- T9 — done (2026-08-16)"        "- T9 — done, evidence to follow"
+      //     "T9: completed on Tuesday"
+      //
+      // The true discriminator is POSITION, not exactness. A done CLAIM is written as
+      // `<thing> — done…`: the completion word follows a separator. Prose that merely begins
+      // with a completion word starts the LINE. So a segment counts when it is either exactly
+      // a completion value (a bare `done` line), or begins with one AND is not the first
+      // segment of its line. "Delivered to staging on Tuesday." has no separator, so its only
+      // segment is the first, and it stays clean; "Completed work: see the table." fails on
+      // both halves — segment 0 is first, segment 1 does not begin with a completion word.
+      //
+      // A status IS the value; prose merely starts with the word. So here the segment must BE
+      // a completion value, trailing punctuation allowed — `T9: done` still has a segment that
+      // is "done", while "Delivered to staging on Tuesday." has no segment that is anything
+      // but a sentence. The status-cell reading is deliberately untouched: widening it was
+      // X139, and narrowing it here would undo that fix where it was actually needed (X194's
+      // control F pins a Status cell reading "shipped").
+      // 2026-08-18, X194 SECOND repair. The version above declared the right discriminator in
+      // this comment and implemented a different one in the code: it required `si > 0`, a
+      // POSITIONAL test, while claiming the segment must BE a completion value. Every prose
+      // control in the reproduction puts the completion word at position 0 — the one position
+      // that guard excludes — so the stated rule was never applied and no control could tell.
+      // Measured on the golden fixture, five for five still blocked: "Re-done work is tracked in
+      // the table above.", "Half-finished features are parked in the backlog.", "See the
+      // well-shipped orders report for last quarter.", "Status: Delivered to staging on
+      // Tuesday.", "Note: completed work is described in the release notes."
+      //
+      // The stated rule is ALSO wrong, and control B2 already proves it: X196 found that
+      // requiring the segment to be exactly a completion value silences every real claim with a
+      // qualifier ("T9: completed on Tuesday"), which is a false clean — the worse direction.
+      // Both candidate discriminators are refuted by controls already in the file.
+      //
+      // TWO causes, fixed separately.
+      //
+      // (1) The split class held a bare hyphen, so it cut INSIDE ordinary hyphenated words:
+      // "Re-done" became ["Re","done"]. A hyphen is only a separator with space around it, or
+      // leading a bullet. Intra-word hyphens are now left alone, which fixes three of the five
+      // above without touching any control.
+      //
+      // (2) For a real separator, beginning with a completion word is not evidence of a claim.
+      // The discriminator that survives BOTH control sets is that a done claim outside a table
+      // NAMES A TASK: every control that must block names one, every sentence that must stay
+      // clean names none. A bare `done` line names nothing, so that case is kept explicitly.
+      // 2026-08-18, X228: the line above required an id-shaped token, so a task named in PROSE was
+      // never a claim — "- Refactor the login form: completed on Tuesday" reported clean while
+      // "- T9: completed on Tuesday" blocked, on identical absent evidence. That swallowed the whole
+      // X196 class, which is the false-clean direction this gate exists to prevent. No control could
+      // see it: in the reproduction every must-BLOCK case names `T9` and every must-stay-clean case
+      // names nothing, so an id test partitions that set perfectly whether or not it is the right rule.
+      //
+      // The POSITIONAL test is viable again because of the separator repair in the same commit: an
+      // intra-word hyphen no longer splits, so "Re-done" is one segment at position 0. The hyphen was
+      // what killed position, not position itself.
+      //
+      // The missing piece is what FOLLOWS the completion word. A status is followed by a short
+      // qualifier; prose continues into a clause. "completed on Tuesday" is a status; "completed work
+      // is described in the release notes" is a sentence about where things are written down. No
+      // amount of position or whole-value testing can tell those apart, which is why both earlier
+      // attempts failed.
+      // 2026-08-25, found by the axis sweep asking what X194's reproduction held still while it
+      // varied everything else. The answer was THE SEPARATOR: only `|`, `:`, a spaced em dash and a
+      // spaced hyphen ever appeared, so every other way of writing the same claim read as clean.
+      // Measured against the real gate, all of these were CLEAN with no evidence recorded:
+      //
+      //   T1 = done      T1 -> done      T1<TAB>done      T1 (done)
+      //
+      // while `T1 — done`, `T1 | done` and `T1: done` blocked correctly. A gate that catches three
+      // spellings of a claim and misses four is not catching the claim.
+      //
+      // The BARE-SPACE form (`T1 done`) is deliberately NOT added. With no punctuation at all every
+      // sentence containing the word becomes a candidate, and the auxiliary guard below would be the
+      // only thing between this gate and a false alarm on ordinary prose. That is too much load for
+      // one guard, and a gate that fires on prose gets switched off (L5). Disclosed gap, not a
+      // widened pattern.
+      // PARENTHESES WERE TRIED AND WITHDRAWN, and the withdrawal is the useful part. Adding `[()]`
+      // caught `T1 (done)` — and immediately BLOCKED this project's own golden fixture, whose line 3
+      // reads "Phase 1 (Build) shipped and verified below". Splitting on a bracket turned an ordinary
+      // parenthetical into a segment ending "shipped", which the done-value recogniser accepts.
+      // Parentheses are everywhere in prose; the control said so within one run. So `T1 (done)` joins
+      // the bare-space form as a stated gap rather than a widened pattern, and the negative control
+      // earned its keep for the second time this week.
+      const SEPARATORS = /\||:|=|->|→|\t|\s[—-]\s|^\s*[—-]\s/;
+      const AUXILIARY =
+        /\b(is|are|was|were|be|been|being|has|have|had|will|would|can|could|should|may|might|do|does|did|remains?|stays?)\b/i;
+      const isStatusShaped = (c) => {
+        const raw = deEmphasise(String(c == null ? '' : c))
+          .trim()
+          .replace(/^[^A-Za-z0-9]+/, '');
+        const m = raw.match(DONE_WORDS);
+        if (!m) return false;
+        const rest = raw
+          .slice(m[0].length)
+          .replace(/^[\s:,—-]+/, '')
+          .trim();
+        if (rest === '') return true;
+        if (AUXILIARY.test(rest)) return false; // a clause, not a status
+        return rest.split(/\s+/).filter(Boolean).length <= 6;
+      };
+      // 2026-08-24, X278. Everything above recognises WORD spellings of completion, and the value is
+      // first stripped of leading punctuation — so `- [x] T1 habit CRUD` became `x] T1 habit CRUD`
+      // and matched nothing. Measured: a PROGRESS.md of three `- [x]` bullets and no table returned
+      // clean, with the reason "every done row has a verified: cell" over a file holding no rows and
+      // no `verified:` cell at all. The one spelling the reproduction happened to use, `- T1: done`,
+      // blocked correctly — so the test pinned one spelling of the defect rather than the defect.
+      //
+      // A ticked markdown checkbox is the most idiomatic done-list there is, so this COMPLETES an
+      // existing rule rather than adding a new policy: the gate already demands evidence for a done
+      // claim outside a table, and this is that same claim written the way people actually write it.
+      //
+      // `[ ]` is deliberately excluded — an unticked box claims nothing. The marker must also stand
+      // as its own token, so an ordinary word containing an x cannot trip it.
+      // 2026-08-25: `✓` U+2713 LIGHT CHECK MARK was missing while `✅` U+2705, `✔` U+2714 and `☑`
+      // U+2611 were all present — so the plainest tick of the four read as clean. Measured: the same
+      // line ticked with ✅, ✔ or ☑ blocked, and with ✓ did not. `✗`/`✘` are deliberately NOT here:
+      // a cross claims the opposite and must never be read as done.
+      const DONE_MARK = /(^|\s)(\[[xX]\]|✅|✔️?|✓|☑️?)(\s|$)/;
+      const segs = l.split(SEPARATORS);
+      const isClaim = segs.some((seg, si) => {
+        if (!seg || seg.trim() === '') return false;
+        if (DONE_MARK.test(seg)) return true; // a ticked box or a tick, wherever it sits
+        if (isDoneClaimValue(seg)) return true; // a bare `done`, wherever it sits
+        return si > 0 && isDoneValue(seg) && isStatusShaped(seg);
+      });
+      if (isClaim) claims.push(l);
     }
     if (claims.length > 0) {
       unidentified.push(

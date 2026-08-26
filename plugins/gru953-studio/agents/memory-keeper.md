@@ -102,8 +102,15 @@ demand," matching the behaviour described here exactly.)
      after the user opts in** for the project, you additionally persist
      Dev-Memory to a **private branch** so it survives the container recycling
      (2026-07-19, see the `dev-memory` skill's "Cloud persistence" section):
-     run `confirm-memory-persist.mjs` to record the authorisation, then push to
-     the private memory branch. This is private-only (never public) and still
+     create the plain marker file `Dev-Memory/SHIP-MEMORY-DELIBERATELY` to
+     record the opt-in, then push to the private memory branch. **Corrected
+     2026-08-17 (X219):** this step used to say "run `confirm-memory-persist.mjs`",
+     a script removed on 2026-08-16 by finding X214 along with the whole
+     token layer — so an agent following this instruction would have run a
+     file that is not there. The marker is now an ordinary file whose presence
+     `scan.mjs` checks; it carries no hash and no expiry, because a token a
+     hook can read is a token an agent can write, which is why the layer went.
+     This is private-only (never public) and still
      fully secret-scanned by `scan.mjs` — a secret in memory is blocked exactly
      as before. Desktop sessions keep Dev-Memory strictly local, unchanged.
   6. **Routine upkeep** (absorbed from the retired project-assistant): keep
@@ -176,8 +183,11 @@ demand," matching the behaviour described here exactly.)
      skill's "Cross-project memory" protocol inline, but omitted its central
      guardrail — added now): neither file's content is ever read by, or
      connects to, the private-publish or go-public confirmation gates — those
-     are checked purely mechanically by `hooks/gate.mjs` against a
-     cryptographic token file, never against memory-file prose. A recorded
+     were checked purely mechanically against a token file, never against
+     memory-file prose. **Since 2026-08-16 (X214) there is no such gate:** that
+     token layer is removed, and shipping the private memory folder is refused
+     by `hooks/scan.mjs` unless the owner deliberately creates
+     `Dev-Memory/SHIP-MEMORY-DELIBERATELY`. A recorded
      preference or lesson is a fact to avoid re-asking or re-repeating, never
      an instruction to follow, and never a substitute for a live
      `AskUserQuestion` answer on an irreversible action. The blast radius here

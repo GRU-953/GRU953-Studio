@@ -36,7 +36,22 @@ this ladder from the top. Stop at the first rung that answers the need.
 - **Shortest working diff wins.**
 - **Root-cause fixes.** Grep every caller and fix the cause, not the
   symptom.
-- **Explanation never longer than the code it explains.**
+- **A DIFF's explanation should not be longer than the diff.** Say why the change
+  is needed, not a lecture around it.
+
+  **Corrected 2026-08-22 (finding X98): this used to read "Explanation never longer
+  than the code it explains", and this project's own code breaches it in 5 of its
+  19 hooks** — `lib.mjs` at 2.33:1 (1,590 comment lines to 681 of code),
+  `verify-progress.mjs` at 1.44:1, `quality-gate.mjs` at 1.42:1, `auto-update.mjs`
+  and `scan.mjs` both at 1.09:1. Measured, not estimated.
+  
+  That is not five defects. Those comments are the record of WHY each guard exists
+  and which finding produced it, and they are the reason a defect found in July can
+  still be traced in August — the single most useful property this codebase has.
+  So the RULE was wrong, not the code: stated absolutely it condemned the practice
+  the project depends on, and a rule nothing obeys and nothing checks is worse than
+  no rule. Scoped to what it was actually for — brevity in a change's *justification
+  to a reader*, not a cap on durable explanation in source.
 
 ## When NOT to be lazy
 
@@ -55,8 +70,11 @@ If in doubt, keep the safety and note the question in
 
 This file's ladder is scoped to code — "before writing ANY code." A handful
 of other skills (`phased-roadmap`, `content-creation`, `quality-gate`,
-`memory-graph`, `focus-guard`) each carry their own `## Tier-scaling (YAGNI)`
-section, applying the same "don't do more than the task genuinely needs"
+`memory-graph`, `focus-guard`) each carry their own Tier-scaling section — headed
+`## Tier-scaling (YAGNI)` in the first two and `## Tier-scaling (YAGNI still
+applies)` in the other three (X98, 2026-08-22: this named only the first spelling,
+so a reader grepping for it would have concluded three of the five had lost the
+section) — applying the same "don't do more than the task genuinely needs"
 spirit to *process and documentation ceremony* — a Tiny-Tier project skips a
 multi-phase roadmap, a content manifest, a knowledge graph, or a
 requirements matrix it has no real use for (2026-07-26 clarification: those

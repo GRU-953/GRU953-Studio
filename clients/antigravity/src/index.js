@@ -40,9 +40,11 @@ if (result.ok) {
     console.log('');
     console.log('Restart Antigravity, then ask it to build something and it will follow the');
     console.log('studio protocol. Two things to know, so nothing comes as a surprise:');
-    console.log('  * Antigravity has no place for separate specialist agents, so the roster is');
-    console.log('    provided as a rules file it follows itself. In Claude Code they run as');
-    console.log('    genuinely separate agents, which works better.');
+    console.log('  * The roster is provided as a rules file Antigravity follows itself.');
+    console.log('    In Claude Code the specialists run as genuinely separate agents, which');
+    console.log('    works better. (Antigravity does support separate subagents too, since');
+    console.log('    CLI v1.1.6 - installing the 38 that way is simply not built yet: see');
+    console.log('    finding X43, 2026-08-22.)');
     console.log('  * The /studio slash commands are a Claude Code feature. Here, just ask in');
     console.log('    plain words — "carry on with my project", "where are we up to".');
     if (scope === 'global') {

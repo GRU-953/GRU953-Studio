@@ -14,9 +14,10 @@ Two automatic safety nets back this up, wired in `hooks/hooks.json` on
 every Bash command. `hooks/scan.mjs` blocks push-capable commands
 (`git push`, `gh repo create`, `gh ... --push`, and the like) if the
 would-ship set contains secrets, key files, or the private `Dev-Memory/`
-folder. `hooks/gate.mjs` blocks the same commands unless the user's publish
-confirmation has been recorded for this project via
-`node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-publish.mjs"`, which writes a
+folder. The publish gate that used to sit beside it was removed on 2026-08-16 (X214);
+authorisation is Claude Code's own permission prompt. Historical note, kept
+because it explains the shape of what follows: it blocked the same commands via
+`confirm-publish.mjs` (removed 2026-08-16, finding X214), which wrote a
 project-bound confirmation token — so a push cannot fire outside the
 Publish stage even on a clean tree. Both hooks stand down (allow) when no
 studio project (no `Dev-Memory/` folder) exists anywhere above the working
@@ -101,7 +102,7 @@ full seven, matching security-compliance-auditor.md, studio/SKILL.md and CLAUDE.
 8. **Roster check, via `scope-guardian`** (2026-07-12 fix: this file — the
    role's own declared "single source of truth" — used to omit this step
    even though `publisher.md` and `/studio-publish` both treat it as
-   mandatory) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"`. A
+   mandatory) — `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .`. A
    non-zero exit means the agent roster grew past its recorded baseline
    with no named reason; resolve that first too.
 
@@ -129,7 +130,10 @@ Never rewrite history in the user's live project directory.
 
 ## 5. Create the private repository, add licensing, and push
 
-**Order matters here (2026-07-10 Round 4 audit fix):** `gate.mjs` denies
+**Order matters here (2026-07-10 Round 4 audit fix; the mechanism named below
+was removed on 2026-08-16, finding X214 — the ORDER still matters, because
+confirming before you create anything is right regardless of what enforces
+it):** `gate.mjs` denied
 `gh repo create`/`git push` unless the publish confirmation is ALREADY
 recorded — so confirming (step 3 below) must happen before `gh repo create`
 (step 4), not after it. The earlier version of this list got this backwards
@@ -145,8 +149,9 @@ names now instead of numbers, so this can't drift again.)
 2. Ask the single AskUserQuestion pop-up using "permanent and irreversible"
    wording — the only place in the lifecycle that phrase is used. If the
    user declines, stop here; nothing below this step runs.
-3. Record the confirmation NOW, before any gated command:
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-publish.mjs"`.
+3. Confirm with the user that they want this published, and note their answer
+   in the project's record. (Until 2026-08-16 this step also wrote a token; that
+   layer is removed — X214.)
 4. `gh repo create <login>/<project-name> --private` — never create-and-push
    in one step.
 5. Read visibility back: `gh repo view <login>/<project-name> --json
@@ -232,7 +237,9 @@ private, what was published, that all seven pre-flight checks came back
 clean, and that a real Release (not just a tag) exists — quote the
 `isDraft: false` confirmation. Record the address, tag and date in
 `Dev-Memory/PROGRESS.md` and `SESSION-LOG.md`. Delete
-`Dev-Memory/PUBLISH-APPROVED` afterwards, so a later publish (e.g. a
+`Dev-Memory/PUBLISH-APPROVED` afterwards — **that file was removed on 2026-08-16 by
+X214, so nothing creates it and there is nothing to delete (noted 2026-08-18, X226)** —
+so a later publish (e.g. a
 maintenance release) must be re-confirmed by the user.
 
 ## Going public (separate, later, explicit step — never bundled here)
@@ -241,9 +248,10 @@ Only when the user explicitly asks, via its OWN AskUserQuestion pop-up
 (distinct from the private-publish confirmation — do not reuse that
 wording or that answer):
 
-1. Record the confirmation: `node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-go-public.mjs"`
-   from the project root — this writes a separately-derived token that
-   `hooks/gate.mjs` checks specifically for visibility-changing commands;
+1. Ask the user explicitly, and record their answer in the project's record.
+   Going public is a separate decision from publishing privately, and it stays
+   separate. (Until 2026-08-16 this wrote a separately-derived token that
+   `gate.mjs` (removed 2026-08-16, finding X214) checked specifically for visibility-changing commands;
    the ordinary publish token from step 5 does NOT satisfy it.
 2. Only then: `gh repo edit <login>/<project-name> --visibility public`.
 3. Verify: `gh repo view <login>/<project-name> --json visibility` shows

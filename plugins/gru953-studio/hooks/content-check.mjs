@@ -174,6 +174,21 @@ function main() {
   // read positionally, so it is reported rather than skipped — the same
   // discipline verify-progress.mjs and quality-gate.mjs apply.
   const rows = [];
+  // X279: collected here rather than pushed straight to `problems`, which is not declared until
+  // after this loop — doing that threw a ReferenceError from the temporal dead zone, which running
+  // it caught immediately. Same class as X188, a shipped ReferenceError that a green suite missed.
+  const unreadableTables = [];
+  // 2026-08-24, X122's residual, found by a defeat probe. The threshold above reports a table that
+  // plainly claims to be a content register, and it was chosen against X122's own controls so it
+  // cannot fire on `Model | Status`. But a table with only ONE OR TWO content columns and unreadable
+  // asset headers is genuinely ambiguous — indistinguishable from an unrelated table by its headers
+  // alone — and it was still being skipped in SILENCE, with the verdict then affirming that every
+  // recorded asset has approval, provenance and rights.
+  //
+  // Silence is the defect, not the skip. So EVERY skipped table is now named in the verdict. This
+  // blocks nothing and therefore cannot false-alarm: a reader of a clean result can see which tables
+  // were not read and judge for themselves whether one of them should have been.
+  const tablesSkipped = [];
   const ragged = [];
   let sawContentTable = false;
   for (const table of parseTables(text)) {
@@ -181,8 +196,31 @@ function main() {
     // like "**Approved**" is recognised the same as "Approved".
     const find = (re) => table.headerCells.findIndex((h) => re.test(deEmphasise(h)));
     const found = {
-      asset: find(/^(asset|name|file|item)$/i),
-      medium: find(/^(medium|type|kind)$/i),
+      // 2026-08-15, finding X122, second attempt. A register headed
+      // `| Assets | Media | … |` — both key headers pluralised, the likeliest slip — was
+      // not recognised, so its rows were skipped in silence.
+      //
+      // The FIRST fix guessed: it flagged any table matching two or more of the six
+      // content columns while lacking asset/medium. An adversarial pass then showed that
+      // guess blocking seven of thirteen realistic auxiliary tables — `| Model | Status |`
+      // and `| Licence | Status |` among them — each a Publish-blocking false alarm on a
+      // perfectly ordinary content register. It was reverted.
+      //
+      // This is the precise fix instead: tolerate the plural. A mistyped register is then
+      // simply RECOGNISED and its rows validated on their merits, with no heuristic
+      // deciding what a table "looks like". Recognition beats guessing.
+      asset: find(/^(assets?|names?|files?|items?)$/i),
+      medium: find(/^(mediums?|media|types?|kinds?)$/i),
+      // 2026-08-15, finding X121, on the owner's decision of the same date. Until now this
+      // gate checked a row's paperwork and never that the asset existed — a wholly imaginary
+      // `totally-imaginary.svg` passed as clean, with the reason "every recorded content asset
+      // has approval, provenance, rights and (for media) alt-text", which was true and
+      // meaningless. Nothing could resolve a name to a file, because nothing said where assets
+      // live, so this went to the owner as a convention decision rather than a gate fix.
+      //
+      // The decision: a path in each register row. It handles text rows that are not files at
+      // all, works whatever layout a project uses, and imposes no folder rule.
+      path: find(/^(paths?|file ?paths?|locations?|where)$/i),
       source: find(/^(source|provenance|model|origin|by)$/i),
       approved: find(/^(approved|approval|status|sign[- ]?off)$/i),
       rights: find(/^(rights|licen[cs]e|usage)$/i),
@@ -192,11 +230,46 @@ function main() {
         /^(alt|alt[- ]?text|caption|transcript|accessibility|a11y)([\/ ]?(alt|caption|text|transcript))*$/i,
       ),
     };
-    if (found.asset === -1 && found.medium === -1) continue; // not a content table
+    // 2026-08-24, X279. This `continue` is the line the X122 repair left standing, and it is why that
+    // repair did not hold. Widening the synonym list recognises one more spelling each time; the SKIP
+    // itself is what makes an unrecognised table invisible. Measured: a CONTENT.md whose second table
+    // is headed `Artwork | Format | Source | Approved | Rights | Alt`, carrying an unapproved,
+    // unattributed image with no alt-text, returned clean with `assets: 1` — and the identical table
+    // headed `Asset | Medium | ...` BLOCKED and named that image. The verdict depended on a word.
+    //
+    // A silent skip is still right for a table that has nothing to do with content: CONTENT.md may
+    // hold a `Draft | Reason` table and blocking on it was a real false alarm this gate has already
+    // been burned by. So the question is not "is this a content table" — guessing that is what the
+    // X122 note rejected — but "does this table plainly CLAIM to be one while I cannot read it".
+    //
+    // The evidence for that is the content-specific columns: provenance, approval, rights, alt-text,
+    // path. Three or more of them and no readable asset or medium column means a register the author
+    // clearly wrote for assets and this gate cannot see. THE THRESHOLD WAS CHOSEN AGAINST THE EXISTING
+    // CONTROLS, not picked: `Model | Status` and `Licence | Status` each match two, and both are X122
+    // controls that must stay silent; `Source | URL` matches one; `Draft | Reason` none. X279's table
+    // matches four.
+    if (found.asset === -1 && found.medium === -1) {
+      const contentish = ['source', 'approved', 'rights', 'alt', 'path'].filter(
+        (k) => found[k] !== -1,
+      );
+      if (contentish.length >= 3) {
+        unreadableTables.push(
+          `a table in CONTENT.md has ${contentish.length} content columns (${contentish.join(', ')}) ` +
+            `but no column this gate can read as the asset's name or medium — its headers are ` +
+            `"${table.headerCells.join(' | ')}". Every row in it was therefore skipped WITHOUT being ` +
+            'checked for approval, provenance, rights or alt-text. Rename the first column to Asset ' +
+            '(or Name, File, Item) and the second to Medium (or Type, Kind), so the rows are judged ' +
+            'rather than passed over (finding X279).',
+        );
+      }
+      tablesSkipped.push(table.headerCells.join(' | '));
+      continue; // not a content table, or one that has just been reported as unreadable
+    }
     sawContentTable = true;
     for (const r of table.rows) {
       if (r.ragged) {
-        if (r.cells.some((c) => c !== '')) ragged.push(r.raw.trim());
+        // X201: carry WHICH kind of raggedness, so the message below can be true.
+        if (r.cells.some((c) => c !== '')) ragged.push({ raw: r.raw.trim(), short: r.short });
         continue;
       }
       rows.push({ cells: r.cells, idx: found });
@@ -204,6 +277,8 @@ function main() {
   }
 
   const problems = [];
+  // X279: merged in as soon as `problems` exists — see the note above the table loop.
+  problems.push(...unreadableTables);
   if (!sawContentTable) {
     // CONTENT.md exists but has no readable asset table — treat as incomplete.
     problems.push(
@@ -221,11 +296,27 @@ function main() {
       'CONTENT.md has a content table with no rows — an empty register is not the same as having no content. Either record the assets, or delete CONTENT.md if this project genuinely ships no generated content.',
     );
   }
-  for (const raw of ragged) {
+  for (const r of ragged) {
+    // X201: a SHORT row is legal markdown and nothing is shifted; telling the user to escape a
+    // pipe that is not there sends them hunting a defect that does not exist.
     problems.push(
-      `a content row's columns do not line up with its header, so its approval and rights cannot be verified → "${raw}" (an unescaped "|" inside a cell is the usual cause — write it as \\|)`,
+      r.short
+        ? `a content row has FEWER cells than its header, so a trailing column is absent and this row's approval or rights cannot be read -> "${r.raw}" (a short row is legal markdown - add the missing cell, or a trailing "|" for each empty one)`
+        : `a content row has MORE cells than its header, so its values line up against the wrong columns and its approval and rights cannot be verified -> "${r.raw}" (an unescaped "|" inside a cell is the usual cause - write it as \\|)`,
     );
   }
+  // 2026-08-24, X121, on the owner's decision: "use the Path column, warn on strays". The gate has
+  // always checked the paperwork of every asset RECORDED, and never looked at the folder to see
+  // whether a file is sitting there that no row records. Measured before this: a project with one
+  // recorded asset plus an unrecorded `assets/UNRECORDED-scraped-from-web.png` returned clean with
+  // `assets: 1`, and the verdict did not even say enumeration had been skipped.
+  //
+  // The convention chosen is the one that needs no new configuration and cannot be wrong about a
+  // folder nobody mentioned: the directories inspected are exactly those that a recorded Path
+  // already points into. A project that records `assets/hero.png` gets `assets/` looked at; a project
+  // that records no paths at all is inspected nowhere, which is the existing disclosed state.
+  const recordedFiles = new Set();
+  const watchedDirs = new Set();
   for (const row of rows) {
     const r = row.cells;
     const idx = row.idx;
@@ -259,16 +350,134 @@ function main() {
       problems.push(
         `content "${name}": media asset has no alt-text/caption/transcript — required for accessibility.`,
       );
+
+    // X121: does the recorded asset actually exist? Only answerable when the register
+    // carries a Path column, which is why the column is the owner's chosen convention.
+    if (idx.path !== -1) {
+      const rawPath = idx.path !== -1 ? String(r[idx.path] || '') : '';
+      const assetPath = deEmphasise(rawPath).trim();
+      if (ph(assetPath)) {
+        // A text asset is in-app copy, not a file on disk, so an empty path is correct.
+        // A media asset with no path cannot be checked at all, which is the gap X121 exists
+        // to close — so it is a problem rather than a silent pass.
+        if (!isTextOnly)
+          problems.push(
+            `content "${name}": media asset records no path, so nothing can confirm it exists. Give its path in the Path column (finding X121).`,
+          );
+      } else {
+        // Resolved against the project root, and confined to it: a register must not send
+        // this gate walking outside the project it describes.
+        const resolved = path.resolve(root, assetPath);
+        recordedFiles.add(resolved);
+        watchedDirs.add(path.dirname(resolved));
+        if (!resolved.startsWith(path.resolve(root))) {
+          problems.push(
+            `content "${name}": path "${assetPath}" resolves outside the project, which a content register may not do (finding X121).`,
+          );
+        } else if (!fs.existsSync(resolved)) {
+          problems.push(
+            `content "${name}": recorded at "${assetPath}", but no file exists there — an asset that is approved, attributed and licensed but absent is not shippable (finding X121).`,
+          );
+        }
+      }
+    }
+  }
+
+  // X121: the strays. Only inside directories a recorded path already points into, and only files —
+  // a nested directory is not an asset and is not walked into, which keeps this from turning into a
+  // whole-project scan the owner explicitly did not ask for.
+  const projectRoot = path.resolve(root);
+  for (const dir of [...watchedDirs].sort()) {
+    if (!dir.startsWith(projectRoot)) continue; // never look outside the project it describes
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue; // a directory that cannot be listed is already reported by the per-row existence check
+    }
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      const full = path.join(dir, e.name);
+      if (recordedFiles.has(full)) continue;
+      problems.push(
+        `${path.relative(projectRoot, full)} is in a folder your content register points into, but no ` +
+          'row records it. Every shipped asset needs a recorded approval, provenance and rights — add ' +
+          'a row for it, or move it out of that folder if it is not a shipped asset (finding X121).',
+      );
+    }
   }
 
   if (problems.length === 0) {
+    // X121: say what was NOT checked. A register with no Path column cannot have its assets
+    // resolved to files, and the old reason — "every recorded content asset has approval,
+    // provenance, rights and (for media) alt-text" — was true while a wholly imaginary asset
+    // sat in the register. It never claimed to check existence, but nothing said it hadn't,
+    // and a silence that reads as assurance is the defect this whole round of findings is
+    // about. The column stays optional so every register written before today keeps working;
+    // what changes is that its clean verdict now admits the gap instead of implying coverage.
+    // 2026-08-16, finding X195. This was `rows.some(...)`, over rows drawn from EVERY table in
+    // the register. A register grouped by medium — "## Artwork" carrying a Path column,
+    // "## Sound" not — therefore reported assetExistenceChecked: true and "a file where it
+    // says it is", while the sound assets were never resolved to anything at all.
+    //
+    // That is a positive false statement made by the one field whose entire purpose is to stop
+    // silence being mistaken for a check, and grouping a register by medium is the ordinary way
+    // to write one. Coverage is now claimed only when EVERY row could be checked; a partial
+    // register says how far the check reached instead of rounding it up.
+    //
+    // It deliberately does not start BLOCKING. The Path column is optional by design, and
+    // failing a partial register would break every register written before X121 landed — which
+    // is what the optionality was for. X195's controls A and E hold both halves of that.
+    // 2026-08-18, X195 SECOND repair. The count above was the right move applied to the wrong
+    // quantity: `row.idx.path !== -1` asks whether the row's TABLE carries a Path column, not
+    // whether the row's Path CELL holds anything. A register whose every Path cell was empty
+    // therefore reported assetExistenceChecked: true, assetsExistenceChecked: 2 and "a file where
+    // it says it is" after ZERO filesystem checks — the original defect verbatim, and L16 besides:
+    // a count no independent count supports.
+    //
+    // There are genuinely three outcomes, so three are counted. An in-app text asset with no path
+    // is not a gap — text is copy, not a file — but it is not a check either, and the difference
+    // is exactly what this field exists to report.
+    let resolvedRows = 0; // the Path cell held a value and a real check ran
+    let textNoPathRows = 0; // in-app copy: nothing to resolve, legitimately
+    let unresolvableRows = 0; // no Path column, or media with no path (a problem already raised)
+    for (const row of rows) {
+      if (row.idx.path === -1) {
+        unresolvableRows += 1;
+        continue;
+      }
+      const cell = deEmphasise(String(row.cells[row.idx.path] || '')).trim();
+      if (!ph(cell)) {
+        resolvedRows += 1;
+        continue;
+      }
+      const med = row.idx.medium !== -1 ? deEmphasise(String(row.cells[row.idx.medium] || '')) : '';
+      if (row.idx.medium !== -1 && TEXT_ONLY_RE.test(med)) textNoPathRows += 1;
+      else unresolvableRows += 1;
+    }
+    // `checkedRows` and `unchecked` stood here as aliases kept while the reason strings were
+    // rewritten, and nothing consumed them afterwards — eslint duly reported both as unused. Removed
+    // rather than left: a variable named `checkedRows` beside a field named assetsExistenceChecked is
+    // exactly the kind of near-duplicate that gets read as the authority and drifts from it.
+    const assetExistenceChecked = rows.length > 0 && resolvedRows > 0 && unresolvableRows === 0;
     console.log(
       JSON.stringify(
         {
           status: 'clean',
-          reason:
-            'every recorded content asset has approval, provenance, rights and (for media) alt-text',
+          reason: assetExistenceChecked
+            ? `every recorded content asset has approval, provenance, rights, (for media) alt-text, and a file where it says it is${textNoPathRows > 0 ? ` (${textNoPathRows} of ${rows.length} ${textNoPathRows === 1 ? 'is in-app copy with no file to resolve' : 'are in-app copy with no file to resolve'})` : ''}`
+            : resolvedRows === 0
+              ? `every recorded content asset has approval, provenance, rights and (for media) alt-text. Whether any asset EXISTS was NOT verified: ${textNoPathRows === rows.length ? 'every row is in-app copy with no path, so there was no file to resolve' : 'no row names a path that could be resolved to a file'} — so no existence check was performed at all (findings X121, X195)`
+              : `every recorded content asset has approval, provenance, rights and (for media) alt-text. Existence was verified for ${resolvedRows} of ${rows.length}: ${unresolvableRows} could not be resolved (no Path column, or a media asset with no path)${textNoPathRows > 0 ? `, and ${textNoPathRows} ${textNoPathRows === 1 ? 'is' : 'are'} in-app copy with no file` : ''} (finding X195)`,
           assets: rows.length,
+          assetExistenceChecked,
+          assetsExistenceChecked: resolvedRows,
+          assetsInAppCopyNoFile: textNoPathRows,
+          assetsUnresolvable: unresolvableRows,
+          // X122's residual: never skip a table in SILENCE. A reader of a clean verdict can now see
+          // which tables were not read, and judge whether one of them should have been. This blocks
+          // nothing, so it cannot false-alarm on an unrelated table.
+          tablesSkipped,
         },
         null,
         2,
@@ -277,7 +486,11 @@ function main() {
     process.exit(0);
   }
   console.log(
-    JSON.stringify({ status: 'BLOCKED', reason: 'content manifest incomplete', problems }, null, 2),
+    JSON.stringify(
+      { status: 'BLOCKED', reason: 'content manifest incomplete', problems, tablesSkipped },
+      null,
+      2,
+    ),
   );
   process.exit(1);
 }

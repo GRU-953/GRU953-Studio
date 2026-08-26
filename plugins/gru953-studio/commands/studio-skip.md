@@ -1,6 +1,7 @@
 ---
 description: Skip the current GRU953-Studio task for now and move on to the next one, without losing it.
 argument-hint: (optionally, the task to skip — otherwise the current one)
+disable-model-invocation: true
 ---
 
 Skip the current task and move to the next, following the `command-centre`

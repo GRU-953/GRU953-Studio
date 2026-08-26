@@ -26,9 +26,21 @@ function fakeRunner({ ok = true, stdout = '', systemd = true } = {}) {
         calls.push({ cmd, args, opts });
         if (cmd === 'systemctl' && args[1] === '--version') return { ok: systemd, status: systemd ? 0 : 1, stdout: '', stderr: '' };
         if (cmd === 'crontab' && args[0] === '-l') return { ok: !!stdout, status: stdout ? 0 : 1, stdout, stderr: '' };
+        // 2026-08-25, X351: capture the crontab we are being asked to INSTALL, here, while the file
+        // still exists. `writeCrontab` deletes its temp directory before returning (autoupdate.js:173),
+        // so a test that reads `write.args[0]` afterwards always finds nothing — see the comment on the
+        // assertions below for what that cost.
+        if (cmd === 'crontab' && args[0] !== '-l') {
+            try {
+                run.lastText = fs.readFileSync(args[0], 'utf8');
+            } catch {
+                run.lastText = null; // recorded as unreadable rather than as empty
+            }
+        }
         return { ok, status: ok ? 0 : 1, stdout: '', stderr: ok ? '' : 'pretend failure' };
     };
     run.calls = calls;
+    run.lastText = undefined;
     return run;
 }
 
@@ -36,9 +48,21 @@ test('off by default: status reports not scheduled, and explains what happens in
     const home = mkTmp('gru-au-status-');
     const s = autoupdate.status({ platform: 'darwin', homeDir: home, runner: fakeRunner(), env: {} });
     assert.equal(s.enabled, false);
-    // The important half of the message: a user told "not scheduled" needs to know
-    // updates still reach them, or they will assume they are stuck on old code.
-    assert.match(s.message, /first time you use it each day/);
+    // 2026-08-22, X233. This asserted /first time you use it each day/ — and that daily default
+    // check DOES NOT EXIST. Only two call sites invoke auto-update.mjs and both pass --force; it is
+    // not in hooks.json; session-start.mjs stopped running it, its own comment recording the removal.
+    // So the 24-hour .last-update-check window inside auto-update.mjs is unreachable, and this test
+    // was PINNING THE FALSE WORDING — the reason nothing could tell, in four shipped statements.
+    //
+    // The comment it replaced had the right instinct and the wrong fact: a user told "not scheduled"
+    // does need to know what happens instead. What happens instead is nothing, so that is what the
+    // message must say, and this test now holds that.
+    assert.match(s.message, /nothing checks on its own/i);
+    assert.doesNotMatch(
+        s.message,
+        /first time you use it each day/,
+        'the daily default check does not exist; a message promising one is a false claim (X233)',
+    );
     fs.rmSync(home, RM);
 });
 
@@ -122,11 +146,19 @@ test('cron: an empty crontab is not treated as an error (the first-ever enable m
     fs.rmSync(home, RM);
 });
 
+// 2026-08-22: this test's FIXTURE was corrected, not its purpose. It built `existing` out of the
+// literal pre-X232 cron line ending `>/dev/null 2>&1` and then asserted `nothing should be written`
+// — so it pinned the very defect X232 was meant to remove, and no machine that had already enabled
+// the job could ever be migrated to a line that keeps its failure report. The fixture now uses the
+// CURRENT line, which is what "already scheduled, nothing to do" actually means. The stale-line case
+// it used to occupy is asserted the other way round in scheduler-honesty.test.mjs, where a write MUST
+// happen. Same repair X230 needed: a fixture had quietly stopped representing its own case.
 test('cron: enabling twice does not add a second line', () => {
     const home = mkTmp('gru-au-cron-twice-');
-    const existing = `0 9 * * * /usr/bin/backup\n17 4 * * * "/usr/bin/node" "/x/index.js" update >/dev/null 2>&1 ${autoupdate.CRON_MARKER}`;
+    const current = autoupdate.cronLineFor('/usr/bin/node', '/x/index.js');
+    const existing = `0 9 * * * /usr/bin/backup\n${current}`;
     const runner = fakeRunner({ systemd: false, stdout: existing });
-    const r = autoupdate.enable({ platform: 'linux', homeDir: home, runner, env: {} });
+    const r = autoupdate.enable({ platform: 'linux', homeDir: home, runner, nodePath: '/usr/bin/node', cliPath: '/x/index.js', env: {} });
     assert.equal(r.ok, true);
     assert.match(r.message, /already scheduled/);
     assert.equal(runner.calls.filter((c) => c.cmd === 'crontab' && c.args[0] !== '-l').length, 0, 'nothing should be written');
@@ -140,15 +172,25 @@ test("cron: turning it off removes only our line and keeps the user's own entrie
     autoupdate.disable({ platform: 'linux', homeDir: home, runner, env: {} });
     const write = runner.calls.find((c) => c.cmd === 'crontab' && c.args[0] !== '-l');
     assert.ok(write, 'the crontab must be rewritten');
-    const written = fs.existsSync(write.args[0]) ? fs.readFileSync(write.args[0], 'utf8') : null;
-    // The temp file is deleted immediately after the call, so if it is gone the
-    // assertion below is checked instead via the marker's absence in the runner's
-    // recorded input. Either way, the user's own two lines must survive.
-    if (written !== null) {
-        assert.match(written, /\/usr\/bin\/backup/);
-        assert.match(written, /\/usr\/bin\/weekly/);
-        assert.ok(!written.includes(autoupdate.CRON_MARKER), 'our line must be gone');
-    }
+    // 2026-08-25, X351. This read `write.args[0]` — a temp file `writeCrontab` had already deleted —
+    // so `written` was ALWAYS null and the three assertions below never ran, on any platform, in any
+    // checkout. The comment that stood here said the check happened "instead via the marker's absence
+    // in the runner's recorded input"; no such check existed anywhere in the file, and none could:
+    // the recorded input is a PATH, so the marker can never appear in it.
+    //
+    // Measured cost, by mutation: inverting autoupdate.js:358 so that `disable()` keeps OUR line and
+    // deletes the USER'S made no test in the repository fail — 60/60 in clients/cli and 479/479 in the
+    // hooks suite, before and after. `autoupdate off` deleting every one of the user's own cron jobs
+    // while leaving the GRU953 updater running was invisible to the whole suite. The three assertions
+    // that would have caught it are these, and they were switched off by a guard.
+    //
+    // The content is now captured by the fake runner at call time, and the guard is GONE: if the
+    // capture ever stops working these assertions must fail loudly rather than quietly not run.
+    const written = runner.lastText;
+    assert.equal(typeof written, 'string', 'the crontab being installed must have been captured');
+    assert.match(written, /\/usr\/bin\/backup/, "the user's own backup line must survive");
+    assert.match(written, /\/usr\/bin\/weekly/, "the user's own weekly line must survive");
+    assert.ok(!written.includes(autoupdate.CRON_MARKER), 'our line must be gone');
     fs.rmSync(home, RM);
 });
 

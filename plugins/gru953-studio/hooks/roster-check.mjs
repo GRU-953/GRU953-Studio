@@ -27,8 +27,63 @@ import { formatFsError } from './lib.mjs';
 
 function main() {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const pluginRoot = process.argv[2] || path.resolve(here, '..');
-  const devMemoryRoot = process.argv[3] || process.cwd();
+  // 2026-08-15, finding X114 (High, reproduced). Two roots is correct by design — an
+  // installed plugin lives outside the project whose baseline governs it. What was wrong
+  // is that they were defaulted INDEPENDENTLY, so a bare invocation paired "the plugin
+  // next to this script" with "any file matching /roster/i under whatever directory you
+  // happened to be standing in", and nobody had asserted that those belong together.
+  //
+  // Both directions were reachable, and the second is why this is High:
+  //   a foreign baseline of 5  -> BLOCKED for apparent scope creep that does not exist
+  //   a foreign baseline of 90 -> CLEAN, so this plugin could grow from 38 roles to 89
+  //                               unnoticed, measured against another project's number
+  //
+  // No cleverer rule settles it. A project baseline may legitimately EXCEED the plugin's
+  // own ROSTER.md — recording a deliberate addition with its reason is exactly what it is
+  // for — so comparing the numbers cannot distinguish legitimate from accidental. Nor can
+  // "is the plugin inside the project": for an installed plugin it never is.
+  //
+  // What can be distinguished is whether anybody asserted the pairing. Both roots given
+  // means the caller asserted it; both defaulted means nobody did. So a defaulted pairing
+  // that would adopt a project baseline is refused below, naming the exact command to run.
+  // Reproduction: hooks/test/repro/X114-cross-project-baseline.mjs.
+  const pluginRootGiven = typeof process.argv[2] === 'string' && process.argv[2] !== '';
+  const devMemoryRootGiven = typeof process.argv[3] === 'string' && process.argv[3] !== '';
+  const rootsAsserted = pluginRootGiven && devMemoryRootGiven;
+
+  // 2026-08-24, X280, on the owner's decision. X114's repair made the two counts safe by requiring
+  // the CALLER to name both roots — and not one of the four shipped callers was ever updated to do
+  // so. All four ran it bare, as did the packaged copy an installing user receives, while every
+  // sibling gate in the same pre-flight lists was invoked with a root (`licence-scan.mjs .`,
+  // `verify-progress.mjs .`, `content-check.mjs .`). So the reproduction proved a property of an
+  // invocation the product never made.
+  //
+  // The four call sites are fixed in the same commit. This refuses the bare form outright rather than
+  // falling back to a guess, because a guess is what X114 was about: without both roots this counted
+  // the INSTALLED plugin's agents against the USER'S project baseline, which is two different trees.
+  // A check whose safety depends on an argument nobody passes has never been safe.
+  //
+  // It is a BREAKING change for anyone outside the product invoking it bare, which is why it needed
+  // the owner's word. The message says exactly what to type.
+  if (!rootsAsserted) {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        reason:
+          'roster-check needs both roots named, and will not guess them (finding X280). Run it as ' +
+          '`node roster-check.mjs <plugin-root> <project-root>` — for example ' +
+          '`node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .`. Without ' +
+          'both, it counted the agents of the INSTALLED plugin against the baseline of YOUR project, ' +
+          'which are two different trees, and reported the difference as a roster change (X114).',
+        pluginRootGiven,
+        devMemoryRootGiven,
+      }),
+    );
+    process.exit(1);
+  }
+
+  const pluginRoot = process.argv[2];
+  const devMemoryRoot = process.argv[3];
 
   const agentsDir = path.join(pluginRoot, 'agents');
   let agentFiles = [];
@@ -52,6 +107,30 @@ function main() {
     decisionFiles = fs.readdirSync(decisionsDir).filter((f) => /roster/i.test(f));
   } catch {
     decisionFiles = [];
+  }
+
+  // X114: a project baseline was found, but nobody said this project governs this plugin.
+  // Refusing here rather than adopting it is the whole fix — the alternative is a number
+  // from an unrelated project silently deciding whether this roster has grown.
+  if (decisionFiles.length > 0 && !rootsAsserted) {
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason:
+            `a roster baseline was found at ${decisionsDir} (${decisionFiles.join(', ')}), but neither root was given, so nothing establishes that this project's baseline governs the roster at ${pluginRoot}. ` +
+            `A baseline from an unrelated project can both block a healthy roster and, worse, pass a grown one — it is only a number. ` +
+            `Re-run naming both roots to assert the pairing: node roster-check.mjs <pluginRoot> <projectRoot> (finding X114)`,
+          pluginRoot,
+          devMemoryRoot,
+          currentCount,
+          rootsAsserted,
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(1);
   }
 
   if (decisionFiles.length === 0) {

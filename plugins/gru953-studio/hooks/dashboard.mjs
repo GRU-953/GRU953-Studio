@@ -213,7 +213,21 @@ function renderBoard(projectName, docs, table, boardText) {
   // fell into "other" — the sibling gates already de-emphasise headers the
   // same way (quality-gate.mjs's find(), audit finding 3). De-emphasise before
   // matching so the board actually groups by the task's real status.
-  const statusIdx = table.headers.findIndex((h) => /^status$/i.test(deEmphasise(h)));
+  // 2026-08-18, X230 (L14). This held the pre-X143 spelling `/^status$/i` while its sibling
+  // quality-gate.mjs had already been widened to the synonym list below — so a board whose column
+  // was headed `State`, `Result`, `Outcome` or `Verdict` found no status column, and EVERY row fell
+  // silently into "other". The Layer 2 audit's hooks-correctness lens spotted this and deliberately
+  // did not report it, on the grounds that dashboard.mjs is informational and untested; declining a
+  // live instance of a fixed pattern class is a self-cap, not a finding of no defect, so it is
+  // recorded and fixed here.
+  //
+  // Deliberately NOT changed in traceability-check.mjs, which also matches `/^status$/i`: that gate
+  // REPORTS a table it cannot read (X192, X193) rather than mis-grouping it in silence, so the same
+  // spelling there produces a visible complaint rather than a wrong answer. Same word, different
+  // consequence, different call — recorded so the asymmetry reads as a decision.
+  const statusIdx = table.headers.findIndex((h) =>
+    /^(status|result|outcome|verdict|state)$/i.test(deEmphasise(h)),
+  );
   const counts = {};
   for (const g of GROUPS) counts[g.key] = 0;
   counts.other = 0;

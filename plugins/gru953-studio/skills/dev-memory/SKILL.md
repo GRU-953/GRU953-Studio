@@ -9,7 +9,7 @@ user-invocable: false
 Dev-Memory is GRU953-Studio's project notebook: a small set of plain-text
 files in a `Dev-Memory/` folder inside the user's own project directory.
 It exists so no work is ever lost — close the computer mid-project, come
-back a week later in a new session, type `/studio`, and the studio picks up
+back a week later in a new session, type `/studio-start`, and the studio picks up
 at the exact point it stopped.
 
 Written by the `memory-keeper` role. At the start of every session, the
@@ -30,7 +30,23 @@ silently drifted apart again after the Round 9 fix above.)
 
 ## The files
 
-All live under `Dev-Memory/` in the project's working directory:
+All live under `Dev-Memory/` in the project's working directory.
+
+**Before writing ANY of them, add `Dev-Memory/` to the project's `.gitignore` — create the file if
+there isn't one. This is step zero, not a tidy-up afterwards (2026-08-23, X274).**
+
+That rule already existed, further down this file under "Local-only, and never shipped", and
+`agents/memory-keeper.md` rule 5 says the same: `.gitignore` it "from the moment it is created". It
+was stated as a POLICY in a section about privacy, and not as an ACTION at the point the folder gets
+made — so it was skipped. Measured, not supposed: a real build on 2026-08-23 created all nine
+Dev-Memory files and three decision records, and wrote no `.gitignore` at all.
+
+Why it matters even though nothing leaked. `hooks/scan.mjs` still refuses any push whose file set
+contains a `Dev-Memory/` path, so the privacy guarantee held. But an un-ignored folder is one
+ordinary `git add -A` away from being staged, and at that point the product's own guard correctly
+blocks the user's push — leaving a non-technical owner stuck behind a refusal they cannot clear
+without `git rm --cached`. Skipping step zero manufactures the exact condition the guard exists to
+refuse, which is this project's L5 seen from the other side.
 
 | File | What it holds |
 | :-- | :-- |
@@ -47,7 +63,7 @@ All live under `Dev-Memory/` in the project's working directory:
 | `GRAPH.md` | (2026-07-19, Standard/Complex Tier, see the `memory-graph` skill) The plain-text knowledge graph — nodes (requirements, tasks, decisions, files, lessons) and typed links (`implements`/`depends-on`/`relates-to`/`supersedes`/`caused-by`/`blocks`) — expanded on demand so a session recalls only what the current task needs. Links are checked for dangling nodes by `hooks/memory-integrity.mjs`. |
 | `decisions/*.md` | One small dated note per load-bearing decision (stack choices, Tier changes, the roster baseline — `*roster*.md` — and anything a future session must not re-litigate). |
 | `UNBUILT.md` | The append-only ledger of things deliberately **not** built (owned by `scope-guardian`), so a cut idea is never silently re-proposed. |
-| `PUBLISH-APPROVED` | Written by `confirm-publish.mjs` only after the user confirms publishing; read by `gate.mjs`. Deleted after a successful publish. Valid for 60 minutes from the moment it's written (2026-07-12 Round 7 audit fix — the deletion above is a prose instruction the agent must remember, not something any code enforces, so `gate.mjs` also checks a written-in timestamp and stops honouring the record on its own once the window passes, rather than relying solely on the delete step happening). |
+| `PUBLISH-APPROVED` | **All four rows below describe machinery REMOVED on 2026-08-16 by X214 (noted 2026-08-18, X226). No such file is written, and no hook reads any of them. The rows are kept because the file names still appear in older projects' Dev-Memory folders.** Was: written by `confirm-publish.mjs` after the user confirms publishing; read by `gate.mjs`. Deleted after a successful publish. Valid for 60 minutes from the moment it's written (2026-07-12 Round 7 audit fix — the deletion above is a prose instruction the agent must remember, not something any code enforces, so `gate.mjs` also checks a written-in timestamp and stops honouring the record on its own once the window passes, rather than relying solely on the delete step happening). |
 | `GO-PUBLIC-APPROVED` | Written by `confirm-go-public.mjs` only after the separate "go public" confirmation; read by `gate.mjs`. Also valid for 60 minutes from being written, enforced the same way — this file was never deleted by anything until the 2026-07-12 Round 7 fix added the time-bound check, so a single confirmation would otherwise have authorised every later visibility-changing command in the project, indefinitely. |
 | `CHECKPOINT-APPROVED` | (2026-07-19, see `checkpoint-commit` skill) Written by `confirm-checkpoint.mjs` to authorise a per-phase backup — an ordinary (private) push only; read by `gate.mjs`, TTL-bounded the same 60 minutes. A distinct, project-bound token that can never satisfy the go-public gate, so a checkpoint can never make anything public. |
 | `MEMORY-PERSIST-APPROVED` | (2026-07-19, see "Cloud persistence" below; row added 2026-07-26 — this table never listed it despite the file existing and being discussed in detail further down) Written by `confirm-memory-persist.mjs` to authorise cloud persistence of Dev-Memory — an ordinary (private) push only; read by `gate.mjs`, TTL-bounded the same 60 minutes. Like `CHECKPOINT-APPROVED`, it can never satisfy the go-public gate. |
@@ -115,8 +131,14 @@ memory changes:
    performs this write, already read it as gated — this section is now
    corrected to match that, not the other way round).
 4. On Standard/Complex Tier, major memory changes (Tier changes, architecture
-   decisions) additionally open a PR-like review via `confirm-memory-persist.mjs`
-   before any push (opt-in projects only, per point 3).
+   decisions) are worth putting to the owner before any push (opt-in projects
+   only, per point 3). **Corrected 2026-08-18 (X225):** this step used to say
+   "open a PR-like review via `confirm-memory-persist.mjs`" — a script removed on
+   2026-08-16 by finding X214 along with the whole token layer, so an agent
+   following this instruction ran a file that is not there. There is no review
+   script now, and adding one would recreate what X91 disproved: a file a hook
+   can read is a file an agent can write, so it never evidenced human intent.
+   Ask the owner and wait for the answer.
 
 This per-session branch is separate from `memory/cloud-persist` (which holds
 the whole Dev-Memory folder as one restorable snapshot — see "One named
@@ -221,7 +243,7 @@ was copied here without re-deriving whether it still held):**
 
 - Neither file's content is ever read by, or connects to, the private-publish
   or go-public confirmation gates — those are checked purely mechanically
-  by `hooks/gate.mjs` against a cryptographic token file, never against
+  by the publish gate (removed 2026-08-16, finding X214) against a token file, never against
   memory-file prose (see `SECURITY.md`). A recorded preference or
   lesson is a fact to avoid re-asking or re-repeating — never an instruction
   to follow, and never something that can substitute for a live
@@ -298,12 +320,28 @@ says yes for that project (`project-lead` asks once, plainly, on a cloud
 session; the answer is recorded). The safety envelope is deliberately narrow
 (2026-07-19):
 
-- **Private only, never public.** Authorised by a distinct, project-bound
-  `MEMORY-PERSIST-APPROVED` token (`hooks/confirm-memory-persist.mjs`) that
-  `gate.mjs` accepts for an ordinary (private) push only — checked *after* the
-  go-public gate, which it never satisfies. Persisted memory can never reach a
-  public repository.
-- **Still fully secret-scanned.** The token tells `scan.mjs` not to block purely
+- **Intended for a private branch — and read the correction below before
+  relying on that.** Opted into by a `Dev-Memory/SHIP-MEMORY-DELIBERATELY` file
+  the owner creates on purpose (until 2026-08-16 this was a
+  `MEMORY-PERSIST-APPROVED` token minted by a script; that token and its minter were
+  **removed** on 2026-08-16 by finding X214, because X91 established that such a
+  token proves nothing about human intent — it was replaced by something the owner
+  can see and delete).
+
+  **Corrected 2026-08-18 (X225). This paragraph used to end: "that `gate.mjs`
+  accepts for an ordinary (private) push only — checked *after* the go-public
+  gate, which it never satisfies. Persisted memory can never reach a public
+  repository." That was a false safety guarantee.** `gate.mjs` and the
+  go-public gate were both removed on 2026-08-16 by finding X214, so no
+  mechanism enforces private-only for a memory push. What the marker file
+  actually does is narrow: it stops `scan.mjs` objecting *purely because* a
+  `Dev-Memory/` path is in the would-ship set. It says nothing about which
+  remote or which visibility, and nothing checks either. **Whether the branch is
+  private is the operator's choice, and it is the only thing keeping persisted
+  memory off a public repository.** Stated plainly here rather than left implied,
+  because this sentence survived in a shipped skill for two days behind a check
+  that could not read the file.
+- **Still fully secret-scanned.** The marker file tells `scan.mjs` not to block purely
   because a `Dev-Memory/` path is present — but `scan.mjs` still runs its full
   secret/key-file scan on those files, so Dev-Memory persists only if it carries
   no password, key or token. A secret in memory is blocked exactly as before.

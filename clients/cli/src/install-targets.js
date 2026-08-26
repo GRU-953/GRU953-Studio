@@ -77,13 +77,23 @@ function installAntigravity(host, { pluginSourceDir, platform = process.platform
     } catch {
         /* cosmetic only; a missing version must not stop the install */
     }
+    // 2026-08-22, X253: the same correction as clients/antigravity/src/install.js, applied here
+    // because the two carry this layout logic on purpose (see the header note) and fixing one twin
+    // while leaving the other is the mistake this project calls L14. These three writes are
+    // unconditional and reported the same word whether the file was new or replaced, while `skills/`
+    // beside them is guarded — so one run could report skills "already present" in the same breath
+    // as silently replacing a rules file the user had edited. The writes are unchanged: these are
+    // generated projections of the plugin, and a stale copy is worse than a replaced one. What
+    // changes is that a replacement now says so.
     try {
+        const pluginJsonPath = path.join(target, 'plugin.json');
+        const replacing = fs.existsSync(pluginJsonPath);
         fs.writeFileSync(
-            path.join(target, 'plugin.json'),
+            pluginJsonPath,
             JSON.stringify({ name: 'gru953-studio', version }, null, 2) + '\n',
             'utf8',
         );
-        steps.push('plugin.json');
+        steps.push(replacing ? 'plugin.json (replaced)' : 'plugin.json');
     } catch (e) {
         return { ok: false, message: `Could not write plugin.json: ${e.message}` };
     }
@@ -98,12 +108,20 @@ function installAntigravity(host, { pluginSourceDir, platform = process.platform
     const rulesTarget = path.join(target, 'rules');
     try {
         fs.mkdirSync(rulesTarget, { recursive: true });
-        fs.writeFileSync(path.join(rulesTarget, 'gru953-roster.md'), buildRosterRule(pluginSourceDir), 'utf8');
-        steps.push('rules/gru953-roster.md');
+        const rosterPath = path.join(rulesTarget, 'gru953-roster.md');
+        const replacingRoster = fs.existsSync(rosterPath);
+        fs.writeFileSync(rosterPath, buildRosterRule(pluginSourceDir), 'utf8');
+        steps.push(replacingRoster ? 'rules/gru953-roster.md (replaced)' : 'rules/gru953-roster.md');
         const charter = path.join(pluginSourceDir, 'skills', 'operating-charter', 'SKILL.md');
         if (!fs.existsSync(charter)) return { ok: false, message: `Could not find the operating charter at ${charter}.` };
-        fs.copyFileSync(charter, path.join(rulesTarget, 'gru953-operating-charter.md'));
-        steps.push('rules/gru953-operating-charter.md');
+        const charterPath = path.join(rulesTarget, 'gru953-operating-charter.md');
+        const replacingCharter = fs.existsSync(charterPath);
+        fs.copyFileSync(charter, charterPath);
+        steps.push(
+            replacingCharter
+                ? 'rules/gru953-operating-charter.md (replaced)'
+                : 'rules/gru953-operating-charter.md',
+        );
     } catch (e) {
         return { ok: false, message: `Could not write the rules: ${e.message}` };
     }
@@ -111,7 +129,7 @@ function installAntigravity(host, { pluginSourceDir, platform = process.platform
     return {
         ok: true,
         changed: true,
-        message: `Installed at ${target} (${steps.join(', ')}). Antigravity has no place for separate specialist agents, so the roster is provided as a rules file it follows itself.`,
+        message: `Installed at ${target} (${steps.join(', ')}). the roster is provided as a rules file Antigravity follows itself (it does support separate subagents since CLI v1.1.6; installing the 38 as real subagents is not done yet - X43), so the roster is provided as a rules file it follows itself.`,
     };
 }
 
@@ -161,6 +179,21 @@ function installVscodeFamily(host, { vsixPath, platform = process.platform }) {
         return {
             ok: false,
             message: `No .vsix file was found to install. Download "gru953-studio-<version>.vsix" from https://github.com/GRU-953/GRU953-Studio/releases and run: ${host.command} --install-extension <the file you downloaded>`,
+        };
+    }
+    // 2026-08-22, X246: `shell: true` is needed on Windows because these hosts ship a `.cmd`
+    // launcher, and Node's own documentation warns that it does NOT escape arguments in that mode —
+    // so the path went to cmd.exe raw. A `.vsix` path containing a shell metacharacter would break
+    // the command, and `&` in particular would end it and start another. Rather than attempt
+    // cmd.exe quoting, which is a well-known source of its own bugs, a path that cannot be passed
+    // safely is not passed at all: the user is told the exact command to run themselves. Refusing
+    // to build a command we cannot build correctly is the only honest option here.
+    const UNSAFE_FOR_CMD = /["%&|<>^]/;
+    if (platform === 'win32' && UNSAFE_FOR_CMD.test(vsixPath)) {
+        return {
+            ok: false,
+            changed: false,
+            message: `The extension file's location contains a character Windows treats specially, so it cannot be installed automatically without risk: ${vsixPath}. Install it by hand with this command, or move the file to a folder whose name has only letters, numbers, spaces, dashes and underscores: ${host.command} --install-extension "${vsixPath}"`,
         };
     }
     const r = spawnSync(host.command, ['--install-extension', vsixPath, '--force'], {

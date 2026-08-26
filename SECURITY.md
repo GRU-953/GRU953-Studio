@@ -74,8 +74,24 @@ of code that GRU953-Studio *builds for you* in a separate project.
 
 ## Known limitations (disclosed, not hidden)
 
-The publish-safety hooks (`scan.mjs`, `gate.mjs`) defend against accidental
-or premature publishing and ordinary secret leaks. They are not a defence
+**Read this first (added 2026-08-17, finding X219).** On 2026-08-16 finding
+X214 removed the push-authorisation layer entirely: the hook `gate.mjs` and
+its four `confirm-*.mjs` token minters are gone, and `scan.mjs` is the only
+push-safety hook left. It scans for secrets, key files and the private
+`Dev-Memory/` folder, and it never approves anything — finding no secrets is
+an absence of objection, not permission. Nothing now claims to prove that a
+person authorised a push, because a file-based token never could: anything a
+hook can read, an agent can write. Passages further down this document
+describe `gate.mjs` and its tokens as they stood at the time each round was
+written. They are kept as a record of how the design got here, and are marked
+where they could otherwise be read as present fact. This paragraph exists
+because 36 references to those five deleted files survived in shipped
+documents for a day — including a security guarantee in this file — while the
+gate meant to catch exactly that reported clean.
+
+The publish-safety hook `scan.mjs` defends against accidental
+publishing of secrets, and — with the removed `gate.mjs` — was intended to
+defend against premature publishing too. They are not a defence
 against a fully compromised or deliberately adversarial agent session —
 Claude Code's hook mechanism cannot verify that a human, rather than the
 agent itself, actually approved an action. If you find a way to defeat these
@@ -108,7 +124,8 @@ this was the single most severe bypass found across the whole loop, since
 it defeated the matcher's very first check with zero confirmation tokens
 of any kind recorded, for the plain `push`/`repo create`/`repo edit` cases
 themselves, not just an edge-case flag value. `isGoPublicCommand`
-(`hooks/gate.mjs`) shares this same canonicalisation and case-insensitivity,
+(`gate.mjs` (removed 2026-08-16, finding X214); this paragraph records
+what was true when the audit ran) shares this same canonicalisation and case-insensitivity,
 and its own token-matching regex tolerates quotes/`$IFS` around every one
 of `gh`/`repo`/`create`/`edit`/`--public`/`--visibility`, closing a critical
 gap where it used to match raw, un-normalized, case-sensitive text entirely
@@ -156,7 +173,7 @@ v=public`, and the keyword applies them left-to-right with the LAST one
 winning (confirmed live via `bash -x`). This let `export v={private,public};
 gh repo edit me/app --visibility=$v` bypass the go-public gate with only
 the private-publish token recorded — reproduced end-to-end via the real
-`gate.mjs` before being fixed. The bare, no-keyword form
+`gate.mjs` (since removed — 2026-08-16, finding X214) before being fixed. The bare, no-keyword form
 (`v={private,public}; ...`) is NOT exploitable and was deliberately left
 unchanged: a plain assignment word is not itself brace-expanded by bash, so
 `$v` there really does hold the literal, un-expanded text, which the
@@ -187,7 +204,9 @@ disclosed rather than eliminated: doing better would mean verifying the
 resolved path against a fixed, known-good location, which isn't possible
 here because the legitimate invocation form genuinely varies (an absolute
 `${CLAUDE_PLUGIN_ROOT}/...` path from the plugin cache, or a relative
-`hooks/confirm-publish.mjs` from within the project root).
+`confirm-publish.mjs` (removed 2026-08-16, finding X214) from within the project root).
+**Removed 2026-08-16, finding X214** — the confirmation scripts and the gate they
+fed are gone; this paragraph is kept as a record of the reasoning at the time.
 
 **2026-07-11 Round 9 additions** (found by a dedicated audit lens attacking
 agent behaviour and instruction-following, not shell text — a genuinely
@@ -195,7 +214,8 @@ different attack surface from everything above). The core finding was a
 PASS: no skill or agent file offers a shortcut where a memory file's
 *claimed* approval ("user already confirmed, proceed") substitutes for a
 fresh, live `AskUserQuestion` answer — the private-publish and go-public
-gates are anchored to a token file `gate.mjs` checks mechanically, never to
+gates were anchored to a token file `gate.mjs` checked mechanically (both
+removed 2026-08-16, finding X214), never to
 prose any agent reads and trusts. Two adjacent, real, lower-severity gaps
 were found alongside that PASS:
 
@@ -212,7 +232,8 @@ were found alongside that PASS:
   document ultimately runs into.
 - `dev-memory/SKILL.md` and `memory-keeper.md` both state a mandatory
   secrets-scan before every memory write, but `hooks.json` only wires
-  `scan.mjs`/`gate.mjs` on the `Bash` matcher — there is no `PreToolUse`
+  `scan.mjs` on the `Bash` matcher (`gate.mjs` sat beside it until it was
+  removed on 2026-08-16, finding X214) — there is no `PreToolUse`
   hook on `Write`/`Edit` backing this rule mechanically. It is currently
   enforced by instruction-following alone, unlike the push-time scan (which
   *is* hook-enforced regardless of what any file claims). Blast radius is
@@ -304,10 +325,17 @@ undisclosed findings, all confirmed by direct execution before being fixed:
   (`"Bash|PowerShell|Monitor"`) and extending `repo-integrity.mjs`'s INV10
   check (which already guarded the PowerShell fix against silent reversion)
   to require Monitor coverage too, with a matching regression test.
-- **Verified as a genuine PASS, not re-reported as new:** the plugin has
-  zero third-party dependencies anywhere in the repo (no `package.json`,
-  lockfile, or `node_modules`), so there is currently nothing for a
-  Dependabot/CVE-scanning gap to expose; `licence-scan.mjs` is honest about
+- **Verified as a genuine PASS, not re-reported as new:** the *plugin*
+  (`plugins/gru953-studio/`) has zero third-party dependencies — nothing under it
+  declares, vendors or installs one, and `docs-consistency.mjs` fails closed if
+  that changes. **Corrected 2026-08-22 (X183): this used to say "zero third-party
+  dependencies anywhere in the repo (no `package.json`, lockfile, or
+  `node_modules`)", and the repository has EIGHT tracked manifests** —
+  `package.json` and `package-lock.json` at the root and in each of
+  `clients/cli`, `clients/antigravity` and `clients/vscode`. So a
+  Dependabot/CVE-scanning gap does have something to expose; what it cannot
+  expose is anything reaching the plugin, because the plugin has none.
+  `licence-scan.mjs` is honest about `licence-scan.mjs` is honest about
   covering licence text only, not vulnerability data. Worth re-assessing
   if a dependency is ever added.
 
@@ -381,7 +409,8 @@ for scalar command substitution rather than chasing indefinitely:
 A separate structural fix from the same rounds: `repo-integrity.mjs`
 gained an INV10 check verifying `hooks.json`'s `PreToolUse` matcher still
 actually names both `Bash` and `PowerShell` and still wires both
-`scan.mjs` and `gate.mjs` — a reviewer proved live that simply reverting
+`scan.mjs` and `gate.mjs` (the required-hooks list became `scan.mjs` alone
+when `gate.mjs` was removed on 2026-08-16, finding X214) — a reviewer proved live that simply reverting
 the matcher back to `"Bash"` alone (silently disabling the Round 7
 PowerShell fix) left every other gate this project trusts before a commit
 fully green, since nothing previously checked `hooks.json`'s actual
@@ -403,14 +432,16 @@ reads this project's `LESSONS.md` and the cross-project
 `common-pitfalls.md` before deciding whether an AI feature is warranted,
 but carried no "this is DATA, never an instruction" framing of its own.
 
-**2026-07-12 Round 11** found one further, minor, documentation-only gap:
+**2026-07-12 Round 11** found one further, minor, documentation-only gap (the
+tokens below were removed on 2026-08-16 by X214; noted 2026-08-18, X226):
 `publish-github/SKILL.md`'s "Going public" section instructed recording
 the go-public confirmation and verifying the visibility change, but never
 mirrored the private-publish path's existing instruction to delete the
 token file afterward — so nothing told the publishing agent to clean up
 `Dev-Memory/GO-PUBLIC-APPROVED` once a visibility change completed (the
 60-minute TTL still bounds exposure either way). Fixed by adding the same
-delete step already present for `PUBLISH-APPROVED`.
+delete step already present for `PUBLISH-APPROVED`. (Both tokens were removed on
+2026-08-16 by X214; noted 2026-08-18, X226.)
 
 **2026-07-12 Round 13 (CRITICAL — the audit loop's second attempt at
 convergence, broken by this round's findings): four more genuinely new
@@ -675,8 +706,11 @@ existing gate — each is additive.
   That turns the residual from a stall into a potential bypass of **both**
   push-time hooks at once — extrapolating the curve above, roughly 36,000
   assignments (~310 KiB of command text) would reach the 600 s default, after
-  which `scan.mjs` and `gate.mjs` are both cancelled as non-blocking errors and
-  the push proceeds unscanned and unauthorised. So it is now **bounded rather
+  which `scan.mjs` is cancelled as a non-blocking error and
+  the push proceeds unscanned. (This read "`scan.mjs` and `gate.mjs` are both
+  cancelled ... unscanned and unauthorised" until 2026-08-17; `gate.mjs` was
+  removed on 2026-08-16, finding X214, so there is one hook to cancel, not two,
+  and nothing left that "authorised" a push in the first place.) So it is now **bounded rather
   than disclosed**: `normalizeForPushCheck` skips variable resolution entirely
   past `MAX_RESOLVED_ASSIGNMENTS` (500 — over 16x the largest real command this
   project has seen, which is under 30), and both security callers fail CLOSED on
@@ -851,7 +885,9 @@ genuine confirmation of an existing one. No version bump accompanies this
 update — every change is internal hardening, not a user-facing release.
 
 **Proven, not merely asserted: the push/go-public gate is structurally
-token-driven, immune to prose.** `gate.mjs` reads exclusively the four
+token-driven, immune to prose.** (Both the gate and its tokens were removed on
+2026-08-16, finding X214 — what follows records what was proven at the time,
+not how the product behaves now.) `gate.mjs` read exclusively the four
 `Dev-Memory/*-APPROVED` record files — it never opens `PROGRESS.md`,
 `FOCUS.md`, or anything else. A dedicated injection corpus now proves this by
 execution rather than by reading the code and trusting it: a forged
@@ -951,17 +987,220 @@ What reduces it here, and what does not:
 
 ### The scheduled daily update
 
-- Off unless explicitly enabled with `gru953-studio autoupdate on`. The default
-  remains a check on first use each day, which starts nothing in the background.
+- Off unless explicitly enabled with `gru953-studio autoupdate on`. **Corrected
+  2026-08-22 (X247): the default is that NOTHING checks.** This said "the default
+  remains a check on first use each day", and no code performs it — verified three
+  ways: only two call sites invoke `auto-update.mjs` and both pass `--force`
+  (`clients/cli/src/index.js:320` and `commands/studio-update.md:16`); it appears
+  nowhere in `hooks/hooks.json`; and `session-start.mjs` stopped running it, its
+  own comment recording the removal. The 24-hour `.last-update-check` window
+  inside `auto-update.mjs` is therefore unreachable. Nothing starts in the
+  background either way, which was the load-bearing half of the original sentence
+  and remains true.
 - When enabled it registers a job with the operating system's own scheduler
   (launchd, Task Scheduler, or a systemd user timer falling back to cron), writing
   only inside the user's own account. It needs no administrator rights.
 - **Residual:** a scheduled job runs `git pull --rebase --autostash` in the
-  plugin's checkout without a person present. It cannot make anything public and
-  cannot push — `gate.mjs` still requires a recorded confirmation token for that,
-  scheduled or not — but it does mean code can change on disk while you are away.
+  plugin's checkout without a person present. **That boundary holds in THIS source; it did NOT
+  hold in the published 6.0.3 or 6.1.0 — see the 2026-08-24 currency update at the end of this
+  document, finding X241, where the updater walked up to any `.git` above itself.** It cannot make anything public and
+  cannot push, because `git pull` does not push — but it does mean code can
+  change on disk while you are away. **Corrected 2026-08-17 (X219):** this read
+  "`gate.mjs` still requires a recorded confirmation token for that", naming a
+  hook removed on 2026-08-16 by finding X214. The conclusion is unchanged and
+  still true; the reason given for it was not. The honest reason is simply that
+  the scheduled job runs a pull and nothing else.
   Anyone who would rather that never happened should leave it off, which is the
   default, and update with `/studio-update` when they choose to.
 - If the pull leaves conflicts, the updater reports them and stops rather than
-  attempting a second unconfirmed change on top of the first. That behaviour is
-  unchanged from v5.
+  attempting a second unconfirmed change on top of the first. **Corrected
+  2026-08-22 (X231): that is true only when a person is watching.** The report is
+  four `console.error` lines and a non-zero exit code (`auto-update.mjs:181-192`).
+  **That was the defect X232 recorded, and it is now fixed — this paragraph is the
+  description of it, corrected on 2026-08-22 because the code changed and the prose
+  did not.** It used to say, in the present tense, that "the cron fallback the
+  scheduler itself writes `>/dev/null 2>&1` into the crontab line
+  (`clients/cli/src/autoupdate.js:135`)". That line now ends
+  `>> "$HOME/.gru953-studio-update.log" 2>&1`, one definition shared with the
+  launchd plist, and every "now scheduled" message names the log. So the security
+  document was overstating a defect that had been repaired, and citing a line number
+  that no longer held that text — the mirror image of the usual failure, and just as
+  much a false statement about the product.
+
+  **One real residual, and it is worth stating precisely.** Fixing the line only
+  changed what a NEW enable writes. Until 2026-08-22 `enable()` returned as soon as
+  it saw its own marker, so a machine where `autoupdate on` had been run earlier kept
+  the old `/dev/null` line for ever, and re-running the remedy reported success while
+  changing nothing. That is now repaired too: the existing line is compared against
+  the current one and rewritten when it differs. A machine that has not run
+  `gru953-studio autoupdate on` since 2026-08-22 still carries the old line until it
+  does. **This paragraph was already corrected once, on 2026-08-17 by X219, for a
+  different falsehood, and again on 2026-08-22 by X231 — so this is its third visit,
+  which is itself the argument for checking a paragraph as a whole rather than the
+  sentence someone came for.**
+
+- **Disclosed plainly, because no document said it before (X231, 2026-08-22): an
+  update fetches code from the internet and then runs it.** The plugin's checks
+  are programs, so after a pull the next command is judged by the version that
+  just arrived. **Nothing is verified first** — no signature, no signed tag, no
+  pinned hash, no checksum; verified by grep over `auto-update.mjs` and
+  `clients/cli/src/`, which returns nothing. What is pulled is whatever `@{u}`
+  resolves to for the current branch: no URL and no ref is pinned in the code.
+  Trust in an update therefore rests entirely on the GitHub repository and the
+  account that controls it.
+
+- **A correction to the sentence above about which checkout is touched.** It says
+  the scheduled job runs "in the plugin's checkout". `findGitRoot`
+  (`auto-update.mjs:28-37`) walks UP from the hooks directory to the FIRST
+  ancestor containing a `.git`, which is the plugin's checkout only when the
+  plugin is not nested inside another repository. If it is, that outer repository
+  is what gets rebased and autostashed.
+
+## Currency update (2026-08-24) — a defect in the PUBLISHED versions, disclosed while it waits for a release
+
+This section exists because the owner chose to **disclose and wait** rather than cut a corrective
+release, and a decision to wait is only honest if the thing being waited on is written down where a
+user would look.
+
+**What is affected:** every published version, up to and including **6.1.0** — the current release —
+and **6.0.3**, the version the Homebrew tap installs. This is finding **X241**.
+
+**What it does.** `hooks/auto-update.mjs` finds the repository it should act on by walking *upwards*
+from its own location until it meets any `.git` directory, and using that. In the published versions
+that function (`findGitRoot`) has no test that the directory it lands on is actually the plugin's.
+Both published tags then run `git pull --rebase --autostash` against it. Verified by reading the
+published code, not the current source:
+
+```
+git show v6.0.3:plugins/gru953-studio/hooks/auto-update.mjs   # findGitRoot walks up to any .git
+git show v6.1.0:plugins/gru953-studio/hooks/auto-update.mjs   # 4 occurrences of pull --rebase / autostash
+```
+
+**Why that matters on an installed copy.** The directory above an installed plugin is not the
+plugin's project — it is whatever of *your own* work happens to sit above it. So the updater can
+rebase your repository and stash your uncommitted changes. `--autostash` reapplies them afterwards;
+if that reapplication conflicts, you are left in a state that is genuinely hard to unpick.
+
+**This corrects a sentence elsewhere in this document.** The residual note under "The scheduled daily
+update" says the job runs a pull "in the plugin's checkout". That is true of the current source, where
+X241 is fixed and the repository is checked before use. **It was not true of the published versions**,
+and anyone reading it there would have been reassured by a boundary that was not being enforced.
+
+**How it can be reached in 6.1.0.** Three routes, all checked:
+
+| Route | Needs you to act? |
+| :-- | :-- |
+| `gru953-studio update` | yes — you typed it |
+| The scheduled daily job | yes — it is off unless you turn it on |
+| **`/studio-update` invoked by the assistant itself** | **no** |
+
+The third is the one that does not need you: `commands/studio-update.md` in 6.1.0 carries no
+`disable-model-invocation` flag, so the assistant could decide to update on your behalf. That flag is
+present in the current source.
+
+**What is NOT affected, stated so the disclosure is not read as worse than it is.** Findings X223 and
+X227 concern the catastrophic-command guard — the part that refuses things like `rm -rf /`. **That
+guard is in neither published version** (`git show v6.1.0:…/scan.mjs | grep -c catastrophic` returns
+0, as does 6.0.3); it was built afterwards. A defect in an unshipped feature reaches nobody. What the
+published versions have instead is *no* such guard, which is finding **X39** and was already disclosed
+above before the release.
+
+**What to do if you are running 6.0.3 or 6.1.0.** Either leave the scheduled job off, which is the
+default, and run updates only when you choose to — or, if you would rather not run the shipped updater
+at all, update by reinstalling rather than by `gru953-studio update`.
+
+**Why no corrective release yet.** The fix exists and is committed, along with roughly 115 others, but
+this project's own release requirements (R19, an independent code review by someone other than the
+author; R20, continuous integration green on every platform claimed) are not yet satisfied for that
+work. Shipping the fix for a Critical with less scrutiny than the code that caused it would lower the
+standard rather than raise it. The defect is therefore disclosed here and fixed in the release that can
+meet those requirements honestly.
+
+## Currency update (2026-08-24) — what reading a command can and cannot establish
+
+This section exists because of finding **X15**, which says something true and worth a user knowing:
+deciding what a shell command does by pattern-matching its text cannot converge. Twelve rounds of
+audit are the evidence, and the fix history proves it — whether `npm run build` might publish used to
+be decided by testing the command against six words (`deploy|release|publish|ship|public|visibility`),
+so `npm run deploy` was scanned and `npm run build` was not, on nothing but the name someone gave the
+script.
+
+*Updated 25 August 2026 (finding X15). This limit is real and permanent, and it is now recorded in the
+register as a **disclosed limit** rather than as an open defect — because calling it a defect implied
+someone would one day fix it, and nobody will. What has changed is how much of the product relies on
+reading text at all: a script is now READ rather than guessed at from its name, through up to three
+levels of one script calling another; the check no longer assumes git is the only way code leaves your
+machine; and when the studio says it found no secrets it now tells you which kinds it knows how to look
+for, instead of implying there are none.*
+
+*What is still outside the boundary, and always will be: a command assembled while it runs, from pieces
+that are not in the text; a fourth level of one script calling another; and code downloaded from the
+internet and run immediately, which does not exist on your machine until the moment it runs. For that
+last one the studio ASKS you rather than pretending to have checked.*
+
+**What changed on 2026-08-24.** Where an indirection can be resolved, it is now resolved instead of
+guessed at. The studio reads the thing that will actually run:
+
+| You type | It reads |
+| :-- | :-- |
+| an interpreter given a script — `bash`, `sh`, `node`, `python`, `ruby`, `perl`, or `./` | that script file |
+| `npm run <name>` (and the `pnpm` and `yarn` spellings) | that entry in `package.json`'s `scripts` |
+| `make <target>` | that target's recipe |
+| a script piped or redirected into an interpreter | that script file |
+
+and then asks the ordinary question of the real text. A script that does not publish stays silent,
+exactly as before, so this added no new interruptions.
+
+**What it still cannot do, stated plainly rather than left for you to discover.**
+
+- **A command assembled while it runs is invisible.** If a script builds the words `git push` out of
+  variables, or fetches them, nothing that reads text will find it. This is X15's own point, and it is
+  a limit rather than a bug: no amount of further pattern work removes it.
+### The opt-out, and exactly when it applies
+
+A deliberate fake key in a test fixture would otherwise block every push in the repository that holds
+it. So one line can be exempted: end it with a comment reading `scan-allow: known test fixture`.
+
+It has to be a REAL comment in that kind of file — `//` in JavaScript or TypeScript, `#` in shell,
+YAML, Makefiles and `.env` files, `--` in SQL. A JSON file has no comments at all, so there is nowhere
+in one to put it, and no exemption is possible there.
+
+*Added 2026-08-24 (finding X286), and it is a correction rather than a new feature. Until that date
+the check was only "does this line end with that text", which asked nothing about the file — so `//`
+counted as a comment in every file on disk, and the marker silenced a REAL key in a Kubernetes secrets
+file, a Makefile, a shell script and a JSON config. Measured: five such files, five real keys, all
+exempted. In those files `//` is not an annotation at all, it is ordinary text that happens to sit at
+the end of the line, and the exemption's whole justification — a maintainer annotating a deliberate
+test vector — did not hold. If the file's comment syntax cannot be established, the exemption does not
+apply and the secret is reported.*
+
+*Two smaller things went with it. The refusal message used to tell you the marker was "documented by
+the dev-memory skill"; it was documented nowhere, in any file, so the message pointed at nothing. It
+now states the rule itself. And a commit or tag message accepts any of the three characters, because
+there is no file to take a comment syntax from and you wrote that text deliberately.*
+
+- **Three levels, then it stops.** A script that runs a script that runs a script is followed all
+  the way; a fourth is not. So `deploy.sh` → `build.sh` → `publish.sh` is read, and one more link in
+  that chain is where the reading ends.
+
+  *Corrected 2026-08-24 (finding X284). Until that date this said "one level only", which was true
+  and was the wrong place to stop: `deploy.sh` calling `build.sh` is the ordinary shape of real
+  deployment tooling, not an edge case, and the same was true of `npm run release` calling
+  `npm run push`. Being written down here did not make it acceptable. The new limit is a real limit
+  and is tested as one, so it cannot quietly drift in either direction.*
+- **No shell semantics.** Variables, globs, conditionals and loops inside the script are not
+  evaluated. The text is read, not interpreted.
+- **Remote code is never read at all.** `curl … | sh` runs something that does not exist on your
+  machine until the moment it runs. The studio therefore **asks** rather than pretending to have
+  checked — that is the only honest answer available, and it is why you will see a question there and
+  nowhere else in ordinary work.
+
+**Why this is disclosed rather than fixed.** The residual is not an oversight waiting on effort. Any
+guard that decides from text has this boundary, and a product claiming otherwise would be making a
+promise it cannot keep. What the studio owes you is to be accurate about where the boundary is, and to
+ask rather than guess when it reaches it.
+
+**What it does NOT weaken.** The secret scan still reads the actual file set a push would ship, not
+the command that triggers it, so a secret in your tree is found regardless of how the push was
+spelled. The catastrophic-command refusals judge the command text itself, where the evidence is in the
+words. This section is about inferring a command's *intent*, which is a different and harder thing.

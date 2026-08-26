@@ -1,6 +1,6 @@
 ---
 name: checkpoint-commit
-description: The per-phase backup — at the end of each build phase, commit the app's code (never Dev-Memory) to the project's `development` branch and push, after the phase's quality gate, secret scan and licence scan pass. Keeps work backed up offsite progressively without weakening the security-first Publish gates or ever making anything public. Use at each phase boundary once the phase is green. The final Publish remains the separate, clean, confirmed release.
+description: The per-phase backup — at the end of each build phase, commit the app's code (never Dev-Memory) to the project's `development` branch and push, after the phase's quality gate, secret scan and licence scan pass. Keeps the app's code backed up offsite progressively — when the user has enabled stage-by-stage backup at the warframe gate and GitHub is connected — without weakening the security-first Publish gates or ever making anything public. Never covers `Dev-Memory/`, which by design never leaves the machine. Use at each phase boundary once the phase is green. The final Publish remains the separate, clean, confirmed release.
 ---
 
 # Checkpoint Commit
@@ -12,7 +12,11 @@ everything to GitHub so everything is properly backed up." Long builds shouldn't
 risk losing a phase of work to a lost machine or a recycled container. This skill
 adds a **per-phase offsite backup** — a commit and push of the app's code to a
 **`development` branch** — while keeping every existing safety guarantee
-intact. Plain-English rule is as set in the
+intact. **Two limits, stated here because the public wording used to omit both
+(2026-08-23, X182):** it happens only if the user turned it on at the warframe
+gate and GitHub is connected, and it covers the app's code only — `Dev-Memory/`
+is `.gitignore`d by design and is never pushed, so the planning notebook is not
+protected by this and never was. Plain-English rule is as set in the
 `operating-charter` skill.
 
 ## What a checkpoint is (and is not)
@@ -32,11 +36,19 @@ intact. Plain-English rule is as set in the
    private planning memory.
 2. **No secrets.** `scan.mjs` runs on every push regardless of any token, so a
    checkpoint can never ship a secret or key file.
-3. **Private only, never public.** A checkpoint is authorised by a dedicated,
-   project-bound `CHECKPOINT-APPROVED` token (`hooks/confirm-checkpoint.mjs`),
-   which `gate.mjs` accepts for an ordinary (private) push **only**. Going public
-   still requires the separate `GO-PUBLIC-APPROVED` token, checked first — a
-   checkpoint can never change visibility to public.
+3. **Private only, never public.** A checkpoint is an ordinary private push.
+   It used to require a project-bound token; that layer was removed on
+   2026-08-16 (X214) because a file-based token cannot establish that a person
+   agreed — anything the hook can read, an agent can write.  Authorisation is
+   now Claude Code's own permission prompt. **Corrected 2026-08-18 (X226): the
+   rest of this guarantee was false.** It read "Going public still requires the
+   separate `GO-PUBLIC-APPROVED` token, checked first — a checkpoint can never
+   change visibility to public." That token and the go-public gate were removed
+   on 2026-08-16 by X214 along with everything else in this layer, so **nothing
+   mechanical stops a visibility change**; the only thing in the way is Claude
+   Code's own permission prompt, the same as for any other command. A checkpoint
+   is still an ordinary private push because that is what the protocol below
+   does — not because anything checks it.
 4. **Quality first.** A checkpoint is taken only after the phase's `quality-gate`
    (Definition of Done) is clean and the `security-compliance-auditor`'s
    secret/vulnerability/**licence** scans pass — a broken phase is never backed
@@ -48,25 +60,46 @@ intact. Plain-English rule is as set in the
    scan passes (`licence-scan.mjs`).
 2. Ensure `Dev-Memory/` is `.gitignore`d; stage the app's code only.
 3. Record the per-phase backup authorisation: run
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/confirm-checkpoint.mjs"` from the project
+   nothing — the confirmation script was removed on 2026-08-16 (X214) and a
+   checkpoint is now an ordinary private push, authorised by the permission
+   prompt. From the project
    root (the user enables per-phase backup once, at the phased-plan/warframe
    approval — see `warframe-prototype`; this records that consent for the phase's
-   push). The token is TTL-bounded and private-only.
-4. Commit with a clear per-phase message and push to the **private working
+   push). **Corrected 2026-08-18 (X226):** this read "The token is TTL-bounded and private-only" — an orphaned tail of the removed layer. There is no token.
+4. **First check that there is somewhere to push to, and say so plainly if there
+   is not (2026-08-23, X182).** This skill described a "progressive offsite
+   backup" while never mentioning a remote at all — and nothing in the product
+   creates the project's GitHub repository outside Publish (`gh repo create`
+   appears only in `publish-github` and `first-run`). Publish is the LAST step, so
+   for the whole of a long build — exactly the case this skill exists for — the
+   push had nowhere to go. If no remote is configured, do not report a backup:
+   tell the user in one plain sentence that this phase is committed **on this
+   computer only**, and offer to set up the private repository now. A silent
+   local-only commit reported as a backup is the failure this finding is about.
+5. Commit with a clear per-phase message and push to the **private working
    `development` branch** (never `main`, which carries only released versions —
-   see "Two branches, always" below). `scan.mjs` +
-   `gate.mjs` allow it because the tree is clean and the checkpoint token is
-   present; anything unclean fails closed.
-5. Record the checkpoint in `Dev-Memory/SESSION-LOG.md` and the recall index.
+   see "Two branches, always" below). `scan.mjs` raises no objection because
+   the tree is clean; anything unclean fails closed. **Corrected 2026-08-17
+   (X219):** this read "`scan.mjs` + `gate.mjs` allow it ... and the checkpoint
+   token is present". `gate.mjs` and the checkpoint token were removed on
+   2026-08-16 by finding X214, so neither is consulted. Note also that
+   `scan.mjs` never *allows* anything — finding no secrets is an absence of
+   objection, not an approval (X1), and it is the only push-safety hook left.
+6. Record the checkpoint in `Dev-Memory/SESSION-LOG.md` and the recall index.
 
 ## Reused machinery (no duplication)
 
-- Push safety: the existing `hooks/scan.mjs` (secret/Dev-Memory block) and
-  `hooks/gate.mjs` (token gate) — extended in v3.8.0 only to accept the distinct
-  checkpoint token for a private push, leaving the go-public gate untouched.
+- Push safety: `hooks/scan.mjs` (secret/Dev-Memory block) is now the whole of it.
+  The token gate that sat beside it was removed on 2026-08-16 (X214). **Corrected
+  2026-08-18 (X226):** the rest of this bullet dangled after that removal, still
+  describing the gate being "extended in v3.8.0 only to accept the distinct
+  checkpoint token for a private push, leaving the go-public gate untouched" — a
+  clause about a gate that no longer exists, left attached to the sentence saying
+  it was deleted.
 - Licence safety: the existing `hooks/licence-scan.mjs`.
-- Confirmation: `hooks/confirm-checkpoint.mjs`, a sibling of `confirm-publish.mjs`
-  / `confirm-go-public.mjs`.
+- Confirmation: `confirm-checkpoint.mjs`, a sibling of `confirm-publish.mjs`
+  and `confirm-go-public.mjs` — all four minters removed on 2026-08-16, finding
+  X214. A checkpoint now needs no token: ask the user, and wait.
 
 ## Who applies this
 
@@ -99,11 +132,14 @@ Practical consequences, so this is a rule with teeth rather than a preference:
 3. **At first publish, both branches are created**, so a project never has a
    `development` commit with nowhere to be released from, and never a `main` with
    no place to work.
-4. **Nothing about push safety changes.** `hooks/gate.mjs` authorises a push by
+4. **Push safety is now the secret scan alone.** `gate.mjs` (removed 2026-08-16, finding X214) authorised a push by
    the recorded confirmation token, not by which branch is being pushed —
    verified, not assumed, when this rule was written. So a checkpoint to
-   `development` needs the same `CHECKPOINT-APPROVED` token it always did, and
-   going public still needs its own separate `GO-PUBLIC-APPROVED` token. This
+   `development` needs no token at all, and neither does going public — the
+   `CHECKPOINT-APPROVED` and `GO-PUBLIC-APPROVED` tokens were both removed on
+   2026-08-16 by X214 (corrected 2026-08-18, X226; this sentence restated the
+   false version a second time, 74 lines after the file itself said the layer
+   was gone). This
    rule organises the work; it does not loosen a single gate.
 5. **If the user prefers different names**, say so plainly and use theirs — this
    is the owner's default for their own projects, not a law about git.

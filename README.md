@@ -37,9 +37,16 @@ published safely to your own GitHub account, under your name.<br>
 ## What is GRU953-Studio?
 
 You talk to GRU953-Studio in plain English inside **Claude Code**, **Claude
-Desktop** or **Google Antigravity** — and you can project it into any major 2026
-AI coding platform (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands,
-Cline, Augment Code, Tabnine, JetBrains AI).
+Desktop** or **Google Antigravity**. It can also write rules files that some other
+AI coding tools read on their own — today that reaches GitHub Copilot, Aider,
+Cursor and Windsurf, and `skills/universal-platform-integration/SKILL.md` carries
+the honest per-tool table, including the two it does not currently reach and the
+seven for which no file is written at all.
+
+> **Corrected 2026-08-22 (X45).** This paragraph used to say you "can project it
+> into any major 2026 AI coding platform" and name eleven. Writing a file another
+> tool may or may not read is not the same as working there, and five of the
+> eleven had no file written for them.
 
 You tell it what you want — "a habit tracker for my phone", "a page that lists my
 recipes". It asks a few multiple-choice questions to understand exactly what you
@@ -51,7 +58,7 @@ You never write or read a single line of code. You answer questions, one clear
 pop-up at a time, each with a recommended answer already marked.
 
 **In numbers:** one coordinator you talk to · a team of up to **38 specialist
-roles** · **37 skills** (the internal playbooks the team follows) · **11 simple
+roles** · **40 skills** (the internal playbooks the team follows) · **11 simple
 commands** · **two automatic push-time safety hooks** (plus a suite of
 pre-publish and CI integrity checks) · **zero third-party code dependencies**.
 
@@ -85,7 +92,10 @@ and how it was proved.
   AI model and effort for each step — spending more only where it genuinely
   matters — and pauses to ask before anything unusually expensive.
 - **🏗️ Grows in safe stages.** The smallest useful version first, then improvements
-  in order — with a private backup of your work after every stage.
+  in order. At the end of each stage, if you have turned the stage-by-stage backup
+  on and connected GitHub, your app's code is saved to your own private repository.
+  Your planning notes are deliberately never copied anywhere — they stay on this
+  computer only, so your own backups still matter for those.
 - **🔒 Safety built in, not bolted on.** Checks for leaked passwords, known
   weaknesses and licence problems run automatically before anything ships;
   publishing is private by default, with a separate, explicit step to make
@@ -126,7 +136,7 @@ and JetBrains editor extensions. Install and sign in first.
 /plugin install gru953-studio@gru953-studio
 ```
 
-That's it — type `/studio` to begin. The very first time, it runs a short, one-off
+That's it — type `/studio-start` to begin. The very first time, it runs a short, one-off
 "getting to know you" setup; it never asks again.
 
 ### Other ways to install it
@@ -243,7 +253,7 @@ You never have to sit and watch. A few simple commands, typed any time:
 
 | Command | What it does |
 | :-- | :-- |
-| `/studio` | Start a new project, or resume the current one. |
+| `/studio-start` | Start a new project, or resume the current one. |
 | `/studio-status` | A plain-English progress report. |
 | `/studio-pause` · `/studio-resume` | Pause, then pick up exactly where you left off. |
 | `/studio-stop` | Set everything down cleanly for the day. |
@@ -265,11 +275,20 @@ than overclaiming. There is no "100% secure" here — the exact protections and
 their honestly-disclosed limits are written up in full in
 [SECURITY.md](SECURITY.md), with nothing glossed over.
 
-**What has actually been tested, and what has not.** Every automatic check runs
-on macOS, Windows and Linux before anything ships: the installer runs end to
-end into a throwaway folder on all three, every downloadable package is opened
-and inspected, and the packaging is proved to produce identical files from
-identical source. What no automatic test can do is open Claude Desktop, VS Code
+**What has actually been tested, and what has not.** The automatic checks run on
+macOS, Windows and Linux before anything ships: the installer runs end to end into
+a throwaway folder, every downloadable **archive** is opened and checked for the
+files that make it work, and every archive is rebuilt from the same source and
+compared byte for byte.
+
+**The VS Code `.vsix` is the one exception, and this section exists to say so.**
+The checks confirm it was built; they do not open it and they do not rebuild it —
+the reproducibility comparison runs with `--skip-vsix` because packaging it shells
+out to another tool. (Corrected 2026-08-22, X184: this used to say "every
+downloadable package is opened and inspected, and the packaging is proved to
+produce identical files from identical source", and neither half covered the
+`.vsix`. In the one section whose stated purpose is to say how much is actually
+proven, an unqualified "every" was the wrong word.) What no automatic test can do is open Claude Desktop, VS Code
 or Antigravity and confirm they load what was installed — so
 [docs/INSTALL-VERIFY.md](docs/INSTALL-VERIFY.md) is a ten-minute set of steps you
 can follow yourself, and it says plainly which parts still need a person.

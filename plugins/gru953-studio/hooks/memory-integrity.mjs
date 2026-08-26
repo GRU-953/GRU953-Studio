@@ -35,6 +35,8 @@ import { fileURLToPath } from 'node:url';
 import {
   splitPipeCells,
   isDirectory,
+  // 2026-08-15: checkIndex reads through the shared reader now, not its own line walk.
+  parseTables,
   deEmphasise,
   SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
@@ -206,7 +208,22 @@ function checkFocus(devMemory, problems) {
 // 2026-07-19: a bare non-ASCII/Bangla filename with no slash (e.g. "নথি.md")
 // previously failed this heuristic and was silently skipped from the
 // stale-file check even when the target genuinely didn't exist.
-const LOOKS_LIKE_PATH_RE = /(^|\/)[^/\s]+\.[A-Za-z0-9]+$|\//;
+// 2026-08-15, finding X147 / memory-integrity D10 (reproduced). The stem was `[^/\s]+` — no
+// whitespace — so an index entry reading `Project Plan.md` was not recognised as a path and
+// its existence was never checked. Filenames with spaces are entirely ordinary, especially in
+// a memory folder a person writes by hand.
+//
+// The obvious widening is dangerous: simply allowing spaces makes ordinary prose look like a
+// filename. `in section 4.2`, `version 1.2`, `about 3.5 hours` and `it costs 4.99` all become
+// "paths", and every one would then be reported as a file that does not exist — a false alarm
+// on a healthy index, which is worse than the gap being fixed.
+//
+// The discriminator, measured across twelve realistic cells BEFORE this was written: a file
+// extension begins with a LETTER. `.md`, `.json`, `.txt` do; `.2`, `.5`, `.99` do not. That
+// one constraint separated every case correctly. The prose cells are held as controls in
+// hooks/test/repro/X147-path-with-space.mjs, so a future widening cannot quietly reintroduce
+// them, and so is the non-ASCII case the 2026-07-19 fix added.
+const LOOKS_LIKE_PATH_RE = /(^|\/)[^/]+\.[A-Za-z][A-Za-z0-9]{0,5}$|\//;
 // A markdown-link cell, `[Label](target)` — unwrapped to its target before
 // the path/existence test below (found the same day: a cell written this
 // way ends in ")", not the file extension, so it also fell through
@@ -247,28 +264,31 @@ function checkIndex(root, devMemory, problems) {
   const file = path.join(devMemory, 'INDEX.md');
   const text = read(file);
   if (text === null) return; // no structured index yet — nothing to validate
-  const lines = text.split(/\r?\n/);
-  let inTable = false;
-  let whereCol = -1;
-  // 2026-07-29 maintenance fix (audit finding 2): reset alongside whereCol
-  // itself, at both places whereCol is (re)computed per table — the fix below
-  // pushes one problem per TABLE, not one per data row.
-  let unrecognisedHeaderReported = false;
-  for (const line of lines) {
-    if (!/^\s*\|/.test(line)) {
-      inTable = false;
-      whereCol = -1;
-      unrecognisedHeaderReported = false;
-      continue;
-    }
-    const cells = splitPipeCells(line).map((c) => c.trim());
-    if (!inTable) {
-      inTable = true;
-      whereCol = cells.findIndex((c) => /^(file|path|where|location)$/i.test(deEmphasise(c)));
-      unrecognisedHeaderReported = false;
-      continue;
-    }
-    if (SEPARATOR_ROW_RE.test(line)) continue;
+  // 2026-08-15, finding X141 / memory-integrity D9 (High, reproduced). This function used to
+  // walk lines itself and enter table mode only on a line beginning with a pipe:
+  //
+  //     if (!/^\s*\|/.test(line)) { inTable = false; whereCol = -1; continue; }
+  //
+  // Outer pipes are OPTIONAL in GitHub-flavoured markdown — `What | Where` renders exactly
+  // as `| What | Where |` does — so an ordinary index written the second way was recognised
+  // in no respect at all, every row skipped, and the gate reported the index "internally
+  // consistent" while its entries pointed at files that do not exist. That is this gate's
+  // entire job.
+  //
+  // This was the THIRD private table parser found in one sweep, and the third with a fault
+  // the shared reader does not have. So the fix is a deletion: lib.mjs's parseTables() has
+  // recognised pipe-less tables since it was written, it is fence-aware as of today, and
+  // traceability-check was moved onto it this morning for the same reason.
+  //
+  // The per-table "no recognisable Where column" report is preserved exactly — a 2026-07-29
+  // fix made that a problem rather than a silent skip, and control E of the reproduction
+  // exists so this move cannot quietly undo it.
+  //
+  // Reproduction: hooks/test/repro/X141-index-pipeless-table.mjs.
+  for (const table of parseTables(text)) {
+    const whereCol = table.headerCells.findIndex((c) =>
+      /^(file|path|where|location)$/i.test(deEmphasise(c)),
+    );
     if (whereCol === -1) {
       // 2026-07-29 maintenance fix: this used to `continue` silently, so a
       // table whose header wasn't recognised (e.g. a genuine file/path/
@@ -284,12 +304,11 @@ function checkIndex(root, devMemory, problems) {
       // loop), so an unrecognised header emitted one identical sentence per
       // row instead of once per table. `unrecognisedHeaderReported` reports
       // it only the first time for this table.
-      if (!unrecognisedHeaderReported) {
-        problems.push(
-          'INDEX.md has a table with no recognisable file/path/where/location header column — its rows cannot be checked for stale references.',
-        );
-        unrecognisedHeaderReported = true;
-      }
+      // The 2026-07-29 de-duplication flag is gone with the private walk: this branch now
+      // runs once per TABLE by construction, which is what that flag was emulating.
+      problems.push(
+        'INDEX.md has a table with no recognisable file/path/where/location header column — its rows cannot be checked for stale references.',
+      );
       continue;
     }
     // 2026-07-29 maintenance fix (round 3, F1): the backtick strip alone
@@ -300,15 +319,46 @@ function checkIndex(root, devMemory, problems) {
     // failed LOOKS_LIKE_PATH_RE outright (needs the extension to end the
     // string) and silently skipped the check entirely. deEmphasise() strips
     // the emphasis the same way this file's own header-cell fix already does.
-    let where = deEmphasise((cells[whereCol] || '').replace(/^`|`$/g, '')).trim();
-    const mdLink = where.match(MD_LINK_RE);
-    if (mdLink) where = mdLink[2].trim();
-    if (!where || PLACEHOLDER_RE.test(where) || !LOOKS_LIKE_PATH_RE.test(where)) continue;
-    // Resolve relative to the project root; also accept a path already relative
-    // to Dev-Memory/ (a bare filename recorded in the index).
-    const candidates = [path.resolve(root, where), path.resolve(devMemory, where)];
-    if (!candidates.some((p) => fs.existsSync(p))) {
-      problems.push(`INDEX.md points at "${where}", which does not exist — a stale recall entry.`);
+    for (const row of table.rows) {
+      // 2026-08-16, finding X191: a row whose cell count disagrees with the header shifts every
+      // value along, so `cells[whereCol]` is another column's text or nothing at all. `where`
+      // then came out empty or unrecognisable and the `continue` below skipped the row without
+      // a word — the gate reporting the index consistent about a row it could not read.
+      // Reported instead, in the same words traceability-check.mjs already uses for its own
+      // tables, because a row that cannot be read is never evidence of health.
+      // 2026-08-22, X201, in two halves.
+      //
+      // FIRST, the message. `ragged` conflates a row with too MANY cells (a literal pipe shifted the
+      // values - untrustworthy, and "escape it as \\|" is the right advice) with one that has too FEW
+      // (legal GitHub-flavoured markdown, which fills the missing trailing cells as empty - nothing is
+      // shifted). Both got the pipe message, so half the time the user was sent looking for a defect
+      // that was not there, by something that had just blocked their Publish.
+      //
+      // SECOND, and this is the part that matters: a short row whose NEEDED column is present is not a
+      // problem at all and must not be blocked. Reproduced on this project’s own golden fixture -
+      // deleting one trailing Tags cell from a healthy INDEX.md row failed the gate, although the Where
+      // column it actually reads was sitting right there.
+      const shortButReadable = row.short && whereCol < row.cells.length;
+      if (row.ragged && !shortButReadable) {
+        problems.push(
+          row.short
+            ? `INDEX.md row "${row.raw}" is missing the "${table.headerCells[whereCol] || 'target'}" column (${row.cells.length} cells against a ${table.headerCells.length}-column header). A short row is legal markdown, but this gate needs that column to check the row’s target. Add the missing cell, or a trailing "|" for each empty one (X191, corrected X201).`
+            : `INDEX.md row "${row.raw}" has MORE cells than the header (${row.cells.length} of ${table.headerCells.length}), so its values line up against the WRONG columns and its target is never checked. A literal pipe inside a cell is the usual cause - write it as \\| (finding X191).`,
+        );
+        continue;
+      }
+      let where = deEmphasise((row.cells[whereCol] || '').replace(/^`|`$/g, '')).trim();
+      const mdLink = where.match(MD_LINK_RE);
+      if (mdLink) where = mdLink[2].trim();
+      if (!where || PLACEHOLDER_RE.test(where) || !LOOKS_LIKE_PATH_RE.test(where)) continue;
+      // Resolve relative to the project root; also accept a path already relative
+      // to Dev-Memory/ (a bare filename recorded in the index).
+      const candidates = [path.resolve(root, where), path.resolve(devMemory, where)];
+      if (!candidates.some((p) => fs.existsSync(p))) {
+        problems.push(
+          `INDEX.md points at "${where}", which does not exist — a stale recall entry.`,
+        );
+      }
     }
   }
 }
@@ -353,14 +403,60 @@ function checkGraph(devMemory, problems) {
   // bullet under an unrelated heading turned a correctly-BLOCKED dangling-link
   // case into a false "clean". Scoped to a Nodes/Graph section the same way the
   // link pass is scoped, below.
+  // 2026-08-15, finding X140 / memory-integrity D2 (High, reproduced). Both passes over this
+  // file scoped themselves with a LEVEL-AGNOSTIC match that reassigned the flag on every
+  // heading:
+  //
+  //     if (heading) { inNodes = /node/i.test(heading[1]); continue; }
+  //
+  // So a `### Phase 2` sub-heading INSIDE a correct `## Nodes` or `## Links` section switched
+  // checking off for the rest of the file — after the gate had already parsed and resolved
+  // real entries in that very section, so it demonstrably believed it had read the file.
+  // Nothing about the input looks wrong: the documented parent heading is present, and
+  // grouping a growing list by phase is ordinary maintenance on a file this plugin tells
+  // projects to keep growing.
+  //
+  // sectionScope() applies markdown's own nesting rule instead: a section ends at the next
+  // heading of the SAME or SHALLOWER level, and a deeper heading is a sub-heading that
+  // belongs to the section it sits inside. Reproduction:
+  // hooks/test/repro/X140-section-scope.mjs, whose control E proves a SIBLING heading still
+  // ends the section — otherwise this would trade a silent skip for a false alarm, with
+  // prose under a later heading parsed as data.
+  const sectionScope = (opensRe) => {
+    let open = false;
+    let level = 0;
+    return (line) => {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (!heading) return { isHeading: false, open };
+      const depth = heading[1].length;
+      if (opensRe.test(heading[2])) {
+        // 2026-08-16, finding X190: this used to set `level = depth` unconditionally, so a
+        // DEEPER sub-heading that happened to contain the section word — "### Implementation
+        // links" under "## Links" — became the new boundary at depth 3. The next sibling,
+        // "### Dependencies", is depth 3 and does not match, so it closed the section that
+        // "## Links" had opened, and everything below went unchecked in silence.
+        //
+        // The section's boundary is the depth of the heading that OPENED it. A matching
+        // sub-heading nested inside it is part of the section, not a new one; only a matching
+        // heading at the same depth or shallower re-anchors it.
+        if (!open || depth <= level) {
+          open = true;
+          level = depth;
+        }
+      } else if (open && depth <= level) {
+        open = false; // a sibling or shallower heading genuinely ends the section
+      }
+      return { isHeading: true, open };
+    };
+  };
+
   const nodeTypeVocabulary = loadNodeTypeVocabulary();
+  const nodeScope = sectionScope(/node/i);
   let inNodes = false;
   for (const line of lines) {
-    const heading = line.match(/^#{1,6}\s+(.*)$/);
-    if (heading) {
-      inNodes = /node/i.test(heading[1]);
-      continue;
-    }
+    const s = nodeScope(line);
+    inNodes = s.open;
+    if (s.isHeading) continue;
     if (!inNodes) continue;
     const m = line.match(NODE_DEF_RE);
     if (m) {
@@ -386,8 +482,30 @@ function checkGraph(devMemory, problems) {
   // ("- All links use verbs like implements and blocks") was parsed as a link and
   // its words flagged as undefined nodes (a spurious BLOCK the un-anchored form
   // introduced).
+  // 2026-08-15, finding X145 / memory-integrity D3 (reproduced). This required a BULLET
+  // marker, so a link written as an ordinary numbered list item — `1. T1 depends-on R99` — or
+  // as a table row — `| T1 | depends-on | R99 |` — matched nothing, was never validated, and a
+  // reference to a node that does not exist passed as "internally consistent". Both render
+  // identically to a reader; neither is exotic.
+  //
+  // Widening the marker is safe ONLY because of the 2026-07-21 fix directly above: the type
+  // token is constrained to the documented vocabulary. Before that, this pattern accepted any
+  // lowercase word and a prose bullet ("All links use verbs like implements and blocks") was
+  // parsed as a link with its words reported as undefined nodes. Prose does not carry a
+  // vocabulary word in exactly the second position, which is what keeps it out — control D of
+  // the reproduction holds that same sentence, numbered, so the protection is proven rather
+  // than assumed.
+  //
+  // The three accepted forms are: a bullet (`-` or `*`), a numbered item (`1.` or `1)`), and a
+  // table row, whose leading pipe and cell separators are treated as the marker and the gaps.
+  const linkVocabulary = loadLinkVocabulary().join('|');
   const LINK_RE = new RegExp(
-    `^\\s*[-*]\\s+(\\S+)\\s+(${loadLinkVocabulary().join('|')})\\s+(\\S+)`,
+    `^\\s*(?:[-*]|\\d+[.)])\\s+(\\S+)\\s+(${linkVocabulary})\\s+(\\S+)`,
+    'i',
+  );
+  // A table row states the same triple with pipes instead of spaces.
+  const LINK_TABLE_RE = new RegExp(
+    `^\\s*\\|\\s*([^|]+?)\\s*\\|\\s*(${linkVocabulary})\\s*\\|\\s*([^|]+?)\\s*\\|`,
     'i',
   );
   // 2026-07-26 further-pass audit fix (false-block, confirmed by execution).
@@ -400,14 +518,23 @@ function checkGraph(devMemory, problems) {
   // legitimately end in sentence punctuation, so trailing punctuation is
   // stripped from each captured id before checking it against `nodes`.
   const stripTrailingPunctuation = (s) => s.replace(/[.,;:!?)\]]+$/, '');
+  // 2026-08-15, finding X140 / memory-integrity D1 (Medium, reproduced). The links section
+  // was recognised only by the words "link" or "edge", so a list under `## Relationships` —
+  // the word the design's own prose uses, "their relationships as typed links" — was never
+  // checked at all, and a dangling reference beneath it passed as clean.
+  //
+  // The widening is ADDITIVE ONLY. No heading recognised today stops being recognised,
+  // because a narrowing change would turn files that ARE checked into files that are not —
+  // the very defect being fixed. In particular the existing quirk that "Knowledge" contains
+  // "edge", so `## Knowledge graph` enables link parsing, is deliberately left alone:
+  // tightening it with word boundaries would be a regression in the direction that matters.
+  const linkScope = sectionScope(/link|edge|relationship|relation|connection/i);
   for (const line of lines) {
-    const heading = line.match(/^#{1,6}\s+(.*)$/);
-    if (heading) {
-      inLinks = /link|edge/i.test(heading[1]);
-      continue;
-    }
+    const s = linkScope(line);
+    inLinks = s.open;
+    if (s.isHeading) continue;
     if (!inLinks) continue;
-    const m = line.match(LINK_RE);
+    const m = line.match(LINK_RE) || line.match(LINK_TABLE_RE);
     if (!m) continue;
     const [, rawSrc, type, rawDst] = m;
     const src = stripTrailingPunctuation(rawSrc);
@@ -416,6 +543,111 @@ function checkGraph(devMemory, problems) {
       problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${src}".`);
     if (!nodes.has(dst))
       problems.push(`GRAPH.md link "${src} ${type} ${dst}" references undefined node "${dst}".`);
+  }
+}
+
+// ---- X86: what recall actually covers, and what the index cannot see -------------
+//
+// Two different defects with two different answers. Coverage is a JUDGEMENT and is reported.
+// An unindexed file is a RULE and blocks: INDEX.md is the recall index by design — the dev-memory
+// skill has a session read it first — so a memory file absent from it cannot be recalled at all.
+// That is not a statistic, it is a file the product cannot see.
+function idsIn(text, re) {
+  return new Set([...String(text || '').matchAll(re)].map((m) => m[1]));
+}
+
+function measureRecallCoverage(devMemory) {
+  // 2026-08-24, X283 — X120's remaining residual, named by X12's adjudication as the SECOND
+  // same-class swallow in this file. `readOr` returned '' for any read failure, so a file that is
+  // absent, or present and unreadable, produced exactly the same figures as a file that is present
+  // and holds nothing: total 0, inGraph 0, percent null.
+  //
+  // Measured on the golden fixture, which has no LESSONS.md at all: the report said lessons total 0,
+  // percent null — indistinguishable from a LESSONS.md sitting there with no lessons written in it.
+  //
+  // That defeats the one thing this report exists for. X86 added it so "a clean verdict cannot be
+  // mistaken for a statement about recall quality", and a zero that cannot tell an empty file from a
+  // missing one is not a statement about recall quality either.
+  //
+  // THE VERDICT IS DELIBERATELY UNCHANGED. Coverage is reported, never enforced, and that stays true —
+  // this is not a new way to block. What changes is that every figure now says where it came from, so
+  // a reader can tell a real zero from a file nobody has written yet.
+  const readOr = (f) => {
+    try {
+      return { text: fs.readFileSync(path.join(devMemory, f), 'utf8'), source: 'read' };
+    } catch (e) {
+      return { text: '', source: e && e.code === 'ENOENT' ? 'absent' : 'unreadable' };
+    }
+  };
+  const graph = readOr('GRAPH.md');
+  const nodes = idsIn(graph.text, /^\s*[-*]?\s*\[([A-Za-z]+-?\d+)\]/gm);
+  const of = (read, re) => {
+    const ids = idsIn(read.text, re);
+    const inGraph = [...ids].filter((x) => nodes.has(x)).length;
+    return {
+      total: ids.size,
+      inGraph,
+      percent: ids.size === 0 ? null : Math.round((100 * inGraph) / ids.size),
+      source: read.source,
+    };
+  };
+  return {
+    graphNodes: nodes.size,
+    graphSource: graph.source,
+    tasks: of(readOr('PROGRESS.md'), /^\|\s*\**([A-Za-z]?T\d+)\**\s*\|/gm),
+    requirements: of(readOr('REQUIREMENTS.md'), /^\|\s*\**(R\d+)\**\s*\|/gm),
+    lessons: of(readOr('LESSONS.md'), /^\s*#{2,3}\s*(L\d+)\b/gm),
+    note:
+      'Reported, not enforced. A low percentage may be deliberate; it is shown so a clean verdict ' +
+      'cannot be mistaken for a statement about recall quality (finding X86). Each figure carries a ' +
+      '`source` of read, absent or unreadable, so a zero cannot be mistaken for a file nobody wrote ' +
+      '(finding X283).',
+  };
+}
+
+function checkIndexCoversFiles(devMemory, problems) {
+  // 2026-08-24, X281. The catch below used to `return` on the stated ground that "a missing INDEX.md
+  // is already reported by checkIndex". IT IS NOT. `checkIndex` opens with
+  // `if (text === null) return; // no structured index yet — nothing to validate`, so BOTH functions
+  // skipped and each was deferring to the other. Measured: a Dev-Memory holding seven memory files
+  // and no INDEX.md returned `{"status":"clean"}` with zero problems and exit 0 — the recall index the
+  // product says a session reads FIRST was entirely absent and the gate reported nothing wrong.
+  //
+  // Fourth time this project has found the same shape: absent input reading as a clean pass, after
+  // X113 (verify-progress), X115 (licence-scan) and X118 (docs-consistency). It was fixed in three
+  // gates and missed in the fourth.
+  //
+  // Reported only when there is something to index. An empty `Dev-Memory/` with no index is a project
+  // that has not started writing memory yet, not a broken one, and blocking that would be a false
+  // alarm on the most ordinary first-run state there is — which is how a gate earns the reputation
+  // that gets it switched off.
+  let onDisk;
+  try {
+    onDisk = fs.readdirSync(devMemory).filter((f) => f.endsWith('.md') && f !== 'INDEX.md');
+  } catch {
+    return; // the directory itself is unreadable; main() already reports that
+  }
+  let index;
+  try {
+    index = fs.readFileSync(path.join(devMemory, 'INDEX.md'), 'utf8');
+  } catch {
+    if (onDisk.length) {
+      problems.push(
+        `Dev-Memory/ holds ${onDisk.length} memory file(s) and there is no INDEX.md, so none of them ` +
+          'can be recalled. INDEX.md is the recall index a session reads first (see the dev-memory ' +
+          'skill), and without it the product cannot see its own memory (findings X86, X281).',
+      );
+    }
+    return;
+  }
+  for (const f of onDisk) {
+    if (!index.includes(f)) {
+      problems.push(
+        `Dev-Memory/${f} exists but INDEX.md does not name it, so nothing can recall it. INDEX.md ` +
+          'is the recall index a session reads first (see the dev-memory skill); a memory file ' +
+          'absent from it is invisible to the product (finding X86).',
+      );
+    }
   }
 }
 
@@ -440,10 +672,62 @@ function main() {
   checkIndex(root, devMemory, problems);
   checkGraph(devMemory, problems);
   checkFocus(devMemory, problems);
+  checkIndexCoversFiles(devMemory, problems);
+  const coverage = measureRecallCoverage(devMemory);
+
+  // 2026-08-24, X12 — the last part of its claim, and it needed X283's provenance to exist before it
+  // could be enforced at all. X12 says this gate "reports internally consistent for a file it could
+  // not read". An unreadable GRAPH.md or LESSONS.md already blocked, by paths that happen to throw;
+  // an unreadable PROGRESS.md or REQUIREMENTS.md returned CLEAN, with the reason "recall index and
+  // knowledge graph are internally consistent" — X12's wording almost verbatim.
+  //
+  // That asymmetry could not be defended. Reading GRAPH.md is this gate's job and reading PROGRESS.md
+  // is another gate's, but "could not read" is not a finding about whose job it is: it is a memory
+  // file the product cannot see. Every sibling that once treated unreadable input as a clean pass has
+  // been repaired for exactly this — X113, X115, X118, X281 — and this is the same rule reaching the
+  // last place it had not.
+  //
+  // ABSENT IS STILL FINE, and that distinction is what makes this safe rather than noisy. A
+  // Dev-Memory with no LESSONS.md is a project that has not written lessons yet: it reports `absent`
+  // and stays clean. Only a file that EXISTS and cannot be read blocks, which is never ordinary.
+  for (const [name, figure] of [
+    ['GRAPH.md', { source: coverage.graphSource }],
+    ['PROGRESS.md', coverage.tasks],
+    ['REQUIREMENTS.md', coverage.requirements],
+    ['LESSONS.md', coverage.lessons],
+  ]) {
+    if (figure && figure.source === 'unreadable') {
+      problems.push(
+        `Dev-Memory/${name} exists but could not be read, so the coverage figure reported for it ` +
+          'means nothing. A memory file the product cannot read is not a clean state — fix the file ' +
+          'or its permissions, or remove it if it was not meant to be there (finding X12).',
+      );
+    }
+  }
+
   if (problems.length === 0) {
     console.log(
       JSON.stringify(
-        { status: 'clean', reason: 'recall index and knowledge graph are internally consistent' },
+        {
+          status: 'clean',
+          // 2026-08-17, finding X86. This reason used to stand alone, and it is TRUE: the gate
+          // checks referential integrity — every link points at a node that exists — and nothing
+          // else. That is exactly why it misled. It never asked whether the graph COVERS the
+          // work, so recall degraded silently while the verdict read as assurance. Measured on
+          // this project's own memory at the time: 45% of tasks, 52% of requirements and 9% of
+          // lessons were in the graph, and the gate said clean.
+          //
+          // Coverage is DISCLOSED, never enforced. No honest threshold exists — 45% may be right
+          // for a project that graphs only its live work and wrong for one that graphs
+          // everything — and a gate blocking at an invented number would fail every project on
+          // day one and be switched off (L5). So the numbers sit beside the word "clean" and stop
+          // it implying something it never checked. Same remedy as X195, where content-check was
+          // made to admit what it had not verified.
+          reason:
+            'recall index and knowledge graph are internally consistent. Coverage of the graph is ' +
+            'REPORTED below, not enforced: a sparse graph is a choice, not a defect (finding X86)',
+          recallCoverage: coverage,
+        },
         null,
         2,
       ),

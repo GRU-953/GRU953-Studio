@@ -65,8 +65,14 @@ VS Code extension, `npm ci && npm run compile && npm run lint`) — see
 
 The plugin itself (`plugins/gru953-studio/`) has **zero third-party runtime
 dependencies** — Node's standard library only. That's a deliberate,
-mechanically-checked property (see `docs-consistency.mjs` and
-`licence-scan.mjs`), not an accident: it's what "no coding, no build step,
+mechanically-checked property — `docs-consistency.mjs` checks it, once on the
+plugin's own manifest (failing closed if that cannot be parsed) and once on
+vendored code and foreign file types — not an accident
+(2026-08-22, X185: this named `licence-scan.mjs` as a second checker of the
+property. It contains no zero-dependency check at all: its only match for the
+word is an unrelated comment about having "examined zero packages". Naming a file
+that does not perform a check makes the guarantee look twice as guarded as it is,
+and this same section already attributes it correctly twelve lines further down): it's what "no coding, no build step,
 just describe your app" can promise honestly. The three `clients/` bridges
 carry their own dev-only tooling (TypeScript, ESLint, `vsce`) to build and
 lint the VS Code extension — that's a deliberate exception, since none of it

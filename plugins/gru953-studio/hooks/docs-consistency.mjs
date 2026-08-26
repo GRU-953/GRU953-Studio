@@ -92,7 +92,48 @@ const agentNames = new Set(agentFiles.map((f) => f.replace(/\.md$/, '')));
 const skillCount = skillDirs.length;
 
 const allFiles = walk(repoRoot);
-const allMd = allFiles.filter((f) => f.endsWith('.md'));
+// 2026-08-17, finding X216 — the same live-versus-historical distinction X215 made for INV4,
+// in its sibling gate. This check exists to catch a STALE CLAIM: a live document telling a user
+// there are 7 skills when there are 37. A RECORD is the opposite case — a decision note saying
+// "4 agents, 7 skills, 1 command were edited" is counting what it touched, not asserting a total,
+// and a changelog describing the day a count changed must be free to name the old one.
+//
+// Caught on this project's own note: `2026-08-16-x214-remove-token-layer.md` was blocked for the
+// phrase "7 skills", written while listing the seven files updated that day. The only way to
+// satisfy the old rule was to stop recording what was done.
+//
+// Same categories as X215, stated once rather than exempted file by file: records, test material
+// and build output. Everything a user actually reads stays covered — X216's reproduction holds a
+// live README with a wrong count and requires it to BLOCK.
+// 2026-08-18, X225: the trailing `i` made `Dev-Memory/` also match the live shipped skill
+// directory `skills/dev-memory/`, so this gate skipped it too. Case-sensitive now, matching
+// scan.mjs's DEVMEMORY_RE. Exactly five files lose the exemption and all five are live product
+// files, measured before the change.
+const RECORD_OR_FIXTURE_RE = /(^|\/)(CHANGELOG\.md|AUDIT-[^/]*\.md)|(^|\/)Dev-Memory\//;
+
+// 2026-08-26, X365 — the sibling of X359, found by sweeping its class rather than by CI. The pattern
+// above is spelled with '/' and was handed `path.relative()` output, which emits `path.sep` — '\' on
+// win32. So on Windows `Dev-Memory\FINDINGS.md` and `docs\AUDIT-2026-08.md` lose an exemption they
+// have on every other platform, and this gate false-BLOCKS on every record in them, exactly as
+// repo-integrity.mjs did on the twelve tests CI caught. Demonstrated by calling the pattern directly
+// with both spellings, not by simulating the path module.
+//
+// It is dormant on CI only by accident: `Dev-Memory/` is gitignored so a clean runner has none, and
+// the AUDIT files happen to sit at the repository ROOT, where a single-segment path has no separator
+// to misspell. It would fire on the first Windows machine that did real development here — which is
+// the condition this project is actually for.
+//
+// `.split(path.sep).join('/')` and NOT `.replace(/\\/g, '/')`: a backslash is a legal POSIX filename
+// character, and an unconditional replace would hand a file genuinely named `a\b.md` an exemption it
+// never had. Normalise at the boundary, never widen the pattern.
+//
+// NOT applied at :149's `abs.startsWith(path.resolve(repoRoot, '.kilo') + path.sep)` — that one is
+// already correct, because `resolve` and `sep` agree with each other on every platform. Normalising
+// there would break it. The rule is about a relative path meeting a '/'-spelled pattern, not about
+// separators in general.
+const toPosix = (p) => p.split(path.sep).join('/');
+const repoRel = (f) => toPosix(path.relative(repoRoot, f));
+const allMd = allFiles.filter((f) => f.endsWith('.md') && !RECORD_OR_FIXTURE_RE.test(repoRel(f)));
 
 // Files that legitimately quote a stale or wrong number as EVIDENCE, not as
 // a live claim. AUDIT-2026-07.md IS the findings register — its own rows
@@ -210,9 +251,7 @@ for (const f of allMd) {
       if (isInHistoricalSection(historicalRanges, m.index)) continue;
       const n = parseInt(m[1], 10);
       if (n !== skillCount) {
-        fail(
-          `${path.relative(repoRoot, f)} states "${m[0]}" — the actual skill count is ${skillCount}`,
-        );
+        fail(`${repoRel(f)} states "${m[0]}" — the actual skill count is ${skillCount}`);
       }
     }
   }
@@ -300,7 +339,7 @@ if (actualStageCount === null) {
       const claimed = NUMBER_WORDS[m[1].toLowerCase()];
       if (claimed !== actualStageCount) {
         fail(
-          `${path.relative(repoRoot, f)} calls it a "${m[1]}-stage" lifecycle — studio/SKILL.md's own lifecycle line names ${actualStageCount} stages`,
+          `${repoRel(f)} calls it a "${m[1]}-stage" lifecycle — studio/SKILL.md's own lifecycle line names ${actualStageCount} stages`,
         );
       }
     }
@@ -431,7 +470,7 @@ for (const f of allMd) {
     if (mergedRoleNames.has(token)) continue;
     if (NON_ROLE_EXEMPTIONS.has(token)) continue;
     fail(
-      `${path.relative(repoRoot, f)} references \`${token}\`, which names no current agent, no merged-away role in ROSTER.md, and is not an exempted non-role term — a dangling specialist reference (finding 27's class)`,
+      `${repoRel(f)} references \`${token}\`, which names no current agent, no merged-away role in ROSTER.md, and is not an exempted non-role term — a dangling specialist reference (finding 27's class)`,
     );
   }
 }
@@ -446,25 +485,127 @@ for (const f of allMd) {
 // package.json is ever reintroduced with a real dependency while README
 // still makes this claim, that is a genuine regression of finding 29, not a
 // disclosed known state.
+// 2026-08-15, finding X106 (High, reproduced). This check used to read:
+//
+//     if (claimsZeroDependencies && hasRealDependency) fail(...)
+//
+// It fired only when BOTH held, so it did not check the zero-dependency property at
+// all — it checked whether README.md was LYING about the property. And the cheapest way
+// to stop lying is to stop claiming: delete the sentence and a real dependency passed
+// unnoticed, while CONTRIBUTING.md and the header comment of 18 shipped hooks went on
+// calling zero-dependency "a deliberate, mechanically-checked property".
+//
+// A guard that can be switched off by removing the sentence it guards is not a guard.
+// The property is a project rule, not a claim in one document, so it is now tested on
+// its own terms and README.md's wording is irrelevant to it.
+//
+// The swallowed parse error was the same mistake in a second form. Its comment read
+// "invalid JSON here is repo-integrity's / licence-scan's concern, not this gate's" —
+// and that was FALSE, checked rather than assumed: licence-scan.mjs reads the ROOT
+// package.json, never the plugin's own, and repo-integrity.mjs does not read
+// dependencies at all. So an unparseable manifest was reported by nobody, and this gate
+// treated "I could not read it" as "it is fine" — the exact inversion the project's own
+// C8 rule forbids. It now fails closed.
+//
+// Reproduction: hooks/test/repro/X106-disarmable-dependency-gate.mjs — five cases, three
+// of them controls.
+// Read once and keep: later checks in this file (the version cross-check at DC8, among
+// others) use README.md's text. Only the zero-dependency check stopped depending on it.
+const readmeText = read(path.join(repoRoot, 'README.md')) || '';
+
 const mcpPackageJsonRaw = read(path.join(pluginRoot, 'package.json'));
-let hasRealDependency = false;
 if (mcpPackageJsonRaw !== null) {
+  let mcpPackageJson = null;
   try {
-    const mcpPackageJson = JSON.parse(mcpPackageJsonRaw);
-    hasRealDependency = !!(
-      mcpPackageJson.dependencies && Object.keys(mcpPackageJson.dependencies).length > 0
-    );
+    mcpPackageJson = JSON.parse(mcpPackageJsonRaw);
   } catch {
-    /* invalid JSON here is repo-integrity's / licence-scan's concern, not this gate's */
+    mcpPackageJson = null;
+  }
+  if (mcpPackageJson === null) {
+    fail(
+      `plugins/gru953-studio/package.json exists but cannot be parsed, so the zero-dependency property cannot be verified — refusing to report it as satisfied (finding 29 / X106). A gate that cannot read its input must never claim its input is fine.`,
+    );
+  } else if (mcpPackageJson.dependencies && Object.keys(mcpPackageJson.dependencies).length > 0) {
+    fail(
+      `plugins/gru953-studio/package.json declares a runtime dependency, but zero third-party dependencies is a mechanically-checked property of this plugin, asserted in CONTRIBUTING.md and in 18 shipped hook headers — finding 29 has regressed (X106: this now fails regardless of what README.md claims)`,
+    );
   }
 }
-const readmeText = read(path.join(repoRoot, 'README.md')) || '';
-const claimsZeroDependencies =
-  /zero third-party code\s*\ndependencies|zero third-party code dependencies/i.test(readmeText);
-if (claimsZeroDependencies && hasRealDependency) {
-  fail(
-    `README.md claims "zero third-party code dependencies" but plugins/gru953-studio/package.json declares a real dependency — finding 29 has regressed`,
-  );
+
+// 2026-08-15, finding X109 (Medium, reproduced). The check above reads the manifest and
+// nothing else, so third-party code that is never DECLARED is never seen: a compiled
+// `.node`/`.dylib`, a bundled `node_modules/`, or a library pasted in as a `.js` file
+// all leave the manifest empty while CONTRIBUTING.md and 18 hook headers go on calling
+// zero third-party dependencies "a mechanically-checked property".
+//
+// WHY AN ALLOWLIST RATHER THAN A LIST OF BANNED EXTENSIONS. Looking for `.node`, `.so`,
+// `.dll` and friends is the exact failure mode this family of findings is about — a
+// check that only looks for what somebody thought of. X86 checked references but not
+// coverage; X99 checked the register's shape but never compared it with its source; X106
+// checked whether a sentence was honest rather than whether the rule held. So this is
+// inverted: the plugin ships markdown, stdlib-only ES modules, a little JSON and a
+// licence, and anything ELSE fails rather than passing unexamined.
+//
+// The cost is deliberate: a legitimately new file type makes this fail until someone
+// widens PERMITTED on purpose. That is the intended behaviour, and the message below
+// says exactly how — an over-strict gate nobody can understand is one that gets switched
+// off (lesson L5).
+//
+// NOT COVERED, and deliberately not half-covered: a dependency fetched over the network
+// at run time. `hooks/openrouter-models.mjs` legitimately uses Node's built-in fetch to
+// read a public model catalogue, so "this plugin never fetches anything" is NOT a
+// property this product has and must not be asserted as one. Disclosed in RESIDUALS.md.
+//
+// Reproduction: hooks/test/repro/X109-vendored-dependency.mjs — five cases, two controls,
+// one of which is the real tree.
+const PERMITTED_EXTENSIONS = new Set(['.md', '.mjs', '.json']);
+const PERMITTED_FILENAMES = new Set(['LICENSE', 'LICENCE']);
+const VENDOR_DIRECTORY_NAMES = new Set(['node_modules', 'vendor', 'third_party', 'third-party']);
+
+function collectForeignArtefacts(dir, rel, foreign, vendorDirs) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    // Unreadable directory: report it rather than treating it as empty. A gate that
+    // cannot read its input must never claim its input is fine (the C8 rule, and the
+    // second half of X106).
+    foreign.push(`${rel || '.'} (unreadable — cannot verify its contents)`);
+    return;
+  }
+  for (const entry of entries) {
+    const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (VENDOR_DIRECTORY_NAMES.has(entry.name)) {
+        vendorDirs.push(childRel);
+        continue; // named explicitly; no need to list every file inside it
+      }
+      collectForeignArtefacts(path.join(dir, entry.name), childRel, foreign, vendorDirs);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (PERMITTED_FILENAMES.has(entry.name)) continue;
+    const ext = path.extname(entry.name);
+    if (PERMITTED_EXTENSIONS.has(ext)) continue;
+    foreign.push(childRel);
+  }
+}
+
+{
+  const foreign = [];
+  const vendorDirs = [];
+  collectForeignArtefacts(pluginRoot, '', foreign, vendorDirs);
+  if (vendorDirs.length > 0) {
+    fail(
+      `a vendored-dependency directory exists inside the plugin: ${vendorDirs.join(', ')} — third-party code copied into the tree is still a third-party dependency, and this plugin's zero-dependency property is asserted in CONTRIBUTING.md and in 18 shipped hook headers (X109)`,
+    );
+  }
+  if (foreign.length > 0) {
+    const shown = foreign.slice(0, 10).join(', ');
+    fail(
+      `the plugin tree contains ${foreign.length} file(s) that are not markdown, ES modules, JSON or a licence: ${shown}${foreign.length > 10 ? ', …' : ''} — this plugin ships only those types, so anything else may be vendored third-party code, which its zero-dependency property forbids (X109). If the file is legitimate, add its extension to PERMITTED_EXTENSIONS in this file, deliberately and in the same commit that adds the file`,
+    );
+  }
 }
 
 // ---- DC7: dangling cross-file "see `path`" references (2026-07-27 R1 Phase 1.3, new) --
@@ -547,7 +688,7 @@ for (const f of allMd) {
     if (!looksLikePathRef(token)) continue;
     if (!refResolves(token, f)) {
       fail(
-        `${path.relative(repoRoot, f)} says "see \`${token}\`", but no file at that path exists (checked the repo root, the plugin root, agents/, skills/, hooks/, and commands/) — a dangling cross-reference`,
+        `${repoRel(f)} says "see \`${token}\`", but no file at that path exists (checked the repo root, the plugin root, agents/, skills/, hooks/, and commands/) — a dangling cross-reference`,
       );
     }
   }
@@ -618,6 +759,20 @@ if (indexHtmlText !== null) {
 // heading is unambiguous. README.md's "Latest version: X.Y.Z" line is
 // included because it is the version a reader sees before anything else.
 const changelogText = read(path.join(repoRoot, 'CHANGELOG.md'));
+
+// 2026-08-15, finding X118 (High, reproduced). Everything below is inside
+// `if (changelogText !== null)`, so deleting or renaming CHANGELOG.md did not merely
+// skip one check — it silently switched off every version cross-check in this gate at
+// once. The gate went on reporting `clean`, having verified nothing about versions.
+//
+// This is the same rule as X113 and X115: a gate that cannot read its input must never
+// claim its input is fine. The absence is now a failure in its own right, so the block
+// below is skipped only when it has already been reported.
+if (changelogText === null) {
+  fail(
+    `CHANGELOG.md is missing or unreadable, so every version cross-check in this gate is silently skipped — the release version, the manifests and the docs go unverified against each other (finding X118)`,
+  );
+}
 if (changelogText !== null) {
   const newest = changelogText.match(/^##\s+v?(\d+\.\d+\.\d+)\b/m);
   if (!newest) {

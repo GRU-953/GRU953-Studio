@@ -45,6 +45,14 @@
 // a two-field check. Checking the whole map fails safe: a new paid dimension
 // makes a model drop OUT of the free list rather than quietly stay in it.
 //
+// 2026-08-22, X242: that last sentence was only HALF true and is now made true. Checking the whole
+// map checked only the keys an entry chose to DECLARE, so an entry declaring a single zero `prompt`
+// read as free whatever it charged on keys it omitted - the exact opposite of the "absent price
+// information means unknown" rule stated a few lines below. `prompt` and `completion` must now be
+// present as well as zero. Nobody had named this; it was found while fixing the prefix-parse defect
+// in the same function, which is the argument for reading a whole claim rather than the clause one
+// came for.
+//
 // Usage:
 //   node openrouter-models.mjs                      # free models, table
 //   node openrouter-models.mjs --search coder       # free models matching text
@@ -56,6 +64,8 @@
 // error). Exit 1 = could not reach or read the catalogue.
 
 import process from 'node:process';
+import { realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 export const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
@@ -71,15 +81,44 @@ export const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
  *    same reason.
  *  - Every key is checked, not a known subset (see the header note).
  */
+// 2026-08-22, X242: a price counts as zero only if the WHOLE value is a number that equals zero.
+// This used to be `parseFloat(v)`, which is a PREFIX parser: it reads as far as it can and discards
+// the rest, so "0abc" became 0 and the model was reported free. The values that actually did this
+// are worth naming, because they are not all silly - "0,000003" is three millionths written with a
+// decimal comma, the ordinary spelling across most of Europe, and it read as FREE. So did "0x5",
+// "0 dollars", the empty string, and the array [0] (String([0]) is "0").
+//
+// The docstring below already said "A value that does not parse as a number is treated as not-free",
+// so the code contradicted its own stated rule rather than lacking one.
+function zeroPrice(v) {
+  if (typeof v === 'number') return Number.isFinite(v) && v === 0;
+  if (typeof v !== 'string') return false; // arrays, objects, booleans, null - all "unknown"
+  const t = v.trim();
+  if (t === '') return false;
+  // Whole-string decimal or exponent form only. No hex, no thousands separators, no units, no
+  // decimal comma - any of which means this is not a value we understand, and "not understood"
+  // must never be shown to a non-technical user as "free".
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(t)) return false;
+  return Number(t) === 0;
+}
+
+// The dimensions OpenRouter has always returned for every entry. Requiring them to be PRESENT is
+// what makes the header's "fails safe" claim true: an entry that declares only one zero key used to
+// read free no matter what it charged on keys it omitted, which is the opposite of the "absent price
+// information means unknown" rule stated in the same comment. Disclosed residual: if OpenRouter ever
+// stops returning one of these, genuinely free models will drop OUT of the free list. That is the
+// intended direction of failure - the list gets shorter, never wrongly longer.
+const REQUIRED_PRICE_KEYS = ['prompt', 'completion'];
+
 export function isFreeModel(model) {
   const pricing = model && model.pricing;
-  if (!pricing || typeof pricing !== 'object') return false;
-  const values = Object.values(pricing);
-  if (values.length === 0) return false;
-  return values.every((v) => {
-    const n = parseFloat(v);
-    return Number.isFinite(n) && n === 0;
-  });
+  if (!pricing || typeof pricing !== 'object' || Array.isArray(pricing)) return false;
+  const keys = Object.keys(pricing);
+  if (keys.length === 0) return false;
+  if (!REQUIRED_PRICE_KEYS.every((k) => Object.prototype.hasOwnProperty.call(pricing, k))) {
+    return false;
+  }
+  return Object.values(pricing).every(zeroPrice);
 }
 
 /** Case-insensitive match across the fields a person would actually search by. */
@@ -99,7 +138,18 @@ export function matchesSearch(model, term) {
  * (an unstable list looks like the catalogue changed when it did not).
  */
 export function selectModels(models, { search = '', all = false, limit = 0 } = {}) {
-  let out = Array.isArray(models) ? models.slice() : [];
+  // 2026-08-22, X250: catalogue entries are third-party DATA and were passed straight into the
+  // sort comparator, so a single `null` in `data` produced a raw Node stack trace —
+  // "TypeError: Cannot read properties of null (reading 'context_length')" — two lines below a
+  // docstring promising "Never a raw stack trace: this output reaches a non-technical user".
+  // Filtered at the source rather than wrapped in another try/catch, so every consumer of
+  // selectModels benefits and the fix cannot be bypassed by a new call path.
+  // `!Array.isArray(m)` is not decoration: `typeof [] === 'object'`, so the first version of this
+  // filter let a bare array through and it reached the renderer as a model with no id. Caught by
+  // this fix's own reproduction on the very first run.
+  let out = (Array.isArray(models) ? models : []).filter(
+    (m) => m && typeof m === 'object' && !Array.isArray(m),
+  );
   if (!all) out = out.filter(isFreeModel);
   if (search) out = out.filter((m) => matchesSearch(m, search));
   out.sort(
@@ -118,6 +168,20 @@ function humanContext(n) {
   return String(n);
 }
 
+// 2026-08-22, X242: catalogue text is third-party data and reaches two places a person or a model
+// reads - the padded table, and the --json output that `commands/studio-models.md` feeds to the
+// assistant. A newline in an `id` used to forge an extra table row, which could read "free" beside a
+// paid model. JSON.stringify escapes newlines, so the --json path was cleared by an earlier pass,
+// but escaping is not sanitising: the raw text still arrived in the assistant's context while
+// SECURITY.md promises the catalogue is "treated as DATA and never as an instruction". One helper,
+// applied on both paths, so the two cannot drift apart.
+export function safeText(v) {
+  return String(v == null ? '' : v)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .replace(/\r\n?|\n/g, ' ')
+    .trim();
+}
+
 export function formatTable(models, { all = false } = {}) {
   if (models.length === 0) {
     return all
@@ -125,7 +189,7 @@ export function formatTable(models, { all = false } = {}) {
       : 'No FREE models on OpenRouter matched that search. Try a different word, or pass --all to include paid models (which cost money to use).';
   }
   const rows = models.map((m) => ({
-    id: String(m.id),
+    id: safeText(m.id),
     ctx: humanContext(m.context_length),
     cost: isFreeModel(m) ? 'free' : 'paid',
   }));
@@ -158,7 +222,22 @@ export async function fetchModels({
   }
   let response;
   try {
-    response = await fetchImpl(url, { headers: { accept: 'application/json' } });
+    // 2026-08-22, X250: this had no timeout and no redirect guard. It is the plugin's ONLY outbound
+    // call, and nothing above it supplies either: this file is not a registered hook, so it gets none
+    // of hooks.json's `timeout: 20`; `commands/studio-models.md` runs a bare `node …`; and
+    // `clients/cli/src/index.js` awaits `mod.main(argv)` with no timer. So a stalled connection hung
+    // the command with no output and nothing to interrupt but Ctrl-C.
+    //
+    // `redirect: 'error'` because the catalogue URL is fixed and public: a redirect away from it
+    // means something between the user and OpenRouter has replaced the response, which is precisely
+    // the captive-portal case the JSON-parse error below already warns about. Failing is the right
+    // answer, and the existing catch turns both into the plain-English "Could not reach OpenRouter …
+    // nothing was changed" message, so no new user-facing text is needed.
+    response = await fetchImpl(url, {
+      headers: { accept: 'application/json' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000),
+    });
   } catch (e) {
     throw new Error(
       `Could not reach OpenRouter to look up its models (${e && e.message ? e.message : String(e)}). Check your internet connection and try again — nothing was changed.`,
@@ -181,6 +260,22 @@ export async function fetchModels({
   if (!body || !Array.isArray(body.data)) {
     throw new Error(
       "OpenRouter's model list did not have the expected shape (no `data` list). Their API may have changed — re-check https://openrouter.ai/docs before relying on this.",
+    );
+  }
+  // 2026-08-22, X242: an empty or truncated catalogue used to be reported as `"status": "ok"` with
+  // exit 0 and `"totalInCatalogue": 0`, discarding the response's own contradicting count. This
+  // file's header assigns exit 1 to "could not reach or read the catalogue", and an empty catalogue
+  // is exactly that: OpenRouter has hundreds of models, so zero is a failed read and not an answer.
+  // An empty FILTERED result is a different thing and stays a success, because that IS an answer.
+  if (body.data.length === 0) {
+    throw new Error(
+      "OpenRouter's model list came back empty. That is not a real answer — the catalogue always has hundreds of models — so something between you and OpenRouter truncated the reply. Nothing was changed; try again in a few minutes.",
+    );
+  }
+  const declared = Number(body.total_count);
+  if (Number.isFinite(declared) && declared > 0 && declared !== body.data.length) {
+    throw new Error(
+      `OpenRouter's reply contradicts itself: it says the catalogue holds ${declared} models but only sent ${body.data.length}. A partial list would make "no free model matched" untrue, so nothing is reported from it. Try again in a few minutes.`,
     );
   }
   return body.data;
@@ -210,19 +305,32 @@ export async function main(argv = process.argv.slice(2), { fetchImpl } = {}) {
     console.error(`GRU953-Studio: ${e.message}`);
     return 1;
   }
-  const selected = selectModels(models, opts);
+  // 2026-08-22, X250: the counts below used `models.length` — the raw length of whatever `data`
+  // contained. With a malformed entry in it, the summary said "OpenRouter currently lists 4 models"
+  // when three of the four were `null`, `42` and a bare string. Since selectModels now discards
+  // non-objects, counting the same way keeps the summary and the table talking about the same
+  // things. Found while testing the malformed-entry fix, not reported by anyone.
+  const valid = (Array.isArray(models) ? models : []).filter(
+    (m) => m && typeof m === 'object' && !Array.isArray(m),
+  );
+  const selected = selectModels(valid, opts);
   if (opts.json) {
     console.log(
       JSON.stringify(
         {
           status: 'ok',
-          totalInCatalogue: models.length,
-          freeInCatalogue: models.filter(isFreeModel).length,
+          totalInCatalogue: valid.length,
+          freeInCatalogue: valid.filter(isFreeModel).length,
           shown: selected.length,
           freeOnly: !opts.all,
           models: selected.map((m) => ({
-            id: m.id,
-            name: m.name,
+            // Sanitised, not merely escaped (X242). `commands/studio-models.md` feeds this JSON
+            // to the assistant, so these two fields are third-party text arriving in a model's
+            // context; SECURITY.md promises the catalogue is treated as data and never as an
+            // instruction, and stripping the control characters that could restructure what the
+            // model sees is part of keeping that promise.
+            id: safeText(m.id),
+            name: safeText(m.name),
             contextLength: m.context_length,
             free: isFreeModel(m),
           })),
@@ -234,10 +342,10 @@ export async function main(argv = process.argv.slice(2), { fetchImpl } = {}) {
     return 0;
   }
   console.log(formatTable(selected, opts));
-  const freeCount = models.filter(isFreeModel).length;
+  const freeCount = valid.filter(isFreeModel).length;
   console.log('');
   console.log(
-    `OpenRouter currently lists ${models.length} models, ${freeCount} of them free to use.` +
+    `OpenRouter currently lists ${valid.length} models, ${freeCount} of them free to use.` +
       (opts.all
         ? ' Models marked "paid" charge real money per use — GRU953-Studio always asks before choosing one.'
         : ' Only the free ones are shown. Pass --all to see paid models too.'),
@@ -245,11 +353,25 @@ export async function main(argv = process.argv.slice(2), { fetchImpl } = {}) {
   return 0;
 }
 
-// Run only when invoked directly, so the functions above stay importable by
-// the offline test suite. Compared on the resolved script path rather than with
-// import.meta.main, which is newer than the Node floor this repo supports.
-const invokedDirectly =
-  process.argv[1] && import.meta.url.endsWith(process.argv[1].split(/[/\\]/).pop());
+// Run only when invoked directly, so the functions above stay importable by the offline test suite.
+// `import.meta.main` is newer than the Node floor this repo supports, so it is not used.
+//
+// 2026-08-22, X250: this compared a BASENAME SUFFIX —
+// `import.meta.url.endsWith(process.argv[1].split(/[/\\]/).pop())` — which is true for any entry
+// point whose whole filename is a suffix of "openrouter-models.mjs": models.mjs, r-models.mjs, s.mjs,
+// els.mjs. Demonstrated with a stubbed fetch: a file named `models.mjs` that merely imported this
+// module fired the request and printed an entire model listing nobody asked for. For the plugin's one
+// network call, "am I the entry point" has to be answered by comparing the RESOLVED FULL PATH.
+const invokedDirectly = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    // argv[1] unreadable (deleted, or a virtual entry point): treat as not-direct. Standing aside is
+    // the safe default for a module whose direct-run branch makes a network request.
+    return false;
+  }
+})();
 if (invokedDirectly) {
   process.exitCode = await main();
 }

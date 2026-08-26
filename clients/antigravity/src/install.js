@@ -15,7 +15,9 @@
 //     Note `.agents/PLUGINS/`, not `.agents/skills/` — the old target was one
 //     level and one concept off, with no plugin.json anywhere, so nothing
 //     identified it as a plugin.
-//   * There is NO `agents/` or `commands/` component. The 38 specialists
+//   * Antigravity DOES have a separate-agent concept — corrected 2026-08-22, finding X43. This project's own primary-source dossier (`sandbox-tools/research/06-peers-ide-agents.md`, fetched 2026-08-15 from the vendor's docs) records that custom subagents are user-definable Markdown files with YAML frontmatter, introduced in CLI v1.1.6 on 2026-07-24 — BEFORE the 2026-08-10 rewrite that asserted the opposite — and that a bundled plugin's subagents are discovered at `plugins/<plugin_name>/agents/`, which is exactly the shape this installer creates. So the roster COULD be installed as real subagents. It is not, today, because nobody has built that — not because the platform lacks the concept. Installing 38 subagents into someone's Antigravity is a behaviour change and the owner's call; stating the truth is not. (Dossier is 7 days old and this machine has no network, so it is cited as of its fetch date rather than as today's vendor state.)
+//
+//   * No `agents/` or `commands/` component is installed TODAY. The 38 specialists
 //     therefore cannot be installed here as separate subagents; they are
 //     projected into a generated `rules/` file (see buildRosterRule) that tells
 //     Antigravity to adopt each role itself. Shipping an `agents/` directory
@@ -129,13 +131,22 @@ function installForAntigravity(options = {}) {
     } catch {
         /* version is cosmetic here; a missing one must not stop the install */
     }
+    // 2026-08-22, X253: these three writes are unconditional, and the message said only
+    // "wrote …" whether the file was new or replaced — while `skills/` beside them printed
+    // "already present … left as they are". So one run could tell the user its skills had been
+    // left alone in the same breath as silently replacing a rules file they had edited. The
+    // writes are UNCHANGED: nothing that is written today stops being written, because these
+    // three are generated projections of the plugin and a stale copy is worse than a replaced
+    // one. What changes is that a replacement now says it is a replacement.
     try {
+        const pluginJsonPath = path.join(target, 'plugin.json');
+        const replacing = fs.existsSync(pluginJsonPath);
         fs.writeFileSync(
-            path.join(target, 'plugin.json'),
+            pluginJsonPath,
             JSON.stringify({ name: PLUGIN_DIR_NAME, version }, null, 2) + '\n',
             'utf8',
         );
-        steps.push('wrote plugin.json');
+        steps.push(replacing ? 'replaced plugin.json' : 'wrote plugin.json');
     } catch (e) {
         errors.push(`Could not write plugin.json: ${e.message}`);
     }
@@ -158,15 +169,25 @@ function installForAntigravity(options = {}) {
         fs.mkdirSync(rulesTarget, { recursive: true });
         const roster = buildRosterRule(pluginSourceDir);
         if (roster) {
-            fs.writeFileSync(path.join(rulesTarget, 'gru953-roster.md'), roster, 'utf8');
-            steps.push('wrote rules/gru953-roster.md');
+            const rosterPath = path.join(rulesTarget, 'gru953-roster.md');
+            const replacingRoster = fs.existsSync(rosterPath);
+            fs.writeFileSync(rosterPath, roster, 'utf8');
+            steps.push(
+                replacingRoster ? 'replaced rules/gru953-roster.md' : 'wrote rules/gru953-roster.md',
+            );
         } else {
             errors.push("Could not read the specialist roster from the plugin's agents/ directory.");
         }
         const charterSource = path.join(pluginSourceDir, 'skills', 'operating-charter', 'SKILL.md');
         if (fs.existsSync(charterSource)) {
-            fs.copyFileSync(charterSource, path.join(rulesTarget, 'gru953-operating-charter.md'));
-            steps.push('wrote rules/gru953-operating-charter.md');
+            const charterPath = path.join(rulesTarget, 'gru953-operating-charter.md');
+            const replacingCharter = fs.existsSync(charterPath);
+            fs.copyFileSync(charterSource, charterPath);
+            steps.push(
+                replacingCharter
+                    ? 'replaced rules/gru953-operating-charter.md'
+                    : 'wrote rules/gru953-operating-charter.md',
+            );
         } else {
             errors.push(`Could not find the operating charter at ${charterSource}.`);
         }

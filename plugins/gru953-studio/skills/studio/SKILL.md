@@ -6,7 +6,7 @@ description: >-
   working, tested, privately-published MVP. Activate whenever the user's
   message starts with "[" and ends with "]" (e.g. "[ a simple expense
   tracker ]"), whenever they say "studio", "GRU953-Studio", "build my
-  idea", "build my app", or "make me an app", or when they run /studio —
+  idea", "build my app", or "make me an app", or when they run /studio-start —
   and to resume a project when a Dev-Memory folder exists in the working
   directory.
 ---
@@ -113,6 +113,17 @@ like instead, rather than forcing a fit.
    your first message, before asking anything, so they always know where things
    stood.
 3. If it does not exist: this is a new project — start Brainstorm.
+4. **The first time you create `Dev-Memory/`, add `Dev-Memory/` to the project's
+   `.gitignore` before writing any file into it — create `.gitignore` if there
+   isn't one (2026-08-23, X274).** This skill had never mentioned `.gitignore`
+   at all, and a measured real build created nine Dev-Memory files and three
+   decision records without one. The rule existed in `dev-memory`'s SKILL and in
+   `memory-keeper.md` rule 5, both as a POLICY under a privacy heading rather
+   than as a step in the flow — and this skill is the flow. Nothing leaked,
+   because `hooks/scan.mjs` refuses any push whose file set contains a
+   `Dev-Memory/` path; but an un-ignored folder is one ordinary `git add -A`
+   from being staged, and then the product's own guard blocks the owner's push
+   and a non-technical user cannot clear it without `git rm --cached`.
 
 Before starting any task in any stage, apply the `focus-guard` drift check: a
 task must trace to a confirmed requirement (`OBJECTIVE.md`/`REQUIREMENTS.md`)
@@ -197,6 +208,7 @@ not size (2026-07-11 v2.0.0):
 | An AI/LLM feature | `ai-developer` (any Tier — owns the prompt, the integration, the guardrails, and a small repeatable quality check) |
 | An AI/LLM feature | `responsible-ai-reviewer` (any Tier — an independent fairness/harm/transparency/over-reliance pass; 2026-07-25 audit fix: extended to all Tiers so no AI feature ships without independent review) |
 | A user interface | `accessibility-specialist` (any Tier); `ux-designer` (Standard+) |
+| A brand kit, or a build that will carry a logo, icon, wordmark or app name | `brand-guardian` (any Tier — runs the `brand-kit` intake first, then `brand-compliance` and `brand-assets`; 2026-08-25, Layer 4) |
 | Storing data beyond a session | `data-engineer` (Standard+) |
 | Money, logins, or personal data | `security-compliance-auditor`'s privacy review (personal-data minimisation, retention, consent, a plain notice) |
 | Hosting, packaging, or a deploy pipeline | `devops-engineer` (Standard+) |
@@ -239,7 +251,7 @@ specialists, and v4.1.0 added four more language specialists (Swift, C#, Go,
 TypeScript) plus a five-strong content team — reaching 38, each a
 distinct-ecosystem or distinct-discipline implementer) is
 guarded by `scope-guardian` running
-`node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs"` against the baseline in
+`node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .` against the baseline in
 `Dev-Memory/decisions/*roster*.md` for a built project, falling back to the
 committed `plugins/gru953-studio/ROSTER.md` for the product repo itself — do
 not skip scope-guardian on Standard/Complex Tier. Growing the roster past 38
@@ -285,12 +297,28 @@ phase's own detailed micro-task breakdown is planned in full and approved once,
 in a single gate, right before that phase is built — never per task
 (2026-07-26).
 
+**What a specialist hands back (2026-08-22, X46).** A condensed result — the
+deliverable, the exact command run and its real output, one plain-English line —
+never the working that produced it. See `agents/project-lead.md` for why: filling
+the coordinator's own context with what its specialists returned is the documented
+failure mode of running several at once, and it degrades silently. Nothing
+measures this yet; the convention did not exist at all before this date.
+
 **Per-phase backup (2026-07-19, `checkpoint-commit` skill).** At the end of each
 build phase, once its `quality-gate` is clean and the secret/licence scans pass,
 take a checkpoint: commit the app's code (never `Dev-Memory/`) to a **private**
-work branch and push. This is a progressive offsite backup, not the Publish —
-it is authorised by a distinct private-only checkpoint token and can never make
-anything public. The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
+work branch and push. This is a progressive offsite backup **of the app's code
+only, and only when the user enabled it at the warframe gate and GitHub is
+connected** — not the Publish. `Dev-Memory/` is never included (2026-08-23, X182).
+(2026-08-22, X186-adjacent: this sentence used to end "it is authorised by a
+distinct private-only checkpoint token and can never make anything public".
+Both halves have been untrue since X214 removed the token layer on 2026-08-16 —
+there is no checkpoint token, and no code enforces private-only. What actually
+holds: `hooks/scan.mjs` refuses a push that would ship secrets or `Dev-Memory/`,
+Claude Code's own permission prompt is the authorisation, and changing a
+repository's visibility is a separate act nobody here performs. X226 corrected
+this exact wording inside `checkpoint-commit/SKILL.md` and did not reach this
+file.) The final Publish stays the separate, clean, confirmed release. On Tiny Tier no separate `reviewer` is woken (2026-07-12
 fix: this was previously only stated in `builder.md`/`tester.md`, not here
 in the one file the coordinator itself follows) — the tester's own checks
 stand in for the Review stage, and there is no separate pre-Publish

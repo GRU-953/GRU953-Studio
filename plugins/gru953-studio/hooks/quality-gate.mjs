@@ -41,6 +41,9 @@ import {
   deEmphasise,
   isDirectory,
   PLACEHOLDER_RE,
+  // X143: evidence is judged by this, which also catches a placeholder with an excuse
+  // appended ("tbd - will attach after the demo"), while leaving real sentences alone.
+  isPlaceholderEvidence,
   parseTables,
 } from './lib.mjs';
 
@@ -65,7 +68,21 @@ const REQUIRED = [
   { key: 'review', match: /review/i, label: 'independent code review' },
   {
     key: 'security',
-    match: /secur|secret|licen[cs]e|privac|vuln/i,
+    // 2026-08-25, from the X138-X173 band (re-issued as X318). `Penetration testing` satisfied the
+    // TESTS dimension, because that matcher is `/\btest/i` and "testing" begins with "test" — so a
+    // Definition of Done could pass with a pentest report and NO unit-test run recorded anywhere.
+    // Measured: with an accessibility row present and `Penetration testing` the only test-shaped row,
+    // the gate returned clean.
+    //
+    // Fixed by claiming the phrase for the dimension it belongs to rather than by tightening the
+    // tests matcher. X119 made the FIRST keyword by POSITION win, so `penetrat` at index 0 beats
+    // `test` at index 12 and the row lands in security — where a pentest report is real evidence.
+    // Enumerating the security-testing phrases is narrower than trying to define what "test" may not
+    // touch (L15: enumerate, never sweep).
+    //
+    // Residual, stated: `load testing` or `smoke testing` still satisfy TESTS. That is defensible —
+    // both are test runs — and is not the defect this closes.
+    match: /secur|secret|licen[cs]e|privac|vuln|penetrat|pentest|threat model/i,
     label: 'security / licence / privacy clean',
   },
   { key: 'accessibility', match: /access/i, label: 'accessibility (or N/A with a reason)' },
@@ -213,7 +230,19 @@ function parseRows(text) {
     const find = (re) => table.headerCells.findIndex((c) => re.test(deEmphasise(c)));
     const idx = {
       item: find(/^(item|check|dimension|requirement|criterion|gate)$/i),
-      status: find(/^status$/i),
+      // 2026-08-15, finding X143 / quality-gate D1 (High, reproduced). This was
+      // `find(/^status$/i)` and nothing else, so a second Definition-of-Done table headed
+      // `| Item | Result | Evidence |` — recording a re-run that FAILED — had no column this
+      // gate calls Status, was skipped entirely, and the gate reported clean. The first
+      // table's presence suppressed the "no Definition-of-Done table" failure, so nothing was
+      // said at all.
+      //
+      // That is the X122 shape one gate along: a register nobody can read, sitting beside one
+      // that can. And the answer is the same one X122 arrived at the hard way — RECOGNISE the
+      // ordinary word rather than add a heuristic about what a table looks like. A synonym
+      // list cannot raise a false alarm: a table with none of these columns is still not a
+      // Definition-of-Done table and is still left alone.
+      status: find(/^(status|result|outcome|verdict|state)$/i),
       evidence: find(/^(evidence|proof|notes?|verified|command)$/i),
     };
     if (idx.item === -1 || idx.status === -1) continue; // not a Definition-of-Done shape
@@ -223,20 +252,60 @@ function parseRows(text) {
   // Every candidate counts. No heuristic, no position rule — see finding F1 above.
   const rows = [];
   const ragged = [];
+  // X144 / P6-L1: blank-Item rows whose other cells record a failure.
+  const orphanFailures = [];
   for (const { tableIndex, table, idx } of candidates) {
     for (const r of table.rows) {
       if (r.ragged) {
-        if (r.cells.some((c) => c !== '')) ragged.push(r.raw.trim());
+        // X201: carry WHICH kind of raggedness, so the message below can be true.
+        if (r.cells.some((c) => c !== '')) ragged.push({ raw: r.raw.trim(), short: r.short });
         continue;
       }
       const item = r.cells[idx.item] || '';
       const status = r.cells[idx.status] || '';
       const evidence = idx.evidence === -1 ? '' : r.cells[idx.evidence] || '';
-      if (!item) continue;
-      rows.push({ item, status, evidence, raw: r.raw.trim(), tableIndex });
+      // 2026-08-15, finding X144 / quality-gate D3 and D4. The contradiction check read the
+      // EVIDENCE cell alone, so two claims of failure were invisible: one written in the
+      // STATUS cell ("pass, but 3 still failing" — PASS_RE is prefix-anchored and matches
+      // "pass"), and one written in a FOURTH column, because idx.evidence takes the first
+      // matching header and a later Notes column is never read.
+      //
+      // Scanning the whole row would undo a deliberate fix of 2026-08-05: CONTRADICTION_RE
+      // used to run against the raw row, and the word "Regression" in an item's NAME wrongly
+      // blocked a green row. So the rule is every cell EXCEPT the item name — the name is a
+      // label, every other cell is a claim. Control E of the reproduction holds that exact
+      // regression row so this cannot be undone by accident.
+      const claimCells = r.cells.filter((_, i) => i !== idx.item);
+      const contradiction = claimCells.find((c) => CONTRADICTION_RE.test(c));
+      // D2: a row with a blank Item cell used to be dropped here, before anything was read —
+      // so a continuation row recording a real failure vanished. It is no longer attributable
+      // to a dimension, but a failure it records still counts.
+      if (!item) {
+        // 2026-08-15, P6 round 1 finding L1 — a crash I introduced with X144 hours earlier.
+        // This called problems.push() from inside parseRows(), where `problems` does not
+        // exist: it is a const declared in main(). Any QUALITY-GATE.md carrying a blank-Item
+        // row with a recorded failure crashed the gate with a ReferenceError.
+        //
+        // Collected alongside `ragged` instead — which this function already returns for
+        // exactly this purpose — and reported by main(). Same outcome, correct scope.
+        //
+        // `npm run lint` catches an undefined variable and would have caught this. It is in
+        // the repo's own CI and I did not run it: I ran the twelve documented gates all day
+        // and never the static job beside them. That is the lesson, not the typo.
+        if (contradiction) orphanFailures.push(r.raw.trim());
+        continue;
+      }
+      rows.push({
+        contradiction,
+        item,
+        status,
+        evidence,
+        raw: r.raw.trim(),
+        tableIndex,
+      });
     }
   }
-  return { rows, ragged };
+  return { rows, ragged, orphanFailures };
 }
 
 function main() {
@@ -280,8 +349,18 @@ function main() {
     );
     process.exit(1);
   }
-  const { rows, ragged } = parseRows(text);
+  const { rows, ragged, orphanFailures } = parseRows(text);
   const problems = [];
+  // D6: which Item row satisfied each required dimension. Reported on a clean verdict so a
+  // collision is visible to a reader even though the gate does not judge it.
+  const satisfiedBy = {};
+  // X144 / P6-L1: a blank-Item row cannot be attributed to a dimension, but a failure it
+  // records still counts and is reported on its own terms.
+  for (const raw of orphanFailures) {
+    problems.push(
+      `a row with no Item name records a failure that nothing else in this file accounts for → "${raw}" (finding X144)`,
+    );
+  }
   if (rows.length === 0) {
     problems.push(
       'QUALITY-GATE.md contains no Definition-of-Done table (need a table with at least "Item" and "Status" columns).',
@@ -292,13 +371,72 @@ function main() {
   // rather than skip it — an unescaped `|` inside an Evidence cell is the
   // common cause, and it hid a recorded test failure (finding P11). Escape it
   // as `\|`, per GitHub-flavoured markdown, and this clears.
-  for (const raw of ragged) {
+  for (const r of ragged) {
+    // X201: two opposite problems had one message, and half the time it was wrong.
     problems.push(
-      `a row's columns do not line up with its header, so its status cannot be verified → "${raw}" (an unescaped "|" inside a cell is the usual cause — write it as \\|)`,
+      r.short
+        ? `a row has FEWER cells than its header, so a trailing column is absent and this row's status cannot be read -> "${r.raw}" (a short row is legal markdown - add the missing cell, or a trailing "|" for each empty one)`
+        : `a row has MORE cells than its header, so its values line up against the wrong columns and its status cannot be verified -> "${r.raw}" (an unescaped "|" inside a cell is the usual cause - write it as \\|)`,
     );
   }
   for (const dim of REQUIRED) {
-    const matches = rows.filter((r) => dim.match.test(r.item));
+    // 2026-08-24, X119's residual — evidence is now TIED to a dimension.
+    //
+    // A row used to satisfy every dimension whose keyword it contained, so one row and one piece of
+    // evidence could vouch for two. Measured: delete the review row, relabel "Accessibility" as
+    // "Accessibility review", and the gate returned CLEAN with independent code review signed off by
+    // an accessibility row. That is the mechanism behind X276.
+    //
+    // The 2026-08-15 pass answered this by measurement and correctly REFUSED the tightening it
+    // considered — requiring the keyword at the START of the label would have missed "Automated
+    // tests", "Independent code review" and "Regression tests", and blocked healthy projects. What it
+    // could not see is that it sampled the labels which HAPPEN TO EXIST: of twelve ordinary
+    // alternatives, eight collide ("Security review", "Build and test", "Test documentation",
+    // "Licence review" among them).
+    //
+    // The rule that works is neither of those: a row belongs to the dimension whose keyword appears
+    // FIRST IN ITS LABEL, and to that one only. Checked against every real label in the project, the
+    // golden fixture, the documented template and the test suite — all nine keep the dimension they
+    // were plainly written for, including the four that keyword-at-start would have lost. And every
+    // colliding label gets one sensible owner: "Accessibility review" is about accessibility,
+    // "Security review" about security, "Code review and tests" about review.
+    //
+    // Every row that matches anything is still primary for exactly one dimension, so no row escapes
+    // the pass/fail checks below — narrowing the match cannot let a failing row through unexamined.
+    const firstHit = (item) => {
+      let best = null;
+      for (const d of REQUIRED) {
+        const hit = d.match.exec(item);
+        if (hit && (best === null || hit.index < best.index))
+          best = { key: d.key, index: hit.index };
+      }
+      return best && best.key;
+    };
+    const matches = rows.filter((r) => firstHit(r.item) === dim.key);
+    // 2026-08-15, finding D6 of the silent-skip sweep — answered by MEASUREMENT rather than by
+    // tightening. D6 says a dimension can be satisfied by an unrelated row, because the Item
+    // cell only has to CONTAIN the keyword.
+    //
+    // Measured across 24 distinct Item labels from six sources — this project's live table,
+    // the golden fixture, two sibling checkouts, the documented template and the test suite:
+    //
+    //     labels matching MORE than one dimension : 0
+    //     keyword at the START of the label       : 6 of 10 real labels
+    //     keyword LATER in the label              : 4 of 10
+    //       ("Automated tests", "Independent code review", "Regression tests",
+    //        "Improve test coverage tooling integration")
+    //
+    // So no collision occurs in any real data, and the obvious tightening — requiring the
+    // keyword at the start — would MISS 4 of 10 real labels and block healthy projects with
+    // "missing required dimension". That is the failure mode that gets a gate switched off,
+    // and it would be a worse defect than the one being fixed.
+    //
+    // The evidence therefore says: do not tighten. What it does support is making the match
+    // VISIBLE, so a human reading a clean verdict can see which row vouched for each
+    // dimension and spot a wrong one themselves. This changes nothing about what passes, so
+    // it carries no false-alarm risk at all. D6 stays open as a disclosed residual with the
+    // measurement attached.
+    satisfiedBy[dim.key] = matches.map((r) => r.item);
     if (matches.length === 0) {
       problems.push(
         `missing required dimension: ${dim.label} — no row in QUALITY-GATE.md covers it (mark it pass with evidence, or "n/a" with a reason, but it may not be absent).`,
@@ -319,7 +457,9 @@ function main() {
       // legitimately green row. A contradiction claim lives in the EVIDENCE
       // cell, never in the item's name — scope the check to that cell, the
       // same cell the placeholder/evidence checks below already read.
-      if (CONTRADICTION_RE.test(r.evidence)) {
+      // X144: `contradiction` is the first claim cell that says this row is failing —
+      // every cell except the item's name. Previously this tested r.evidence alone.
+      if (r.contradiction) {
         problems.push(
           `${dim.label}: a row is marked passing but its own text says it is currently failing/unverified → "${r.raw}"`,
         );
@@ -337,13 +477,13 @@ function main() {
       // in bold, e.g. "**tbd**", still failed PLACEHOLDER_RE as-is and was
       // wrongly accepted as real evidence.
       if (PASS_RE.test(deEmphasise(r.status))) {
-        if (PLACEHOLDER_RE.test(deEmphasise(r.evidence).trim())) {
+        if (isPlaceholderEvidence(deEmphasise(r.evidence))) {
           problems.push(
             `${dim.label}: marked "${r.status}" but carries no evidence — a pass needs a concrete proof/command/reference.`,
           );
         }
       } else if (NA_RE.test(deEmphasise(r.status))) {
-        if (PLACEHOLDER_RE.test(deEmphasise(r.evidence).trim())) {
+        if (isPlaceholderEvidence(deEmphasise(r.evidence))) {
           problems.push(
             `${dim.label}: marked not-applicable but gives no reason — "n/a" needs a stated reason (e.g. "no user interface").`,
           );
@@ -355,6 +495,7 @@ function main() {
       }
     }
   }
+
   if (problems.length === 0) {
     console.log(
       JSON.stringify(
@@ -363,6 +504,10 @@ function main() {
           reason:
             'every required Definition-of-Done dimension passes or is consciously N/A with a reason',
           dimensions: REQUIRED.map((d) => d.key),
+          // D6: name the row that vouched for each dimension. A dimension satisfied by a row
+          // that is plainly about something else is then visible here, rather than hidden
+          // behind the word "clean".
+          satisfiedBy,
         },
         null,
         2,

@@ -36,6 +36,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { readGate, readDecision, refuseCrash } from './_verdict.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HOOKS = path.resolve(HERE, '..', '..');
@@ -52,18 +53,26 @@ function golden(dir) {
     fs.copyFileSync(path.join(GOLDEN, f), path.join(dir, 'Dev-Memory', f));
   }
 }
+function die(msg) {
+  console.error(`FAIL: ${msg}`);
+  process.exit(1);
+}
+
+// This used to be `status === 0 ? 'clean' : 'blocked'` — the exit code and nothing else, so a
+// gate that THREW was reported as one that objected. See _verdict.mjs for the measurement.
 const gateVerdict = (hook, root) =>
-  spawnSync(NODE, [path.join(HOOKS, hook), root], { encoding: 'utf8' }).status === 0
+  refuseCrash(readGate(NODE, path.join(HOOKS, hook), [root]), `${hook} in review-findings.mjs`, die).kind === 'clean'
     ? 'clean'
     : 'blocked';
+
+// Likewise 'none' meant both "the hook stood aside" and "the hook died before printing".
 function hookDecision(hook, command, cwd) {
-  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd });
-  const r = spawnSync(NODE, [path.join(HOOKS, hook)], { input, encoding: 'utf8' });
-  try {
-    return JSON.parse(r.stdout).hookSpecificOutput.permissionDecision ?? 'none';
-  } catch {
-    return 'none';
-  }
+  const v = refuseCrash(
+    readDecision(NODE, path.join(HOOKS, hook), { tool_name: 'Bash', tool_input: { command }, cwd }),
+    `${hook} in review-findings.mjs`,
+    die,
+  );
+  return v.kind === 'silent' ? 'none' : v.decision;
 }
 // A studio project MUST contain a Dev-Memory folder, or scan.mjs correctly stands
 // down because it is not a studio project at all. The first version of this helper
@@ -181,27 +190,18 @@ cases.push({
   what: "this plugin's own fixture stays exempt when pushed from a SUBDIRECTORY",
   buggy: 'deny',
   run() {
-    const repoRoot = path.resolve(HOOKS, '..', '..', '..');
     return hookDecision('scan.mjs', PUSH, HOOKS) === 'deny' ? 'deny' : 'none';
     // (repoRoot referenced for clarity; the subdirectory is HOOKS itself)
   },
   fixed: 'none',
 });
 
-cases.push({
-  id: 'F4',
-  what: 'a valid publish token blanket-approves a destructive second command',
-  buggy: 'allow',
-  run() {
-    const d = tmp('gru-rv-f4-');
-    fs.mkdirSync(path.join(d, 'Dev-Memory'), { recursive: true });
-    spawnSync(NODE, [path.join(HOOKS, 'confirm-publish.mjs'), d], { encoding: 'utf8' });
-    const v = hookDecision('gate.mjs', PUSH + ' && rm -rf /important', d);
-    fs.rmSync(d, { recursive: true, force: true });
-    return v;
-  },
-  fixed: 'escalate',
-});
+// 2026-08-17, X214: case F4 removed. Its subject was "a valid publish token blanket-approves a
+// destructive second command", and both halves are gone — there is no publish token and no gate
+// to honour one. Recorded rather than silently dropped because F4 is where finding X37 was
+// caught: this reproduction had been PINNING the defect, asserting an `escalate` value the
+// PreToolUse contract does not define. Every other case here stays; only one of the ten died
+// with the gate, which is why this file was repaired rather than retired.
 
 cases.push({
   id: 'F6',

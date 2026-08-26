@@ -12,6 +12,8 @@ model: haiku
 Keep every user-facing surface consistent with the user's own brand
 identity, without being asked each time.
 
+Follow the `brand-kit`, `brand-compliance` and `brand-assets` skills. `brand-kit` runs first and decides what the other two can honestly check; run it before either of them, and again whenever the kit is replaced.
+
 ## Inputs
 
 The brand guidebook and brand kit already on disk for this user (logos,

@@ -89,9 +89,37 @@ This is what "recall the last entries and all ongoing tasks with the least
 tokens" means in practice: a compact index and a graph you expand, not a full
 re-read.
 
-## Optional semantic re-rank (only if Ollama is already present)
+**What "least tokens" is, as a number (added 2026-08-22, finding X87).** Until now
+this skill and the tier rule both promised the recall path was cheap and neither
+carried a figure, so neither could pass or fail. The always-on path is two files —
+`Dev-Memory/INDEX.md` plus `Dev-Memory/GRAPH.md` — and on this project today they
+are **9,277 bytes together** (6,024 + 3,253), measured with
+`wc -c Dev-Memory/INDEX.md Dev-Memory/GRAPH.md`. On 15 August the same two came to
+9,071 bytes, so the figure moves and a single measurement of it ages: re-take it
+rather than quoting this one.
 
-When the local Ollama tool is available (see the `ollama-integration` skill),
+**The budget: 16,000 bytes for those two files combined.** Set deliberately ABOVE
+today's measurement rather than at it, because a number set at the current value
+fails on the first honest addition and gets removed — and roughly 1.7x leaves room
+for the index to grow with the project without hiding a doubling. Nothing enforces
+this yet; declaring it is what makes the promise checkable at all, and a gate that
+reads it is the obvious next step rather than a silent one.
+
+## Optional semantic re-rank (only if Ollama has a usable model)
+
+**Corrected 2026-08-22 (finding X89): "available" used to mean the tool existed,
+which is not the same thing and made this path untestable.** Observed on the
+machine this was found on: `which ollama` returns `/opt/homebrew/bin/ollama`, so
+the client IS installed — while `ollama list` names ZERO models and the server is
+not even running. Under the old wording that counted as available, so the re-rank
+would have been attempted against nothing, and the "degrades silently" claim had
+never once been exercised in practice.
+
+The condition is therefore: the local Ollama **server responds** AND `ollama list`
+**names at least one model**. A client on disk is not a model, and an empty model
+list is not availability.
+
+When that holds (see the `ollama-integration` skill),
 recall MAY add a semantic re-rank step: embed the active task and the index
 summaries locally and rank by closeness, to catch a relevant entry whose wording
 differs from the task's keywords. This is a private, local, free enhancement —

@@ -181,8 +181,28 @@ function scanNodeFromNodeModules(root) {
       ...Object.keys(rootPkg.dependencies || {}),
       ...Object.keys(rootPkg.devDependencies || {}),
     ];
-  } catch {
-    declared = []; // no readable root package.json — nothing to cross-check against
+  } catch (e) {
+    // 2026-08-25, X353. This was `declared = []` for EVERY failure, with the comment "no readable
+    // root package.json — nothing to cross-check against". That is true of one case and false of the
+    // other, and the difference decides the verdict: an ABSENT package.json declares nothing, so an
+    // empty declared set is the honest answer; an UNREADABLE or unparseable one declares we-cannot-
+    // know, and an empty set there switches OFF the guard immediately above — the guard whose entire
+    // purpose is that "an empty or pruned node_modules must never read as a clean pass". `unresolved`
+    // comes out empty, `checked` flips to true, and this publish-blocking gate prints
+    // {"status":"clean"} with exit 0 having examined nothing. Same class as X348 and X349: a check
+    // that could not read its input reporting the reassuring answer.
+    if (!e || e.code !== 'ENOENT') {
+      return {
+        ecosystem: 'npm',
+        checked: false,
+        findings,
+        note:
+          `the root package.json could not be read (${(e && (e.code || e.message)) || 'unknown error'}), ` +
+          'so the declared dependencies could not be compared against what is installed. That is ' +
+          'UNCHECKED, not clean: node_modules alone cannot show what is missing from it.',
+      };
+    }
+    declared = []; // genuinely no root package.json — an empty declared set is the honest answer
   }
   const unresolved = declared.filter((name) => !resolved.has(name));
   if (unresolved.length > 0) {
@@ -284,6 +304,32 @@ function severityRank(v) {
   return 1;
 }
 
+// 2026-08-25, X354. Three of this file's four tool-driven ecosystems returned `checked: true` on
+// whatever the tool printed, however little that was — so "the tool ran successfully and saw nothing"
+// was recorded as "there is nothing to see". A globally-installed pip-licenses (pipx, or a system
+// python) run against a project whose dependencies live in an unactivated venv lists the WRONG
+// package set, and where that set is empty a publish-blocking gate answered {"status":"clean"} with
+// exit 0 over a requirements.txt full of declared dependencies. The npm path received exactly this
+// cross-check on 2026-08-13 ("an empty or pruned node_modules must never read as a clean pass") and
+// the other three did not: L14, fix every place carrying the shape.
+//
+// Deliberately narrow. It does not parse version constraints or resolve transitive dependencies — it
+// asks the one question that distinguishes the two situations: does a manifest in this project
+// declare dependencies while the tool reported none? A project that genuinely declares nothing still
+// reads clean, so this cannot cry wolf on an empty project (L5).
+function toolListedNothingButSomethingIsDeclared(root, manifests) {
+  for (const [file, declaresRe] of manifests) {
+    let text;
+    try {
+      text = fs.readFileSync(path.join(root, file), 'utf8');
+    } catch {
+      continue; // absent, or unreadable — either way this manifest cannot be used as evidence
+    }
+    if (declaresRe.test(text)) return file;
+  }
+  return null;
+}
+
 // ---- Python (pip/poetry/pipenv/uv) ----
 function scanPython(root) {
   // Try pip-licenses first (most reliable)
@@ -310,6 +356,27 @@ function scanPython(root) {
           licence: licence || 'unknown',
           verdict: 'needs-review',
         });
+    }
+    {
+      const declaresAnyway =
+        findings.length === 0 && pkgs.length === 0
+          ? toolListedNothingButSomethingIsDeclared(root, [
+              ['requirements.txt', /^\s*[A-Za-z0-9._-]+\s*(==|>=|<=|~=|!=|>|<|\[|$)/m],
+              ['pyproject.toml', /^\s*(dependencies|requires)\s*=/m],
+              ['Pipfile', /^\s*\[packages\]/m],
+            ])
+          : null;
+      if (declaresAnyway)
+        return {
+          ecosystem: 'python',
+          checked: false,
+          findings,
+          note:
+            `pip-licenses ran and listed no packages at all, while ${declaresAnyway} declares dependencies. ` +
+            'The licences of those dependencies were therefore never examined — most often because the ' +
+            'tool is looking at a different environment from the one the project installs into. That is ' +
+            'UNCHECKED, not clean.',
+        };
     }
     return { ecosystem: 'python', checked: true, findings };
   } catch {
@@ -536,6 +603,23 @@ function scanDartFlutter(root) {
     }
   }
 
+  // 2026-08-25, X354, second of three. Same shape as the python leg above: a resolved-package list
+  // that came back empty is not evidence that nothing is depended on.
+  if (findings.length === 0 && hostedPackages.length === 0) {
+    const declaresAnyway = toolListedNothingButSomethingIsDeclared(root, [
+      ['pubspec.yaml', /^\s*(dependencies|dev_dependencies)\s*:/m],
+    ]);
+    if (declaresAnyway)
+      return {
+        ecosystem: 'dart/flutter',
+        checked: false,
+        findings,
+        note:
+          `no resolved packages were found at all, while ${declaresAnyway} declares dependencies. ` +
+          'Their licences were therefore never examined — most often because `dart pub get` or ' +
+          '`flutter pub get` has not been run here. That is UNCHECKED, not clean.',
+      };
+  }
   return { ecosystem: 'dart/flutter', checked: true, findings };
 }
 
@@ -635,6 +719,22 @@ function scanCargo(root) {
         verdict: 'needs-review',
       });
     }
+  }
+  // 2026-08-25, X354, third of three.
+  if (findings.length === 0 && (parsed.packages || []).length === 0) {
+    const declaresAnyway = toolListedNothingButSomethingIsDeclared(root, [
+      ['Cargo.toml', /^\s*\[(dependencies|dev-dependencies|build-dependencies)\]/m],
+    ]);
+    if (declaresAnyway)
+      return {
+        ecosystem: 'rust/cargo',
+        checked: false,
+        findings,
+        note:
+          `the metadata listed no packages at all, while ${declaresAnyway} declares dependencies. ` +
+          'Their licences were therefore never examined — most often because `cargo fetch` has not ' +
+          'been run here. That is UNCHECKED, not clean.',
+      };
   }
   return { ecosystem: 'rust/cargo', checked: true, findings };
 }
@@ -802,10 +902,29 @@ const MANIFEST_FILE_NAMES = [
   'packages.lock.json',
   'go.mod',
 ];
+// 2026-08-24, X115's residual — found by a defeat probe, not by reading. The X115 fix added a
+// `statSync(root).isDirectory()` guard, which closed the "does not EXIST" half properly. This
+// function is the other half and was untouched: any directory that exists, IS a directory, and
+// simply cannot be READ returned an empty list, produced zero manifests, and the scan fell through
+// to `{"status":"clean"}` with exit 0.
+//
+// Two proven cases, each with a control showing the fixture engages: the scan root itself unreadable
+// while containing a package.json and a GPL-3.0 dependency reported clean; and — more dangerous — a
+// single unreadable SUBDIRECTORY while the root is fine, where the gate looks like it worked and
+// simply never saw that subtree.
+//
+// FIFTH instance of one shape in this project: unreadable input reading as empty, after X113
+// (verify-progress), X118 (docs-consistency), X281 and X283 (memory-integrity). Recorded because
+// five is not a coincidence — it is a habit of this codebase, and `try { … } catch { return [] }` is
+// what the habit looks like.
+const unreadableDirs = [];
 function dirEntries(dir) {
   try {
     return fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (e) {
+    // An empty directory and one that cannot be read are not the same fact, and a licence scan that
+    // cannot tell them apart cannot support the word "clean".
+    unreadableDirs.push({ dir, code: (e && e.code) || 'unknown' });
     return [];
   }
 }
@@ -884,7 +1003,58 @@ function scanOneDirectory(dir) {
 
 function main() {
   const root = process.argv[2] || process.cwd();
+
+  // 2026-08-15, finding X115 (High, reproduced). findManifestDirs() on a directory that
+  // does not exist returns nothing, and "nothing found" fell through to the clean report
+  // at the bottom of this function — so pointing this scanner at a path that is not
+  // there produced `{"status":"clean"}` and exit 0. A licence scan that never ran read
+  // as a licence scan that passed.
+  //
+  // The distinction that matters: a real directory with genuinely NO dependency
+  // manifests is legitimately clean — this plugin itself has none, and that must keep
+  // passing. What must fail is being unable to look at all. The reproduction at
+  // hooks/test/repro/X113-X115-X118-absent-input.mjs holds both sides.
+  let rootIsDirectory = false;
+  try {
+    rootIsDirectory = fs.statSync(root).isDirectory();
+  } catch {
+    rootIsDirectory = false;
+  }
+  if (!rootIsDirectory) {
+    console.log(
+      JSON.stringify(
+        {
+          status: 'BLOCKED',
+          reason: `cannot scan ${root} — it does not exist or is not a directory, so no licence conclusion can be drawn about it (finding X115)`,
+          results: [],
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(1);
+  }
+
   const manifestDirs = findManifestDirs(root);
+
+  // X115's residual: a directory the scan could not read means the scan does not know what is in it,
+  // so it cannot report clean over it. Reported per directory, with the reason the read failed.
+  if (unreadableDirs.length) {
+    console.log(
+      JSON.stringify({
+        status: 'BLOCKED',
+        reason:
+          `${unreadableDirs.length} director${unreadableDirs.length === 1 ? 'y' : 'ies'} under the ` +
+          'scan root could not be read, so no licence statement can be made about what is inside ' +
+          'them. An unreadable directory is not an empty one (finding X115).',
+        unreadable: unreadableDirs.map((u) => ({
+          dir: path.relative(root, u.dir) || '.',
+          error: u.code,
+        })),
+      }),
+    );
+    process.exit(1);
+  }
 
   const results = [];
   for (const dir of manifestDirs) {

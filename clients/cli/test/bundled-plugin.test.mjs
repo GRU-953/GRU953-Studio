@@ -65,21 +65,81 @@ test('the bundler refuses a version mismatch between the command and the studio'
   assert.match(src, /process\.exit\(1\)/, 'and must fail rather than warn');
 });
 
-test('findPluginSource prefers the bundled copy, so a published install works', async () => {
+// 2026-08-24, X38. This test was named "findPluginSource prefers the bundled copy, so a published
+// install works" and its body asserted only that SOMETHING was found and that the something had a
+// manifest. It would have stayed green whichever order shipped — so the one test that looked like it
+// pinned this behaviour pinned nothing, and it was cited as a safety net while being none. A test
+// whose name claims more than its body checks is worse than no test.
+//
+// It now asserts the order that actually ships, and the identity guard that makes that order safe.
+test('findPluginSource prefers the repository source over the packaged copy, and checks identity', async () => {
   const { findPluginSource } = await import(
     path.join(PACKAGE_ROOT, 'src', 'index.js').replace(/^/, 'file://')
-  ).then((m) => m.default || m).catch(async () => {
-    // index.js is CommonJS; import() of a .js CJS file yields its exports on default
-    const { createRequire } = await import('node:module');
-    return createRequire(import.meta.url)(path.join(PACKAGE_ROOT, 'src', 'index.js'));
-  });
-  // In a checkout with no bundled ./plugin, it must still find the repository copy —
-  // otherwise development breaks.
+  )
+    .then((m) => m.default || m)
+    .catch(async () => {
+      const { createRequire } = await import('node:module');
+      return createRequire(import.meta.url)(path.join(PACKAGE_ROOT, 'src', 'index.js'));
+    });
+
   const found = findPluginSource();
-  assert.ok(found, 'the studio must be findable from a checkout');
+  assert.ok(found, 'the studio must be findable');
   assert.ok(
     fs.existsSync(path.join(found, '.claude-plugin', 'plugin.json')),
     'whatever it returns must actually be the studio',
+  );
+
+  // 2026-08-25, X352. The comment that stood here said "In THIS checkout both candidates exist, so
+  // the order is decidable" — and it was false for the checkout that matters. `clients/cli/plugin/`
+  // is GITIGNORED (.gitignore:29), so it exists only on a machine where someone has run the packer.
+  // CI uses actions/checkout and has none, so this `if` was false on every CI leg and the ONLY
+  // behavioural check of the X38 ordering ran nowhere but a developer's laptop. This file's own header
+  // records that the original defect survived precisely because "every test ran from a checkout".
+  //
+  // The other check of the ordering, X38-X40-which-copy-guards-you.mjs, is a regex over the source
+  // text — it cannot see a behavioural change at all. So X38 (the tool running, and handing the
+  // updater, a stale build-output copy instead of the source) could regress with nothing in the
+  // repository noticing, as long as the candidate-list literal was left alone.
+  //
+  // So the competing candidate is CREATED when it is absent, the ordering is measured, and only what
+  // this test created is removed again. The manifest deliberately names `gru953-studio`: a candidate
+  // naming anything else is filtered by the identity guard and would not compete, which would make
+  // the assertion pass without deciding anything — the same trap one level down.
+  const checkout = path.join(PACKAGE_ROOT, '..', '..', 'plugins', 'gru953-studio');
+  const packaged = path.join(PACKAGE_ROOT, 'plugin');
+  const packagedManifestDir = path.join(packaged, '.claude-plugin');
+  const packagedManifest = path.join(packagedManifestDir, 'plugin.json');
+  const madeManifest = !fs.existsSync(packagedManifest);
+  const madePackagedDir = !fs.existsSync(packaged);
+  if (madeManifest) {
+    fs.mkdirSync(packagedManifestDir, { recursive: true });
+    fs.writeFileSync(
+      packagedManifest,
+      `${JSON.stringify({ name: 'gru953-studio', version: '0.0.0-competing-candidate-for-a-test' }, null, 2)}\n`,
+      'utf8',
+    );
+  }
+  try {
+    // Called again on purpose: `found` above was resolved before the competing candidate existed.
+    const withBoth = findPluginSource();
+    assert.equal(
+      path.resolve(withBoth),
+      path.resolve(checkout),
+      'with both present it must choose the repository source, not the build output — X38',
+    );
+  } finally {
+    if (madePackagedDir) fs.rmSync(packaged, { recursive: true, force: true, maxRetries: 3 });
+    else if (madeManifest) fs.rmSync(packagedManifestDir, { recursive: true, force: true, maxRetries: 3 });
+  }
+
+  // And the identity guard: a candidate whose manifest names something else is not this plugin.
+  // Asserted by reading the shipped source, because the guard is what makes the reorder safe and a
+  // test that cannot see it would repeat this test's own original defect.
+  const src = fs.readFileSync(path.join(PACKAGE_ROOT, 'src', 'index.js'), 'utf8');
+  assert.match(
+    src,
+    /pluginManifestName\(d\)\s*===\s*'gru953-studio'/,
+    'findPluginSource must filter candidates by manifest identity',
   );
 });
 

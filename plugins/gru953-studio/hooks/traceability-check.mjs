@@ -46,14 +46,15 @@
 import path from 'node:path';
 import process from 'node:process';
 import {
-  splitPipeCells,
   CONTRADICTION_RE,
   deEmphasise,
   isDirectory,
-  SEPARATOR_ROW_RE,
   PLACEHOLDER_RE,
   readOrBlock,
   MISSING,
+  // 2026-08-15: this gate now reads tables through the shared reader rather than its own
+  // private parser. See parseTable() below for the five defects that closed.
+  parseTables,
 } from './lib.mjs';
 
 // A task id token: 1-4 letters, an optional dash, then digits (T1, R2, P1-T3,
@@ -236,35 +237,152 @@ function readTier(devMemory) {
 // Generic per-table parser: returns { headers, rows } for the FIRST table whose
 // header matches `wantHeader`, resetting on any non-`|` line so a stray earlier
 // table can't leak its columns. Each row is the array of trimmed cells.
+// 2026-08-15, the shared-table-reader build. This gate carried its own table parser, and it
+// stopped early in five separate ways — every one of them dropping input that held a real
+// defect while the gate reported clean:
+//
+//   D1  only the FIRST matching table was read, so a matrix split by phase lost everything
+//       after the first heading
+//   D5  the same, applied to PROGRESS.md — so the reverse check, the scope-creep guard that
+//       is the whole reason two-way traceability exists, ran against only the first section
+//   D6  one stray blank line truncated the matrix and every row below it was discarded
+//   D3  a ```markdown EXAMPLE table was taken as the live matrix, hiding the real one below
+//   D9  no ragged-row detection at all, so one unescaped pipe shifted every later cell and
+//       the row was read into the WRONG columns rather than reported
+//
+// These are not five defects. They are one: a private parser, invented here, that nothing
+// else exercises. `lib.mjs`'s shared `parseTables()` — already used by content-check and
+// quality-gate — has none of these faults, and it is now fence-aware, which closes D3 for
+// every caller at once rather than only for this one.
+//
+// So this function keeps its name and its contract and becomes a thin adapter over the
+// shared reader. Notably it MERGES every table whose header matches: a matrix split across
+// phases is one matrix, and treating it as several was the cause of D1, D5 and D6.
+//
+// Reproduction: hooks/test/repro/X138-shared-table-reader.mjs.
 function parseTable(text, wantHeaderRe) {
-  const lines = text.split(/\r?\n/);
-  let inTable = false;
-  let headers = null;
+  const all = parseTables(text);
+  const matching = all.filter((t) => t.headerCells.some((c) => wantHeaderRe.test(deEmphasise(c))));
+  if (matching.length === 0) return null;
+
+  // D6: a stray blank line inside a matrix ends the table, and the pipe-led line beneath it
+  // becomes the HEADER of a new one — whose cells are data, so it matches nothing and was
+  // dropped in silence along with every row below it.
+  //
+  // Reading it as a continuation would mean GUESSING that a pipe-led line is data rather
+  // than a heading, and guessing is what caused a false-alarm regression in this codebase
+  // earlier today. So it is REPORTED instead, on a signal with a real basis: a stray
+  // fragment carrying exactly as many columns as the real matrix is a torn matrix, whereas
+  // a legend or an aside carries a different number. That distinction is measured, not
+  // assumed — and reporting cannot block a healthy file the way mis-reading it could.
+  const width = matching[0].headerCells.length;
+  const orphaned = all
+    .filter((t) => !matching.includes(t) && t.headerCells.length === width)
+    .map((t) => t.headerCells.join(' | '));
+  // 2026-08-16, finding X197 — found by P6 round 3, and a regression of X192 fixed the same
+  // day. Merging every table that merely CONTAINS an id-ish column swept in tables that are
+  // not part of this register at all. An ordinary
+  //
+  //     ## Notes
+  //     | Task | Owner | Note |
+  //
+  // beside a four-column task table matched on "Task", was merged, and — once X192 taught this
+  // branch to report mismatched headers — blocked a perfectly healthy PROGRESS.md.
+  //
+  // The discriminator is already used ten lines above for orphans, and is the right one here
+  // too: a torn fragment of a table has the SAME number of columns, because it is the same
+  // table. A different width cannot be a positional continuation of this one, so it is a
+  // separate table and is left alone, exactly as a reader would leave it.
+  const nameSet = (cells) => new Set(cells.map((c) => deEmphasise(String(c)).trim().toLowerCase()));
+  const firstNames = nameSet(matching[0].headerCells);
+  const belongsToThisRegister = (t) => {
+    const names = [...nameSet(t.headerCells)];
+    if (names.length === 0) return false;
+    const shared = names.filter((n) => firstNames.has(n)).length;
+    // Half or more of its columns are columns of THIS register, so it is a section of the same
+    // table written with a different column set — the case X138 exists for, and it is reported.
+    // Below that it is a different table (a "## Notes" aside that merely mentions "Task"), and
+    // a reader would not merge it. Column COUNT alone was tried first and was too blunt: it
+    // silently dropped a genuine six-column-vs-four-column mismatch in REQUIREMENTS.md.
+    return shared * 2 >= names.length;
+  };
+  const fragments = [matching[0], ...matching.slice(1).filter(belongsToThisRegister)];
   const rows = [];
-  for (const line of lines) {
-    if (!/^\s*\|/.test(line)) {
-      if (headers) break; // finished the table we wanted
-      inTable = false;
-      continue;
+  for (const t of fragments) {
+    for (const r of t.rows) {
+      // X201: `short` must be carried through, or the message below reports the opposite of what
+      // happened — this rebuild dropped it and a FEWER-cells row was told it had MORE.
+      rows.push({
+        cells: r.cells,
+        raw: String(r.raw).trim(),
+        ragged: r.ragged,
+        short: r.short,
+        overlong: r.overlong,
+      });
     }
-    const cells = splitPipeCells(line).map((c) => c.trim());
-    if (!inTable) {
-      inTable = true;
-      // 2026-07-26 further-pass audit fix: de-emphasise before testing, the
-      // same as verify-progress.mjs already does — otherwise a decorated
-      // header ("**ID**", "`Requirement`") makes the whole table
-      // unrecognised even though every row is otherwise well-formed.
-      if (cells.some((c) => wantHeaderRe.test(deEmphasise(c)))) headers = cells;
-      continue;
-    }
-    if (!headers) {
-      inTable = false;
-      continue;
-    }
-    if (SEPARATOR_ROW_RE.test(line)) continue;
-    rows.push({ cells, raw: line.trim() });
   }
-  return headers ? { headers, rows } : null;
+  // The first matching table names the columns. A later fragment with different columns
+  // would be read positionally against these, so it is reported rather than trusted.
+  const headers = matching[0].headerCells;
+  // 2026-08-16, finding X193: this compared header cells by RAW join, while every other
+  // consumer of the same cells resolves them through deEmphasise() and a case-insensitive
+  // regex (see col() below, and the header matcher above). So a later section repeating the
+  // FIRST section's header in **bold**, or in a different case, was reported as a table whose
+  // columns differ — a false alarm on a healthy file, in a blocking Publish check.
+  //
+  // The comparison now normalises exactly as the reader does, and no further: a genuinely
+  // reordered or renamed header still differs and is still reported. Widening it past styling
+  // would swap a false alarm for a false clean, which is the worse trade — X193's control H
+  // pins that line. The NUL separator stays: it keeps ['a b','c'] distinct from ['a','b c'].
+  //
+  // 2026-08-18, X193 SECOND repair. The comment above says this normalises "exactly as the reader
+  // does". It did not. The reader resolves a header through col(), which is a case-insensitive
+  // regex ALTERNATION - /^(tasks?|task ?ids?|task ?refs?)$/i and friends - while this compared
+  // normalised TEXT for equality. So a later section headed `Task` where the first said `Tasks`
+  // was reported as columns that "would be read against the WRONG columns", when both resolve to
+  // the very same index and every row is read identically. A false alarm in a blocking check.
+  //
+  // Now each header cell is reduced to the ROLE it resolves to, using the same patterns the
+  // consumers use. A cell matching no role compares by name, so a genuine rename or reorder still
+  // differs and is still reported - which is what X193's control H pins.
+  const ROLES = [
+    ['id', /^(id|ref|task ?id)$/i],
+    ['req', /^(requirement|req|need|criterion)$/i],
+    ['tasks', /^(tasks?|task ?ids?|task ?refs?)$/i],
+    ['status', /^status$/i],
+    ['verif', /^(verification|verify|evidence|proof)$/i],
+  ];
+  const roleOf = (c) => {
+    const t = deEmphasise(String(c)).trim();
+    for (const [name, re] of ROLES) if (re.test(t)) return name;
+    return `~${t.toLowerCase()}`; // no role: fall back to the name, so a rename still differs
+  };
+  const headerKey = (cells) => cells.map(roleOf).join('\u0000');
+  const firstKey = headerKey(headers);
+  //
+  // 2026-08-18, X192 SECOND repair. A later table that MATCHED the register's id test but FAILED
+  // belongsToThisRegister fell through both nets: filtered out of `fragments`, so its rows were
+  // never read, and excluded from `orphaned`, which only collects tables NOT in `matching`. It
+  // vanished with nothing said. Measured: a section headed `Task ID | Description | State |
+  // Comment` carrying two `done` rows traceable to no requirement returned clean and 0 problems,
+  // while the same rows under `ID | Task | Status | Notes` blocked with both.
+  //
+  // Reported only at the SAME WIDTH as the first table. That is deliberate and it is X197's line:
+  // X197 fixed a real regression where a `## Notes | Task | Owner | Note |` aside beside a
+  // four-column task table was merged and blocked a healthy file. A different width is a different
+  // table, and reporting it would reopen X197.
+  const rejectedSameWidth = matching
+    .slice(1)
+    .filter((t) => !belongsToThisRegister(t) && t.headerCells.length === width)
+    .map((t) => t.headerCells.join(' | '));
+  const mismatched = [
+    ...fragments
+      .slice(1)
+      .filter((t) => headerKey(t.headerCells) !== firstKey)
+      .map((t) => t.headerCells.join(' | ')),
+    ...rejectedSameWidth,
+  ];
+  return { headers, rows, mismatchedFragments: mismatched, orphanedFragments: orphaned };
 }
 function col(headers, re) {
   return headers.findIndex((c) => re.test(deEmphasise(c)));
@@ -351,6 +469,39 @@ function main() {
     );
     process.exit(1);
   }
+  // 2026-08-15, the shared-table-reader build. Two things that used to be dropped in
+  // silence are now said out loud. Neither guesses at the content: they report that
+  // something in the file could not be read, which is the capability every one of these
+  // gates was missing.
+  // P6 round 1, finding L3 — a guard written and never wired up. parseTable() computes
+  // `mismatchedFragments` for a later section whose columns differ from the first table's,
+  // and its own comment says such a fragment "would be read positionally against these, so it
+  // is reported rather than trusted". Nothing read it. So a REQUIREMENTS.md whose Phase 2
+  // section swaps two column positions had its rows judged against the WRONG columns, and a
+  // requirement marked "met" with an empty Verification cell passed as clean — in one of the
+  // seven blocking Publish pre-flight checks. The byte-identical row in a canonically-ordered
+  // section blocked, which is what made it a false clean rather than a difference of opinion.
+  //
+  // Consuming it here is the whole fix. Reproduction: X138's case D7.
+  for (const frag of reqTable.mismatchedFragments || []) {
+    problems.push(
+      `REQUIREMENTS.md has a later table headed "${frag}" whose columns differ from the first table's, so its rows would be read against the WRONG columns. Give every section the same column order, or split them into separate files (finding X138 / P6-L3).`,
+    );
+  }
+  for (const frag of reqTable.orphanedFragments || []) {
+    problems.push(
+      `REQUIREMENTS.md has a pipe table starting "${frag}" with the same number of columns as the matrix but no recognisable header — most often a matrix torn in two by a stray blank line, in which case every row below that line is going unchecked (finding X138 / D6).`,
+    );
+  }
+  for (const r of reqTable.rows) {
+    if (r.ragged)
+      problems.push(
+        r.short
+          ? `REQUIREMENTS.md row "${r.raw}" has FEWER cells than the header. That is legal markdown - the missing trailing cells count as empty - but a trailing column is absent for this row, so anything it should say cannot be read. Add the missing cell, or a trailing "|" for each empty one (X138 / D9, message corrected X201).`
+          : `REQUIREMENTS.md row "${r.raw}" has MORE cells than the header, so its values line up against the WRONG columns. A literal pipe inside a cell is the usual cause - write it as \\| (finding X138 / D9).`,
+      );
+  }
+
   const H = reqTable.headers;
   const cId = col(H, /^(id|ref)$/i);
   const cReq = col(H, /^(requirement|req|need|criterion)$/i);
@@ -413,6 +564,36 @@ function main() {
     );
   } else {
     const progTable = parseTable(progText, /^(id|task ?id|#|task)$/i);
+    // 2026-08-16, finding X192. parseTable() returns three warnings about tables it could not
+    // read with confidence, and the REQUIREMENTS branch above consumes all three — that was
+    // finding X138 / P6-L3, fixed in round 1. This branch consumed none of them: same file,
+    // same function, same defect, fixed once. Measured from the golden fixture, a mismatched
+    // later table in REQUIREMENTS.md BLOCKED while the identical defect in PROGRESS.md
+    // returned clean with zero problems.
+    //
+    // It is not cosmetic here. PROGRESS.md's ID column is what the dangling-reference and
+    // scope-creep checks match against, so a fragment read positionally against the wrong
+    // headers yields ids taken from whatever column happens to sit at that index.
+    if (progTable) {
+      for (const frag of progTable.mismatchedFragments || []) {
+        problems.push(
+          `PROGRESS.md has a later table headed "${frag}" whose columns differ from the first table's, so its rows would be read against the WRONG columns — including the ID column this check matches against. Give every section the same column order, or split them into separate files (finding X192).`,
+        );
+      }
+      for (const frag of progTable.orphanedFragments || []) {
+        problems.push(
+          `PROGRESS.md has a pipe table starting "${frag}" with the same number of columns as the task table but no recognisable header — most often a table torn in two by a stray blank line, in which case every row below that line is going unchecked (finding X192).`,
+        );
+      }
+      for (const r of progTable.rows) {
+        if (r.ragged)
+          problems.push(
+            r.short
+              ? `PROGRESS.md row "${r.raw}" has FEWER cells than the header. That is legal markdown - the missing trailing cells count as empty - but a trailing column is absent for this row, so anything it should say cannot be read. Add the missing cell, or a trailing "|" for each empty one (X192, message corrected X201).`
+              : `PROGRESS.md row "${r.raw}" has MORE cells than the header, so its values line up against the WRONG columns. A literal pipe inside a cell is the usual cause - write it as \\| (finding X192).`,
+          );
+      }
+    }
     let idCol = -1;
     let progIds = null;
     if (progTable) {

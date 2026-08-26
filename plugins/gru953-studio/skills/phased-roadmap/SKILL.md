@@ -64,7 +64,15 @@ For each phase, in order:
 2. Clear the **quality gate** (`quality-gate` skill) for the phase — the
    Definition of Done must be green.
 3. Take a **backup checkpoint** (`checkpoint-commit` skill): commit the phase's
-   app code to the private work branch. Nothing is lost if work stops here.
+   app code to the private work branch, and push it if the user enabled
+   stage-by-stage backup at the warframe gate. **(2026-08-23, X182: this read
+   "Nothing is lost if work stops here", which is not true and is exactly the kind
+   of reassurance a non-technical owner acts on. Two ways it is untrue. If backup
+   was not enabled, or GitHub is not connected, the commit is LOCAL and nothing has
+   left the machine. And `Dev-Memory/` — every decision, plan and progress record —
+   is `.gitignore`d by design and is never pushed at all, so it is lost with the
+   machine either way.)** What is true: the phase's app code is at a clean, named
+   point, recoverable from GitHub if backup is on.
 4. Advance to the next phase (or, at the final phase, proceed to Publish),
    returning to step 0 for that next phase.
 
