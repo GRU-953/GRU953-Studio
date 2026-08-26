@@ -16,9 +16,22 @@
 # It distinguishes its own three outcomes, which is the point of running it unattended at all:
 #   exit 0  the studio built working software
 #   exit 1  the studio ran and the result is wrong  -> a real product defect
-#   exit 2  it could not measure (no credentials, a timeout, an incomplete run)
-# Exit 2 is reported as a NEUTRAL result rather than a pass, so a nightly run that never
-# authenticated cannot read as a green night.
+#   exit 2  it could not measure (a timeout, an incomplete run)
+#
+# 2026-08-26 correction. This comment used to claim exit 2 was "reported as a NEUTRAL result".
+# That was wrong: the step ends in `exit $CODE`, and GitHub Actions treats every non-zero exit as
+# a failure — there is no neutral outcome for a plain step. So with no credentials configured,
+# every scheduled run would have been a red failure, every night, for a reason that is not a
+# defect. A nightly alert that is always red is an alert nobody reads, and its absence when it
+# matters is then invisible — the same lesson as the watchdog suppression rule in
+# hooks/stall-check.mjs.
+#
+# Handled by SPLITTING the two cases instead of misdescribing one:
+#   * no credentials  -> the harness is not run at all. The job reports plainly that the product
+#                        was NOT MEASURED and ends green, because there is nothing wrong to
+#                        report. It never claims a pass: the summary says "not measured".
+#   * credentials set -> the harness runs, and any failure to measure IS then a real problem
+#                        worth a red tick, because the one reason for it has been removed.
 name: e2e (headless build)
 
 on:
@@ -49,7 +62,32 @@ jobs:
       - name: Install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Are there credentials to run with?
+        id: creds
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        shell: bash
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "have=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "have=no" >> "$GITHUB_OUTPUT"
+            echo "::warning::ANTHROPIC_API_KEY is not configured, so the product was NOT MEASURED tonight. This is not a pass and not a defect. Add the secret to make this workflow meaningful, then add \`needs: e2e\` to publish.yml."
+            {
+              echo '## Not measured'
+              echo ''
+              echo 'No `ANTHROPIC_API_KEY` secret is configured, so the unattended build was not run.'
+              echo ''
+              echo '**This is not a pass.** Nothing was proven about the product tonight.'
+              echo ''
+              echo 'Add the secret in Settings → Secrets and variables → Actions, then this workflow'
+              echo 'starts doing its job — and `needs: e2e` can be added to `publish.yml` so no release'
+              echo 'is tagged without this proof.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Run the unattended build and judge it
+        if: steps.creds.outputs.have == 'yes'
         id: e2e
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -63,16 +101,17 @@ jobs:
           case "$CODE" in
             0) echo "The studio built working software." ;;
             1) echo "::error::The studio ran and produced something wrong — a real product defect." ;;
-            2) echo "::warning::Could not measure (no credentials, a timeout, or an incomplete run). This is NOT a pass and NOT a product defect." ;;
+            2) echo "::error::Could not measure, WITH credentials configured — so this is a real problem: a timeout, or a run that never completed." ;;
             *) echo "::error::Unexpected exit code $CODE from the harness itself." ;;
           esac
           exit "$CODE"
 
-      # A run that could not measure must not be recorded as a success. `continue-on-error` is
-      # deliberately NOT used above for that reason: it would turn every unmeasurable night into a
-      # green tick, which is the exact fault the harness refuses to commit.
       - name: Restate the outcome plainly
         if: always()
         run: |
-          echo "harness exit code: ${{ steps.e2e.outputs.code }}"
-          echo "0 = built working software | 1 = product defect | 2 = could not measure"
+          if [ "${{ steps.creds.outputs.have }}" != "yes" ]; then
+            echo "NOT MEASURED — no credentials configured. Not a pass."
+          else
+            echo "harness exit code: ${{ steps.e2e.outputs.code }}"
+            echo "0 = built working software | 1 = product defect | 2 = could not measure"
+          fi"
