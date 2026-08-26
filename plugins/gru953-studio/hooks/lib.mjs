@@ -709,7 +709,16 @@ export const SEPARATOR_ROW_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // Both additions are whole-cell only (the pattern is anchored `^...$` after
 // trimming and de-emphasis), so prose that merely contains the word is
 // unaffected — only a cell that says nothing else.
-export const PLACEHOLDER_RE = /^(|[-—–]+|tbd|tbc|todo|none|n\/?a|pending|\.\.\.)$/i;
+// 2026-08-26, X372. `undefined`, `null` and `NaN` were not placeholder forms, so an evidence
+// cell containing the literal stringification of a missing value was accepted as real
+// evidence. Found by running hooks/dod.mjs for the first time: a template bug there emitted
+// `| Independent code review | pass | undefined |`, and quality-gate.mjs reported the whole
+// Definition of Done clean. The generator bug is fixed at its source, and this closes the
+// class for every OTHER producer of an evidence cell — a machine writing `undefined` into a
+// table is a common accident, and no legitimate evidence cell is exactly that word. Whole-cell
+// anchored like the rest of this pattern, so prose about "undefined behaviour" is untouched.
+export const PLACEHOLDER_RE =
+  /^(|[-—–]+|tbd|tbc|todo|none|n\/?a|pending|\.\.\.|undefined|null|nan)$/i;
 
 // 2026-08-15, finding X143 / quality-gate D7 (reproduced). PLACEHOLDER_RE above is whole-cell
 // anchored, so `tbd` is caught and `tbd - will attach the proof after the demo` is not. The

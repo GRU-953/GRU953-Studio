@@ -1831,6 +1831,203 @@ const FULL_DOD = [
   '| Reproducible build | pass | `make build` -> exit 0 on clean clone |',
 ].join('\n');
 
+// ---------------------------------------------------------------------------
+// dod.mjs — the Definition of Done, EXECUTED rather than attested (v7 Phase 2).
+//
+// quality-gate.mjs proves no required dimension is MISSING from the record; dod.mjs proves the
+// work was actually done, by running it. Every test below is a way the gate could report clean
+// while nothing was measured — which is the entire reason the file exists.
+// ---------------------------------------------------------------------------
+const DOD_ALL_NA = {
+  build: { notApplicable: 'x' },
+  tests: { notApplicable: 'x' },
+  coverage: { notApplicable: 'x' },
+  lint: { notApplicable: 'x' },
+  types: { notApplicable: 'x' },
+  security: { notApplicable: 'x' },
+  dependencies: { notApplicable: 'x' },
+  runs: { notApplicable: 'x' },
+  accessibility: { notApplicable: 'x' },
+  performance: { notApplicable: 'x' },
+  review: { notApplicable: 'x' },
+  docs: { notApplicable: 'x' },
+};
+function writeDod(dir, dimensions, schemaVersion = 1) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'dod.json'),
+    JSON.stringify({ schemaVersion, dimensions }, null, 2),
+  );
+}
+
+test('dod.mjs: no Dev-Memory is a no-op (not a studio project), exit 0', () => {
+  const dir = mkTmp('gru-dod-nostudio-');
+  const r = runScript('dod.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json && r.json.status, 'not a studio project');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: a root it cannot read BLOCKS rather than reporting clean (X370 rule)', () => {
+  const r = runScript('dod.mjs', path.join(os.tmpdir(), 'gru-dod-definitely-not-here-7c1e'));
+  assert.notEqual(r.code, 0, 'an unreadable root must never report clean');
+});
+
+test('dod.mjs: Dev-Memory but no dod.json fails closed — nothing declared cannot be proven', () => {
+  const dir = mkTmp('gru-dod-nocfg-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  assert.match(JSON.stringify(r.json), /dod\.json is missing/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: an unknown schemaVersion BLOCKS rather than guessing (the migration rule)', () => {
+  const dir = mkTmp('gru-dod-schema-');
+  writeDod(dir, DOD_ALL_NA, 99);
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0, 'a file in a shape this gate does not know might mean everything passed or nothing ran');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: a dimension that is simply absent BLOCKS (no silent omission)', () => {
+  const dir = mkTmp('gru-dod-absent-');
+  const dims = { ...DOD_ALL_NA };
+  delete dims.security;
+  writeDod(dir, dims);
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  assert.match(JSON.stringify(r.json), /security[^"]*is not declared/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: a command given as a STRING is refused — it is never handed to a shell', () => {
+  const dir = mkTmp('gru-dod-shell-');
+  writeDod(dir, { ...DOD_ALL_NA, build: { command: 'make build && echo also-this' } });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  assert.match(JSON.stringify(r.json), /argv array/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: notApplicable with no reason is an omission wearing a label', () => {
+  const dir = mkTmp('gru-dod-blankna-');
+  writeDod(dir, { ...DOD_ALL_NA, build: { notApplicable: '   ' } });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: a failing command BLOCKS, and its real exit code is recorded as evidence', () => {
+  const dir = mkTmp('gru-dod-fail-');
+  writeDod(dir, { ...DOD_ALL_NA, tests: { command: [process.execPath, '-e', 'process.exit(7)'] } });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  const ev = JSON.parse(fs.readFileSync(path.join(dir, 'Dev-Memory', 'evidence', 'tests.json'), 'utf8'));
+  assert.equal(ev.exitCode, 7, 'the evidence must record what actually happened, not a summary of it');
+  assert.equal(ev.verdict, 'fail');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: a command that cannot be started is "could-not-run", never a pass', () => {
+  const dir = mkTmp('gru-dod-nobin-');
+  writeDod(dir, { ...DOD_ALL_NA, build: { command: ['gru953-definitely-not-a-binary-4a2f'] } });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  const ev = JSON.parse(fs.readFileSync(path.join(dir, 'Dev-Memory', 'evidence', 'build.json'), 'utf8'));
+  assert.equal(ev.verdict, 'could-not-run', 'not measuring is its own outcome, distinct from measuring a failure');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The decisive coverage test. A coverage tool exits 0 while reporting 4% just as happily as at
+// 95%, so a dimension judged only by exit code would be decorative. The number is read from the
+// tool's own machine-readable report, never scraped from stdout prose.
+test('dod.mjs: coverage BELOW its floor blocks even though the command exited 0', () => {
+  const dir = mkTmp('gru-dod-cov-');
+  fs.mkdirSync(path.join(dir, 'coverage'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'coverage', 'summary.json'), JSON.stringify({ total: { lines: { pct: 41.2 } } }));
+  writeDod(dir, {
+    ...DOD_ALL_NA,
+    coverage: { command: [process.execPath, '-e', ''], minPercent: 80, reportPath: 'coverage/summary.json' },
+  });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0, 'exit 0 from a coverage tool is not the same as adequate coverage');
+  assert.match(JSON.stringify(r.json), /41\.2% is below the declared floor of 80%/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: coverage with no stated floor blocks — an unstated floor measures nothing', () => {
+  const dir = mkTmp('gru-dod-cov-nofloor-');
+  writeDod(dir, { ...DOD_ALL_NA, coverage: { command: [process.execPath, '-e', ''] } });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: a judged dimension must name the artefact it judged', () => {
+  const dir = mkTmp('gru-dod-judged-');
+  writeDod(dir, { ...DOD_ALL_NA, review: { verdict: 'pass' } });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0);
+  assert.match(JSON.stringify(r.json), /must name the .?artefact/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The end-to-end contract: a fully declared, fully passing project produces evidence on disk,
+// generates QUALITY-GATE.md from that evidence, and the generated table satisfies
+// quality-gate.mjs — so the table that gate verifies is machine-written from measured exit
+// codes rather than composed by the agent being graded.
+test('dod.mjs: a passing project writes evidence and generates a QUALITY-GATE.md that quality-gate.mjs accepts', () => {
+  const dir = mkTmp('gru-dod-pass-');
+  fs.mkdirSync(path.join(dir, 'coverage'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'coverage', 'summary.json'), JSON.stringify({ total: { lines: { pct: 91.5 } } }));
+  const ok = [process.execPath, '-e', ''];
+  writeDod(dir, {
+    build: { command: ok },
+    tests: { command: ok },
+    coverage: { command: ok, minPercent: 80, reportPath: 'coverage/summary.json' },
+    lint: { command: ok },
+    types: { command: ok },
+    security: { command: ok },
+    dependencies: { command: ok },
+    runs: { command: ok },
+    accessibility: { notApplicable: 'command-line tool — no user interface' },
+    performance: { notApplicable: 'no budget agreed for this phase' },
+    review: { verdict: 'pass', artefact: 'abc1234', by: 'reviewer' },
+    docs: { verdict: 'pass', artefact: 'abc1234', by: 'technical-writer' },
+  });
+  const r = runScript('dod.mjs', dir);
+  assert.equal(r.code, 0, `expected clean, got: ${r.stdout}`);
+
+  for (const key of ['build', 'tests', 'coverage', 'runs', 'review', 'docs']) {
+    const p = path.join(dir, 'Dev-Memory', 'evidence', `${key}.json`);
+    assert.ok(fs.existsSync(p), `evidence for ${key} must exist on disk — an unrecorded check is not a proven one`);
+  }
+
+  const table = fs.readFileSync(path.join(dir, 'Dev-Memory', 'QUALITY-GATE.md'), 'utf8');
+  assert.match(table, /GENERATED by hooks\/dod\.mjs/, 'the table must declare that it is generated');
+  assert.ok(
+    !/\|\s*(undefined|null|NaN)\s*\|/i.test(table),
+    'no row may carry the stringification of a missing value as its evidence (X372)',
+  );
+  const qg = runScript('quality-gate.mjs', dir);
+  assert.equal(qg.code, 0, `the generated table must satisfy quality-gate.mjs, got: ${qg.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// 2026-08-26, X372. Found by running dod.mjs for the first time: a template bug there emitted
+// `| Independent code review | pass | undefined |` and quality-gate.mjs reported the whole
+// Definition of Done clean, because "undefined" was not a placeholder form. The generator bug is
+// fixed at source; this closes the class for every other producer of an evidence cell.
+test('lib.mjs: PLACEHOLDER_RE recognises the stringification of a missing value (X372)', () => {
+  for (const v of ['undefined', 'null', 'NaN', 'UNDEFINED', 'Null']) {
+    assert.ok(PLACEHOLDER_RE.test(v), `"${v}" is a machine's way of writing nothing and must not count as evidence`);
+  }
+  for (const v of ['undefined behaviour was fixed', 'null-safety added', 'exit 0', 'done']) {
+    assert.ok(!PLACEHOLDER_RE.test(v), `control: "${v}" is real prose and must not be treated as a placeholder`);
+  }
+});
+
 // 2026-08-26, finding X371. CONTRADICTION_RE is the ONLY automated defence against an
 // evidence cell marked passing whose own text says the run failed, and it is shared by
 // quality-gate.mjs, verify-progress.mjs and traceability-check.mjs. Measured before the fix:
