@@ -1832,6 +1832,278 @@ const FULL_DOD = [
 ].join('\n');
 
 // ---------------------------------------------------------------------------
+// task-ledger.mjs — the task list as data, and "can this run continue?" (v7 Phase 3).
+//
+// The headless problem it solves: studio-start.md:29 says a task marked "blocked" is never
+// picked as next until a human unblocks it, so the first hard failure ends an unattended build
+// however much independent work remains. Splitting "blocked" into blocked-on-defect (park it,
+// carry on) and blocked-on-human (genuinely stop) is the whole difference.
+// ---------------------------------------------------------------------------
+function writeLedger(dir, tasks, extra = {}) {
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'tasks.json'),
+    JSON.stringify({ schemaVersion: 1, tasks, ...extra }, null, 2),
+  );
+}
+const EV = (at = '2026-08-26T10:00:00Z') => ({ command: 'npm test', exitCode: 0, at });
+
+test('task-ledger.mjs: a defect-parked task does NOT stop the run when other work is runnable', () => {
+  const dir = mkTmp('gru-tl-carryon-');
+  writeLedger(dir, [
+    { id: 'T1', title: 'a', state: 'done', evidence: EV() },
+    { id: 'T2', title: 'b', state: 'blocked-on-defect', blockedReason: 'DST rollover; 2 attempts spent' },
+    { id: 'T3', title: 'c', state: 'todo' },
+  ]);
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 0, 'independent work remains, so the run must continue');
+  assert.equal(r.json.canContinue, true);
+  assert.equal(r.json.next, 'T3', 'the next task must be the runnable one, not the parked one');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: exit 2 (not 1) when the ledger is VALID but nothing is runnable', () => {
+  const dir = mkTmp('gru-tl-stuck-');
+  writeLedger(dir, [
+    { id: 'T1', title: 'a', state: 'blocked-on-human', blockedReason: 'needs a commercial decision' },
+  ]);
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 2, '1 means "this file is wrong"; 2 means "this file is right and says I am stuck" — an unattended caller must tell them apart');
+  assert.equal(r.json.status, 'needs attention');
+  assert.match(JSON.stringify(r.json.why), /need a person/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: when stuck it names WHICH kind of stuck, per task', () => {
+  const dir = mkTmp('gru-tl-why-');
+  writeLedger(dir, [
+    { id: 'T1', title: 'a', state: 'blocked-on-defect', blockedReason: 'segfault in the parser' },
+    { id: 'T2', title: 'b', state: 'todo', dependsOn: ['T1'] },
+  ]);
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 2);
+  const why = JSON.stringify(r.json.why);
+  assert.match(why, /parked on a defect/, 'a defect needs another attempt');
+  assert.match(why, /waiting on a dependency/, 'a dependent task needs its blocker cleared — a different remedy');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: the bare state "blocked" is refused — one word cannot say both things', () => {
+  const dir = mkTmp('gru-tl-bare-');
+  writeLedger(dir, [{ id: 'T1', title: 'a', state: 'blocked' }]);
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 1);
+  assert.match(JSON.stringify(r.json), /no bare/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: a block with no stated reason is refused', () => {
+  const dir = mkTmp('gru-tl-noreason-');
+  writeLedger(dir, [{ id: 'T1', title: 'a', state: 'blocked-on-defect' }]);
+  assert.equal(runScript('task-ledger.mjs', dir).code, 1);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: done requires evidence, and that evidence must record exit 0', () => {
+  const noEv = mkTmp('gru-tl-noev-');
+  writeLedger(noEv, [{ id: 'T1', title: 'a', state: 'done' }]);
+  assert.equal(runScript('task-ledger.mjs', noEv).code, 1, 'a task is done when something ran and passed, not when it is described as finished');
+  fs.rmSync(noEv, RM_OPTS);
+
+  const failEv = mkTmp('gru-tl-failev-');
+  writeLedger(failEv, [
+    { id: 'T1', title: 'a', state: 'done', evidence: { command: 'npm test', exitCode: 1, at: '2026-08-26T10:00:00Z' } },
+  ]);
+  const r = runScript('task-ledger.mjs', failEv);
+  assert.equal(r.code, 1);
+  assert.match(JSON.stringify(r.json), /Only exit 0 is a pass/);
+  fs.rmSync(failEv, RM_OPTS);
+});
+
+test('task-ledger.mjs: a done task whose own note reports failures is refused (X371 reused)', () => {
+  const dir = mkTmp('gru-tl-contra-');
+  writeLedger(dir, [{ id: 'T1', title: 'a', state: 'done', evidence: EV(), note: '3 failed, 12 passed' }]);
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 1, 'the contradiction rule the Definition of Done uses applies to a task row too');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: a dependency cycle is an invalid ledger, not a stall to report at run time', () => {
+  const dir = mkTmp('gru-tl-cycle-');
+  writeLedger(dir, [
+    { id: 'T1', title: 'a', state: 'todo', dependsOn: ['T2'] },
+    { id: 'T2', title: 'b', state: 'todo', dependsOn: ['T1'] },
+  ]);
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 1, 'no task in the loop can ever become runnable, so the ledger can never complete');
+  assert.match(JSON.stringify(r.json), /dependency cycle/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: duplicate ids and dangling dependencies are refused', () => {
+  const dup = mkTmp('gru-tl-dup-');
+  writeLedger(dup, [{ id: 'T1', title: 'a', state: 'todo' }, { id: 'T1', title: 'b', state: 'todo' }]);
+  assert.equal(runScript('task-ledger.mjs', dup).code, 1);
+  fs.rmSync(dup, RM_OPTS);
+
+  const dangling = mkTmp('gru-tl-dangling-');
+  writeLedger(dangling, [{ id: 'T1', title: 'a', state: 'todo', dependsOn: ['NOPE'] }]);
+  assert.equal(runScript('task-ledger.mjs', dangling).code, 1);
+  fs.rmSync(dangling, RM_OPTS);
+});
+
+test('task-ledger.mjs: an unknown schemaVersion blocks rather than guessing', () => {
+  const dir = mkTmp('gru-tl-schema-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'tasks.json'), JSON.stringify({ schemaVersion: 99, tasks: [] }));
+  assert.equal(runScript('task-ledger.mjs', dir).code, 1);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: no Dev-Memory is a no-op, and an unreadable root BLOCKS', () => {
+  const dir = mkTmp('gru-tl-nostudio-');
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.status, 'not a studio project');
+  fs.rmSync(dir, RM_OPTS);
+  assert.notEqual(
+    runScript('task-ledger.mjs', path.join(os.tmpdir(), 'gru-tl-definitely-not-here-2b8f')).code,
+    0,
+  );
+});
+
+// The rendered view must remain readable by the gate that already reads PROGRESS.md, or moving
+// the ledger to JSON would silently break the phase-checkpoint check.
+test('task-ledger.mjs: renders a PROGRESS.md that verify-progress.mjs still accepts', () => {
+  const dir = mkTmp('gru-tl-render-');
+  writeLedger(
+    dir,
+    [
+      { id: 'T1', title: 'Habit CRUD', state: 'done', evidence: EV() },
+      { id: 'T2', title: 'Streak counter', state: 'todo' },
+    ],
+    { project: 'Habit Tracker' },
+  );
+  assert.equal(runScript('task-ledger.mjs', dir).code, 0);
+  const rendered = fs.readFileSync(path.join(dir, 'Dev-Memory', 'PROGRESS.md'), 'utf8');
+  assert.match(rendered, /GENERATED by hooks\/task-ledger\.mjs/);
+  assert.match(rendered, /▶ RESUME HERE/, 'the focus-guard resume marker must land on the next runnable task');
+  assert.match(rendered, /verified: `npm test` -> exit 0/, 'a done row must render its evidence in the form verify-progress reads');
+  const vp = runScript('verify-progress.mjs', dir);
+  assert.equal(vp.code, 0, `verify-progress must accept the rendered file, got: ${vp.stdout}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
+// config-protection.mjs — stops an agent weakening the instruments that measure it (v7 Phase 3).
+//
+// The failure mode: an unattended agent told "make the build pass" can fix the code, or edit
+// the thing that decides whether the code is acceptable. The second is faster, always works,
+// and leaves every downstream gate green while measuring nothing.
+// ---------------------------------------------------------------------------
+function runEditHook(script, filePath) {
+  const input = JSON.stringify({ tool_input: { file_path: filePath } });
+  const r = spawnSync(NODE, [path.join(HERE, script)], { input, encoding: 'utf8' });
+  let decision = null;
+  try {
+    decision = JSON.parse(r.stdout).hookSpecificOutput.permissionDecision;
+  } catch {
+    decision = null;
+  }
+  return { code: r.status, decision, stdout: r.stdout, silent: (r.stdout || '').trim() === '' };
+}
+
+test('config-protection.mjs: DENIES an edit to an existing linter config', () => {
+  const dir = mkTmp('gru-cfg-lint-');
+  const f = path.join(dir, 'eslint.config.mjs');
+  fs.writeFileSync(f, 'export default [];\n');
+  const r = runEditHook('config-protection.mjs', f);
+  assert.equal(r.decision, 'deny', '"make lint pass" must not be achievable by editing the linter');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('config-protection.mjs: DENIES an edit to Dev-Memory/dod.json — the declared coverage floor', () => {
+  const dir = mkTmp('gru-cfg-dod-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const f = path.join(dir, 'Dev-Memory', 'dod.json');
+  fs.writeFileSync(f, '{}\n');
+  const r = runEditHook('config-protection.mjs', f);
+  assert.equal(r.decision, 'deny', 'an agent that can lower minPercent makes dod.mjs measure whatever it likes');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('config-protection.mjs: DENIES an edit to recorded evidence — writing evidence is dod.mjs\'s job', () => {
+  const dir = mkTmp('gru-cfg-ev-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory', 'evidence'), { recursive: true });
+  const f = path.join(dir, 'Dev-Memory', 'evidence', 'tests.json');
+  fs.writeFileSync(f, '{"verdict":"fail"}\n');
+  const r = runEditHook('config-protection.mjs', f);
+  assert.equal(
+    r.decision,
+    'deny',
+    'an agent that can hand-write an evidence file can hand-write a pass, and the executed Definition of Done collapses back into self-attestation',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('config-protection.mjs: stands aside for FIRST-TIME creation of a config that does not exist', () => {
+  const dir = mkTmp('gru-cfg-new-');
+  const r = runEditHook('config-protection.mjs', path.join(dir, 'eslint.config.mjs'));
+  assert.ok(r.silent, 'a project with no linter must be able to acquire one — the rule is about MODIFYING an instrument, not about the filename');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('config-protection.mjs: stands aside for pyproject.toml even when it exists (deliberate exclusion)', () => {
+  const dir = mkTmp('gru-cfg-pyproj-');
+  const f = path.join(dir, 'pyproject.toml');
+  fs.writeFileSync(f, '[project]\nname = "x"\n');
+  const r = runEditHook('config-protection.mjs', f);
+  assert.ok(
+    r.silent,
+    'pyproject.toml carries dependencies and packaging alongside any tool section; a hook that fires on ordinary work gets switched off, and a switched-off hook guards nothing',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('config-protection.mjs: stands aside for an ordinary source file', () => {
+  const dir = mkTmp('gru-cfg-src-');
+  const f = path.join(dir, 'index.js');
+  fs.writeFileSync(f, 'export const a = 1;\n');
+  const r = runEditHook('config-protection.mjs', f);
+  assert.ok(r.silent, 'the hook must have no opinion about ordinary code');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('config-protection.mjs: DENIES rather than standing aside when the payload cannot be understood', () => {
+  const r = spawnSync(NODE, [path.join(HERE, 'config-protection.mjs')], {
+    input: 'not json at all',
+    encoding: 'utf8',
+  });
+  let decision = null;
+  try {
+    decision = JSON.parse(r.stdout).hookSpecificOutput.permissionDecision;
+  } catch {
+    decision = null;
+  }
+  assert.equal(
+    decision,
+    'deny',
+    'losing the payload means losing the path this hook exists to inspect — scan.mjs\'s precedent is deny, not stand aside',
+  );
+});
+
+test('config-protection.mjs: never emits permissionDecision "allow" (INV17)', () => {
+  const dir = mkTmp('gru-cfg-inv17-');
+  const f = path.join(dir, '.prettierrc');
+  fs.writeFileSync(f, '{}\n');
+  for (const p of [f, path.join(dir, 'nope.js'), path.join(dir, 'tsconfig.json')]) {
+    const r = runEditHook('config-protection.mjs', p);
+    assert.notEqual(r.decision, 'allow', '"allow" suppresses the prompt the user would otherwise have seen — no hook may emit it');
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
 // dod.mjs — the Definition of Done, EXECUTED rather than attested (v7 Phase 2).
 //
 // quality-gate.mjs proves no required dimension is MISSING from the record; dod.mjs proves the

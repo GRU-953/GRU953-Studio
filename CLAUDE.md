@@ -73,7 +73,7 @@ a Claude skill — and this gate compares them clause by clause so the two can
 never quietly say different things.
 
 The seven gates above are the ones CI itself runs and are mandatory on every
-commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries six
+commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries seven
 project-level gates (no-ops on this repo, since it has no `Dev-Memory/` of its
 own) that a project built *by* the plugin must pass before a phase checkpoint
 or Publish — run these too whenever you touch the skill/hook that documents
@@ -81,6 +81,7 @@ them, so the documented requirement and the enforcing script never drift apart:
 
 ```
 node plugins/gru953-studio/hooks/dod.mjs .                 # RUNS the Definition of Done and records the evidence (v7)
+node plugins/gru953-studio/hooks/task-ledger.mjs .         # validates Dev-Memory/tasks.json, renders PROGRESS.md, says whether the run can continue (v7)
 node plugins/gru953-studio/hooks/verify-progress.mjs .     # done tasks carry verified: evidence (tester / security-compliance-auditor)
 node plugins/gru953-studio/hooks/quality-gate.mjs .        # Definition of Done (quality-gate skill)
 node plugins/gru953-studio/hooks/traceability-check.mjs .  # requirements <-> tasks (focus-guard skill)
@@ -110,3 +111,39 @@ rather than becoming a permanent tick nobody re-earns.
 A hand-edited `QUALITY-GATE.md` is overwritten on the next `dod.mjs` run,
 deliberately: a Definition of Done that can be edited by the work it grades is not
 a Definition of Done.
+
+**`task-ledger.mjs` exits 2, and that is not a failure (2026-08-26, v7 Phase 3).**
+It has three outcomes, not two: `0` the ledger is valid and the run can continue
+(or everything is done), `1` the ledger is *invalid* — bad schema, a dependency
+cycle, a `done` task with no evidence — and `2` the ledger is *valid* and says
+nothing is runnable while work remains. An unattended caller has to tell "this
+file is wrong" from "this file is right and I am stuck", so a plain `&&` chain
+over these gates will read a legitimate 2 as a failure. Check for it explicitly.
+
+That third state exists because `commands/studio-start.md:29` says a task marked
+"blocked" is never picked as next until a human unblocks it. With somebody at the
+keyboard that is correct. With nobody there, the first hard failure ends the build
+however much independent work remains — and `self-healing/SKILL.md` allows two
+quiet attempts and then invokes the terminal Stuck Protocol, so there is no middle.
+So v7 has no bare `blocked` state at all: a task is `blocked-on-defect` (parked —
+the run carries on with anything whose dependencies are satisfied) or
+`blocked-on-human` (genuinely cannot proceed). Only when nothing is runnable does
+the run stop, and then it reports which of the two applies, per task.
+
+`Dev-Memory/tasks.json` is the authoritative ledger and `PROGRESS.md` is rendered
+from it. That direction is deliberate: this repository carries eight separate
+reproductions for failures of *reading* that markdown table (X122, X138, X141,
+X142, X144, X146, X147, X192/X193), every one of them the same mistake of using a
+human presentation format as a data structure. A rendered file cannot be torn,
+because nothing parses it back. The rendered output is still in the shape
+`verify-progress.mjs` reads, which is asserted by a test.
+
+**`config-protection.mjs`** is a `PreToolUse` hook, not one of the commit gates. It
+refuses edits to an existing linter/formatter/type-checker config, to
+`Dev-Memory/dod.json`, and to `Dev-Memory/evidence/` — the files that decide
+whether the work is acceptable. An unattended agent told "make the build pass" can
+fix the code or edit the thing measuring it, and the second always works. Creating
+such a file for the first time is allowed; `pyproject.toml` and `setup.cfg` are
+deliberately excluded because they carry project metadata alongside tool
+configuration, and a guard that fires on ordinary work gets switched off. `INV10`
+in `repo-integrity.mjs` asserts it stays wired for all four file-editing tools.

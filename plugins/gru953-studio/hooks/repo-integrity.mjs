@@ -690,12 +690,31 @@ if (hooksJsonText === null) {
     // require at least one of THOSE entries to cover the tools the guard must cover.
     // Reproduction: hooks/test/repro/X116-X117-weaker-predicate.mjs.
     const REQUIRED_TOOLS = ['Bash', 'PowerShell', 'Monitor'];
+    // 2026-08-26, v7 Phase 3. Each guard is paired with the tools IT must cover, because they
+    // no longer guard the same surface: scan.mjs guards command execution, config-protection.mjs
+    // guards file edits. A single shared REQUIRED_TOOLS list would have asserted that
+    // config-protection.mjs was wired for Bash — which is not what it is for — and said nothing
+    // about whether it was wired for Write at all. That is the X116 shape again: a true
+    // statement standing in for the one that matters.
+    const REQUIRED_GUARDS = [
+      {
+        script: 'scan.mjs',
+        tools: REQUIRED_TOOLS,
+        why: 'a push-capable command run that way bypasses the secret scan entirely (finding X116)',
+      },
+      {
+        script: 'config-protection.mjs',
+        tools: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'],
+        why: 'an agent could then edit the linter config, the Definition of Done, or its own recorded evidence through the unguarded tool, and every downstream gate would report green while measuring nothing',
+      },
+    ];
     // 2026-08-16, X214: `gate.mjs` was removed. Dropping it from this list is deliberate, not an
     // oversight — the push-authorisation token layer it enforced could not establish what it
     // claimed (X91: anything the hook can read, an agent can write), and this list must describe
     // the product that exists. `scan.mjs` STAYS required: the secret scan refuses on evidence,
     // and a build that silently stopped wiring it would ship credentials with nothing objecting.
-    for (const required of ['scan.mjs']) {
+    for (const guard of REQUIRED_GUARDS) {
+      const required = guard.script;
       const entriesRunningIt = preToolUse.filter((e) =>
         (Array.isArray(e.hooks) ? e.hooks : []).some((h) =>
           // X116: EXECUTED, not mentioned — see invokesScript() below.
@@ -707,10 +726,10 @@ if (hooksJsonText === null) {
         continue;
       }
       const itsMatchers = entriesRunningIt.map((e) => String(e.matcher || ''));
-      const uncovered = REQUIRED_TOOLS.filter((t) => !matcherCoversTool(itsMatchers, t));
+      const uncovered = guard.tools.filter((t) => !matcherCoversTool(itsMatchers, t));
       if (uncovered.length > 0) {
         fail(
-          `hooks.json no longer wires ${required} under a matcher covering ${uncovered.join(', ')} — it is registered, but not for the tool(s) it exists to guard, so a push-capable command run that way bypasses it entirely (finding X116)`,
+          `hooks.json no longer wires ${required} under a matcher covering ${uncovered.join(', ')} — it is registered, but not for the tool(s) it exists to guard, so ${guard.why}`,
         );
       }
     }
