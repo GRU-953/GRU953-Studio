@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "A marketplace for GRU953-Studio: a Tier-sized team of specialised AI software developers, led by an AI project lead, that turns a plain-English idea and one short pop-up interview into a working, tested project on your own machine. A native Claude Code plugin \u2014 from 7.0.0 it targets Claude Code only, and every check it reports is one it actually ran.",
-    "version": "6.1.0"
+    "version": "7.0.0"
   },
   "plugins": [
     {

@@ -1,29 +1,165 @@
 # Changelog
 
-## Unreleased
+## 7.0.0 — 2026-08-26 (LTS)
 
-### Ordinary GitHub work was refused as though it were going public
+**Please read section 1 before updating.** Two things change that you would notice
+straight away: the licence now permits commercial use free of charge, and the studio
+no longer publishes anything to GitHub for you. Everything else is detail.
 
-- **`gate.mjs`: filing an issue was denied with a message about changing
-  visibility (finding X189).** A `gh api` write whose body sits in a file
-  cannot be read, so it fails closed — correctly — when aimed at a path that
-  can carry `visibility`. That rule was meant to cover the repository root and
-  repo-creation endpoints only, and its own comment said so. The endpoint test
-  ended in `(?![A-Za-z0-9_])`, which a following `/` satisfies, so
-  `repos/o/r/issues`, `.../releases`, `.../dispatches` and `.../pulls` all
-  matched the "repository root" and were refused. The remedy the denial
-  suggested was to record the go-public approval — the single most consequential
-  token in the product — to unblock filing an issue.
-- **The test that should have caught it was decorative.** `hooks.test.mjs`
-  carries a test named "does not over-block writes that cannot change
-  visibility". Its only sub-resource case with an unreadable body also carried
-  `-f private=true`, which clears the command through a different branch
-  entirely, so the predicate under test was never reached. Cases without that
-  flag are now included.
-- **GitHub Pages is deliberately still fail-closed.** Pages is a sub-resource,
-  so narrowing the rule would have quietly relaxed it — and a Pages site
-  publishes the repository's content on the web. It is now named explicitly
-  rather than caught by accident, with its own test.
+Full plain-English upgrade notes: [MIGRATION.md](MIGRATION.md).
+
+### 1. What changes for you
+
+**The licence is now Apache-2.0. Commercial use is free.** Every version up to and
+including 6.1.0 was PolyForm Noncommercial: free personally, but selling anything you
+built with it required buying a separate licence. That requirement is gone. You may
+use, modify, sell and ship whatever you build, with nothing to pay and nobody to ask.
+The GRU953 name and Soaring Bird logo are still protected — Apache-2.0 grants no
+trademark rights.
+
+**The studio no longer publishes for you.** It now finishes with a complete, tested
+project committed on your own machine, and stops. Creating a GitHub repository and
+pushing to it is yours to do, deliberately. This is a safety decision rather than a
+missing feature: an unattended build cannot sensibly be trusted to decide when your
+code becomes visible to other people, and the old design asked you to approve each
+push — a question nothing can answer when you are not there.
+
+**It now works unattended.** You answer one round of pop-up questions at the start,
+and the studio then researches, designs, plans, codes, reviews and tests without
+interrupting you again.
+
+**Claude Code only.** Support for Cursor, Windsurf, Cline, Roo Code, Aider, GitHub
+Copilot, Devin, Replit, OpenHands and Google Antigravity is withdrawn, along with the
+Ollama, OpenRouter and Gemini integrations. That support was never tested end to end
+and this project's own documentation called it "best-effort, uneven". One target that
+genuinely works is worth more than nine that might. The Antigravity npm package could
+never install in any case: every published version of it shipped without the plugin its
+own code loads at runtime.
+
+**Media is now specified rather than generated.** Images, audio and video used to be
+produced through a paid Google integration, behind an approval prompt shown before
+every single generation. With no such provider, one `media-content-specialist` now
+writes you an asset brief — what it must show, every size and format the platform
+needs, the alt-text written out, and a note on what you may legally use — plus
+step-by-step instructions for producing it. This was already the documented behaviour
+when no key was available; it is now the only behaviour. It also removes a prompt an
+unattended run could never answer.
+
+### 2. The change underneath all of it
+
+**Checks now run the work instead of reading a report about it.**
+
+`quality-gate.mjs` and `verify-progress.mjs` never executed anything — neither imports
+`child_process`, and the only `exec` in either is a regular expression. They read a
+markdown table listing each quality dimension as passed, with a note as evidence. The
+agents wrote that table themselves.
+
+With a person watching, that is survivable: you read the summary and notice when the
+app does not work. With nobody watching it is a loop that always closes green — the
+agent does the work, writes its own report card, and the check marks the report card.
+
+`hooks/dod.mjs` replaces it. It runs the build, the tests, coverage against a stated
+number, the linter, the type checker, a security scan, a dependency audit, a real user
+journey, accessibility checks and performance budgets. Each produces a real exit code,
+recorded with its command and output under `Dev-Memory/evidence/`. The markdown table
+is then generated from that evidence, so the older check still does its job — on
+measurements rather than claims. A hand-edited table is overwritten on the next run,
+deliberately: a standard the work can edit is not a standard.
+
+### 3. Bugs fixed, and what each one had been hiding
+
+Every one was reproduced by running the code before being called a bug, and every one
+has a test that fails on the old code.
+
+- **The reproduction harness accepted a crash as proof of a fix.** The contract for the
+  71 regression reproductions asserted only a non-zero exit. A reproduction that died
+  for an unrelated reason — a renamed fixture, a typo in its own path — satisfied it
+  while measuring nothing. All 71 were weaker than they claimed.
+- **Five blocking pre-publish checks reported "clean" for a folder they never read.**
+  A path that did not exist, and a file passed where a folder was expected, both
+  produced `not a studio project` and exit 0 — the same answer as a genuinely
+  unrelated folder. A mistyped path made five checks report success on work none of
+  them had looked at.
+- **The only defence against a passing row that admits failure missed most failures.**
+  It recognised how a person narrates one ("now fails", "still failing") and not how a
+  test runner reports one. `3 failed, 12 passed` — the commonest line any runner
+  prints — went straight through, so a Definition of Done could pass carrying its own
+  evidence of failure. Seven of eleven realistic phrasings were missed.
+- **`undefined` counted as evidence.** Found when the new checker's own template wrote
+  `| Independent code review | pass | undefined |` and the older gate reported the
+  whole Definition of Done clean.
+- **The charter's most important sentence was the one nothing guarded.** The guarantee
+  that publishing needs a fresh, explicit yes every time could be deleted outright and
+  every gate still reported clean.
+- **The release path ran none of the checks.** Pushing a version tag published to npm
+  with no dependency on the test suite or any of the seven integrity gates.
+- **Four gates had latent bugs nobody had reached.** Two read a historical role count
+  as the current one; one recognised merged-away roles only under a heading naming one
+  specific old version; one could never allow a skill to be deleted while the changelog
+  still mentioned it. Each surfaced the first time anyone actually changed the thing it
+  guarded.
+- **One role's protocol existed twice**, as both an agent and a same-named skill that
+  nothing loaded — and that skill claimed to be mechanically enforced by a check which
+  skips it.
+
+### 4. New in the machinery
+
+- **`dod.mjs`** — the executed Definition of Done, above.
+- **`task-ledger.mjs`** — the task list as data, with `PROGRESS.md` generated from it.
+  There is no bare "blocked" state any more: a task is blocked on a *defect* (parked,
+  and the run carries on with anything else it can finish) or blocked on a *person*
+  (it genuinely stops). Previously the first hard failure ended an unattended build
+  however much independent work remained. It also enforces a retry ceiling as data,
+  rather than trusting the agent that wants to keep trying to count its own attempts.
+- **`run-brief.mjs`** — checks, before a run starts, that the interview left nothing the
+  build would have to come back and ask about. It also re-derives the project Tier from
+  the three answers that produce it and refuses a mismatch, so a mis-sized project is
+  caught rather than silent.
+- **`config-protection.mjs`** — refuses edits to the linter's configuration, to the
+  declared Definition of Done, and to recorded evidence. An agent told "make the build
+  pass" can fix the code or edit the thing measuring it, and the second always works.
+- **`session-cost.mjs`** — what a run has spent, in tokens. Not money: a price list
+  inside a long-term release becomes a promise that goes quietly stale.
+- **`stall-check.mjs`** — whether an unattended run is still working or has silently
+  wedged, which nothing could previously answer.
+- **A real end-to-end test.** There were 520 tests over the machinery and not one that
+  the studio produces working software. `tools/e2e/headless-build.mjs` runs an
+  unattended build of a small app and judges the result against both the files on disk
+  and the session transcript — including that nothing was pushed anywhere. It runs
+  nightly. **It has not yet run green**, because it needs credentials this repository
+  does not have; that is stated in the file rather than implied by its existence.
+
+### 5. Numbers
+
+| | 6.1.0 | 7.0.0 |
+| :-- | --: | --: |
+| Specialist roles | 38 | 36 |
+| Skills | 40 | 34 |
+| Commands | 11 | 10 |
+| Enforcement hooks | 19 | 24 |
+| Tests | 480 | 520 |
+| Text read before any work starts | 141,570 B | 118,731 B |
+| Outbound network calls | 1 | 0 |
+| Third-party runtime dependencies | 0 | 0 |
+
+### 6. What LTS means here
+
+`7.0.x` receives bug fixes and security fixes only. No new features, no behaviour
+changes — so anything you build on it does not move under you. New work goes to a
+`7.1` line. The full statement of what will not change is in
+[docs/STABILITY.md](docs/STABILITY.md), and the supported-versions table is in
+[SECURITY.md](SECURITY.md).
+
+### 7. Corrected from the pending notes of the previous cycle
+
+The unreleased section this replaces described repairing an endpoint rule inside
+`hooks/gate.mjs` (finding X189). That file, and the entire push-authorisation token
+layer it belonged to, had already been deleted nine days before those notes were
+written — the layer could not establish what it claimed, since anything the check could
+read an agent on the same machine could write. So the note described a repair to
+something that no longer existed, and shipping it would have credited a fix nobody
+could verify. It is withdrawn rather than carried forward. The removal of that layer
+itself was never given a changelog entry; it is recorded here.
 
 ## 6.1.0 — 2026-08-13
 

@@ -145,11 +145,29 @@ function main() {
   // update after they ask for it. Deliberately a REDUCTION in automation: a
   // silent rebase is not a feature worth keeping. Asserted by test — the hook
   // must spawn no child process.
+  //
+  // 2026-08-26, v7.0.0. The notify-only decision above is kept exactly as it is — a silent
+  // rebase is not a feature worth having back, and the test below pins that this hook spawns no
+  // child process. What changed is that the notice was CONDITIONAL on the user raising the
+  // subject: "if the user asks about updating". A person who does not know a new version exists
+  // does not ask, so the only channel that ever reached a 6.1.0 user was a paragraph at the top
+  // of a changelog they had no reason to open.
+  //
+  // It is now stated once, unprompted, alongside the version actually running. That is the whole
+  // honest repair available here: this hook cannot know whether a newer version EXISTS, because
+  // v7 makes no outbound network call at all and that property is worth more than the notice.
+  // Telling the person what they are running and how to check is true, useful, and free.
+  //
+  // Worth recording plainly, because MIGRATION.md makes a claim next to this one: this change
+  // cannot reach anybody already on 6.1.0. They run 6.1.0's copy of this hook. The channels that
+  // reach them are npm, the CLI's own `update` command, and the npm deprecation notices on the
+  // withdrawn packages — not anything shipped inside 7.0.0.
   lines.push(
     '',
-    'If the user asks about updating GRU953-Studio, tell them to run',
-    '`/studio-update`. Never fetch, pull, rebase or stash on their behalf',
-    'without them asking for it first.',
+    'Tell the user, once, in your first message of a new project: they are running',
+    'GRU953-Studio and can check for a newer version with `/studio-update`, which',
+    'never changes anything without asking first. Never fetch, pull, rebase or stash',
+    'on their behalf without them asking for it.',
   );
 
   // 2026-08-24, X38/X40 — SAY WHICH COPY IS GUARDING THIS SESSION.

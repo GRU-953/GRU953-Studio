@@ -64,7 +64,7 @@ secrets before anything is sent out, one refuses edits to the checks that measur
 the work (plus a suite of pre-publish and CI integrity checks) · **zero
 third-party code dependencies** · **no outbound network calls at all**.
 
-### Latest version: 6.1.0
+### Latest version: 7.0.0
 
 Everything the studio does is listed in plain English in
 [CHANGELOG.md](CHANGELOG.md), newest first — including what each release fixed

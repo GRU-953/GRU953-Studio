@@ -26,6 +26,31 @@ report concerns responsibly rather than opening a public issue.
 > concern, use the [private steps below](#reporting-a-vulnerability); please
 > don't post it in public.
 
+## Supported versions
+
+Added 2026-08-26 with the 7.0.0 long-term-support release. Until then this policy
+described the controls in detail and never said which versions those controls were
+still being maintained for — so a reader could not tell whether a fix would reach the
+version they had installed.
+
+| Version | Supported | What that means |
+| :-- | :-- | :-- |
+| **7.0.x** | **Yes — LTS** | Bug fixes and security fixes. No new features and no behaviour changes; see [docs/STABILITY.md](docs/STABILITY.md) for exactly what will not move. |
+| 6.1.x and earlier | No | No further fixes, including security fixes. |
+| `@gru953/studio-antigravity` (all versions) | No — withdrawn | Removed in 7.0.0 with the other host adapters. Every published version was uninstallable in any case: the tarball shipped without the plugin its own code loads at runtime. Deprecated on npm rather than deleted, because a published package name cannot be removed. |
+| The VS Code extension (all versions) | No — withdrawn | Removed in 7.0.0 with the other host adapters. |
+
+**If you are on 6.1.0 or earlier, update.** The controls described in the rest of this
+document apply to the version they were written for; several were repaired in 7.0.0,
+and a defect disclosed further down this page as present in "every published version,
+up to and including 6.1.0" is fixed only in 7.0.0. See [MIGRATION.md](MIGRATION.md) —
+the upgrade needs nothing from you but changes two things you would notice, so it is
+worth two minutes of reading first.
+
+**Reports against unsupported versions are still welcome.** If the same defect exists
+in 7.0.x it will be fixed there, and you will be credited either way. What will not
+happen is a patch release for 6.1.x.
+
 ## Reporting a vulnerability
 
 Please report security issues **privately**. Do not open a public issue for a
