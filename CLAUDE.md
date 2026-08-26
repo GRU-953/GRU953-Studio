@@ -73,13 +73,14 @@ a Claude skill — and this gate compares them clause by clause so the two can
 never quietly say different things.
 
 The seven gates above are the ones CI itself runs and are mandatory on every
-commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries seven
+commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries eight
 project-level gates (no-ops on this repo, since it has no `Dev-Memory/` of its
 own) that a project built *by* the plugin must pass before a phase checkpoint
 or Publish — run these too whenever you touch the skill/hook that documents
 them, so the documented requirement and the enforcing script never drift apart:
 
 ```
+node plugins/gru953-studio/hooks/run-brief.mjs .            # is the brief complete enough to build from unattended? (v7)
 node plugins/gru953-studio/hooks/dod.mjs .                 # RUNS the Definition of Done and records the evidence (v7)
 node plugins/gru953-studio/hooks/task-ledger.mjs .         # validates Dev-Memory/tasks.json, renders PROGRESS.md, says whether the run can continue (v7)
 node plugins/gru953-studio/hooks/verify-progress.mjs .     # done tasks carry verified: evidence (tester / security-compliance-auditor)
@@ -137,6 +138,43 @@ X142, X144, X146, X147, X192/X193), every one of them the same mistake of using 
 human presentation format as a data structure. A rendered file cannot be torn,
 because nothing parses it back. The rendered output is still in the shape
 `verify-progress.mjs` reads, which is asserted by a test.
+
+**`run-brief.mjs` is the headless front door's contract (2026-08-26, v7 Phase 3).**
+The owner's decision for v7 is "one interview, then silent" — the existing
+expert-panel pop-up interview runs once at kick-off, and the build then proceeds
+with no further human input. That only works if the interview's answers are written
+where the build can read them, and if something checks BEFORE the run that nothing
+it will need is missing. Otherwise "headless" means "runs until the first question,
+then stops", which is what happens today. So run it while a person is still there,
+when a gap costs one more question rather than an abandoned run.
+
+`Dev-Memory/run-brief.json` is the data; `OBJECTIVE.md` is rendered from it. The
+precedent for that direction is in `studio/SKILL.md` itself, which already had to
+carve one machine-readable island out of the prose brief — the Tier "must be
+recorded as one exact, on-disk line" because a script needed to read it and prose
+could not be trusted to yield it.
+
+The check that earns the file its place: the Tier is **re-derived** from the three
+recorded answers and compared with the Tier actually assigned. `studio/SKILL.md`
+documents that mapping as "a checkable rule, not a vibe", added by a 2026-07-10
+audit fix after "a typical web app" let almost any request round up to Standard by
+default. The rule was written down and nothing checked it; now something does, so a
+mis-tiered project is a caught error rather than a silent one.
+
+`nonGoals` must be present even when empty — the same no-silent-omission rule the
+quality gate applies to its dimensions. An absent field cannot be told from a
+considered "nothing is out of scope", and the second is a claim somebody should have
+to make on purpose. `stack` must be either a chosen technology or the exact string
+`studio-chooses`, because an absent value means the run decides for you without
+recording that it did.
+
+**The fix loop's cap is data, not an agent's memory.** `self-healing/SKILL.md`
+allows two quiet attempts before the terminal Stuck Protocol — but the counting is
+done by the agent being asked to keep trying, which is the wrong party to hold the
+counter. A task records `attempts`, and `task-ledger.mjs` refuses a task still
+marked runnable after spending them: a fix loop past its ceiling has not terminated.
+Default 3 (where both independent peer implementations landed); a project may state
+its own as `maxAttemptsPerTask` in `Dev-Memory/run.json`.
 
 **Two run-time observability tools, not gates (2026-08-26, v7 Phase 3).**
 `session-cost.mjs` and `stall-check.mjs` answer questions about a RUN, so they are

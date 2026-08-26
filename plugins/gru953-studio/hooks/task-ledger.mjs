@@ -127,6 +127,49 @@ if (!tasks) {
   out({ status: 'BLOCKED', problems: ['Dev-Memory/tasks.json has no `tasks` array'], root }, 1);
 }
 
+// ---- the fix-loop attempt cap ----------------------------------------------------------------
+// `self-healing/SKILL.md` allows two quiet fix attempts and then invokes the terminal Stuck
+// Protocol. That is a cap, but it is enforced by an agent remembering to count — and an agent
+// asked to keep trying is exactly the wrong party to hold the counter. Here the cap is data: a
+// task records its `attempts`, and a task still marked runnable after spending them is a fix
+// loop that did not terminate, which this gate refuses. Three is the default because it is
+// where the two independent peer implementations of a bounded retry both landed; a project may
+// state its own in `Dev-Memory/run.json`.
+let maxAttempts = 3;
+{
+  const runRaw = readOrBlock(path.join(devMemory, 'run.json'));
+  if (runRaw !== MISSING) {
+    let cfg = null;
+    try {
+      cfg = JSON.parse(runRaw);
+    } catch (e) {
+      out(
+        {
+          status: 'BLOCKED',
+          problems: [`Dev-Memory/run.json is not valid JSON (${e.message})`],
+          root,
+        },
+        1,
+      );
+    }
+    if (cfg && cfg.maxAttemptsPerTask !== undefined) {
+      if (!Number.isInteger(cfg.maxAttemptsPerTask) || cfg.maxAttemptsPerTask < 1) {
+        out(
+          {
+            status: 'BLOCKED',
+            problems: [
+              `Dev-Memory/run.json declares maxAttemptsPerTask ${JSON.stringify(cfg.maxAttemptsPerTask)}, which is not a whole number of 1 or more. A cap that cannot be compared against is not a cap.`,
+            ],
+            root,
+          },
+          1,
+        );
+      }
+      maxAttempts = cfg.maxAttemptsPerTask;
+    }
+  }
+}
+
 // ---- validate --------------------------------------------------------------------------------
 const byId = new Map();
 for (const [i, t] of tasks.entries()) {
@@ -165,6 +208,19 @@ for (const [i, t] of tasks.entries()) {
   }
   if (t.dependsOn !== undefined && !Array.isArray(t.dependsOn)) {
     fail(`${id}: dependsOn must be an array of task ids`);
+  }
+
+  // The attempt cap, enforced rather than trusted. A task that has spent its attempts and is
+  // still marked runnable means the fix loop kept going past its own ceiling — the failure mode
+  // where an unattended run burns a whole budget on one task. It must be parked as
+  // blocked-on-defect (or finished), and saying so is what makes the loop terminate.
+  const attempts = t.attempts === undefined ? 0 : t.attempts;
+  if (!Number.isInteger(attempts) || attempts < 0) {
+    fail(`${id}: attempts ${JSON.stringify(t.attempts)} must be a whole number of 0 or more`);
+  } else if (attempts >= maxAttempts && (state === 'todo' || state === 'in-progress')) {
+    fail(
+      `${id}: has spent ${attempts} of ${maxAttempts} permitted attempts and is still marked ${state}. A fix loop past its cap has not terminated — park it as blocked-on-defect with what was tried, so the run moves on to work it can finish instead of spending the rest of the budget here.`,
+    );
   }
 
   // `done` must be backed by a real recorded execution — the same rule dod.mjs applies to a
@@ -310,6 +366,8 @@ const waiting = all.filter(
 const summary = {
   total: all.length,
   done: done.length,
+  maxAttemptsPerTask: maxAttempts,
+  atAttemptCap: all.filter((t) => (t.attempts || 0) >= maxAttempts).map((t) => t.id),
   runnable: runnable.map((t) => t.id),
   waitingOnDependency: waiting.map((t) => t.id),
   parkedOnDefect: blockedDefect.map((t) => t.id),
