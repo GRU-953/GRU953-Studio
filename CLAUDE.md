@@ -138,6 +138,44 @@ human presentation format as a data structure. A rendered file cannot be torn,
 because nothing parses it back. The rendered output is still in the shape
 `verify-progress.mjs` reads, which is asserted by a test.
 
+**Two run-time observability tools, not gates (2026-08-26, v7 Phase 3).**
+`session-cost.mjs` and `stall-check.mjs` answer questions about a RUN, so they are
+not in the commit list — there is no run to observe when you are committing to this
+repository. Both take `--transcript <path>`:
+
+```
+node plugins/gru953-studio/hooks/session-cost.mjs . --transcript <path>   # what this run has spent
+node plugins/gru953-studio/hooks/stall-check.mjs   . --transcript <path>  # is it working or wedged?
+```
+
+`session-cost.mjs` reports TOKENS, never money. A per-model price list inside an LTS
+release stops being a snapshot and becomes a promise that goes stale silently, in the
+direction of under-reporting; tokens are what the transcript records and they never
+go stale. A ceiling is declared as `tokenBudget` in `Dev-Memory/run.json`, and cache
+reads are excluded from the number it is compared against — on a long session they
+outnumber everything else by roughly eighty to one while costing least, so including
+them would make any ceiling meaningless.
+
+Totals are keyed by `message.id`, which is not a style preference. The harness writes
+one transcript line per content block and repeats the whole `usage` object on each
+line. Measured on a real session on this machine before building against it: 424
+usage-bearing rows carrying only 162 distinct ids, 136 repeated with byte-identical
+usage, so summing rows inflates output tokens by **2.84x**. A budget built on the
+naive sum halts a run at a third of its allowance.
+
+`stall-check.mjs` exits 2 for "wedged", 1 for "cannot tell", 0 for healthy — the same
+three-way convention as `task-ledger.mjs`, for the same reason. Its suppression rule
+is the part that matters: an unanswered tool call is only reported when there is no
+later assistant activity after it. Without that, it would flag the call currently in
+flight on every run, and flag a call that failed and was handled twenty minutes ago.
+Both are healthy runs, and a watchdog that cries wolf gets switched off — after which
+its absence is invisible.
+
+Neither tool ever guesses. Given no `--transcript` they look in Claude Code's
+conventional location, and if they find nothing they say so and block. "I could not
+find the transcript" must never render as "this run has cost nothing", and "I never
+looked" must never render as "healthy".
+
 **`config-protection.mjs`** is a `PreToolUse` hook, not one of the commit gates. It
 refuses edits to an existing linter/formatter/type-checker config, to
 `Dev-Memory/dod.json`, and to `Dev-Memory/evidence/` — the files that decide

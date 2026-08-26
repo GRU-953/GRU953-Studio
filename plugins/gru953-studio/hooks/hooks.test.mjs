@@ -1832,6 +1832,195 @@ const FULL_DOD = [
 ].join('\n');
 
 // ---------------------------------------------------------------------------
+// session-cost.mjs and stall-check.mjs — making an unattended run observable (v7 Phase 3).
+//
+// Both read Claude Code's session transcript. Both share one rule that matters more than
+// anything else they do: an answer they could not measure is never reported as a benign one.
+// "I could not find the transcript" and "this run has cost nothing" must not be the same
+// output, and "I never looked" must not read as "healthy".
+// ---------------------------------------------------------------------------
+function writeTranscript(dir, name, records) {
+  const f = path.join(dir, name);
+  fs.writeFileSync(f, records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  return f;
+}
+function runWithArgs(script, args) {
+  const r = spawnSync(NODE, [path.join(HERE, script), ...args], { encoding: 'utf8' });
+  let json = null;
+  try {
+    json = JSON.parse(r.stdout);
+  } catch {}
+  return { code: r.status, json, stdout: r.stdout };
+}
+const usageRec = (id, out_tokens, extra = {}) => ({
+  type: 'assistant',
+  timestamp: new Date().toISOString(),
+  message: {
+    id,
+    model: 'claude-opus-5',
+    usage: {
+      input_tokens: 10,
+      output_tokens: out_tokens,
+      cache_creation_input_tokens: 50,
+      cache_read_input_tokens: 9000,
+      ...extra,
+    },
+  },
+});
+
+// The measurement that justifies keying by message.id, asserted rather than assumed. The
+// harness writes one transcript line per content block and repeats the whole usage on each, so
+// summing rows over-counts. Measured on a real session on this machine: 424 usage-bearing rows,
+// 162 distinct ids, output inflated 2.84x by naive summing.
+test('session-cost.mjs: totals are keyed by message.id, so repeated content blocks are not double-counted', () => {
+  const dir = mkTmp('gru-cost-dedupe-');
+  const f = writeTranscript(dir, 'tr.jsonl', [
+    usageRec('msg_A', 100),
+    usageRec('msg_A', 100),
+    usageRec('msg_A', 100),
+    usageRec('msg_B', 40),
+  ]);
+  const r = runWithArgs('session-cost.mjs', [dir, '--transcript', f]);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.distinctMessages, 2, 'four rows, two messages');
+  assert.equal(r.json.rowsRead, 5, 'and it still reports how many rows it actually read');
+  // (10+100+50) + (10+40+50) = 260. Cache reads are excluded from the budget number on purpose.
+  assert.equal(r.json.tokens.billableish, 260, 'summing rows would have given far more');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('session-cost.mjs: a transcript it cannot find BLOCKS rather than reporting zero spend', () => {
+  const dir = mkTmp('gru-cost-missing-');
+  const r = runWithArgs('session-cost.mjs', [dir, '--transcript', path.join(dir, 'nope.jsonl')]);
+  assert.equal(r.code, 1, 'a spend of zero and a failure to measure must never be the same answer');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('session-cost.mjs: a transcript with no usage records BLOCKS — that is not a run which cost nothing', () => {
+  const dir = mkTmp('gru-cost-nousage-');
+  const f = writeTranscript(dir, 'tr.jsonl', [{ type: 'user', message: { content: 'hello' } }]);
+  const r = runWithArgs('session-cost.mjs', [dir, '--transcript', f]);
+  assert.equal(r.code, 1);
+  assert.match(JSON.stringify(r.json), /not a run which cost nothing/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('session-cost.mjs: a declared token budget is enforced, and a respected one reports its percentage', () => {
+  const dir = mkTmp('gru-cost-budget-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const f = writeTranscript(dir, 'tr.jsonl', [usageRec('msg_A', 100)]);
+  const cfg = path.join(dir, 'Dev-Memory', 'run.json');
+
+  fs.writeFileSync(cfg, JSON.stringify({ schemaVersion: 1, tokenBudget: 10 }));
+  const over = runWithArgs('session-cost.mjs', [dir, '--transcript', f]);
+  assert.equal(over.code, 1, 'a run past its ceiling must block');
+  assert.match(JSON.stringify(over.json.reason), /over by/);
+
+  fs.writeFileSync(cfg, JSON.stringify({ schemaVersion: 1, tokenBudget: 10000 }));
+  const under = runWithArgs('session-cost.mjs', [dir, '--transcript', f]);
+  assert.equal(under.code, 0);
+  assert.match(JSON.stringify(under.json.reason), /within budget/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('session-cost.mjs: a budget that is not a positive number BLOCKS rather than being ignored', () => {
+  const dir = mkTmp('gru-cost-badbudget-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const f = writeTranscript(dir, 'tr.jsonl', [usageRec('msg_A', 100)]);
+  for (const bad of ['lots', 0, -5, null]) {
+    fs.writeFileSync(
+      path.join(dir, 'Dev-Memory', 'run.json'),
+      JSON.stringify({ schemaVersion: 1, tokenBudget: bad }),
+    );
+    assert.equal(
+      runWithArgs('session-cost.mjs', [dir, '--transcript', f]).code,
+      1,
+      `tokenBudget ${JSON.stringify(bad)} is not a ceiling anything can be compared against`,
+    );
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// stall-check.mjs ------------------------------------------------------------------------------
+
+test('stall-check.mjs: an old unanswered tool call with nothing after it is reported as wedged (exit 2)', () => {
+  const dir = mkTmp('gru-stall-wedged-');
+  const old = new Date(Date.now() - 90 * 60000).toISOString();
+  const f = writeTranscript(dir, 'tr.jsonl', [
+    { type: 'assistant', timestamp: old, message: { id: 'm1', content: [{ type: 'text', text: 'working' }] } },
+    { type: 'assistant', timestamp: old, message: { id: 'm2', content: [{ type: 'tool_use', id: 't1', name: 'Bash' }] } },
+  ]);
+  const r = runWithArgs('stall-check.mjs', [dir, '--transcript', f]);
+  assert.equal(r.code, 2, '2 means "I can tell, and it is stuck" — distinct from 1, "I cannot tell"');
+  assert.match(JSON.stringify(r.json.reason), /appears wedged/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The suppression rule, and the reason this watchdog is worth keeping switched on. A naive
+// implementation flags the call currently in flight on every single run, and flags a call that
+// failed and was handled twenty minutes ago. Both are healthy runs, and a watchdog that cries
+// wolf gets disabled — after which its absence is invisible.
+test('stall-check.mjs: an unanswered call is NOT reported when the run carried on afterwards', () => {
+  const dir = mkTmp('gru-stall-movedon-');
+  const f = writeTranscript(dir, 'tr.jsonl', [
+    {
+      type: 'assistant',
+      timestamp: new Date(Date.now() - 90 * 60000).toISOString(),
+      message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Bash' }] },
+    },
+    {
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      message: { id: 'm2', content: [{ type: 'text', text: 'carried on with something else' }] },
+    },
+  ]);
+  const r = runWithArgs('stall-check.mjs', [dir, '--transcript', f]);
+  assert.equal(r.code, 0, 'whatever became of that call, the run did not wedge on it');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('stall-check.mjs: idle with nothing outstanding is reported as not-working, but not as wedged', () => {
+  const dir = mkTmp('gru-stall-idle-');
+  const f = writeTranscript(dir, 'tr.jsonl', [
+    {
+      type: 'assistant',
+      timestamp: new Date(Date.now() - 90 * 60000).toISOString(),
+      message: { id: 'm1', content: [{ type: 'text', text: 'all done' }] },
+    },
+  ]);
+  const r = runWithArgs('stall-check.mjs', [dir, '--transcript', f]);
+  assert.equal(r.code, 2);
+  assert.match(JSON.stringify(r.json.reason), /No tool call is outstanding/, 'the two kinds of not-working need different remedies');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('stall-check.mjs: a recent run with a call in flight is healthy, not wedged', () => {
+  const dir = mkTmp('gru-stall-live-');
+  const now = new Date().toISOString();
+  const f = writeTranscript(dir, 'tr.jsonl', [
+    { type: 'assistant', timestamp: now, message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Bash' }] } },
+  ]);
+  const r = runWithArgs('stall-check.mjs', [dir, '--transcript', f]);
+  assert.equal(r.code, 0, 'a call in flight is the normal state of a working run');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('stall-check.mjs: cannot-determine states exit 1, never 0 — "I never looked" must not read as healthy', () => {
+  const dir = mkTmp('gru-stall-cannot-');
+  assert.equal(runWithArgs('stall-check.mjs', [dir, '--transcript', path.join(dir, 'nope.jsonl')]).code, 1);
+  fs.writeFileSync(path.join(dir, 'junk.jsonl'), 'not json at all\n');
+  assert.equal(runWithArgs('stall-check.mjs', [dir, '--transcript', path.join(dir, 'junk.jsonl')]).code, 1);
+  const noTs = writeTranscript(dir, 'nots.jsonl', [{ type: 'assistant', message: { id: 'm1' } }]);
+  assert.equal(runWithArgs('stall-check.mjs', [dir, '--transcript', noTs]).code, 1, 'without a timestamp, idleness cannot be established');
+  assert.equal(
+    runWithArgs('stall-check.mjs', [dir, '--transcript', noTs, '--idle-minutes', 'soon']).code,
+    1,
+    'a threshold that is not a number is not a threshold',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// ---------------------------------------------------------------------------
 // task-ledger.mjs — the task list as data, and "can this run continue?" (v7 Phase 3).
 //
 // The headless problem it solves: studio-start.md:29 says a task marked "blocked" is never
