@@ -54,6 +54,7 @@ const KEEP = flag('--keep');
 const TIMEOUT_MIN = Number(value('--timeout-minutes', '30'));
 const MODEL = value('--model', null);
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const PLUGIN_DIR = path.join(REPO, 'plugins', 'gru953-studio');
 
 const results = [];
 const check = (name, ok, detail) => {
@@ -138,8 +139,17 @@ for (const args of [
 console.log(`E2E: headless build in ${work}\n`);
 
 // ---- run the studio, unattended --------------------------------------------------------------
+// 2026-08-27, X378. The original prompt began "Read IDEA.md in this directory and build it",
+// which contains NONE of the phrases the studio skill documents as its triggers. So the skill
+// legitimately did not fire and the harness measured plain Claude — while INV25 exists in this
+// same repository to check that realistic phrasings reach the entry point. Writing an
+// end-to-end prompt that does not invoke the thing under test is the same mistake one level up.
+//
+// This now uses two documented triggers ("GRU953-Studio" and "build my idea") in a sentence a
+// person would plausibly type. It deliberately does NOT use a slash command: the point is to
+// prove the studio activates from ordinary words, which is how a real user reaches it.
 const prompt = [
-  'Read IDEA.md in this directory and build it.',
+  'Use GRU953-Studio to build my idea. It is written in IDEA.md in this directory.',
   '',
   'Work headlessly: do not ask me anything. Where you would normally ask, choose the most',
   'reversible option, record the assumption in Dev-Memory, and carry on.',
@@ -151,8 +161,14 @@ const prompt = [
 const args = [
   '-p',
   prompt,
+  // 2026-08-27, X378. This was `path.join(REPO, 'plugins')` — the PARENT of the plugin. Measured
+  // against a real run: with the parent, the init event registers the plugin but its `skills`,
+  // `agents` and `slash_commands` arrays contain NONE of its contents. With the plugin directory
+  // itself (the one holding `.claude-plugin/`), 41 skills, 36 agents and 42 commands load. So the
+  // first real end-to-end run measured a plain Claude session with the studio never engaged,
+  // reported eight failures, and none of them were the product's.
   '--plugin-dir',
-  path.join(REPO, 'plugins'),
+  PLUGIN_DIR,
   '--output-format',
   'stream-json',
   '--verbose',
@@ -254,6 +270,45 @@ const events = transcript
   .filter(Boolean);
 
 check('the transcript is parseable stream-json', events.length > 0, `${events.length} events`);
+
+// ---- was the studio even LOADED? ------------------------------------------------------------
+// This must be settled before a single assertion about the product, and it is the lesson of
+// X378: the first real run of this harness pointed `--plugin-dir` at the wrong directory, so the
+// studio's skills and agents were never available. The harness then judged a plain Claude session
+// and reported eight product failures, every one of which was its own misconfiguration.
+//
+// The init event settles it factually. It carries `skills`, `agents`, `slash_commands` and
+// `plugins` arrays, and a correctly-loaded plugin appears in all of them; a plugin pointed at by
+// the wrong path appears ONLY in `plugins`, with none of its contents. So "registered" is not
+// "loaded", and only the second is worth measuring against.
+//
+// A setup failure is exit 2, never exit 1. Blaming the product for the harness is the one
+// mistake this file is least entitled to make.
+{
+  const init = events.find((e) => e && e.type === 'system' && e.subtype === 'init');
+  if (!init) {
+    cleanup();
+    cannotMeasure(
+      'the transcript carries no system/init event, so what was loaded cannot be established',
+    );
+  }
+  const own = (arr) =>
+    Array.isArray(arr) ? arr.filter((x) => /^gru953-studio:/.test(String(x))) : [];
+  const skills = own(init.skills);
+  const agents = own(init.agents);
+  const commands = own(init.slash_commands);
+  const hasEntry = skills.includes('gru953-studio:studio');
+  if (!hasEntry || agents.length === 0) {
+    cleanup();
+    cannotMeasure(
+      `the studio was not loaded: ${skills.length} plugin skill(s), ${agents.length} agent(s), ${commands.length} command(s), and the entry point ${hasEntry ? 'was' : 'was NOT'} among them`,
+      `--plugin-dir must point at the plugin directory itself (${PLUGIN_DIR}), not its parent. A plugin pointed at by the wrong path still appears in the init event's \`plugins\` array while none of its skills or agents load.`,
+    );
+  }
+  console.log(
+    `studio loaded: ${skills.length} skills, ${agents.length} agents, ${commands.length} commands\n`,
+  );
+}
 
 const flat = JSON.stringify(events);
 const toolUses = events.flatMap((e) => {
