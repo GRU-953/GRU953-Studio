@@ -1800,6 +1800,171 @@ if (fs.existsSync(packagedRoot)) {
   }
 }
 
+// ---- INV 25: a build request actually reaches the studio -------------------------
+// Nothing in this repository has ever checked that the product can be STARTED. Every other
+// invariant asks whether a named thing exists or agrees with another; none asks whether the one
+// skill a person needs to reach is the one their words would reach. 32 of the 34 skills are
+// model-invocable, so a description written slightly too broadly can shadow the entry point —
+// and headless there is nobody to notice a mis-route and rephrase.
+//
+// METHOD, deliberately deterministic and free. For each realistic phrasing below, every skill
+// description is scored by how much of the phrasing's vocabulary it carries (inverse-document-
+// frequency weighted, so a word appearing in most descriptions counts for little and a
+// distinctive one counts for a lot), and `studio` must rank FIRST. That is the peer technique
+// the plan adopted, scoped to the question that matters here rather than to a corpus of one case
+// per skill: the other 33 skills are loaded BY NAME as standing rules by the studio skill itself
+// or dispatched explicitly, so their own trigger vocabulary is not what decides whether the
+// product starts. Building 34 case files to prove otherwise would have been the largest hidden
+// cost in the plan for the least of its value.
+//
+// It costs no tokens and calls nothing, so it runs on every commit rather than nightly.
+//
+// The phrasings are the ones a non-technical person actually types, including the bracket form
+// this product documents as its own trigger. They are deliberately NOT copied from the skill's
+// own description: a corpus written by reading the thing under test proves only that the text
+// matches itself.
+{
+  const PHRASINGS = [
+    '[ a simple expense tracker ]',
+    'build me an app that tracks my expenses',
+    'can you make me an app',
+    'I have an idea for an app, can you build it',
+    'turn my idea into a working app',
+    'write me a small program to log my spending',
+    'code my idea for a habit tracker',
+    'build my idea',
+    'use the studio to build this',
+    'I want to build an app but I cannot code',
+  ];
+  const ENTRY = 'studio';
+
+  const descriptions = new Map();
+  for (const d of skillDirs) {
+    const text = read(path.join(skillsDir, d, 'SKILL.md'));
+    if (text === null) {
+      fail(`skills/${d}/SKILL.md could not be read, so its routing could not be checked`);
+      continue;
+    }
+    const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const block = fm ? fm[1] : '';
+    const m = block.match(/description:\s*(?:>-?\s*)?([\s\S]*?)(?:\n[a-z-]+:|$)/i);
+    descriptions.set(d, (m ? m[1] : '').toLowerCase());
+  }
+
+  if (!descriptions.has(ENTRY)) {
+    fail(
+      `skills/${ENTRY}/ has no readable description, so nothing can establish that a build request reaches it`,
+    );
+  } else {
+    const STOP = new Set([
+      'a',
+      'an',
+      'the',
+      'and',
+      'or',
+      'of',
+      'to',
+      'for',
+      'in',
+      'on',
+      'is',
+      'it',
+      'that',
+      'this',
+      'with',
+      'my',
+      'me',
+      'i',
+      'you',
+      'your',
+      'can',
+      'into',
+      'but',
+      'not',
+      'use',
+      'have',
+      'want',
+      'small',
+      'simple',
+      'be',
+      'as',
+      'at',
+      'by',
+      'from',
+      'are',
+      'was',
+      'will',
+      'if',
+      'then',
+      'so',
+      'do',
+      'does',
+      'make',
+      'made',
+      'build',
+      'building',
+    ]);
+    const tokens = (t) =>
+      t
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !STOP.has(w));
+
+    // Inverse document frequency across the descriptions, so a word most skills use ("skill",
+    // "project") cannot carry a match on its own.
+    const docs = [...descriptions.values()].map((d) => new Set(tokens(d)));
+    const idf = (w) => {
+      let n = 0;
+      for (const d of docs) if (d.has(w)) n++;
+      return Math.log((docs.length + 1) / (n + 1));
+    };
+
+    // WHAT THIS ASSERTS, AND THE CHECK I BUILT, TESTED AND THEN REMOVED.
+    //
+    // It asserts one thing: the entry point's description must carry at least one distinctive
+    // word from every phrasing a person would realistically type. That is provable, cheap, and
+    // its violation is a real defect — a description rewritten for elegance stops being findable
+    // by the words people actually use, and nobody notices until a build request reaches nothing.
+    // Demonstrated by rewriting this product's own description into "orchestrates a tiered
+    // ensemble of autonomous engineering personas": eight of the ten phrasings then matched
+    // nothing at all.
+    //
+    // It does NOT assert rank. I built that check, ran it, and took it out, which is worth
+    // recording so it is not re-added on the assumption it works.
+    //
+    // With rank-1 asserted it reported four failures and every one was an artefact. Two were
+    // TIES at an identical score, where the sort broke the tie alphabetically — not a mis-route.
+    // The other two were single-word collisions in unrelated senses: `cost-guard` outscored the
+    // entry point on "write me a small program to log my spending" because it legitimately owns
+    // the word "spending" — for the STUDIO's own budget, not the user's app. Narrowing it would
+    // have been wrong; its description is precise about its own domain.
+    //
+    // Loosening the threshold to tolerate two skills above did not rescue it: a deliberately
+    // widened rival description then passed, because one shadowing skill sits inside the
+    // tolerance. So the rank check either false-alarms on incidental word overlap or fails to
+    // bite on a real attack, and no threshold separates those — because the score is a lexical
+    // proxy and the real router is a model reading whole sentences in context. A gate whose model
+    // of reality is wrong is worse than no gate: it gets switched off, and its absence is then
+    // invisible.
+    //
+    // If skill-description shadowing is ever worth proving, the instrument is a real
+    // trigger eval against the model, not arithmetic over word lists — see the note on the
+    // deliberately-unbuilt trace-graded harness in this commit's message.
+    for (const phrase of PHRASINGS) {
+      const words = [...new Set(tokens(phrase))];
+      const has = new Set(tokens(descriptions.get(ENTRY)));
+      let score = 0;
+      for (const w of words) if (has.has(w)) score += idf(w);
+      if (score === 0) {
+        fail(
+          `INV25: skills/${ENTRY}/'s description carries no distinctive word from ${JSON.stringify(phrase)} — a person typing that reaches the entry point on nothing but luck. Add the vocabulary people actually use to the description; this is the drift that appears when a description is rewritten for elegance.`,
+        );
+      }
+    }
+  }
+}
+
 const census = {
   agentCount,
   skillCount,

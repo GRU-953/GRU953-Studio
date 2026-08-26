@@ -1847,6 +1847,44 @@ const FULL_DOD = [
 // copy, so drift is impossible rather than merely detected. The new C3 inverts the check: it
 // proves the charter is not reproduced anywhere else, because a second copy pasted in "so the
 // agent definitely sees it" is how the two-copy problem would come back.
+// INV25 — a build request must be able to reach the studio (v7 Phase 5).
+//
+// Nothing in this repository had ever checked that the product can be STARTED. Every other
+// invariant asks whether a named thing exists or agrees with another; none asked whether the one
+// skill a person needs to reach is findable by the words they would use. Headless there is nobody
+// to notice a mis-route and rephrase.
+test('repo-integrity.mjs INV25: a description rewritten for elegance, losing the words people type, is caught', () => {
+  const dir = mkTmp('gru-inv25-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md');
+  const before = fs.readFileSync(f, 'utf8');
+  const i = before.indexOf('description: >-');
+  const j = before.indexOf('\n---', i);
+  assert.ok(i !== -1 && j > i, 'fixture: the studio description block was not found');
+  const after =
+    before.slice(0, i) +
+    'description: >-\n  Orchestrates a tiered ensemble of autonomous engineering personas toward a\n  verified deliverable.' +
+    before.slice(j);
+  fs.writeFileSync(f, after);
+
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'an unfindable entry point must be caught');
+  const hits = (r.json.problems || []).filter((p) => /carries no distinctive word/.test(p));
+  assert.ok(
+    hits.length >= 8,
+    `most realistic phrasings should now reach nothing, got ${hits.length}: ${JSON.stringify(hits.slice(0, 2))}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV25: the real description is findable by every phrasing (no false alarm)', () => {
+  // The control that keeps this gate switched on. It runs against the real repository, so a
+  // future rewording that quietly drops the vocabulary fails here rather than in someone's
+  // session.
+  const r = spawnSync(NODE, [path.join(HERE, 'repo-integrity.mjs'), REPO_ROOT], { encoding: 'utf8' });
+  assert.equal(r.status, 0, `the real entry-point description must satisfy INV25: ${r.stdout}`);
+});
+
 // INV24 — nothing publishes from a tree that has not passed the gates (v7 Phase 5, X376).
 //
 // Until v7.0.0 publish.yml had no `needs:` anywhere and referenced none of the plugin's own

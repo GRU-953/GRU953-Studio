@@ -1,0 +1,78 @@
+# The one test that proves the product does what it says: a real, unattended `claude -p` run that
+# builds a small app from a plain-text idea, asserted against both the filesystem and the session
+# transcript. See tools/e2e/headless-build.mjs for what it checks and why.
+#
+# WHY IT IS NOT IN ci.yml. It costs real money and real minutes per run, so it follows the cadence
+# the owner chose: deterministic gates on every change, this one nightly and on demand. Running it
+# per-push would make every pull request slow and expensive for a signal that changes rarely.
+#
+# WHY IT IS NOT (YET) A HARD GATE ON RELEASES. It needs credentials this repository does not have
+# configured. A `needs:` on a job that cannot authenticate would fail every release for a reason
+# unrelated to the release — and a gate wired to a secret that does not exist is a broken gate,
+# not a strict one. So: the release checklist requires a green run of this workflow before a tag
+# is pushed, and once ANTHROPIC_API_KEY exists as a repository secret it should become a `needs:`
+# in publish.yml alongside the `gates` job. That is a one-line change and a deliberate one.
+#
+# It distinguishes its own three outcomes, which is the point of running it unattended at all:
+#   exit 0  the studio built working software
+#   exit 1  the studio ran and the result is wrong  -> a real product defect
+#   exit 2  it could not measure (no credentials, a timeout, an incomplete run)
+# Exit 2 is reported as a NEUTRAL result rather than a pass, so a nightly run that never
+# authenticated cannot read as a green night.
+name: e2e (headless build)
+
+on:
+  schedule:
+    # 03:20 UTC. Off the hour deliberately: scheduled runs bunch on the hour and get delayed.
+    - cron: '20 3 * * *'
+  workflow_dispatch:
+    inputs:
+      timeout-minutes:
+        description: 'Minutes to allow the unattended build'
+        required: false
+        default: '30'
+
+permissions:
+  contents: read
+
+jobs:
+  headless-build:
+    name: build a small app from a plain-text idea, unattended
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install the Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run the unattended build and judge it
+        id: e2e
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        shell: bash
+        run: |
+          set +e
+          node tools/e2e/headless-build.mjs --timeout-minutes "${{ inputs.timeout-minutes || 30 }}"
+          CODE=$?
+          set -e
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          case "$CODE" in
+            0) echo "The studio built working software." ;;
+            1) echo "::error::The studio ran and produced something wrong — a real product defect." ;;
+            2) echo "::warning::Could not measure (no credentials, a timeout, or an incomplete run). This is NOT a pass and NOT a product defect." ;;
+            *) echo "::error::Unexpected exit code $CODE from the harness itself." ;;
+          esac
+          exit "$CODE"
+
+      # A run that could not measure must not be recorded as a success. `continue-on-error` is
+      # deliberately NOT used above for that reason: it would turn every unmeasurable night into a
+      # green tick, which is the exact fault the harness refuses to commit.
+      - name: Restate the outcome plainly
+        if: always()
+        run: |
+          echo "harness exit code: ${{ steps.e2e.outputs.code }}"
+          echo "0 = built working software | 1 = product defect | 2 = could not measure"

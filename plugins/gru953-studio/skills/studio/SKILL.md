@@ -3,12 +3,13 @@ name: studio
 description: >-
   Coordinates the GRU953-Studio team — an AI project lead plus a Tier-sized
   group of specialist agents — that turns a plain-English app idea into a
-  working, tested, privately-published MVP. Activate whenever the user's
+  working, tested MVP on your own machine. Activate whenever the user's
   message starts with "[" and ends with "]" (e.g. "[ a simple expense
   tracker ]"), whenever they say "studio", "GRU953-Studio", "build my
-  idea", "build my app", or "make me an app", or when they run /studio-start —
-  and to resume a project when a Dev-Memory folder exists in the working
-  directory.
+  idea", "build my app", "build me an app", "make me an app", "write me an
+  app", "code my idea", or "turn my idea into an app", or when they run
+  /studio-start — and to resume a project when a Dev-Memory folder exists in
+  the working directory.
 ---
 
 # GRU953-Studio coordinator
