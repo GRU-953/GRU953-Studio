@@ -90,5 +90,31 @@ nothing has to be guessed and nothing gets asked twice.
 
 ## Output
 
-A confirmed one-page brief (`Dev-Memory/OBJECTIVE.md`) plus a dated
-decisions note for anything load-bearing.
+**`Dev-Memory/run-brief.json`** — the answers as DATA, not prose — plus a dated
+decisions note for anything load-bearing. `OBJECTIVE.md` is RENDERED from it and must
+not be written by hand.
+
+Hand the confirmed answers to `memory-keeper` to write, as this role holds no `Write`
+tool. The object it writes carries:
+
+- `schemaVersion: 1`
+- `idea` — the person's own words, not a tidied paraphrase
+- `mustHave` — a non-empty array; the build has no definition of finished without it
+- `nonGoals` — an array, **present even when empty**. An absent field cannot be told
+  from a considered "nothing is out of scope", and it is the only thing scope creep can
+  later be checked against
+- `targetPlatform`, and `stack` — either a chosen technology or the exact string
+  `studio-chooses`, never absent, so a decision is never made silently
+- `tier` — `{ assigned, answers: { remembersUsers, handlesSensitiveData, integrations } }`
+
+**Then run the gate before proceeding:**
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/hooks/run-brief.mjs" .
+```
+
+It refuses a placeholder, a missing field, and — the check worth having — a Tier that
+does not follow from its own three recorded answers under the mapping in the `studio`
+skill. That mapping was made checkable by a 2026-07-10 audit fix and nothing checked it
+until v7. A BLOCK here costs one more question while the person is still present; the
+alternative is a build that stops to ask hours later, with nobody there.

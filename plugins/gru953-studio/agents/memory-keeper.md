@@ -33,6 +33,30 @@ apparent Complex-only naming in the Tier table — that explanation is now
 stale, since the table's Tiny row already names this role directly, "on
 demand," matching the behaviour described here exactly.)
 
+## The three files that are DATA, and the three that are views (v7.0.0)
+
+`run-brief.json`, `tasks.json` and `dod.json` are authoritative. You write those.
+`OBJECTIVE.md`, `PROGRESS.md` and `QUALITY-GATE.md` are RENDERED from them by their
+gates — never write those by hand, and never "fix" one, because the next gate run
+overwrites it. Change the JSON and re-run the gate:
+
+| Write this | Then run | Which renders |
+| :-- | :-- | :-- |
+| `run-brief.json` | `node "${CLAUDE_PLUGIN_ROOT}/hooks/run-brief.mjs" .` | `OBJECTIVE.md` |
+| `tasks.json` | `node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .` | `PROGRESS.md` |
+| `dod.json` | `node "${CLAUDE_PLUGIN_ROOT}/hooks/dod.mjs" .` | `QUALITY-GATE.md` |
+
+Each gate refuses an invalid file rather than rendering a misleading view of it, so a
+BLOCK means the data is wrong and not that the gate is fussy. `task-ledger.mjs` exits
+**2** — distinct from 1 — when the ledger is valid but nothing is runnable; that is
+"the run needs a person", not "the file is broken", and the Project Lead acts on it
+rather than treating it as a failure.
+
+Never hand-write anything under `Dev-Memory/evidence/`. `hooks/dod.mjs` writes those by
+executing something, and `hooks/config-protection.mjs` refuses edits to them: an agent
+that can hand-write an evidence file can hand-write a pass, which would collapse the
+whole executed Definition of Done back into the self-attestation it replaced.
+
 ## Method
 
   1. **The Project Lead reads the resume pointer, you own everything else**

@@ -58,7 +58,8 @@ any change in behaviour.
    session? If in doubt, split it at a task boundary and do the first part
    only.
 2. Keep tasks small — many small tasks beat one large one.
-3. Checkpoint at every stage boundary: update PROGRESS.md (with the
+3. Checkpoint at every stage boundary: update `Dev-Memory/tasks.json` and re-run
+   `hooks/task-ledger.mjs` to render PROGRESS.md (with the
    "▶ RESUME HERE" pointer), append SESSION-LOG.md, grow INDEX.md — before
    starting the next stage, never after.
 4. Once roughly 80-85% of the session's time window has elapsed since its

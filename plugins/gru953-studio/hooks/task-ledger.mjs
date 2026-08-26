@@ -56,8 +56,29 @@ const problems = [];
 const fail = (msg) => problems.push(msg);
 
 const SCHEMA_VERSION = 1;
-const STATES = new Set(['todo', 'in-progress', 'done', 'blocked-on-defect', 'blocked-on-human']);
+const STATES = new Set([
+  'todo',
+  'in-progress',
+  'done',
+  'blocked-on-defect',
+  'blocked-on-human',
+  // 2026-08-27. The three CONTROL states the command-centre skill defines for /studio-pause,
+  // /studio-skip and /studio-schedule. They were missing here, so this ledger would have refused
+  // a project the shipped commands had legitimately put into one of them — the gate contradicting
+  // the product. None can arise in a headless run, since each requires a person to ask for it;
+  // they are accepted because the interactive commands still ship, and a gate that understands
+  // only half the product is worse than one that understands all of it.
+  //
+  // Deliberately NOT blocked states. The command-centre's own words: these rows are "consciously
+  // not-active, never `blocked`". So they need no blockedReason — nothing is wrong — and they are
+  // not runnable either, because a person set them aside on purpose and a run that picked them up
+  // again would be overriding that.
+  'paused',
+  'skipped',
+  'scheduled',
+]);
 const BLOCKED = new Set(['blocked-on-defect', 'blocked-on-human']);
+const SET_ASIDE = new Set(['paused', 'skipped', 'scheduled']);
 
 function out(obj, code) {
   console.log(JSON.stringify(obj, null, 2));
@@ -316,6 +337,7 @@ const runnable = all.filter(
 const waiting = all.filter(
   (t) => (t.state === 'todo' || t.state === 'in-progress') && !depsSatisfied(t),
 );
+const setAside = all.filter((t) => SET_ASIDE.has(t.state));
 
 // ---- render PROGRESS.md from the ledger ------------------------------------------------------
 {
@@ -372,6 +394,7 @@ const summary = {
   waitingOnDependency: waiting.map((t) => t.id),
   parkedOnDefect: blockedDefect.map((t) => t.id),
   needingAPerson: blockedHuman.map((t) => t.id),
+  setAsideByAPerson: setAside.map((t) => `${t.id} (${t.state})`),
 };
 
 if (all.length === done.length) {
@@ -413,6 +436,11 @@ if (blockedHuman.length > 0) {
 if (blockedDefect.length > 0) {
   why.push(
     `${blockedDefect.length} task(s) are parked on a defect with nothing else runnable, so the defect now has to be faced rather than worked around: ${blockedDefect.map((t) => `${t.id} (${t.blockedReason})`).join('; ')}`,
+  );
+}
+if (setAside.length > 0) {
+  why.push(
+    `${setAside.length} task(s) were set aside by a person and are not picked up automatically: ${setAside.map((t) => `${t.id} (${t.state})`).join('; ')}`,
   );
 }
 if (waiting.length > 0) {

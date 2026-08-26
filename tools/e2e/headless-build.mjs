@@ -88,6 +88,27 @@ if (which.status !== 0 || !String(which.stdout).trim()) {
   cannotMeasure('no `claude` executable on PATH', 'install the Claude Code CLI, then re-run');
 }
 
+// 2026-08-27, X379. The one environment trap that will waste somebody's afternoon, named up
+// front because it did waste one. `ANTHROPIC_BASE_URL` being set — even to the correct default,
+// `https://api.anthropic.com` — makes the CLI expect its own API key rather than the OAuth login
+// the user already has. With no key, every run then fails with "OAuth session expired and could
+// not be refreshed", which reads as an expired login and is nothing of the kind: the same
+// machine and same account authenticate immediately once the variable is unset.
+//
+// It is a WARNING and not a refusal, deliberately. Someone deliberately pointing at a gateway is
+// doing something legitimate and this harness has no business overruling it. What it can do is
+// say so before the run, rather than leaving the cause to be found by bisecting an environment.
+if (process.env.ANTHROPIC_BASE_URL && !process.env.ANTHROPIC_API_KEY) {
+  console.log(
+    `WARNING: ANTHROPIC_BASE_URL is set (${process.env.ANTHROPIC_BASE_URL}) with no ANTHROPIC_API_KEY.
+         That combination makes the CLI expect a key instead of using your OAuth login, so the
+         run will most likely fail as "OAuth session expired" — which is not what it sounds like.
+         If it does, retry with:
+           env -u ANTHROPIC_BASE_URL node tools/e2e/headless-build.mjs
+`,
+  );
+}
+
 if (!Number.isFinite(TIMEOUT_MIN) || TIMEOUT_MIN <= 0) {
   cannotMeasure(
     `--timeout-minutes ${JSON.stringify(value('--timeout-minutes', '30'))} is not a positive number`,
@@ -174,6 +195,24 @@ const args = [
   '--verbose',
   '--permission-mode',
   'acceptEdits',
+  // 2026-08-27, X380. `acceptEdits` alone permits file edits and DENIES Bash. The first real
+  // studio run therefore wrote the whole app and its tests and could not execute one command:
+  // its own SESSION-LOG records "`git add` and `git commit` were refused by the same permission",
+  // and PROGRESS.md marked five tasks `code-written, unrun` with "verification substituted". So
+  // the harness reported "the work was committed — 0 commit(s)" as a product failure when it was
+  // the harness forbidding the commit. The second time this file has blamed the product for its
+  // own configuration; hence the loaded-plugin guard above, and hence this list.
+  //
+  // `--allowedTools` rather than `bypassPermissions`, deliberately. Measured: acceptEdits plus an
+  // allowlist runs a shell command with zero permission denials, and the permission system stays
+  // ON — which matters, because the same run showed config-protection.mjs correctly refusing an
+  // edit to QUALITY-GATE.md and the studio respecting it rather than working around it. Turning
+  // permissions off wholesale would have thrown away the evidence that the guards work.
+  //
+  // The list is what a build genuinely needs. If it is too narrow, the "specialists were
+  // dispatched" assertion fails loudly rather than the run quietly doing less.
+  '--allowedTools',
+  'Bash Read Write Edit MultiEdit Glob Grep Task Agent Skill TodoWrite',
 ];
 if (MODEL) args.push('--model', MODEL);
 
@@ -238,7 +277,7 @@ if (transcript.trim() === '') {
     cannotMeasure(
       `the CLI reported the run as failed: ${String(verdict.result || '').slice(0, 300)}`,
       verdict.terminal_reason === 'api_error'
-        ? 'this is an infrastructure or authentication failure, not a product defect. Run from a terminal with an authenticated `claude`, or set an API key in CI.'
+        ? 'this is an infrastructure or authentication failure, not a product defect. Run from a terminal with an authenticated `claude`, or set an API key in CI. If it says the OAuth session expired on a machine that IS signed in, check ANTHROPIC_BASE_URL: setting it makes the CLI expect an API key instead of the OAuth login, and `env -u ANTHROPIC_BASE_URL` fixes it (X379).'
         : `terminal_reason: ${verdict.terminal_reason}`,
     );
   }

@@ -16,18 +16,28 @@ live board. Everything is plain text, so control survives a closed laptop or a
 new session. Plain-English rule is exactly as set in the
 `operating-charter` skill.
 
-## The task state machine (PROGRESS.md Status column)
+## The task state machine (Dev-Memory/tasks.json)
 
-`PROGRESS.md`'s Status column stays the single source of truth. The command
-centre extends its vocabulary from `todo`/`doing`/`done`/`blocked` with three
-control states:
+**Changed in v7.0.0: `Dev-Memory/tasks.json` is the single source of truth, and
+`PROGRESS.md` is RENDERED from it by `hooks/task-ledger.mjs`.** Write the state change
+into the JSON and re-run that gate; editing the rendered table achieves nothing, because
+the next run overwrites it.
+
+Two vocabulary changes came with it. `doing` is now **`in-progress`**, and there is no
+bare **`blocked`** — a task is `blocked-on-defect` (parked; the run carries on with
+anything else it can finish) or `blocked-on-human` (it genuinely stops). One word could
+not say both, and an unattended run has to know which it is looking at.
+
+The command centre adds three control states on top, each of which only a person can
+ask for:
 
 | Status | Meaning | Picked as the next task? |
 | :-- | :-- | :-- |
 | `todo` | not started, ready when dependencies are `done` | yes (first eligible) |
-| `doing` | in progress right now | — (already active) |
+| `in-progress` | in progress right now | — (already active) |
 | `done` | finished and verified (`verified:` line required) | no |
-| `blocked` | waiting on an external unblock | no, until a human unblocks |
+| `blocked-on-defect` | a defect stopped this task; other work continues | no, but the run does not stop |
+| `blocked-on-human` | needs a decision only a person can make | no, and the run reports it |
 | `paused` | user paused it mid-flight; resumes exactly where it stopped | no, until resumed |
 | `skipped` | user set it aside for now; not lost, resurfaces later | no, until revisited |
 | `scheduled` | set to resume at a recorded time (see below) | no, until its time |
@@ -37,17 +47,17 @@ secrets-scan, and reflected into the **build plan** `PLAN.md` and the board
 `STATUS-BOARD.md` in the same write — see "The build plan stays the source of
 truth" below):
 
-- `todo`/`doing` → `paused` (**pause**); `paused` → `doing` (**resume**).
-- `doing` → `todo` (**stop** — a clean set-down; nothing is left half-claimed
+- `todo`/`in-progress` → `paused` (**pause**); `paused` → `in-progress` (**resume**).
+- `in-progress` → `todo` (**stop** — a clean set-down; nothing is left half-claimed
   as `done`; the project is checkpointed and can end safely).
-- `todo`/`doing` → `skipped` (**skip now**); the next eligible task becomes
+- `todo`/`in-progress` → `skipped` (**skip now**); the next eligible task becomes
   active. `skipped` → `todo` when revisited.
-- `todo`/`doing` → `scheduled` (**schedule for later**, with a time);
-  `scheduled` → `todo`/`doing` when the time arrives.
-- The existing `todo` → `doing` → `done` / `blocked` transitions are unchanged.
+- `todo`/`in-progress` → `scheduled` (**schedule for later**, with a time);
+  `scheduled` → `todo`/`in-progress` when the time arrives.
+- `todo` → `in-progress` → `done`, or → `blocked-on-defect` / `blocked-on-human`.
 
 The "next task" rule everywhere (dev-memory, memory-keeper) already means "the
-first `todo`/`doing` row whose dependencies are all `done`" — it now also skips
+first `todo`/`in-progress` row whose dependencies are all `done`" — it now also skips
 over `paused`, `skipped` and `scheduled` rows, which are consciously not-active,
 never `blocked`.
 

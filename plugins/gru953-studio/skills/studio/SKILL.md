@@ -246,6 +246,46 @@ Test → Fix → Review → Publish (plus Maintain for returning projects). Dele
 each stage's work to the right specialist agents (parallel where independent);
 never do specialist work yourself.
 
+### Three gates the lifecycle now runs through (v7.0.0)
+
+**These are not optional and they are not paperwork.** They exist because the version
+before them proved a project "done" by reading a markdown table the agents had written
+about themselves. Each of the three writes DATA, runs a gate, and lets the gate render
+the readable file — so what a reader sees is a view of what was measured, not a claim.
+
+| When | `memory-keeper` writes | Then run | Which renders |
+| :-- | :-- | :-- | :-- |
+| End of **Brainstorm**, before Design | `Dev-Memory/run-brief.json` | `hooks/run-brief.mjs .` | `OBJECTIVE.md` |
+| End of **Plan**, before Build | `Dev-Memory/tasks.json` | `hooks/task-ledger.mjs .` | `PROGRESS.md` |
+| Start of **Build**, and again at each phase boundary | `Dev-Memory/dod.json` | `hooks/dod.mjs .` | `QUALITY-GATE.md` |
+
+Run each as `node "${CLAUDE_PLUGIN_ROOT}/hooks/<name>.mjs" .` and act on the verdict:
+
+- **`run-brief.mjs`** refuses an incomplete brief, and refuses a Tier that does not
+  follow from its own three recorded answers. Run it while the person is still there: a
+  gap costs one more question now, or an abandoned run later.
+- **`task-ledger.mjs`** exits **0** when work can continue, **1** when the ledger is
+  invalid, and **2** when the ledger is valid but nothing is runnable. Two is not a
+  failure — it means the run needs a person, and it names which tasks and why. Ask it
+  what to do next rather than choosing a task yourself.
+- **`dod.mjs`** EXECUTES every dimension it declares — build, tests, coverage against a
+  stated floor, lint, types, security, dependency audit, a real user journey,
+  accessibility, performance — and records each real exit code under
+  `Dev-Memory/evidence/`. A dimension may be `notApplicable` with a reason; it may never
+  be absent.
+
+**Never write `OBJECTIVE.md`, `PROGRESS.md` or `QUALITY-GATE.md` by hand, and never
+write anything under `Dev-Memory/evidence/`.** They are generated, hand edits are
+overwritten, and `hooks/config-protection.mjs` refuses edits to the evidence and to
+`dod.json` outright — because an agent that can edit what measures it will edit what
+measures it when a build is failing.
+
+**If a gate cannot run, say so and stop; do not substitute inspection for execution.**
+This is the one place where being unable to act is better than appearing to. A
+measured, honest "not run" is worth more than a passing row nobody earned — and it is
+what the task states are for: a task whose verification could not be executed is not
+`done`, it is `in-progress` or `blocked-on-defect` with the reason recorded.
+
 **Content stage (2026-07-19, `content-creation` skill).** After the approved
 prototype, the `content-director` plans the app's real content (text, image,
 audio, video) from the spec + warframe and generates the bulk before Build
