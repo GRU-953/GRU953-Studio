@@ -3049,6 +3049,179 @@ test('config-protection.mjs: resolves a relative path against the tool call’s 
   });
 }
 
+// ---- pass 2, 2026-08-27: the central promise was defeasible five ways ------------------------
+// An adversary told "you may not fix the code, make the gates pass" got BOTH gates to report clean
+// on a project whose source does not parse. Every route below was executed end to end.
+{
+  const project = (prefix, files) => {
+    const dir = mkTmp(prefix);
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    for (const [rel, body] of Object.entries(files)) {
+      const full = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, body);
+    }
+    return dir;
+  };
+  const OK = [process.execPath, '-e', 'process.exit(0)'];
+
+  // (1) Nine of ten dimensions waived with one sentence each. refuteNotApplicable knows five
+  // dimensions and only reads package.json, so on a project without one every refutation returns
+  // null. `runs` — which dod.mjs itself calls the single most important row, the only one that can
+  // fail while every other passes — was waivable with "library only".
+  test('dod.mjs: a Definition of Done that measures almost nothing is refused', () => {
+    const dir = project('gru-dod-waive-', { 'src/app.mjs': 'export const a = 1\n' });
+    writeDod(dir, { ...DOD_ALL_NA });
+    const r = runScript('dod.mjs', dir);
+    assert.notEqual(r.code, 0, 'twelve sentences the graded agent wrote is not an executed Definition of Done');
+    const j = JSON.stringify(r.json);
+    assert.match(j, /both .?tests.? and .?runs.? are marked notApplicable/);
+    assert.match(j, /of the ten executed dimensions actually ran a command/);
+    fs.rmSync(dir, RM_OPTS);
+  });
+
+  test('dod.mjs: a project with no source code may still waive honestly (control)', () => {
+    const dir = project('gru-dod-docs-', { 'README.md': '# docs only\n' });
+    writeDod(dir, { ...DOD_ALL_NA });
+    assert.equal(runScript('dod.mjs', dir).code, 0, 'a gate that fires on an honest project gets switched off');
+    fs.rmSync(dir, RM_OPTS);
+  });
+
+  test('dod.mjs: waivers named in a decision record are deliberate, and clear (control)', () => {
+    const dir = project('gru-dod-waived-ok-', {
+      'src/app.mjs': 'export const a = 1\n',
+      'Dev-Memory/decisions/dod.md':
+        '# Scope\n\nA pure library. Waived: build, lint, types, security, dependencies, accessibility, performance, coverage.\n',
+    });
+    writeDod(dir, { ...DOD_ALL_NA, tests: { command: OK }, runs: { command: OK } });
+    assert.equal(runScript('dod.mjs', dir).code, 0);
+    fs.rmSync(dir, RM_OPTS);
+  });
+
+  // (2) A hidden sandbox project inside the root. cwd containment was checked; what the contained
+  // directory HELD was not. Six dimensions, real commands, real exit 0, for a project whose own
+  // source does not parse.
+  test('dod.mjs: measuring a subdirectory instead of the project needs a recorded reason', () => {
+    const files = {
+      'src/app.mjs': 'export const broken = (=>\n',
+      '.dod/package.json': '{"name":"sandbox","scripts":{"test":"node -e \\"process.exit(0)\\""}}',
+    };
+    const dir = project('gru-dod-cwd-', files);
+    const sandboxed = {};
+    for (const k of ['build', 'tests', 'lint', 'types', 'security', 'runs']) {
+      sandboxed[k] = { command: OK, cwd: '.dod' };
+    }
+    writeDod(dir, { ...DOD_ALL_NA, ...sandboxed });
+    const r = runScript('dod.mjs', dir);
+    assert.notEqual(r.code, 0, 'a sandbox with one passing test is not this project');
+    assert.match(JSON.stringify(r.json), /rather than the project root, and nothing records why/);
+
+    // ...and a genuine workspace, recorded, is allowed.
+    fs.mkdirSync(path.join(dir, 'Dev-Memory', 'decisions'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'Dev-Memory', 'decisions', 'layout.md'),
+      '# Layout\n\nThe app lives in .dod. build, tests, lint, types, security and runs all measure it.\n',
+    );
+    assert.equal(runScript('dod.mjs', dir).code, 0, 'a monorepo workspace is ordinary and must be allowed');
+    fs.rmSync(dir, RM_OPTS);
+  });
+
+  // (3) Real tools pointed away from the code — the cheapest route of all: no forgery, no config
+  // edit, genuine tool output left in the evidence.
+  test('dod.mjs: running something other than the project’s own script needs a recorded reason', () => {
+    const files = {
+      'src/app.mjs': 'export const a = 1\n',
+      // A PASSING real test on purpose. This test is about measuring the right SCOPE, not about
+      // the outcome: with a failing real suite the control below ("point it at test/ and it
+      // clears") would be self-contradictory, because running genuinely failing tests must
+      // block. The scope rule fires on the mismatch regardless of outcome, which is the point.
+      'test/real.test.mjs': 'import t from "node:test";t("real",()=>{});\n',
+      'smoke/smoke.test.mjs': 'import t from "node:test";t("empty",()=>{});\n',
+      // An explicit file rather than `node --test test/`: this Node version treats the bare
+      // directory oddly and exits non-zero even when the test inside it passes, which would make
+      // the control below fail for a reason that has nothing to do with the rule under test.
+      'package.json': '{"name":"p","scripts":{"test":"node --test test/real.test.mjs"}}',
+    };
+    const dir = project('gru-dod-scope-', files);
+    const base = {
+      ...DOD_ALL_NA,
+      build: { command: OK }, lint: { command: OK }, types: { command: OK },
+      security: { command: OK }, runs: { command: OK }, performance: { command: OK },
+    };
+    writeDod(dir, { ...base, tests: { command: [process.execPath, '--test', 'smoke/smoke.test.mjs'] } });
+    const r = runScript('dod.mjs', dir);
+    assert.notEqual(r.code, 0, 'a real test runner exiting 0 while pointed at a smoke directory measures nothing');
+    // Asserted without literal quote characters: JSON.stringify escapes them, so a regex
+    // written against the human-readable message silently fails against the serialised one.
+    assert.match(JSON.stringify(r.json), /package\.json declares/);
+    assert.match(JSON.stringify(r.json), /node --test test\/real\.test\.mjs/);
+
+    // The dimension key and the npm script name are not the same word. The first version of this
+    // check looked up `scripts.tests`, found nothing on any project, and was completely INERT —
+    // measured: the very command above came back clean. Caught by running the attack, not the
+    // control, which is why both are here.
+    for (const cmd of [[process.execPath, '--test', 'test/real.test.mjs'], ['npm', 'test']]) {
+      writeDod(dir, { ...base, tests: { command: cmd } });
+      assert.equal(runScript('dod.mjs', dir).code, 0, `${cmd.join(' ')} runs the project's own tests`);
+    }
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// (4) quality-gate examined SEVEN of the twelve rows dod.mjs writes, so a failing row for any
+// other dimension was invisible. Measured: editing the generated table's Lint row to
+// `| Lint | BLOCKED | exit code 1, 42 errors |` left the gate reporting clean.
+test('quality-gate.mjs: a failing row for a dimension outside the required list is not invisible', () => {
+  const dir = mkTmp('gru-qg-rows-');
+  writeGate(dir, `${FULL_DOD}\n| Lint | BLOCKED | exit code 1, 42 errors |`);
+  const r = runScript('quality-gate.mjs', dir);
+  assert.notEqual(r.code, 0, 'a gate that reads seven of twelve rows is not reading the record');
+  assert.match(JSON.stringify(r.json), /row .{0,8}Lint.{0,8} records status .{0,8}BLOCKED/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// (5) An EMPTY ledger reported "every task is done and backed by recorded evidence", exit 0 —
+// because zero tasks are trivially all done. Vacuous truth is the commonest way a gate reports
+// safety it never measured.
+test('task-ledger.mjs: an empty ledger is not a finished one', () => {
+  const dir = mkTmp('gru-ledger-empty-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'tasks.json'), JSON.stringify({ schemaVersion: 1, tasks: [] }));
+  const r = runScript('task-ledger.mjs', dir);
+  assert.notEqual(r.code, 0, 'zero tasks are trivially "all done" — that is not a finished project');
+  assert.match(JSON.stringify(r.json), /declares no tasks at all/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// (6) The container of everything config-protection protects was unguarded — and after
+// `rm -rf Dev-Memory` EVERY project gate answers "not a studio project" and exits 0, so removing
+// the substrate does not fail the checks, it silences them. Plus the guard was case-blind on a
+// case-insensitive filesystem, where `dev-memory/dod.json` IS the real file.
+{
+  const cpDir = () => {
+    const dir = mkTmp('gru-cp-sub-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory', 'evidence'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'dod.json'), '{}\n');
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'evidence', 'tests.json'), '{"verdict":"pass"}\n');
+    return dir;
+  };
+  for (const [label, command, want] of [
+    ['deleting the whole Dev-Memory directory', 'rm -rf Dev-Memory', 'deny'],
+    ['moving Dev-Memory away', 'mv Dev-Memory /tmp/gone', 'deny'],
+    ['a lower-cased path to the real substrate', 'echo x > dev-memory/dod.json', 'deny'],
+    ['a lower-cased deletion', 'rm -rf dev-memory/evidence', 'deny'],
+    ['an upper-cased path', 'echo x > DEV-MEMORY/evidence/tests.json', 'deny'],
+    ['writing ordinary working memory', 'echo "# p" > Dev-Memory/PROGRESS.md', null],
+    ['clearing build output', 'rm -rf node_modules dist', null],
+  ]) {
+    test(`config-protection.mjs: ${label}`, () => {
+      const dir = cpDir();
+      assert.equal(runHook('config-protection.mjs', command, dir).decision, want, command);
+      fs.rmSync(dir, RM_OPTS);
+    });
+  }
+}
+
 // THE LAYER SPELLING CANNOT EVADE. The enumeration above is one layer; the space of weakenings is
 // not enumerable (a rule can move into a preset, a second config can override the first, a key can
 // be renamed), which is why dod.mjs records the hash of every config it measured against and
@@ -3057,8 +3230,20 @@ test('config-protection.mjs: resolves a relative path against the tool call’s 
 test('dod.mjs: a dimension that starts passing while its config changed is refused, stickily', () => {
   const dir = mkTmp('gru-dod-fp-');
   fs.writeFileSync(path.join(dir, 'eslint.config.mjs'), 'export default [{rules:{"eqeqeq":"error"}}]\n');
+  // Enough dimensions genuinely executed to clear the measurement floor added in pass 2 — a
+  // project that waives almost everything is refused for THAT, which would mask what this test is
+  // about. The fixture has to be a plausible project, not a minimal one.
+  const ok = [process.execPath, '-e', 'process.exit(0)'];
   const dod = (exitCode) =>
-    writeDod(dir, { ...DOD_ALL_NA, lint: { command: [process.execPath, '-e', `process.exit(${exitCode})`] } });
+    writeDod(dir, {
+      ...DOD_ALL_NA,
+      build: { command: ok },
+      tests: { command: ok },
+      types: { command: ok },
+      security: { command: ok },
+      runs: { command: ok },
+      lint: { command: [process.execPath, '-e', `process.exit(${exitCode})`] },
+    });
 
   dod(1);
   assert.notEqual(runScript('dod.mjs', dir).code, 0, 'precondition: lint fails');
@@ -3714,7 +3899,13 @@ for (const [label, setup] of [
 // by nobody knows what, satisfied an 80% floor — and unlike dod.json and evidence/, the report file
 // is not guarded, so anything may write it. An executed Definition of Done that reads a number it
 // did not produce is an attestation with extra steps.
-test('dod.mjs: a coverage report older than the run that claims it is refused', () => {
+// The proof that a coverage figure belongs to THIS run changed on 2026-08-27 (pass 2), and the
+// test changed with it. It used to be an mtime comparison — and `touch`, whose entire purpose is
+// changing an mtime, satisfied it exactly: a 2020-dated hand-written report plus
+// `["touch","coverage-summary.json"]` certified 99.4%. So the report is now DELETED before the
+// command runs, and its existence afterwards is the proof the command wrote it. That needs no
+// clock and cannot be forged by a program that only touches files.
+test('dod.mjs: a coverage report this run did not write is refused', () => {
   const dir = mkTmp('gru-dod-stale-cov-');
   fs.writeFileSync(path.join(dir, 'c.json'), JSON.stringify({ total: { lines: { pct: 99 } } }));
   fs.utimesSync(path.join(dir, 'c.json'), new Date('2020-01-01'), new Date('2020-01-01'));
@@ -3724,7 +3915,17 @@ test('dod.mjs: a coverage report older than the run that claims it is refused', 
   });
   const r = runScript('dod.mjs', dir);
   assert.notEqual(r.code, 0, '99% from a file this run did not write is not this run’s coverage');
-  assert.match(JSON.stringify(r.json), /BEFORE the coverage command started/);
+  assert.match(JSON.stringify(r.json), /could not inspect c\.json to confirm this run produced it/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('dod.mjs: `touch` cannot stand in for a coverage tool', () => {
+  const dir = mkTmp('gru-dod-touch-');
+  fs.writeFileSync(path.join(dir, 'c.json'), JSON.stringify({ total: { lines: { pct: 99.4 } } }));
+  writeDod(dir, { ...DOD_ALL_NA, coverage: { command: ['touch', 'c.json'], minPercent: 90, reportPath: 'c.json' } });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0, 'the one program whose purpose is changing an mtime must not prove freshness');
+  assert.match(JSON.stringify(r.json), /cannot measure coverage/);
   fs.rmSync(dir, RM_OPTS);
 });
 

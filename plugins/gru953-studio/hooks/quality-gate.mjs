@@ -399,6 +399,27 @@ function main() {
         : `a row has MORE cells than its header, so its values line up against the wrong columns and its status cannot be verified -> "${r.raw}" (an unescaped "|" inside a cell is the usual cause - write it as \\|)`,
     );
   }
+  // ANY row that is not a pass and not a conscious n/a is a failure — whether or not this gate
+  // has a required dimension by that name.
+  //
+  // 2026-08-27 (pass 2). REQUIRED lists seven keywords; dod.mjs writes TWELVE rows. So `Lint`,
+  // `Type check`, `Test coverage`, `Dependency audit` and `Performance budget` matched none of
+  // them and were never examined at all. Measured: editing the generated table's Lint row to
+  // `| Lint | BLOCKED | exit code 1, 42 errors |` left this gate reporting CLEAN. A gate that
+  // reads seven of twelve rows and calls the record complete is not reading the record.
+  //
+  // X143's rule already covers a row that is UNMATCHED-and-blank; this covers a row that is named,
+  // unmatched by the required list, and failing.
+  for (const r of rows) {
+    const item = (r.item || '').trim();
+    const status = (r.status || '').trim();
+    if (item === '' || status === '') continue;
+    if (PASS_RE.test(deEmphasise(status)) || NA_RE.test(deEmphasise(status))) continue;
+    problems.push(
+      `the row "${item}" records status "${status}", which is neither a pass nor a conscious n/a. Every row in this record must be one or the other — this gate used to examine only the seven rows matching a required dimension, so a failing row for any other dimension was invisible.`,
+    );
+  }
+
   for (const dim of REQUIRED) {
     // 2026-08-24, X119's residual — evidence is now TIED to a dimension.
     //

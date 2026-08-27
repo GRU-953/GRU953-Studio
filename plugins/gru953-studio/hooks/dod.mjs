@@ -90,7 +90,31 @@ const MIN_COVERAGE_FLOOR = 60;
 // the other checks demand — a coverage report with a real percentage, a report file that has to
 // exist and parse. This list exists because the vacuous case was reachable by accident, not only
 // by intent.
-const VACUOUS_PROGRAMS = new Set(['true', ':', 'echo', 'printf', 'exit', 'sleep', 'pwd', 'false']);
+const VACUOUS_PROGRAMS = new Set([
+  'true',
+  ':',
+  'echo',
+  'printf',
+  'exit',
+  'sleep',
+  'pwd',
+  'false',
+  // Added 2026-08-27 (pass 2). `touch` defeated the coverage freshness check outright: that check
+  // compares the report's mtime against the command's start time, and `touch` is the one program
+  // whose entire purpose is to change an mtime. Measured: a 2020-dated hand-written report plus
+  // `["touch","coverage-summary.json"]` certified 99.4% coverage. The copy family is here for the
+  // same reason — none of them inspects anything, they only move bytes that already existed.
+  'touch',
+  'cp',
+  'mv',
+  'ln',
+  'install',
+  'dd',
+  'cat',
+  'tee',
+  'mkdir',
+  'chmod',
+]);
 
 const EXECUTED = [
   { key: 'build', label: 'build succeeds', row: 'Reproducible build' },
@@ -249,6 +273,8 @@ try {
 }
 
 const results = [];
+let summaryExecutedCount = 0;
+let summaryWaived = [];
 
 function writeEvidence(key, payload) {
   const p = path.join(evidenceDir, `${key}.json`);
@@ -687,6 +713,26 @@ for (const dim of EXECUTED) {
     continue;
   }
 
+  // COVERAGE: remove the report BEFORE running, so its existence afterwards proves the command
+  // wrote it. 2026-08-27 (pass 2): the previous proof was an mtime comparison, and `touch` — now
+  // refused as vacuous — satisfied it exactly. Deleting first is a stronger and simpler claim,
+  // and it needs no clock.
+  //
+  // STATED RESIDUAL: this proves the command WROTE the report, not that the number in it was
+  // measured. A three-line script that writes `{"pct":100}` still passes, because every coverage
+  // tool authors its own report and nothing here can tell a real one from a fake one. So the
+  // generated row says the figure is self-reported — see the renderer — rather than implying this
+  // gate verified it.
+  if (dim.key === 'coverage' && spec && typeof spec.reportPath === 'string') {
+    const rp = path.resolve(rootAbs, spec.reportPath);
+    if (rp === rootAbs || rp.startsWith(rootAbs + path.sep)) {
+      try {
+        fs.rmSync(rp, { force: true });
+      } catch {
+        /* if it cannot be removed the check below will report the report as missing */
+      }
+    }
+  }
   let res = execute(dim.key, spec || {});
   if (!res) continue;
   if (dim.key === 'coverage') res = checkCoverageFloor(spec, res);
@@ -807,6 +853,191 @@ for (const dim of EXECUTED) {
   }
 }
 
+// ---- is it measuring THIS project, or somewhere else? ----------------------------------------
+//
+// 2026-08-27 (pass 2). Two routes past every check above, both measured end to end, neither
+// needing any forgery at all:
+//
+//  * `"cwd": ".dod"` — a hidden second project inside the root, with one empty passing test.
+//    Every executed dimension pointed at it: six dimensions, real commands, real exit 0, and a
+//    table reading `| Automated tests | pass | [in .dod] npm test → exit 0 |` for a project whose
+//    own source does not parse. cwd containment was checked; what the contained directory held
+//    was not.
+//  * `tests: ["node","--test","smoke/smoke.test.js"]` while package.json declares
+//    `"test": "node --test test/"`. A real test runner and a real linter, both exiting 0, both
+//    pointed away from the code. The cheapest route of all: no forged evidence, no config edit,
+//    and genuine tool output left in the record.
+//
+// Neither can be forbidden outright — a monorepo legitimately runs in `packages/api`, and a
+// project legitimately runs something other than its npm script. So both are ALLOWED WHEN
+// RECORDED: differ from the project's own declaration and say why, in Dev-Memory/decisions/. That
+// is the same pattern the config fingerprint uses, and for the same reason — the honest case has a
+// legal move and the silent case does not.
+{
+  const decisionsText = (() => {
+    try {
+      const dir = path.join(devMemory, 'decisions');
+      return fs
+        .readdirSync(dir)
+        .filter((f) => /\.(md|json|txt)$/i.test(f))
+        .map((f) => {
+          try {
+            return fs.readFileSync(path.join(dir, f), 'utf8');
+          } catch {
+            return '';
+          }
+        })
+        .join('\n');
+    } catch {
+      return '';
+    }
+  })();
+
+  let pkg = null;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(rootAbs, 'package.json'), 'utf8'));
+  } catch {
+    pkg = null;
+  }
+  const scriptBody = (name) =>
+    pkg && pkg.scripts && typeof pkg.scripts[name] === 'string' ? pkg.scripts[name].trim() : null;
+
+  // The dimensions whose whole point is to cover the project rather than a corner of it.
+  const MUST_COVER_PROJECT = new Set(['tests', 'runs', 'lint', 'types', 'build', 'coverage']);
+
+  for (const r of results) {
+    if (r.kind !== 'executed' || !Array.isArray(r.command)) continue;
+    if (!MUST_COVER_PROJECT.has(r.dimension)) continue;
+    const named = new RegExp(`\\b${r.dimension}\\b`, 'i').test(decisionsText);
+
+    // (1) measured somewhere other than the project root
+    if (r.cwd && r.cwd !== rootAbs && !named) {
+      const rel = path.relative(rootAbs, r.cwd) || '.';
+      fail(
+        `${r.dimension}: measured in \`${rel}\` rather than the project root, and nothing records why. A directory inside the project can be a legitimate workspace — or a sandbox with one passing test, which is how this was measured getting past every other check. THE LEGAL MOVE: name \`${r.dimension}\` in a note under Dev-Memory/decisions/ saying which workspace it covers and why.`,
+      );
+    }
+
+    // (2) running something other than the project's own declared script
+    // The dimension key and the npm script name are NOT the same word. `tests` vs `test` is one
+    // letter, and the first version of this check looked up `scripts.tests`, found nothing on
+    // every project in existence, and was therefore completely inert — measured: the smoke-
+    // directed command it was written to catch came back clean. Caught only by running the
+    // attack rather than the control, which is the whole reason both directions get run.
+    const SCRIPT_FOR = {
+      tests: ['test'],
+      lint: ['lint'],
+      types: ['typecheck', 'types', 'tsc'],
+      build: ['build'],
+      coverage: ['coverage', 'test:coverage'],
+      runs: ['start', 'journey', 'serve'],
+    };
+    const candidates = SCRIPT_FOR[r.dimension] || [r.dimension];
+    const scriptName = candidates.find((n) => scriptBody(n));
+    const body = scriptName ? scriptBody(scriptName) : null;
+    if (body && !named) {
+      const joined = r.command.join(' ');
+      const runsTheScript =
+        /^(npm|pnpm|yarn|bun)\b/.test(r.command[0] || '') ||
+        joined.includes(body) ||
+        body.includes(joined);
+      if (!runsTheScript) {
+        fail(
+          `${r.dimension}: package.json declares \`"${scriptName}": "${body}"\`, and this Definition of Done runs \`${joined}\` instead. A real tool exiting 0 while pointed away from the code is the cheapest way there is to make a gate pass, and it leaves genuine output in the evidence. THE LEGAL MOVE: run the project's own script, or name \`${r.dimension}\` in a note under Dev-Memory/decisions/ saying why this command measures it better.`,
+        );
+      }
+    }
+  }
+}
+
+// ---- how much was actually MEASURED ---------------------------------------------------------
+//
+// 2026-08-27 (pass 2), and this is the deepest hole the whole rebuild had. `notApplicable` takes a
+// reason, and `refuteNotApplicable` refutes a reason the TREE contradicts — but it only knows five
+// dimensions and only reads package.json, so on any project without one every refutation returns
+// null. Measured end to end: nine of the ten executed dimensions waived with one plausible
+// sentence each, coverage given `["touch"]`, and BOTH gates reported clean having executed a single
+// command. The product's central promise — executed, not attested — reduced to twelve sentences
+// the graded agent wrote itself.
+//
+// `runs` is the worst of them. This file says of it, thirty lines up, that it is "the single most
+// important row here, because it is the only one that can fail while every other one passes". It
+// was waivable with the words "library only".
+//
+// Refuting reasons one at a time cannot fix this: the reasons are prose and the tree is unbounded.
+// What CAN be checked is HOW MUCH WAS MEASURED, which is a number, and whether each waiver was a
+// deliberate recorded decision rather than a sentence typed to get past a gate.
+{
+  const executedCount = results.filter((r) => r.kind === 'executed' && r.verdict === 'pass').length;
+  const waived = results
+    .filter((r) => r.kind === 'executed' && r.verdict === 'n/a')
+    .map((r) => r.dimension);
+
+  // Does the tree contain anything that could BE run? If not, a heavily-waived Definition of Done
+  // may be perfectly honest, and this must not fire on it.
+  let looksLikeSoftware = false;
+  try {
+    const walk = (dir, depth) => {
+      if (looksLikeSoftware || depth > 2) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name === '.git' || e.name === 'Dev-Memory') continue;
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full, depth + 1);
+        else if (/\.(m?[jt]sx?|py|rb|go|rs|java|kt|swift|cs|php|dart|c|cc|cpp)$/.test(e.name)) {
+          looksLikeSoftware = true;
+          return;
+        }
+      }
+    };
+    walk(rootAbs, 0);
+  } catch {
+    looksLikeSoftware = false;
+  }
+
+  // The waivers a decision record names are deliberate. The rest are sentences.
+  let explained = [];
+  try {
+    const dir = path.join(devMemory, 'decisions');
+    const text = fs
+      .readdirSync(dir)
+      .filter((f) => /\.(md|json|txt)$/i.test(f))
+      .map((f) => {
+        try {
+          return fs.readFileSync(path.join(dir, f), 'utf8');
+        } catch {
+          return '';
+        }
+      })
+      .join('\n');
+    explained = waived.filter((d) => new RegExp(`\\b${d}\\b`, 'i').test(text));
+  } catch {
+    explained = [];
+  }
+  const unexplained = waived.filter((d) => !explained.includes(d));
+
+  // (1) Nothing that proves the software works. `tests` and `runs` are the two dimensions that
+  // answer "does it do the thing"; waiving both leaves no evidence of that at all.
+  if (looksLikeSoftware && waived.includes('tests') && waived.includes('runs')) {
+    fail(
+      'both `tests` and `runs` are marked notApplicable, and this project contains source code. Those are the only two dimensions that answer whether the software works — waiving both means nothing in this Definition of Done was ever going to fail. Give at least one of them a real command.',
+    );
+  }
+
+  // (2) A floor on how much ran at all. Deliberately low: a small honest project legitimately
+  // waives accessibility, performance, types and dependencies. Four is the point at which a
+  // Definition of Done stops describing the software.
+  const FLOOR = 4;
+  if (looksLikeSoftware && executedCount < FLOOR && unexplained.length > 0) {
+    fail(
+      `only ${executedCount} of the ten executed dimensions actually ran a command, and ${unexplained.length} waiver(s) are unexplained (${unexplained.join(', ')}). This project contains source code, so a Definition of Done that measures ${executedCount} thing(s) is not describing it. THE LEGAL MOVE: give more dimensions a real command, or write a note in Dev-Memory/decisions/ naming each dimension you are waiving and why — a waiver somebody recorded on purpose is a decision, and a sentence typed into dod.json to get past this gate is not.`,
+    );
+  }
+
+  // Recorded either way, so the count is visible in the run's own output rather than inferable.
+  summaryExecutedCount = executedCount;
+  summaryWaived = waived;
+}
+
 // ---- record the judged dimensions ---------------------------------------------------------
 for (const dim of JUDGED) {
   const spec = declared[dim.key];
@@ -916,7 +1147,14 @@ for (const dim of JUDGED) {
     // and then omitted from the output, so a reader of the table could not tell a check of this
     // project from a check of somewhere else. Both halves were needed: confine it, and say so.
     const where = r.cwd && r.cwd !== rootAbs ? `[in ${path.relative(rootAbs, r.cwd) || '.'}] ` : '';
-    const evidence = `${where}${rawEvidence}`
+    // A coverage figure is SELF-REPORTED by the declared command. Said in the row, because the
+    // row is what a reader and the next gate see, and implying this gate measured it would be the
+    // attestation this whole design exists to remove.
+    const selfReported =
+      dim.key === 'coverage' && r.verdict === 'pass'
+        ? ' (figure self-reported by that command)'
+        : '';
+    const evidence = `${where}${rawEvidence}${selfReported}`
       .replace(/\r?\n/g, ' ')
       .replace(/\|/g, '¦')
       .slice(0, 300);
@@ -935,6 +1173,11 @@ const summary = {
   executed: results.filter((r) => r.kind === 'executed' && r.verdict !== 'n/a').length,
   passed: results.filter((r) => r.verdict === 'pass').length,
   notApplicable: results.filter((r) => r.verdict === 'n/a').length,
+  // Stated rather than inferable: how many of the ten executed dimensions actually ran a command,
+  // and which were waived. A reader of this output should not have to count the rows to find out
+  // whether anything was measured.
+  executedDimensions: summaryExecutedCount,
+  waivedDimensions: summaryWaived,
 };
 
 if (problems.length === 0) {

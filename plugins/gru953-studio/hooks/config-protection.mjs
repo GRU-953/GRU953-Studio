@@ -138,6 +138,36 @@ const GUARDED_BASENAMES = new Set([
   '.editorconfig',
 ]);
 
+/**
+ * The path as the FILESYSTEM spells it.
+ *
+ * 2026-08-27 (pass 2). The Dev-Memory checks are case-SENSITIVE on purpose — this plugin ships a
+ * `skills/dev-memory/` directory and a blanket case-insensitive match would guard that legitimate,
+ * frequently-edited path. But macOS and Windows filesystems are case-INSENSITIVE, so
+ * `dev-memory/evidence/tests.json` IS `Dev-Memory/evidence/tests.json` there, and all three
+ * lower-cased spellings were measured walking straight through.
+ *
+ * `realpathSync.native` is the one that answers it: measured on this machine, plain
+ * `realpathSync` returns the lower-cased path unchanged while `.native` returns the real
+ * `Dev-Memory/...`. So the guard sees the file the write will actually land on, and a genuine
+ * `skills/dev-memory/` still canonicalises to itself. On a case-sensitive filesystem nothing
+ * changes at all.
+ */
+function canonicalise(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    /* not on disk yet */
+  }
+  // A path that does not exist cannot be canonicalised, but its PARENT usually can — which is
+  // what matters for a file about to be created inside a guarded directory.
+  try {
+    return path.join(fs.realpathSync.native(path.dirname(p)), path.basename(p));
+  } catch {
+    return p;
+  }
+}
+
 function isGuardedPath(abs) {
   // TEST FIXTURES ARE NOT THE LIVE SUBSTRATE. 2026-08-27: this repository's own committed golden
   // fixture gained a `Dev-Memory/evidence/` directory earlier the same day, and this hook then
@@ -148,7 +178,18 @@ function isGuardedPath(abs) {
   // project's LIVE measurement substrate, and a path under a fixtures directory is by construction
   // test data. RESIDUAL, STATED: a project that kept real evidence under `test/fixtures/` would go
   // unguarded. That is a strange thing to do and it is named here rather than left to be found.
-  const posixAbs = abs.replace(/\\/g, '/');
+  // CANONICALISE THE CASE VIA THE FILESYSTEM, not by lower-casing.
+  //
+  // 2026-08-27 (pass 2). The Dev-Memory checks below are case-SENSITIVE on purpose: this plugin
+  // ships a `skills/dev-memory/` directory, and a blanket case-insensitive match would guard that
+  // legitimate, frequently-edited path. But macOS and Windows filesystems are case-INSENSITIVE,
+  // so `dev-memory/evidence/tests.json` IS `Dev-Memory/evidence/tests.json` there — and all three
+  // lower-cased spellings were measured walking straight through.
+  //
+  // realpathSync answers it exactly: it returns the name the filesystem actually holds, so a
+  // lower-cased path to the real substrate canonicalises to `Dev-Memory/...` and a genuine
+  // `skills/dev-memory/` stays itself. On a case-sensitive filesystem nothing changes.
+  const posixAbs = canonicalise(abs).replace(/\\/g, '/');
   if (/(^|\/)(?:tests?|spec)\/fixtures\//.test(posixAbs) || /(^|\/)__fixtures__\//.test(posixAbs)) {
     return null;
   }
@@ -157,7 +198,7 @@ function isGuardedPath(abs) {
 
   // The Definition-of-Done substrate, matched on POSITION rather than on name, because the
   // filename `dod.json` is only meaningful inside a Dev-Memory folder.
-  const posix = abs.split(path.sep).join('/');
+  const posix = posixAbs;
   if (/(^|\/)Dev-Memory\/dod\.json$/.test(posix)) {
     return "this project's Definition of Done (Dev-Memory/dod.json)";
   }
@@ -282,7 +323,7 @@ function writeTargetsIn(command) {
       continue;
     }
 
-    const at = (t) => ({ target: t, base: rel });
+    const at = (t) => ({ target: t, base: rel, program });
     const isFlag = (t) => t.value.startsWith('-') && t.value !== '-';
 
     // Redirection, from the SCANNER's judgement rather than from the token text: a `>` that was
@@ -348,6 +389,13 @@ function writeTargetsIn(command) {
 // This product's own lib.mjs reads a command from more than one field, because different tools
 // spell it differently. Reading only `command` meant this arm did nothing at all on the
 // PowerShell / Monitor / run_command surfaces that INV10 now certifies it is wired for.
+// THE CONTAINER OF EVERYTHING THIS HOOK PROTECTS. 2026-08-27 (pass 2): `rm -rf Dev-Memory` and
+// `mv Dev-Memory /tmp/gone` were both allowed, and after either one EVERY project-level gate
+// reports "not a studio project" and exits 0 — the whole gate family keyed to a directory that
+// nothing stopped anybody deleting. Guarded against destruction only: ordinary writes INSIDE
+// Dev-Memory are how the run records its work and stay allowed.
+const DESTRUCTIVE = new Set(['rm', 'mv', 'shred', 'truncate', 'unlink', 'rmdir']);
+
 const shellCommand =
   (typeof ti.command === 'string' && ti.command) ||
   (typeof ti.script === 'string' && ti.script) ||
@@ -355,8 +403,15 @@ const shellCommand =
   (typeof ti.cmd === 'string' && ti.cmd) ||
   '';
 if (target === '' && shellCommand !== '') {
-  for (const { target: candidate, base } of writeTargetsIn(shellCommand)) {
+  for (const { target: candidate, base, program } of writeTargetsIn(shellCommand)) {
     let abs = path.resolve(cwd, base, candidate);
+    if (DESTRUCTIVE.has(program || '')) {
+      if (/(^|\/)Dev-Memory\/?$/.test(canonicalise(abs).replace(/\\/g, '/'))) {
+        deny(
+          `studio config protection: this command would ${program} the project's whole Dev-Memory directory. That is the container of the task ledger, the Definition of Done and all its recorded evidence — and every project-level gate answers "not a studio project" and exits 0 once it is gone, so removing it does not fail the checks, it silences them. If the project genuinely needs resetting, that is a deliberate decision for the person who owns it.`,
+        );
+      }
+    }
     // A GLOB never matches a real path, so statSync said "does not exist", which this hook reads
     // as first-time creation and waves through: `rm -f Dev-Memory/evidence/*.json` deleted every
     // measurement unchallenged. A pattern cannot be resolved without expanding it, but its

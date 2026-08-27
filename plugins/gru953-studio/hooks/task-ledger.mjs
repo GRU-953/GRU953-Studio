@@ -455,6 +455,26 @@ const summary = {
   setAsideByAPerson: setAside.map((t) => `${t.id} (${t.state})`),
 };
 
+// AN EMPTY LEDGER IS NOT A FINISHED ONE. 2026-08-27 (pass 2): `{"schemaVersion":1,"tasks":[]}`
+// reported `{"status":"clean","reason":"every task is done and backed by recorded evidence"}` and
+// exit 0 — because zero tasks are trivially all done. The one file that is supposed to prove work
+// happened certified that it had, over nothing. Vacuous truth is the commonest way a gate reports
+// safety it never measured, and this is a textbook instance.
+if (all.length === 0) {
+  out(
+    {
+      status: 'BLOCKED',
+      reason:
+        'Dev-Memory/tasks.json declares no tasks at all. An empty ledger is not a finished one: zero tasks are trivially "all done", which is how this gate used to report a project complete having measured nothing. If the plan genuinely has no tasks, there is nothing for this run to have built.',
+      next: null,
+      canContinue: false,
+      ...summary,
+      root,
+    },
+    1,
+  );
+}
+
 if (all.length === done.length) {
   out(
     {
