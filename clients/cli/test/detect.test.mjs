@@ -147,8 +147,13 @@ test('Claude Desktop is marked unverified, so the installer does not write to a 
 test('every host definition carries what the installer needs to act on it', () => {
     for (const h of hostDefinitions({ platform: 'linux', homeDir: '/home/sam', env: {} })) {
         assert.ok(h.id && h.name && h.kind, `${h.id || 'a host'} is missing an id, name or kind`);
-        assert.ok(['claude-plugin', 'antigravity', 'vscode-family'].includes(h.kind), `unknown kind: ${h.kind}`);
+        // 2026-08-27: this permitted 'antigravity' and 'vscode-family' too, and the exemption
+        // below let a vscode-family host omit its installDir. Both hosts went in 7.0.0, so the
+        // list was permitting kinds nothing produces — which is not merely dead, it is the test
+        // that would stay green if they were reintroduced un-noticed. Every host now needs an
+        // installDir, with no exemption, which is what makes `uninstall` able to act on it.
+        assert.equal(h.kind, 'claude-plugin', `unknown kind: ${h.kind} — 7.0.0 targets Claude Code only`);
         assert.ok(['documented', 'unverified'].includes(h.confidence), `${h.id} must state its confidence`);
-        if (h.kind !== 'vscode-family') assert.ok(h.installDir, `${h.id} needs an installDir`);
+        assert.ok(h.installDir, `${h.id} needs an installDir`);
     }
 });

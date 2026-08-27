@@ -1037,6 +1037,50 @@ if (changelogText !== null) {
 // 2026-08-16)" in step 1 exempted a live claim in step 4. Worse, it exempted a deliberately
 // reintroduced defect — the check reported zero hits on the exact regression it was written for.
 // A window is the honest unit: a wrapped sentence spans one or two lines, a list does not.
+// An exemption marker NEAR a claim is not an explanation OF the claim. 2026-08-27: all three of
+// DC11, DC12 and DC13 exempted a live defect because an unrelated sentence two lines away happened
+// to contain one of their marker words — and every one of those words is ordinary English in this
+// codebase's prose. Measured, not theorised:
+//
+//   DC11  "The studio never guesses a value."      excused a live `blocked` state
+//   DC11  "Keep the old notes for reference."      excused a live `blocked` state
+//   DC11  "Record it rather than asking."          excused a live `blocked` state
+//   DC12  "Antigravity support was removed ..."    excused a live token guarantee
+//   DC13  "Antigravity support was removed ..."    excused a live mid-build pop-up
+//
+// DC12's was found because such a note was added to the end of the very file DC12's own regression
+// test appends its fixture to, so the test went green on the defect it exists to catch. The other
+// four were then found by trying the same thing deliberately.
+//
+// What separates a real explanation from an adjacent one is a SENTENCE. A correction retiring a
+// thing names the thing in the same breath — "this used to say the publish token had a TTL", "the
+// `blocked` state was renamed". An unrelated note is a different sentence, however close. So both
+// halves must fall inside one sentence: `[^.]` cannot cross a full stop.
+//
+// A distance rather than a longer word list, which is the third time on this codebase that
+// comparing a quantity has beaten enumerating spellings.
+function sameSentenceRe(markerSrc, subjectSrc) {
+  const marker = new RegExp(`\\b(?:${markerSrc})\\b`, 'i');
+  const subject = new RegExp(`(?:${subjectSrc})`, 'i');
+  // Split into real sentences, then require ONE sentence to hold both halves.
+  //
+  // The first attempt bounded the distance with `[^.]`, treating any full stop as a sentence end.
+  // That is wrong here in the most predictable way possible: this codebase's prose is full of
+  // filenames. `task-ledger.mjs REFUSES the state \`doing\`` is one sentence containing two dots,
+  // so the rule split it and reported two legitimate correction notes as live defects — a check
+  // that fires on honest work, which is as serious as one that misses.
+  //
+  // A sentence ends with `.`/`!`/`?`, optionally a closing bracket or quote, then WHITESPACE.
+  // `mjs`, `7.0.0` and `e.g.` all fail that test, because nothing follows their dots but letters.
+  const SENTENCE_END = /(?<=[.!?][)\]"'’”]?)\s+/;
+  return {
+    test: (window) =>
+      window
+        .split(SENTENCE_END)
+        .some((sentence) => marker.test(sentence) && subject.test(sentence)),
+  };
+}
+
 function explainedNear(lines, i, re, radius = 2) {
   // Whitespace COLLAPSED, not joined with newlines. Prose wraps: "approval is only / ever a
   // fresh AskUserQuestion answer" is one phrase split across two lines, and a window joined with
@@ -1089,8 +1133,11 @@ function explainedNear(lines, i, re, radius = 2) {
       // blocked-on-human stops it) and collapsing them back is the specific regression to catch.
       const RETIRED = ['doing', 'blocked'];
       // Saying, in any of the ways the product actually says it, that the word is retired.
-      const RETIREMENT_WORDS =
-        /\b(?:is now|used to|no longer|no bare|not a state|never|old|retired|renamed|REFUSES|instead of|rather than)\b/i;
+      // The subject is the state name itself: a line retiring `blocked` says `blocked`. See
+      // sameSentenceRe — these markers are ordinary English, and three of them were measured
+      // excusing a live retired state from two lines away.
+      const RETIREMENT_SRC =
+        'is now|used to|no longer|no bare|not a state|never|old|retired|renamed|REFUSES|instead of|rather than';
       for (const file of walk(pluginRoot)) {
         if (!file.endsWith('.md')) continue;
         const rel = path.relative(repoRoot, file);
@@ -1101,7 +1148,8 @@ function explainedNear(lines, i, re, radius = 2) {
           for (const dead of RETIRED) {
             if (accepted.has(dead)) continue; // still a real state — nothing to say
             if (!new RegExp('`' + dead + '`').test(line)) continue;
-            if (explainedNear(lines, i, RETIREMENT_WORDS)) continue;
+            if (explainedNear(lines, i, sameSentenceRe(RETIREMENT_SRC, '`?' + dead + '`?')))
+              continue;
             fail(
               `${rel}:${i + 1} names the task state \`${dead}\`, which hooks/task-ledger.mjs does not accept (it accepts ${[...accepted].map((a) => `\`${a}\``).join(', ')}). Following this instruction writes a ledger the gate blocks on — which is how the pause/resume cycle dead-ended. Use the current state name, or, if this line is explaining the rename, say so on the line (DC11 looks for words like "no longer", "used to", "is now") (DC11)`,
             );
@@ -1140,6 +1188,24 @@ function explainedNear(lines, i, re, radius = 2) {
   ];
   const REMOVED_WORDS =
     /\b(?:removed|deleted|no longer|no such|there is no|used to|was ceremony|retired|corrected|X214|does not exist|never existed|never required)\b/i;
+
+  // The exemption must be about THIS claim, not merely dated. 2026-08-27: this used REMOVED_WORDS
+  // alone, and `removed` is an ordinary word — so an unrelated correction note ("Antigravity
+  // support was removed in 7.0.0") landing two lines from a token guarantee exempted it, and
+  // DC12's own regression test went green on the exact defect it exists to catch. It surfaced
+  // because that note was appended to the end of the same file the test appends its fixture to;
+  // it would have happened to any file, silently, at any time.
+  //
+  // So the window must ALSO name the subject. A genuine correction cannot avoid it: retiring a
+  // token guarantee means writing the word "token". The conjunction is the same shape DC13's
+  // SCOPED() already uses, for the same reason — a marker NEAR a claim is not an explanation OF
+  // the claim.
+  // The subject is the token layer itself. See sameSentenceRe for why proximity alone failed —
+  // this check is where that was found.
+  const RETIRE_SRC =
+    'removed|deleted|no longer|no such|there is no|used to|was ceremony|retired|corrected|X214|does not exist|never existed|never required';
+  const EXPLAINS_THIS = sameSentenceRe(RETIRE_SRC, 'tokens?|TTL|X214|ceremony');
+
   for (const file of walk(pluginRoot)) {
     if (!file.endsWith('.md')) continue;
     const rel = path.relative(repoRoot, file);
@@ -1148,7 +1214,7 @@ function explainedNear(lines, i, re, radius = 2) {
     const dcLines = text.split(/\r?\n/);
     for (const [i, line] of dcLines.entries()) {
       if (!CLAIMS.some((re) => re.test(line))) continue;
-      if (explainedNear(dcLines, i, REMOVED_WORDS)) continue;
+      if (explainedNear(dcLines, i, EXPLAINS_THIS)) continue;
       fail(
         `${rel}:${i + 1} states a safety guarantee resting on the publish/checkpoint/memory-persist TOKEN mechanism, which was deleted on 2026-08-16 (X214) because a token proves nothing — anything a hook can read, an agent can write. A promise made by machinery that does not exist is worse than no promise, because a reader stops looking for the real protection. State what actually enforces it, or, if this line is explaining the removal, say so on the line (DC12)`,
       );
@@ -1236,8 +1302,14 @@ function explainedNear(lines, i, re, radius = 2) {
   // (c) A DATED CORRECTION NOTE. This repository records why something changed, in place, and
   //     those notes necessarily quote the instruction they retired. Recognised by the date or by
   //     the retiring phrase — the same discipline DC11 and DC12 already use.
-  const HISTORICAL =
-    /20\d\d-\d\d-\d\d|used to|this said|before this|no longer|the same defect|was removed|removes a|corrected|never be acted|freeform entry|collected nowhere|puts its pop-up|met four blocking/i;
+  // The subject is the human gate being discussed. Measured: "Antigravity support was removed in
+  // 7.0.0", two lines above a live mid-build pop-up, excused it — see sameSentenceRe.
+  const HISTORICAL_SRC =
+    '20\\d\\d-\\d\\d-\\d\\d|used to|this said|before this|no longer|the same defect|was removed|removes a|corrected|never be acted|freeform entry|collected nowhere|puts its pop-up|met four blocking';
+  const HISTORICAL = sameSentenceRe(
+    HISTORICAL_SRC,
+    'pop-?up|AskUserQuestion|MCQ|interview|approval|blocking gate|ask the (?:user|owner)',
+  );
   const LEGITIMATE = { test: (w) => STRONG.test(w) || SCOPED(w) || HISTORICAL.test(w) };
 
   // (d) TWO WHOLE-FILE exemptions, both structural rather than verbal:
@@ -1264,6 +1336,72 @@ function explainedNear(lines, i, re, radius = 2) {
           `${rel}:${i + 1} instructs a pop-up (\`AskUserQuestion\`) without saying which context it belongs to. An unattended run cannot answer one: it stops there, and this product's decision 1 is one interview at kick-off then silent — fourteen gates like this were found on 2026-08-27, every one citing the charter as authority. Say the context on or near the line: the kick-off interview, a publish/push path, or "only when a person is present and has asked to be consulted" — and otherwise record the decision in Dev-Memory/decisions/ and carry on (DC13)`,
         );
       }
+    }
+  }
+}
+
+// ---- DC14: no hook may contain a network client ---------------------------------------------
+//
+// 2026-08-27. `docs/STABILITY.md` promises this for the whole life of 7.0.x, and until this
+// check existed the only thing standing behind that promise was a comment in this very file
+// saying "the plugin now makes NO outbound network call at all — so the property is finally
+// true", followed by "it is still not asserted as a gate here, because nothing checks it".
+// A promise in the stability contract with nothing checking it is the defect this repository
+// has spent two days on; the comment even named the fix ("a sweep for `fetch(`/`http` in the
+// hooks tree"), which is what this is.
+//
+// It is deliberately the NARROW property. "The plugin makes no network call" is false and was
+// removed from STABILITY.md the same day: three roles are instructed to use the host's own web
+// search, and `licence-scan.mjs` shells out to `cargo metadata` and `dart pub deps`, either of
+// which contacts a registry on a cold cache. Neither is a hook reaching the network under its
+// own steam, and neither is something a gate over this tree could honestly forbid. What IS
+// checkable is that no hook carries a client of its own — and that is the half a reader relies
+// on, because it is the half that would send something without being asked.
+//
+// The v6 counter-example is real, not hypothetical: `openrouter-models.mjs` read a public
+// catalogue with Node's built-in `fetch`. It was deleted with the model integrations, and
+// nothing would have noticed it coming back.
+{
+  const NET_IMPORT =
+    /(?:^|[^\w.])fetch\s*\(|require\(\s*['"](?:node:)?(?:https?|net|dns|tls|dgram)['"]\s*\)|from\s+['"](?:node:)?(?:https?|net|dns|tls|dgram)['"]|import\s*\(\s*['"](?:node:)?(?:https?|net|dns|tls|dgram)['"]\s*\)/;
+  const hooksDir = path.join(pluginRoot, 'hooks');
+  // The test suite lives in this directory and is NOT a hook: it is never wired into
+  // hooks.json and never runs as one, and it necessarily contains every forbidden spelling as
+  // fixture data — the tests for this very check write `fetch(...)` and `import https` into
+  // temporary files to prove it bites. The first version of DC14 flagged hooks.test.mjs on the
+  // real tree and took eight unrelated tests down with it, which is how a gate earns being
+  // switched off. Narrow by construction: `.test.mjs` cannot be a hook, and excluding it cannot
+  // hide a live client, because nothing ever executes it as one.
+  const entries = listDir(hooksDir).filter(
+    (d) => d.isFile() && d.name.endsWith('.mjs') && !d.name.endsWith('.test.mjs'),
+  );
+  if (entries.length === 0) {
+    fail(
+      'DC14 found no .mjs files under plugins/gru953-studio/hooks/, so the no-network-client property promised in docs/STABILITY.md could not be checked. A gate that reads nothing must never report the thing it reads as fine.',
+    );
+  }
+  for (const d of entries) {
+    const full = path.join(hooksDir, d.name);
+    const text = read(full);
+    if (text === null) {
+      fail(
+        `DC14 could not read plugins/gru953-studio/hooks/${d.name}, so it cannot say whether that hook contains a network client (DC14)`,
+      );
+      continue;
+    }
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Comments are where this property gets DISCUSSED — including in this check's own header,
+      // which names `fetch(` twice. Skipping them is not a loophole: a comment cannot open a
+      // socket. Code hidden after `//` on a line is still code, so only leading-comment lines
+      // and block-comment bodies are skipped, which is what a hook's prose actually looks like.
+      const t = line.trim();
+      if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) continue;
+      if (!NET_IMPORT.test(line)) continue;
+      fail(
+        `plugins/gru953-studio/hooks/${d.name}:${i + 1} contains a network client (\`fetch\`, or an import of http/https/net/dns/tls/dgram). docs/STABILITY.md promises for the life of 7.0.x that no hook has one, and v6 shipped exactly this — openrouter-models.mjs fetched a public catalogue — so the promise needs a check rather than a comment. If a hook genuinely must reach the network, change the contract first, in the open (DC14)`,
+      );
     }
   }
 }

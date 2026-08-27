@@ -7,14 +7,14 @@ Prepared 2026-08-26 on branch `v7-lts-rebuild`.
 
 ## 1. What state it is in
 
-| | |
-| :-- | :-- |
-| Branch | `v7-lts-rebuild`, local only — never pushed |
-| Commits | 12, one per phase instalment, each DCO-signed |
-| Version | `7.0.0` in the plugin manifest, the marketplace manifest and the CLI package |
-| Tests | plugin **520/520**, CLI **46/46** |
-| Gates | all nine green, including `npm run lint` and `npm run format:check` |
-| Tag | **not created**, deliberately — it must point at the merge commit, which does not exist yet. Step 4 creates it. |
+|         |                                                                                                                 |
+| :------ | :-------------------------------------------------------------------------------------------------------------- |
+| Branch  | `v7-lts-rebuild`, local only — never pushed                                                                     |
+| Commits | 12, one per phase instalment, each DCO-signed                                                                   |
+| Version | `7.0.0` in the plugin manifest, the marketplace manifest and the CLI package                                    |
+| Tests   | plugin **520/520**, CLI **46/46**                                                                               |
+| Gates   | all nine green, including `npm run lint` and `npm run format:check`                                             |
+| Tag     | **not created**, deliberately — it must point at the merge commit, which does not exist yet. Step 4 creates it. |
 
 Re-run the checks yourself before doing anything else. The block is the one in
 [CLAUDE.md](../CLAUDE.md); it takes about six minutes, most of it the test suite.
@@ -54,10 +54,10 @@ are in `X401-X413`; `INV26` now guards it.
 
 **Tier drives wall clock far harder than anything else — measured 2026-08-27.**
 
-| Brief | Tier | Result |
-|:--|:--|:--|
-| Tiny CLI expense tracker | Tiny | **PASS 18/18 in 70.9 min**, 21 dispatches across 8 specialists |
-| Household expenses web app (sign-in, SQLite, TypeScript, a11y) | **Complex** | **COULD NOT MEASURE — did not finish in 170 min** |
+| Brief                                                          | Tier        | Result                                                         |
+| :------------------------------------------------------------- | :---------- | :------------------------------------------------------------- |
+| Tiny CLI expense tracker                                       | Tiny        | **PASS 18/18 in 70.9 min**, 21 dispatches across 8 specialists |
+| Household expenses web app (sign-in, SQLite, TypeScript, a11y) | **Complex** | **COULD NOT MEASURE — did not finish in 170 min**              |
 
 The Complex run is worth reading properly rather than as a failure. At the 170-minute
 cut-off it had completed **18 of 19 tasks**; the outstanding one was the last,
@@ -116,8 +116,62 @@ git push origin development
 ```bash
 # 3. Tag it. This is the irreversible step: publish.yml fires on the tag, and every
 #    publishing job now depends on a gates job that re-runs all nine checks first.
-git tag -a v7.0.0 -m "GRU953-Studio 7.0.0 (LTS) — Apache-2.0, headless, Claude Code only" && git push origin v7.0.0
+git tag -s v7.0.0 -m "GRU953-Studio 7.0.0 (LTS) — Apache-2.0, headless, Claude Code only" && git push origin v7.0.0
 ```
+
+**Step 3 will not run yet, and this was measured rather than assumed (2026-08-27.)**
+`CONTRIBUTING.md` requires `git tag -s` so that GitHub shows the tag as Verified,
+and `-s` needs a signing key. On the machine this release was prepared on there is
+no GPG installed, no SSH key, and no `user.signingkey` set; running the command
+above produces `error: cannot run gpg: No such file or directory` and creates no
+tag. Signing has to be set up once, by hand, before step 3. Doing it with an SSH
+key is the shorter route and needs no new software:
+
+1. Open Terminal.
+2. Type `ls ~/.ssh/*.pub` and press Return. If it prints a file name, skip to step 5.
+3. Type `ssh-keygen -t ed25519 -C "aninda.sh.15@gmail.com"` and press Return.
+4. Press Return three more times to accept the default location and an empty
+   passphrase (or type a passphrase if you prefer — you will be asked for it when
+   you tag).
+5. Type `git config --global gpg.format ssh` and press Return.
+6. Type `git config --global user.signingkey ~/.ssh/id_ed25519.pub` and press
+   Return. If step 2 printed a different file name, use that name instead.
+7. Type `pbcopy < ~/.ssh/id_ed25519.pub` and press Return. Your key is now on the
+   clipboard.
+8. In a browser, go to <https://github.com/settings/keys>.
+9. Click **New SSH key**.
+10. In the **Key type** dropdown, choose **Signing Key**. This is the step that
+    matters — an Authentication key will let you push but will not make the tag
+    show as Verified.
+11. Click in the **Key** box and paste (Cmd-V).
+12. Click **Add SSH key**.
+13. Back in Terminal, type `git tag -s zz-probe -m probe && git tag -d zz-probe`
+    and press Return. If it prints `Deleted tag 'zz-probe'` with no error, signing
+    works and step 3 above will run.
+
+If you would rather not set signing up, the release can proceed with `git tag -a`
+instead of `-s`. The consequence is specific and small: the tag will not carry the
+Verified badge on GitHub, and `CONTRIBUTING.md` will then be stating a rule this
+release did not follow — so change that file in the same commit rather than leaving
+the two disagreeing.
+
+## An open decision, recorded rather than settled (2026-08-27)
+
+`clients/cli/src/detect.js` still lists **Claude Desktop** as an install target,
+and `tools/build-release-assets.mjs` still builds a `claude-desktop` zip with its
+own install guide. Both were kept deliberately when Phase 4 removed Antigravity
+and the VS Code family.
+
+But no file inside `plugins/gru953-studio/` mentions Claude Desktop at all, and
+this project's own changelog recorded, before 7.0.0, that the plugin does not run
+there. So 7.0.0 ships an installer for a host where the studio installs and cannot
+build. That is defensible — a user may want the skills visible in the chat app —
+and it is also arguably a leftover.
+
+It is not a release blocker either way, and it is the owner's call, so it is
+written down here instead of being decided quietly. Both README.md and
+docs/INSTALL-VERIFY.md now say exactly what the Claude Desktop install does and
+does not give you, which is true under either answer.
 
 ## 5. After the tag: deprecate the two withdrawn packages
 
@@ -133,12 +187,18 @@ there is no CLI equivalent. Unpublish or mark it deprecated there.
 
 ## 6. What is deliberately not done
 
-- **Nothing was pushed** — no branch, no tag, no npm publish, no GitHub release. That
-  was the agreed boundary.
-- **The end-to-end test is not a release gate.** It should become `needs: e2e` in
-  `publish.yml` beside `gates`, but only once `ANTHROPIC_API_KEY` exists as a
-  repository secret. A gate wired to a missing secret fails every release for a reason
-  unrelated to the release.
+- **Nothing was pushed yet** — no branch, no tag, no npm publish, no GitHub release.
+  The owner's decision of 2026-08-27 changed the boundary: the release now proceeds
+  autonomously through all of those. They are listed here as not-yet-done, not as
+  out-of-scope.
+- **The end-to-end test IS now a release gate (2026-08-27).** `publish.yml` calls
+  `e2e.yml` with `require-measurement: true`, and both publishing jobs depend on it.
+  The earlier note here said this must wait for the secret, because a gate wired to a
+  missing secret fails every release. That is now handled by the input rather than by
+  waiting: without it the nightly still ends green on an absent secret, and with it a
+  release fails. **So pushing the v7.0.0 tag will fail at the `e2e` job until
+  `ANTHROPIC_API_KEY` is configured** — deliberately. Add the secret first (Settings →
+  Secrets and variables → Actions → New repository secret) and the tag proceeds.
 - **The trace-graded LLM-judge harness was not built.** It answers the same question
   as the end-to-end test, less cheaply and with a judge that can be wrong.
 - **A findings register does not exist.** 370-plus numbered findings are referenced

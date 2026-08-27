@@ -31,10 +31,13 @@ decision rule does not need a person; a per-run ceiling is declared as
 
 ## How usage can be judged locally
 
-**Default, always available:** Claude Code and Google Antigravity write session
-transcripts and token metrics locally (under `.claude` or `.gemini`/antigravity
-application directories). On Google Antigravity, AGY SDK observability tracks
-token usage (including thinking tokens) and costs for Gemini models directly.
+**Default, always available:** Claude Code writes session transcripts and token
+metrics locally, under its `.claude` application directory. `hooks/session-cost.mjs`
+reads them and reports what a run has spent — in tokens, keyed by message id,
+excluding cache reads. It never guesses: given no transcript it says so and blocks,
+because "I could not find the transcript" must never render as "this run has cost
+nothing". (This paragraph also described Google Antigravity's AGY SDK until
+2026-08-27; that host was removed in 7.0.0.)
 A long, heavy transcript file or high token total for the current session is a
 reasonable local signal that a lot of the window has been used.
 

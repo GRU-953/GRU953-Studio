@@ -33,12 +33,12 @@ described the controls in detail and never said which versions those controls we
 still being maintained for — so a reader could not tell whether a fix would reach the
 version they had installed.
 
-| Version | Supported | What that means |
-| :-- | :-- | :-- |
-| **7.0.x** | **Yes — LTS** | Bug fixes and security fixes. No new features and no behaviour changes; see [docs/STABILITY.md](docs/STABILITY.md) for exactly what will not move. |
-| 6.1.x and earlier | No | No further fixes, including security fixes. |
-| `@gru953/studio-antigravity` (all versions) | No — withdrawn | Removed in 7.0.0 with the other host adapters. Every published version was uninstallable in any case: the tarball shipped without the plugin its own code loads at runtime. Deprecated on npm rather than deleted, because a published package name cannot be removed. |
-| The VS Code extension (all versions) | No — withdrawn | Removed in 7.0.0 with the other host adapters. |
+| Version                                     | Supported      | What that means                                                                                                                                                                                                                                                                                                                                                                        |
+| :------------------------------------------ | :------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **7.0.x**                                   | **Yes — LTS**  | Bug fixes and security fixes. No new features and no behaviour changes; see [docs/STABILITY.md](docs/STABILITY.md) for exactly what will not move.                                                                                                                                                                                                                                     |
+| 6.1.x and earlier                           | No             | No further fixes, including security fixes.                                                                                                                                                                                                                                                                                                                                            |
+| `@gru953/studio-antigravity` (all versions) | No — withdrawn | Removed in 7.0.0 with the other host adapters. Every published version was uninstallable in any case: the tarball shipped without the plugin its own code loads at runtime. It is deprecated on npm rather than deleted, because a published package name cannot be removed — see `docs/RELEASING-7.0.0.md` section 5 for the command, which runs when 7.0.0 is published, not before. |
+| The VS Code extension (all versions)        | No — withdrawn | Removed in 7.0.0 with the other host adapters.                                                                                                                                                                                                                                                                                                                                         |
 
 **If you are on 6.1.0 or earlier, update.** The controls described in the rest of this
 document apply to the version they were written for; several were repaired in 7.0.0,
@@ -95,7 +95,7 @@ policy is considered authorised.
 In scope: GRU953-Studio's own code (agents, skills, hooks, commands) —
 particularly the security hooks in `plugins/gru953-studio/hooks/` (secret
 scanning, the publish gate, the licence scanner). Out of scope: the security
-of code that GRU953-Studio *builds for you* in a separate project.
+of code that GRU953-Studio _builds for you_ in a separate project.
 
 ## Known limitations (disclosed, not hidden)
 
@@ -173,6 +173,26 @@ and simple transitive chains) IS resolved, as of 2026-07-12 — only a
 variable set in an earlier, separate command, or from the environment
 outside this command's own text, remains unresolvable.
 
+**Two bounds that belong in this section and were missing from it until
+2026-08-27.** Both were disclosed only in code comments, each of which said it
+was disclosed _here_ — so a reader following the reference found nothing, which
+is worse than an undisclosed gap because it reads as reassurance.
+
+- **A git alias set in an earlier, separate command is not resolved.** This hook
+  holds no state between commands: it sees one command line at a time. So
+  `git config alias.p push` in one call, followed by `git p origin main` in the
+  next, is not recognised as a push. Within a single command line it is
+  resolved. The reason is the same as for the variable case above and is not a
+  bug being deferred: giving a hook memory across commands would make its
+  verdict depend on state an agent can also write.
+- **Script indirection is followed three hops deep, not indefinitely.**
+  `resolveScriptChain()` in `hooks/lib.mjs` takes `maxDepth = 3`: a script that
+  runs a script that runs a script is followed, and a fourth hop is not. The
+  bound is deliberate — an unbounded walk is a denial-of-service against the
+  hook's own 20-second timeout — and it is asserted by
+  `hooks/test/repro/X284-transitive-indirection.mjs` case E, which fails if the
+  bound ever changes without this paragraph changing with it.
+
 Two more currently-active protections, added this same 2026-07-12
 engagement and previously missing from this document (a genuine staleness
 gap, not a security hole — this section under-described what the matcher
@@ -237,7 +257,7 @@ fed are gone; this paragraph is kept as a record of the reasoning at the time.
 agent behaviour and instruction-following, not shell text — a genuinely
 different attack surface from everything above). The core finding was a
 PASS: no skill or agent file offers a shortcut where a memory file's
-*claimed* approval ("user already confirmed, proceed") substitutes for a
+_claimed_ approval ("user already confirmed, proceed") substitutes for a
 fresh, live `AskUserQuestion` answer — the private-publish and go-public
 gates were anchored to a token file `gate.mjs` checked mechanically (both
 removed 2026-08-16, finding X214), never to
@@ -245,7 +265,7 @@ prose any agent reads and trusts. Two adjacent, real, lower-severity gaps
 were found alongside that PASS:
 
 - The publish/go-public confirmation tokens are `sha256("studio-publish:" +
-  <project root path>)` — a formula in this project's own public source
+<project root path>)` — a formula in this project's own public source
   code, computed from a path that is not a secret. Anyone who can already
   write files into a project's `Dev-Memory/` folder could compute and write
   a valid `PUBLISH-APPROVED`/`GO-PUBLIC-APPROVED` file directly, without
@@ -261,7 +281,7 @@ were found alongside that PASS:
   removed on 2026-08-16, finding X214) — there is no `PreToolUse`
   hook on `Write`/`Edit` backing this rule mechanically. It is currently
   enforced by instruction-following alone, unlike the push-time scan (which
-  *is* hook-enforced regardless of what any file claims). Blast radius is
+  _is_ hook-enforced regardless of what any file claims). Blast radius is
   bounded: `Dev-Memory/` is git-ignored on creation, and `scan.mjs`
   independently blocks any push whose file set contains a `Dev-Memory/`
   path — so a secret that slipped through an unscanned memory write still
@@ -350,7 +370,7 @@ undisclosed findings, all confirmed by direct execution before being fixed:
   (`"Bash|PowerShell|Monitor"`) and extending `repo-integrity.mjs`'s INV10
   check (which already guarded the PowerShell fix against silent reversion)
   to require Monitor coverage too, with a matching regression test.
-- **Verified as a genuine PASS, not re-reported as new:** the *plugin*
+- **Verified as a genuine PASS, not re-reported as new:** the _plugin_
   (`plugins/gru953-studio/`) has zero third-party dependencies — nothing under it
   declares, vendors or installs one, and `docs-consistency.mjs` fails closed if
   that changes. **Corrected 2026-08-22 (X183): this used to say "zero third-party
@@ -481,7 +501,7 @@ before fixing:
 - **Indirect parameter expansion** (`${!ref}`) resolves to the value of
   the variable whose NAME is held by `ref` — a level of indirection none
   of the direct `$VAR`/`${VAR}` substitution modelled. `name=push;
-  ref=name; git ${!ref} origin main` returned false; the go-public
+ref=name; git ${!ref} origin main` returned false; the go-public
   analogue (`v=public; ref=v; gh repo edit me/app --visibility=${!ref}`)
   was `allow`ed with only the private-publish token recorded.
 - **The `read` builtin reading a here-string** (`read NAME <<< "value"`)
@@ -548,7 +568,7 @@ publish, so this finding is disclosed rather than fixed).** One more
 genuinely new indirection mechanism: bash's `declare -n` (nameref)
 variables make one variable a live alias for another — `declare -n
 ref=v; v=push; echo $ref` prints `push` — a different mechanism from the
-`${!ref}` indirect *expansion* fixed in Round 13 (that resolves a name
+`${!ref}` indirect _expansion_ fixed in Round 13 (that resolves a name
 held in a variable; a nameref makes the alias itself part of the
 variable's declared type). Confirmed live: `declare -n ref=v; v=push; git
 $ref origin main` returned `false` from `isPushCapable()`; the go-public
@@ -675,7 +695,7 @@ existing gate — each is additive.
   (`-X`/`--method` POST|PATCH|PUT|DELETE) or a body flag
   (`-f`/`-F`/`--field`/`--raw-field`/`--input`) is push-capable, and a
   visibility-to-public one needs the GO-PUBLIC-APPROVED token; a read (`gh api
-  user`) stays allowed. **Residual, not closed:** a visibility value living only
+user`) stays allowed. **Residual, not closed:** a visibility value living only
   inside an `--input` file, and a raw `curl` to `api.github.com`, are not parsed —
   the same "this hook does not read referenced files or run arbitrary commands"
   boundary as the command-substitution cases above. More broadly, `gh api`
@@ -695,31 +715,31 @@ existing gate — each is additive.
   the working tree, index and untracked files; a branch push ships commits, so a
   secret committed and then removed still shipped via a checkpoint/memory-persist
   branch push. It now also scans content added in unpushed commits (`HEAD --not
-  --remotes`) — added coverage only. **Residual:** a value present only in a file
+--remotes`) — added coverage only. **Residual:** a value present only in a file
   referenced by a command (not in committed content) is still not read; and the
   history scan applies the same content + key-file/Dev-Memory-name checks as the
   working-tree scan (2026-07-21 Round 2 completion).
 - **Bounded, adversarial-only matcher cost (disclosed, not closed).**
   `normalizeForPushCheck` (shared by both matchers, run on every command) resolves
-  in-command variable assignments in a way that is superlinear in the *number of
-  assignments in a single command*. Such input is machine-generated/adversarial,
+  in-command variable assignments in a way that is superlinear in the _number of
+  assignments in a single command_. Such input is machine-generated/adversarial,
   inside the determined-adversary threat model this document already disclaims.
-  The Round 1 ReDoS fix removed the separate input-*length* blow-up; this residual
-  is the assignment-*count* case, disclosed here rather than closed.
+  The Round 1 ReDoS fix removed the separate input-_length_ blow-up; this residual
+  is the assignment-_count_ case, disclosed here rather than closed.
 
-  *Figures corrected 2026-08-07 by measurement.* This entry previously said the
+  _Figures corrected 2026-08-07 by measurement._ This entry previously said the
   cost reached "a fraction of a second at ~2,000 same-command assignments". That
   understated it by roughly 3x, and gave no sense of how steeply it grows past
   that point. Measured directly against `isPushCapable`, one fresh Node process
   per data point:
 
-  | Same-command assignments | Command size | Time |
-  | :-- | :-- | :-- |
-  | a real command (0-30) | < 1 KiB | 0.1-0.6 ms |
-  | 2,000 | 17 KiB | 1.5 s |
-  | 4,000 | 34 KiB | 6.7 s |
-  | 6,000 | 52 KiB | 17.0 s |
-  | 8,000 | 69 KiB | 29.1 s |
+  | Same-command assignments | Command size | Time       |
+  | :----------------------- | :----------- | :--------- |
+  | a real command (0-30)    | < 1 KiB      | 0.1-0.6 ms |
+  | 2,000                    | 17 KiB       | 1.5 s      |
+  | 4,000                    | 34 KiB       | 6.7 s      |
+  | 6,000                    | 52 KiB       | 17.0 s     |
+  | 8,000                    | 69 KiB       | 29.1 s     |
 
   Growth is roughly quadratic. The "negligible for real commands" half of the
   original claim is confirmed — a genuine command stays well under a
@@ -727,13 +747,13 @@ existing gate — each is additive.
   adversarial half: the knee is nearer, and steeper, than the old figure
   implied. Absolute timings are hardware-dependent; the shape is not.
 
-  *Answered, and then closed, 2026-08-07.* The entry above left one question
+  _Answered, and then closed, 2026-08-07._ The entry above left one question
   open: what Claude Code does with a `command` hook that exceeds its timeout
   (600 s by default for this hook type). The hooks reference answers it, and the
   answer is fail-open: "Any other exit code is a non-blocking error for most hook
   events. The action proceeds" — and a hook cancelled at its timeout exits
   non-zero. The reference singles out Agent SDK callback hooks as the exception
-  that *blocks* on timeout, "because a callback there can be acting as a policy
+  that _blocks_ on timeout, "because a callback there can be acting as a policy
   gate that must not fail open", wording that only makes sense if the ordinary
   command-hook path does fail open. Stated precisely: this is read from the
   documentation, not reproduced in a live session.
@@ -760,8 +780,9 @@ existing gate — each is additive.
   This is the same reasoning the Round 1 ReDoS fix already recorded — "a
   pathological input could push the hook past the harness timeout" — applied to
   the cost this document had disclosed rather than bounded.
+
 - **A stray binary byte no longer hides a co-located ASCII secret (2026-07-21
-  Round 11).** `scan.mjs` used to skip a file's *entire* content scan the instant
+  Round 11).** `scan.mjs` used to skip a file's _entire_ content scan the instant
   it held any NUL byte, and the history scan ran `git log -p` without `--text` (so
   git rendered a NUL-containing blob as "Binary files differ") — together these
   let an ordinary would-ship **text** file that captured one stray binary byte
@@ -780,7 +801,7 @@ existing gate — each is additive.
   states throughout.
 - **A publish integrity gate no longer fails open on an unusual table shape
   (2026-07-21 Round 11).** `verify-progress.mjs` (the mechanical check that every
-  "done" task carries `verified:` evidence) used to return *clean* whenever it
+  "done" task carries `verified:` evidence) used to return _clean_ whenever it
   could not name the Status column — a bolded `**Status**`, a synonym `State`, a
   composite `Task Status`, or a pipe-less GFM table all made it skip every row and
   pass. It now broadens Status detection (strips emphasis, accepts Status/State
@@ -791,21 +812,21 @@ existing gate — each is additive.
   it is recorded here for completeness of the same audit.
 - **`gh repo create --internal` now needs the go-public token (2026-07-21 Round
   12, HIGH).** The go-public matcher recognised `--public` and `--visibility
-  public|internal` but not the standalone `--internal` flag — yet `gh repo create`
-  has no `--visibility` flag, and an *internal* repository is visible to the whole
+public|internal` but not the standalone `--internal` flag — yet `gh repo create`
+  has no `--visibility` flag, and an _internal_ repository is visible to the whole
   organisation/enterprise, i.e. NOT private. A private-scope token (including a
   routine per-phase **checkpoint**) therefore authorised creating a non-private
   repo, contradicting the gate's own guarantee that a checkpoint can never make a
   repo public. Now `--internal` is treated as go-public exactly like `--public`;
   `--private` stays a private push (the studio's own publish flow uses `gh repo
-  create --private`).
+create --private`).
 - **History secret scan restored to full parity with the working-tree scan
-  (2026-07-21 Round 12).** The Round 11 history scan guarded each *diff line* with
+  (2026-07-21 Round 12).** The Round 11 history scan guarded each _diff line_ with
   a text-fraction test; a real ASCII secret sharing one line with ~32+ bytes of
   binary dropped that line below the threshold and was skipped, even though the
   working-tree scan caught the identical content. The history scan now classifies
   and scans added content **per file** (mirroring the working-tree `bufIsTextish →
-  scanText` decision), so a secret co-located with binary on one line is caught on
+scanText` decision), so a secret co-located with binary on one line is caught on
   both paths; a genuine binary file's added content is still skipped.
 - **Large text files are now content-scanned, not silently skipped (2026-07-21
   Round 12).** A would-ship file over the 4 MB in-memory cap used to be skipped
@@ -820,14 +841,14 @@ existing gate — each is additive.
   the same head-sample boundary the working-tree NUL/binary path already carries.
 - **Decorated `done` values and mixed table styles no longer slip past the
   done-requires-verified gate (2026-07-21 Round 12).** `verify-progress.mjs` now
-  de-emphasises the status *value* (`**done**`, `` `done` ``, `✅ done`), not only
+  de-emphasises the status _value_ (`**done**`, `` `done` ``, `✅ done`), not only
   the header, and normalises GFM's optional outer pipes so a row written in a
   different pipe style from the header is not column-shifted; a row whose columns
   cannot be lined up fails closed. Quality/integrity gate, as above.
 - **A force-added gitignored secret is no longer invisible to the scan (2026-07-21
   Round 13, HIGH).** The would-ship file set is built with `git ls-files --others
-  --exclude-standard`, which omits gitignored files. A single compound `git add -f
-  <ignored-secret> && git commit && git push` therefore slipped BOTH scans — at
+--exclude-standard`, which omits gitignored files. A single compound `git add -f
+<ignored-secret> && git commit && git push` therefore slipped BOTH scans — at
   check time the file is untracked+ignored (in none of the three list calls) and no
   commit exists yet (empty history range). Now, when the command itself force-adds
   (`-f`/`--force`, run through the same obfuscation normaliser as the push matcher),
@@ -835,7 +856,7 @@ existing gate — each is additive.
   **scoped to the force-add pathspecs** so an ordinary push — and a force-add of one
   file — never sweeps in unrelated ignored trees such as `node_modules`. The pathspec
   parser is quote-aware (Round 14), so a quoted filename containing spaces (`git add
-  -f "prod copy.secret"`) is kept as one pathspec. **Residual, disclosed:** a
+-f "prod copy.secret"`) is kept as one pathspec. **Residual, disclosed:** a
   force-add pathspec that survives only as a runtime shell expansion, or a
   backslash-escaped space that `normalizeForPushCheck` unescapes before the parser
   runs — the same command-parsing boundary the other disclosed shell cases carry.
@@ -847,7 +868,7 @@ existing gate — each is additive.
   handles), so merge-unique added content — secret, key-file name, or Dev-Memory
   path — is scanned like any other commit.
 - **History secret scan brought to true head-sample parity (2026-07-21 Round 13).**
-  The Round 12 per-file history classifier tested the *whole* added content while
+  The Round 12 per-file history classifier tested the _whole_ added content while
   the working-tree path samples the first ~64 KB; the two disagreed for a
   text-headed but binary-tailed file (a DB dump), which the tree scan caught and the
   history scan skipped. The history classifier now head-samples too, so both paths
@@ -855,7 +876,7 @@ existing gate — each is additive.
 - **The history scan walks every pushable local ref, not just HEAD (2026-07-21
   Round 14, HIGH).** It previously ran `git log … HEAD --not --remotes`, which only
   equals "what a push sends" when the pushed ref is the current checkout. `git push
-  --all`, `git push --mirror`, and `git push origin <branch>` (while standing on a
+--all`, `git push --mirror`, and `git push origin <branch>` (while standing on a
   different branch) all ship commits on non-HEAD refs, which HEAD-only excluded (and
   the working-tree scan reflects only the checkout, so both paths missed them). The
   range is now `--branches --tags HEAD --not --remotes` — the finite superset of
@@ -864,7 +885,7 @@ existing gate — each is additive.
   a remote is still excluded.
 - **Commit messages and annotated-tag messages are now scanned (2026-07-21 Round
   15, HIGH).** A branch push ships whole commit objects — including their commit
-  *message* — and `git push --tags`/`--follow-tags`/`--mirror` ships annotated-tag
+  _message_ — and `git push --tags`/`--follow-tags`/`--mirror` ships annotated-tag
   objects and their messages; none of that is a file diff, so the scanner (which
   only read diff hunks and file content) never saw it. A credential pasted into a
   commit message — one of the most common real-world leak vectors — shipped
@@ -902,7 +923,7 @@ now notify-only: nothing is fetched, nothing is written, and no child process
 is spawned. The user is told plainly that an update may be available and
 pointed at the explicit `/studio-update` command, which still performs a
 real update, but only when the user actually asks for it. This is a
-deliberate *reduction* in automation — a silent rebase was never a feature
+deliberate _reduction_ in automation — a silent rebase was never a feature
 worth keeping — and it is asserted by a test that the session-start hook
 spawns no child process at all.
 
@@ -1005,7 +1026,6 @@ What reduces it here, and what does not:
      sections did, so it read as a current feature of a product that no longer has any external
      model integration at all. v7 targets Claude Code only and makes no outbound network call. -->
 
-
 - The key lives in the `OPENROUTER_API_KEY` environment variable. GRU953-Studio
   never writes it to a project file, never stores it, and never puts it in
   `Dev-Memory/`.
@@ -1102,10 +1122,11 @@ This section exists because the owner chose to **disclose and wait** rather than
 release, and a decision to wait is only honest if the thing being waited on is written down where a
 user would look.
 
-**What is affected:** every published version, up to and including **6.1.0** — the current release —
-and **6.0.3**, the version the Homebrew tap installs. This is finding **X241**.
+**What is affected:** every published version, up to and including **6.1.0** — the last release
+before 7.0.0 — and **6.0.3**, the version the Homebrew tap installed at the time. This is finding
+**X241**. It is fixed in 7.0.0; 6.1.x and earlier receive no further fixes, per the table above.
 
-**What it does.** `hooks/auto-update.mjs` finds the repository it should act on by walking *upwards*
+**What it does.** `hooks/auto-update.mjs` finds the repository it should act on by walking _upwards_
 from its own location until it meets any `.git` directory, and using that. In the published versions
 that function (`findGitRoot`) has no test that the directory it lands on is actually the plugin's.
 Both published tags then run `git pull --rebase --autostash` against it. Verified by reading the
@@ -1117,7 +1138,7 @@ git show v6.1.0:plugins/gru953-studio/hooks/auto-update.mjs   # 4 occurrences of
 ```
 
 **Why that matters on an installed copy.** The directory above an installed plugin is not the
-plugin's project — it is whatever of *your own* work happens to sit above it. So the updater can
+plugin's project — it is whatever of _your own_ work happens to sit above it. So the updater can
 rebase your repository and stash your uncommitted changes. `--autostash` reapplies them afterwards;
 if that reapplication conflicts, you are left in a state that is genuinely hard to unpick.
 
@@ -1128,11 +1149,11 @@ and anyone reading it there would have been reassured by a boundary that was not
 
 **How it can be reached in 6.1.0.** Three routes, all checked:
 
-| Route | Needs you to act? |
-| :-- | :-- |
-| `gru953-studio update` | yes — you typed it |
-| The scheduled daily job | yes — it is off unless you turn it on |
-| **`/studio-update` invoked by the assistant itself** | **no** |
+| Route                                                | Needs you to act?                     |
+| :--------------------------------------------------- | :------------------------------------ |
+| `gru953-studio update`                               | yes — you typed it                    |
+| The scheduled daily job                              | yes — it is off unless you turn it on |
+| **`/studio-update` invoked by the assistant itself** | **no**                                |
 
 The third is the one that does not need you: `commands/studio-update.md` in 6.1.0 carries no
 `disable-model-invocation` flag, so the assistant could decide to update on your behalf. That flag is
@@ -1142,7 +1163,7 @@ present in the current source.
 X227 concern the catastrophic-command guard — the part that refuses things like `rm -rf /`. **That
 guard is in neither published version** (`git show v6.1.0:…/scan.mjs | grep -c catastrophic` returns
 0, as does 6.0.3); it was built afterwards. A defect in an unshipped feature reaches nobody. What the
-published versions have instead is *no* such guard, which is finding **X39** and was already disclosed
+published versions have instead is _no_ such guard, which is finding **X39** and was already disclosed
 above before the release.
 
 **What to do if you are running 6.0.3 or 6.1.0.** Either leave the scheduled job off, which is the
@@ -1165,28 +1186,28 @@ be decided by testing the command against six words (`deploy|release|publish|shi
 so `npm run deploy` was scanned and `npm run build` was not, on nothing but the name someone gave the
 script.
 
-*Updated 25 August 2026 (finding X15). This limit is real and permanent, and it is now recorded in the
+_Updated 25 August 2026 (finding X15). This limit is real and permanent, and it is now recorded in the
 register as a **disclosed limit** rather than as an open defect — because calling it a defect implied
 someone would one day fix it, and nobody will. What has changed is how much of the product relies on
 reading text at all: a script is now READ rather than guessed at from its name, through up to three
 levels of one script calling another; the check no longer assumes git is the only way code leaves your
 machine; and when the studio says it found no secrets it now tells you which kinds it knows how to look
-for, instead of implying there are none.*
+for, instead of implying there are none._
 
-*What is still outside the boundary, and always will be: a command assembled while it runs, from pieces
+_What is still outside the boundary, and always will be: a command assembled while it runs, from pieces
 that are not in the text; a fourth level of one script calling another; and code downloaded from the
 internet and run immediately, which does not exist on your machine until the moment it runs. For that
-last one the studio ASKS you rather than pretending to have checked.*
+last one the studio ASKS you rather than pretending to have checked._
 
 **What changed on 2026-08-24.** Where an indirection can be resolved, it is now resolved instead of
 guessed at. The studio reads the thing that will actually run:
 
-| You type | It reads |
-| :-- | :-- |
-| an interpreter given a script — `bash`, `sh`, `node`, `python`, `ruby`, `perl`, or `./` | that script file |
-| `npm run <name>` (and the `pnpm` and `yarn` spellings) | that entry in `package.json`'s `scripts` |
-| `make <target>` | that target's recipe |
-| a script piped or redirected into an interpreter | that script file |
+| You type                                                                                | It reads                                 |
+| :-------------------------------------------------------------------------------------- | :--------------------------------------- |
+| an interpreter given a script — `bash`, `sh`, `node`, `python`, `ruby`, `perl`, or `./` | that script file                         |
+| `npm run <name>` (and the `pnpm` and `yarn` spellings)                                  | that entry in `package.json`'s `scripts` |
+| `make <target>`                                                                         | that target's recipe                     |
+| a script piped or redirected into an interpreter                                        | that script file                         |
 
 and then asks the ordinary question of the real text. A script that does not publish stays silent,
 exactly as before, so this added no new interruptions.
@@ -1196,6 +1217,7 @@ exactly as before, so this added no new interruptions.
 - **A command assembled while it runs is invisible.** If a script builds the words `git push` out of
   variables, or fetches them, nothing that reads text will find it. This is X15's own point, and it is
   a limit rather than a bug: no amount of further pattern work removes it.
+
 ### The opt-out, and exactly when it applies
 
 A deliberate fake key in a test fixture would otherwise block every push in the repository that holds
@@ -1205,29 +1227,30 @@ It has to be a REAL comment in that kind of file — `//` in JavaScript or TypeS
 YAML, Makefiles and `.env` files, `--` in SQL. A JSON file has no comments at all, so there is nowhere
 in one to put it, and no exemption is possible there.
 
-*Added 2026-08-24 (finding X286), and it is a correction rather than a new feature. Until that date
+_Added 2026-08-24 (finding X286), and it is a correction rather than a new feature. Until that date
 the check was only "does this line end with that text", which asked nothing about the file — so `//`
 counted as a comment in every file on disk, and the marker silenced a REAL key in a Kubernetes secrets
 file, a Makefile, a shell script and a JSON config. Measured: five such files, five real keys, all
 exempted. In those files `//` is not an annotation at all, it is ordinary text that happens to sit at
 the end of the line, and the exemption's whole justification — a maintainer annotating a deliberate
 test vector — did not hold. If the file's comment syntax cannot be established, the exemption does not
-apply and the secret is reported.*
+apply and the secret is reported._
 
-*Two smaller things went with it. The refusal message used to tell you the marker was "documented by
+_Two smaller things went with it. The refusal message used to tell you the marker was "documented by
 the dev-memory skill"; it was documented nowhere, in any file, so the message pointed at nothing. It
 now states the rule itself. And a commit or tag message accepts any of the three characters, because
-there is no file to take a comment syntax from and you wrote that text deliberately.*
+there is no file to take a comment syntax from and you wrote that text deliberately._
 
 - **Three levels, then it stops.** A script that runs a script that runs a script is followed all
   the way; a fourth is not. So `deploy.sh` → `build.sh` → `publish.sh` is read, and one more link in
   that chain is where the reading ends.
 
-  *Corrected 2026-08-24 (finding X284). Until that date this said "one level only", which was true
+  _Corrected 2026-08-24 (finding X284). Until that date this said "one level only", which was true
   and was the wrong place to stop: `deploy.sh` calling `build.sh` is the ordinary shape of real
   deployment tooling, not an edge case, and the same was true of `npm run release` calling
   `npm run push`. Being written down here did not make it acceptable. The new limit is a real limit
-  and is tested as one, so it cannot quietly drift in either direction.*
+  and is tested as one, so it cannot quietly drift in either direction._
+
 - **No shell semantics.** Variables, globs, conditionals and loops inside the script are not
   evaluated. The text is read, not interpreted.
 - **Remote code is never read at all.** `curl … | sh` runs something that does not exist on your
@@ -1243,4 +1266,4 @@ ask rather than guess when it reaches it.
 **What it does NOT weaken.** The secret scan still reads the actual file set a push would ship, not
 the command that triggers it, so a secret in your tree is found regardless of how the push was
 spelled. The catastrophic-command refusals judge the command text itself, where the evidence is in the
-words. This section is about inferring a command's *intent*, which is a different and harder thing.
+words. This section is about inferring a command's _intent_, which is a different and harder thing.

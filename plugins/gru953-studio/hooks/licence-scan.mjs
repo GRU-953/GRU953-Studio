@@ -58,6 +58,30 @@ function isAllowed(licenceStr) {
   if (!licenceStr) return null; // unknown — reported, not silently passed
   const s = String(licenceStr).trim();
   if (ALLOWED.has(s)) return true;
+
+  // A COMPOUND expression is parsed before the whole-string flag test, and the order is the fix.
+  //
+  // 2026-08-27, found by measuring the new PHP path: `(GPL-2.0-only OR MIT)` — a real dual
+  // licence, where the consumer may simply choose MIT — was reported BLOCKED. Not needs-review:
+  // blocked, which stops an honest project publishing. The cause was ordering alone. The
+  // whole-string `FLAG_SUBSTRINGS` test ran first and matched the substring "GPL", returning false
+  // before `classifySpdxExpr()` was ever consulted, so the parser's correct answer was
+  // unreachable. It affected every ecosystem that reaches this function — npm, Dart, Cargo, Maven
+  // and now Composer — not just the new one.
+  //
+  // The 2026-07-26 delegation to the parser was added below this test rather than above it, so it
+  // only ever helped expressions containing no flagged substring at all. Its own note called
+  // reporting a permissive choice as needs-review a defect; blocking it is the same defect, worse.
+  //
+  // Reordering cannot weaken the gate, and that is the point: `classifyId()` inside the parser
+  // applies FLAG_SUBSTRINGS to each identifier, and `AND` is false if either side is false. So
+  // `MIT AND GPL-3.0-only` stays blocked, `(AGPL-3.0 OR GPL-3.0)` stays blocked, and only a
+  // genuine permissive ALTERNATIVE passes. All four are asserted in the suite.
+  if (/[()]|\bOR\b|\bAND\b/i.test(s)) {
+    const parsed = classifySpdxExpr(s);
+    if (parsed !== null) return parsed;
+  }
+
   if (FLAG_SUBSTRINGS.some((f) => s.toUpperCase().includes(f))) return false;
   // 2026-07-26 audit finding 2 (found while making licence-scan.mjs recursive
   // and finally scanning it against this repo's own real npm packages): a
@@ -69,10 +93,6 @@ function isAllowed(licenceStr) {
   // the same parser for any string that looks like a compound expression,
   // so an npm package doesn't get a worse answer than a Dart one for
   // identical licence text.
-  if (/[()]|\bOR\b|\bAND\b/i.test(s)) {
-    const parsed = classifySpdxExpr(s);
-    if (parsed !== null) return parsed;
-  }
   return null; // present but not recognised — needs a human look
 }
 
@@ -776,6 +796,103 @@ function scanJvm(root, kind) {
 }
 
 // ---- C++ (vcpkg/Conan) ----
+// ---- PHP (Composer) ----
+//
+// 2026-08-27, Stage 5. Measured before writing anything: a project whose ONLY dependencies were a
+// Gemfile and a composer.json — both naming deliberately GPL-shaped packages — was reported
+// `{"status":"clean"}`, exit 0. Not "not checked" for those ecosystems: clean. Neither language
+// was detected at all, because `MANIFEST_FILE_NAMES` listed neither file, so the gate that answers
+// "may this be published?" answered yes having looked at nothing. This file's own header promises
+// the opposite in as many words: it "reports 'not checked' for that ecosystem rather than a false
+// pass".
+//
+// PHP gets a real scan rather than a disclosure, because the data is simply there: `composer.lock`
+// records a `license` array per package, so no install and no external tool is needed. Composer's
+// field is an ARRAY — `["MIT"]`, or `["GPL-2.0-only", "MIT"]` for a dual-licensed package where the
+// choice makes it permissive. That is an SPDX OR, so it goes through the same expression parser the
+// npm, Dart, Cargo and Maven paths use; giving PHP a worse answer than a Dart package for identical
+// licence text is exactly the defect finding 2 of the 2026-07-26 audit was about.
+function scanPhp(root) {
+  const lockPath = path.join(root, 'composer.lock');
+  if (!fs.existsSync(lockPath)) {
+    return {
+      ecosystem: 'php/composer',
+      checked: false,
+      findings: [],
+      note: 'composer.json present with no composer.lock — run `composer install` and re-scan, so dependency licences can be read from the lockfile',
+    };
+  }
+  let lock;
+  try {
+    lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch {
+    return {
+      ecosystem: 'php/composer',
+      checked: false,
+      findings: [],
+      note: 'composer.lock could not be parsed as JSON — refusing to report PHP dependencies as clean when the file recording them is unreadable',
+    };
+  }
+  if (!Array.isArray(lock.packages)) {
+    return {
+      ecosystem: 'php/composer',
+      checked: false,
+      findings: [],
+      note: 'composer.lock has no "packages" array — the format is not what this scanner reads, so PHP is reported as not checked rather than as a pass',
+    };
+  }
+  const packages = [
+    ...lock.packages,
+    ...(Array.isArray(lock['packages-dev']) ? lock['packages-dev'] : []),
+  ];
+  const findings = [];
+  for (const pkg of packages) {
+    const name = pkg && typeof pkg.name === 'string' ? pkg.name : '(unnamed package)';
+    const declared = Array.isArray(pkg && pkg.license)
+      ? pkg.license.filter((l) => typeof l === 'string' && l.trim() !== '')
+      : [];
+    if (declared.length === 0) {
+      findings.push({
+        package: name,
+        licence: 'unknown (no license field)',
+        verdict: 'needs-review',
+      });
+      continue;
+    }
+    // Composer's array means "any of these", which is an SPDX OR.
+    const expr = declared.length === 1 ? declared[0] : `(${declared.join(' OR ')})`;
+    const verdict = isAllowed(expr);
+    if (verdict === false) findings.push({ package: name, licence: expr, verdict: 'blocked' });
+    else if (verdict === null)
+      findings.push({ package: name, licence: expr, verdict: 'needs-review' });
+  }
+  return { ecosystem: 'php/composer', checked: true, findings, packagesExamined: packages.length };
+}
+
+// ---- Ruby (Bundler) ----
+//
+// Ruby is a disclosure, not a scan, and that is a property of the ecosystem rather than a corner
+// cut: `Gemfile.lock` records names and versions and carries NO licence field at all, so there is
+// nothing for a lockfile reader to read. Getting the data means resolving against RubyGems or
+// walking an installed gem tree, and neither is available to a check that must work offline on a
+// tree nobody has installed.
+//
+// So it reports what is true — a Ruby project is present and its licences were not examined — and
+// the caller turns that into INCOMPLETE. That is the same answer this file already gives for C++,
+// Swift, .NET, Maven/Gradle and pre-v2 npm lockfiles, and it is worth far more than the `clean` it
+// used to return, because `clean` stopped anybody looking.
+function scanRuby(root) {
+  const hasLock = fs.existsSync(path.join(root, 'Gemfile.lock'));
+  return {
+    ecosystem: 'ruby/bundler',
+    checked: false,
+    findings: [],
+    note: hasLock
+      ? 'Gemfile.lock found, but Bundler lockfiles record no licence data — run `bundle exec license_finder`, or inspect each gem’s gemspec, and review gem licences manually before publish'
+      : 'Gemfile found with no Gemfile.lock — run `bundle install`, then review gem licences manually before publish; Bundler lockfiles record no licence data, so this scanner cannot read them',
+  };
+}
+
 function scanCpp(root) {
   const lockFiles = ['vcpkg.json', 'vcpkg-configuration.json', 'conan.lock', 'conanfile.lock'];
   for (const lf of lockFiles) {
@@ -912,6 +1029,19 @@ const MANIFEST_FILE_NAMES = [
   'Package.resolved',
   'packages.lock.json',
   'go.mod',
+  // 2026-08-27, Stage 5. `Gemfile` and `composer.json` were absent from this list, and that
+  // absence — not any scanner's logic — was the whole of the defect. A directory holding only
+  // those two files was not a manifest directory, so it produced no ecosystem results, so the
+  // scan fell through to `{"status":"clean"}` with exit 0. Measured on a fixture naming
+  // deliberately GPL-shaped packages: clean, not "not checked".
+  //
+  // A gate that answers "may this be published?" must never answer yes about a language it does
+  // not know it is looking at. Two lines in a list, and it was the difference between a real
+  // verdict and a blind one for every Ruby and PHP project the studio might build.
+  'Gemfile',
+  'Gemfile.lock',
+  'composer.json',
+  'composer.lock',
 ];
 // 2026-08-24, X115's residual — found by a defeat probe, not by reading. The X115 fix added a
 // `statSync(root).isDirectory()` guard, which closed the "does not EXIST" half properly. This
@@ -998,6 +1128,8 @@ function scanOneDirectory(dir) {
     dirEntries(dir).some((e) => e.name.endsWith('.csproj') || e.name.endsWith('.sln')) ||
     has('packages.lock.json');
   const hasGo = has('go.mod');
+  const hasRuby = has('Gemfile') || has('Gemfile.lock');
+  const hasPhp = has('composer.json') || has('composer.lock');
 
   const dirResults = [];
   if (hasPackageJson) dirResults.push(scanNode(dir));
@@ -1009,6 +1141,8 @@ function scanOneDirectory(dir) {
   if (hasSwift) dirResults.push(scanSwift(dir));
   if (hasDotnet) dirResults.push(scanDotnet(dir));
   if (hasGo) dirResults.push(scanGo(dir));
+  if (hasRuby) dirResults.push(scanRuby(dir));
+  if (hasPhp) dirResults.push(scanPhp(dir));
   return dirResults;
 }
 

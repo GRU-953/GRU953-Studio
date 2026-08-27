@@ -378,6 +378,9 @@ function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
+// The figures below are Claude Desktop's documented package limits, and they are applied to
+// every target: a release zip that has quietly grown to thousands of files or hundreds of
+// megabytes is a real defect and this is the only thing that would notice.
 function assertWithinDesktopLimits(files, label) {
   const total = files.reduce((n, f) => n + f.data.length, 0);
   if (files.length > MAX_FILES) {

@@ -19,16 +19,19 @@ receive by accident.
 These are the things a fix release will not alter. If one of them has to change, that
 is a `7.1` at least — not a patch.
 
-| You may rely on | Meaning |
-| :-- | :-- |
-| **The file names and locations under `Dev-Memory/`** | `run-brief.json`, `tasks.json`, `dod.json`, `evidence/`, and the generated `OBJECTIVE.md`, `PROGRESS.md` and `QUALITY-GATE.md` stay where they are, with the meanings they have. |
-| **`schemaVersion: 1` for each of those files** | A 7.0.x release will never require you to rewrite one. If a field is ever added it will be optional, and its absence will keep meaning what it means today. |
-| **The exit codes** | `0` clean, `1` blocked or invalid, `2` "valid, and it needs attention" (`task-ledger.mjs`, `stall-check.mjs`) or "could not measure" (`tools/e2e/headless-build.mjs`). Scripts and scheduled jobs may branch on these. |
-| **The task states** | `todo`, `in-progress`, `done`, `blocked-on-defect`, `blocked-on-human`. No state will be removed or renamed. |
-| **The gate commands and their names** | The commands in `CLAUDE.md` keep working, from the same paths. |
-| **That nothing is published for you** | A run finishes with a committed local project and stops. No 7.0.x release will add automatic pushing, repository creation, or going public. |
-| **That the plugin's own hooks make no network call** | Its 24 hooks contact nothing. No 7.0.x release will change that. **Corrected 2026-08-27:** this row used to promise "there are no outbound network calls" flatly, and that was not true of the product as a whole — see the note below. A stability contract that overstates is worse than one that is narrow, because it is the row somebody relies on. |
-| **That the plugin ships no external model or service integration** | It reads no API key, holds no credential, and talks to no model provider. 7.0.0 removed the last of them. |
+| You may rely on                                                    | Meaning                                                                                                                                                                                                                                                                                                                                                                            |
+| :----------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The file names and locations under `Dev-Memory/`**               | `run-brief.json`, `tasks.json`, `dod.json`, `evidence/`, and the generated `OBJECTIVE.md`, `PROGRESS.md` and `QUALITY-GATE.md` stay where they are, with the meanings they have.                                                                                                                                                                                                   |
+| **`schemaVersion: 1` for each of those files**                     | A 7.0.x release will never require you to rewrite one. If a field is ever added it will be optional, and its absence will keep meaning what it means today.                                                                                                                                                                                                                        |
+| **The exit codes**                                                 | `0` clean, `1` blocked or invalid, `2` "valid, and it needs attention" (`task-ledger.mjs`, `stall-check.mjs`) or "could not measure" (`tools/e2e/headless-build.mjs`). Scripts and scheduled jobs may branch on these.                                                                                                                                                             |
+| **The task states**                                                | `todo`, `in-progress`, `done`, `blocked-on-defect`, `blocked-on-human`. No state will be removed or renamed.                                                                                                                                                                                                                                                                       |
+| **The gate commands and their names**                              | The commands in `CLAUDE.md` keep working, from the same paths.                                                                                                                                                                                                                                                                                                                     |
+| **That nothing is published for you**                              | A run finishes with a committed local project and stops. No 7.0.x release will add automatic pushing, repository creation, or going public.                                                                                                                                                                                                                                        |
+| **That no hook contains a network client**                         | None of the 24 hooks calls `fetch`, or imports `http`, `https`, `net` or `dns`. No 7.0.x release will change that, and `docs-consistency.mjs` now checks it on every commit rather than leaving it as a claim in a comment. It is deliberately narrower than "the plugin makes no network call", which this row used to say and which was not true — see the note under the table. |
+| **That the plugin ships no external model or service integration** | It reads no API key, holds no credential, and talks to no model provider. 7.0.0 removed the last of them.                                                                                                                                                                                                                                                                          |
+
+| **Zero third-party runtime dependencies** | The plugin ships only Node's standard library. |
+| **Apache-2.0** | The licence will not become more restrictive on this line. |
 
 **Where network access does happen, stated plainly.** Three roles — `researcher`,
 `ai-developer` and the `ecosystem-finder` skill — are instructed to use **the
@@ -36,11 +39,9 @@ host's own web search** when a build turns on a current external fact (a model
 name, a library's present API, whether a tool already exists). That is your
 session's tool, using your session's access; the plugin supplies no credentials
 and receives nothing back that it stores. Separately, the dependency tooling
-`hooks/licence-scan.mjs` invokes (`npm`, `pip-licenses`, `cargo metadata`,
-`dart pub`) may contact a package registry to resolve a lockfile, exactly as it
+`hooks/licence-scan.mjs` invokes (`pip-licenses`,
+`cargo metadata`, `dart pub deps`) may contact a package registry to resolve a lockfile, exactly as it
 would if you ran it yourself.
-| **Zero third-party runtime dependencies** | The plugin ships only Node's standard library. |
-| **Apache-2.0** | The licence will not become more restrictive on this line. |
 
 **A measured security property (2026-08-27).** A hook's `ask` decision is honoured in a headless
 run, and **`--permission-mode bypassPermissions` does not bypass it**: the tool call does not

@@ -51,6 +51,27 @@ jobs:
   #
   # The commands are the ones CLAUDE.md documents for every commit, kept in the same order, so a
   # contributor reading either place sees the same list.
+  # 2026-08-27, Stage 6. The nine deterministic gates below prove the machinery is sound. They
+  # cannot prove the PRODUCT works, because none of them builds anything — that is what this job
+  # is for, and the owner's decision is that no release is published without it.
+  #
+  # `require-measurement: true` is the load-bearing input. Called without it, e2e.yml ends GREEN
+  # when no ANTHROPIC_API_KEY is configured, deliberately: a nightly that is always red is an
+  # alert nobody reads. Wiring `needs:` to that behaviour would publish a release on a pass that
+  # measured nothing — which is the same defect as a Definition of Done written by the work it
+  # grades, and this release exists to remove that defect, not relocate it. With the input set,
+  # a missing secret fails the release instead.
+  #
+  # 120 minutes, not the nightly's 90: the release brief is Tiny Tier, whose best measured run was
+  # 71 minutes, and a release should not fail on a slow queue. GitHub's job ceiling is 360.
+  e2e:
+    name: the product actually builds something (must pass before anything is published)
+    uses: ./.github/workflows/e2e.yml
+    secrets: inherit
+    with:
+      require-measurement: true
+      timeout-minutes: '120'
+
   gates:
     name: gates (must pass before anything is published)
     runs-on: ubuntu-latest
@@ -83,7 +104,7 @@ jobs:
 
   publish-npm-cli:
     name: Publish @gru953/studio-cli to npm
-    needs: gates
+    needs: [gates, e2e]
     runs-on: ubuntu-latest
     environment: publish-npm-cli
     permissions:
@@ -153,7 +174,7 @@ jobs:
     # The release attachments are what a person downloads from the release page, so they are
     # gated exactly like the npm publish: no asset is attached to a release built from a tree
     # that has not passed the plugin's own checks.
-    needs: gates
+    needs: [gates, e2e]
     runs-on: ubuntu-latest
     permissions:
       # Job-scoped only, never repository-wide — the same discipline the

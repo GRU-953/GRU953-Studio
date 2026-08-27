@@ -28,6 +28,19 @@ push — a question nothing can answer when you are not there.
 and the studio then researches, designs, plans, codes, reviews and tests without
 interrupting you again.
 
+That sentence was written on 26 August and it was not true. A read-only audit the
+next day found the decision behind it — one interview, then silent — recorded in
+the plan and never implemented: **fourteen** places still stopped to ask a person
+mid-build, one at every stage boundary, and three further defects would have made
+an unattended run fail outright rather than merely stall. The one test that proved
+the product worked took a path that avoided every one of them, because it built
+the simplest kind of project there is. All seventeen are fixed, the pop-ups are
+now decisions recorded in `Dev-Memory/decisions/` where a person can read them
+afterwards, and `docs-consistency.mjs` refuses any new one that does not say which
+context it belongs to. It is stated here rather than quietly corrected because a
+released changelog that describes an intention as a feature is the same defect as
+a gate that grades a report card.
+
 **Claude Code only.** Support for Cursor, Windsurf, Cline, Roo Code, Aider, GitHub
 Copilot, Devin, Replit, OpenHands and Google Antigravity is withdrawn, along with the
 Ollama, OpenRouter and Gemini integrations. That support was never tested end to end
@@ -102,12 +115,50 @@ has a test that fails on the old code.
   nothing loaded — and that skill claimed to be mechanically enforced by a check which
   skips it.
 
+Everything above was written on 26 August. Two adversarial passes over this
+release's own new machinery, plus the audit described in section 1, then found
+**forty-one** more — and the pattern in them is worth more to you than the list:
+
+- **The new machinery was built and wired to nothing.** The executed Definition of
+  Done, the run ledger, the run brief, the stall detector and the cost ledger all
+  existed, all had tests, and no skill, agent or command ever invoked any of them.
+  A run would have proceeded exactly as 6.1.0 did, with the new gates sitting
+  unread beside it. Nineteen findings, one defect.
+- **The first genuine end-to-end run measured a Claude session with the studio
+  switched off.** The plugin was pointed at the wrong directory, so nothing loaded;
+  the run produced a working app anyway, because Claude can write a small app
+  unaided, and the test passed. That is the whole failure mode this release is about,
+  reproduced by the test built to catch it.
+- **The fixes were the same defect as the bugs.** Eleven of the first eighteen
+  corrections were themselves wrong, and wrong in the same shape as what they
+  corrected. That number is recorded because it is now the working assumption: a
+  first-pass fix in this codebase is attacked, not trusted.
+- **A guard on the tooling configuration was defeated eleven times out of eleven.**
+  It compared configuration files the one way its twelve tests spelled them. Every
+  other spelling — a rule level written as an array, a numeric level, an unquoted
+  key, a strictness flag removed rather than set to false — went through. All twelve
+  tests passed throughout.
+- **The operating charter could be inverted sentence by sentence with every gate
+  green.** The gate that guards it read only the headings, so the clause bodies —
+  including the ones about your consent — could be replaced with their opposites.
+- **The publish command verified the Definition of Done without measuring it.** It
+  ran the gate that reads the table, and not the one that produces the table.
+- **A filename was taken as evidence of a capability** in five places: a
+  `tsconfig.json` was read as "this project type-checks", so a dimension could be
+  waived as not-applicable on a project that simply had the file lying about.
+- **Opening the repository in Finder failed the build.** macOS scatters `.DS_Store`
+  files, and one gate treated them as unauthorised files inside the plugin, taking
+  thirteen tests with it — for a file three separate rules already stop from ever
+  shipping.
+- **The test that judges the product had no tests of its own.** Its judgements cost
+  seventy minutes to exercise, so they never were; three were wrong.
+
 ### 4. New in the machinery
 
 - **`dod.mjs`** — the executed Definition of Done, above.
 - **`task-ledger.mjs`** — the task list as data, with `PROGRESS.md` generated from it.
-  There is no bare "blocked" state any more: a task is blocked on a *defect* (parked,
-  and the run carries on with anything else it can finish) or blocked on a *person*
+  There is no bare "blocked" state any more: a task is blocked on a _defect_ (parked,
+  and the run carries on with anything else it can finish) or blocked on a _person_
   (it genuinely stops). Previously the first hard failure ended an unattended build
   however much independent work remained. It also enforces a retry ceiling as data,
   rather than trusting the agent that wants to keep trying to count its own attempts.
@@ -126,21 +177,75 @@ has a test that fails on the old code.
   the studio produces working software. `tools/e2e/headless-build.mjs` runs an
   unattended build of a small app and judges the result against both the files on disk
   and the session transcript — including that nothing was pushed anywhere. It runs
-  nightly. **It has not yet run green**, because it needs credentials this repository
-  does not have; that is stated in the file rather than implied by its existence.
+  nightly. It has since run green — 18 of 18 assertions, 71 minutes, 21 dispatches
+  across 8 specialists, nothing pushed — and it has found real defects on four of its
+  six runs, including the one where the plugin was not loaded at all. Its own
+  judgements now have unit tests, because they cost 71 minutes to exercise otherwise
+  and three of them were wrong. It takes `--brief <path>`, so one hardcoded fixture is
+  no longer the whole of the product-level coverage, and it preserves the transcript
+  and the work tree when it fails or times out.
+- **Four new consistency checks.** `docs-consistency.mjs` now refuses a task state the
+  ledger would reject, a safety guarantee resting on machinery that was deleted, a
+  mid-build pop-up that does not say which context it belongs to, and a hook carrying a
+  network client. Each replaced a class of defect that had recurred, rather than a
+  single instance — and each had to be shown both to catch the real reintroduced bug
+  and to leave an honest project alone. Three of the four failed that second test on
+  the first attempt.
+- **The Definition of Done can no longer be waived by omission.** A coverage floor may
+  not be zero, may not sit below 60% without a written reason, and cannot be met by a
+  command that only creates the report file. A dimension may be marked not-applicable
+  only where the project genuinely lacks the capability, not merely the filename.
+  `tests` and `runs` may not both be skipped on a project that contains source code.
+  The tooling configuration is fingerprinted into the evidence, so a lint or type
+  result recorded after the rules changed is flagged until someone writes down why.
+- **The gate that reads the table now checks who wrote it.** Evidence must exist, every
+  row must trace to a file naming it, the table must be newer than the newest
+  measurement, and a table marked blocked is refused outright. A hand-written report
+  card no longer passes, and a hand-edited one is overwritten on the next run.
 
 ### 5. Numbers
 
-| | 6.1.0 | 7.0.0 |
-| :-- | --: | --: |
-| Specialist roles | 38 | 36 |
-| Skills | 40 | 34 |
-| Commands | 11 | 10 |
-| Enforcement hooks | 19 | 24 |
-| Tests | 480 | 520 |
-| Text read before any work starts | 141,570 B | 118,731 B |
-| Outbound network calls | 1 | 0 |
-| Third-party runtime dependencies | 0 | 0 |
+|                                   |     6.1.0 |     7.0.0 |
+| :-------------------------------- | --------: | --------: |
+| Specialist roles                  |        38 |        36 |
+| Skills                            |        40 |        34 |
+| Commands                          |        11 |        10 |
+| Enforcement hooks                 |        19 |        24 |
+| Tests                             |       480 |       674 |
+| Standing context load             | 127,762 B | 137,728 B |
+| Hooks containing a network client |         1 |         0 |
+| Third-party runtime dependencies  |         0 |         0 |
+
+Three of those rows were wrong when this entry was first written on 26 August,
+and the corrections are worth more than the numbers.
+
+**Tests** said 520. It was 520 on the day, and then two adversarial passes over
+this release's own new machinery found forty-one further defects and brought
+another 154 tests with them. A count in a changelog is a measurement with a
+timestamp, so this one is re-measured at the tag rather than at first draft.
+
+**Standing context load** said `141,570 B → 118,731 B`, a 16% reduction. Neither
+figure had a recorded method anywhere in the repository, so neither could be
+reproduced or checked — it was a folk number. Measured properly, by one stated
+rule applied to both releases (the coordinator skill plus every companion skill
+it names as a standing rule, `git show`n from the `v6.1.0` tag for the baseline),
+the load **went up 8%**, not down 16%. It is stated that way round because the
+alternative is a release note claiming an improvement that did not happen. The
+cause is not a mystery: 44.5% of that text is now dated commentary explaining why
+a rule exists, and this release added a great deal of it. Phase 4 removed the
+subset that could be removed safely; the rest is a known cost, recorded here so
+that the next person to look at it starts from a real number.
+
+**Outbound network calls** said `1 → 0`. The 1 was real — `openrouter-models.mjs`
+read a public model catalogue and went with the model integrations. The 0 was
+not: three roles are instructed to use _your_ session's web search when a build
+turns on a current external fact, and `licence-scan.mjs` invokes `cargo metadata`
+and `dart pub deps`, either of which contacts a package registry on a cold cache.
+The row now measures the narrower thing that is actually true and actually
+checkable — that no hook carries a network client of its own — and
+`docs-consistency.mjs` checks it on every commit (DC14), because the same
+sentence had been sitting in a comment for a day saying the property was "finally
+true" and, in its next line, that nothing checked it.
 
 ### 6. What LTS means here
 
@@ -168,8 +273,8 @@ installed on, in a way this project never intended and never disclosed. Two
 critical defects are fixed here, along with nine more that let a gate report
 success on work it had not actually checked.**
 
-*(A 6.0.4 carrying only the first fix was prepared and never released; its
-contents are included below rather than claiming a version that never shipped.)*
+_(A 6.0.4 carrying only the first fix was prepared and never released; its
+contents are included below rather than claiming a version that never shipped.)_
 
 ### The plugin was switching off your permission prompts
 
@@ -179,7 +284,7 @@ plugin gave was the wrong one.
 
 Both safety hooks ended every check they had no objection to by emitting
 `permissionDecision: "allow"`. Per Claude Code's own documented contract, that
-value means *"permit the tool call to proceed without a permission prompt"* — it
+value means _"permit the tool call to proceed without a permission prompt"_ — it
 does not mean "I have no opinion". The neutral answer is to say nothing at all.
 
 So for every shell command that was not a code push, this plugin actively
@@ -294,12 +399,12 @@ there but I couldn't read it", and treated both as "nothing to check":
   internally consistent" about an `INDEX.md` that was unreadable, and about one
   that had been replaced by a directory.
 - `traceability-check.mjs` treated an unreadable `REQUIREMENTS.md` as an absent
-  one — and on a Tiny-Tier project, absent is the *lenient* path. It reported
+  one — and on a Tiny-Tier project, absent is the _lenient_ path. It reported
   "Nothing to trace" about a file it had not read a byte of.
 
 `content-check.mjs` had already found and fixed this exact class in July, and
-stated the principle: *a gate that cannot read its input must never claim its
-input is fine*. That fix is now shared code, so the same bug cannot be made a
+stated the principle: _a gate that cannot read its input must never claim its
+input is fine_. That fix is now shared code, so the same bug cannot be made a
 sixth time.
 
 ### "Unverified" counted as proof; "exit code 0" did not
@@ -343,7 +448,7 @@ A progress file containing no table at all also passed, with the reason
 ### How these were fixed, and why that matters more than the fixes
 
 Every one of the twelve was reproduced first, as a committed script that asserts
-the *defective* behaviour, and only then fixed. The script then had to flip. Both
+the _defective_ behaviour, and only then fixed. The script then had to flip. Both
 directions run in the test suite, so a reproduction cannot quietly decay into a
 test that passes anything.
 
@@ -538,7 +643,7 @@ nobody had asked out loud.
 a minor version. Two things are not. The Google Antigravity install location
 moves — the old bridge wrote to `.agents/skills/`, which Antigravity does not
 scan, so anyone who ran it has files in a place now abandoned and must run the
-installer again. And the two-branch rule changes what Publish *does* for every
+installer again. And the two-branch rule changes what Publish _does_ for every
 project: it now creates a `development` branch alongside `main`. Those are changes
 to documented behaviour people may depend on, not just new capability, so the
 major number moves.
@@ -665,7 +770,7 @@ Round 8 go-public bypasses were found.
   JSON form as well as flag form.
 - The residual that pattern cannot close: `--input body.json` reads the body
   from a file whose contents are not in the command text, so such a write can
-  never be *proven* private. It now fails closed — but only when aimed at a
+  never be _proven_ private. It now fails closed — but only when aimed at a
   repository root endpoint (`repos/<owner>/<repo>`) or a repo-creation
   endpoint, the only paths whose body can carry visibility at all. ~~A
   sub-resource (`.../issues`, `.../dispatches`, `.../releases`) is untouched,
@@ -764,7 +869,7 @@ Round 8 go-public bypasses were found.
 - **A truthful evidence note was blocked as if it were a failure.** 5.1.3
   narrowed `CONTRADICTION_RE`'s bare `regression` noun so it "only counts when
   followed by a failure verb". The lookahead it shipped also accepted bare
-  auxiliaries (`was`/`is`/`has`/…), and an auxiliary admits *any* continuation —
+  auxiliaries (`was`/`is`/`has`/…), and an auxiliary admits _any_ continuation —
   so the narrowing never applied to the phrasings people actually write.
   Evidence reading `npm test -> exit 0, after an earlier regression was fixed`
   was BLOCKED. That penalises honesty and pushes users toward vaguer evidence,
@@ -780,7 +885,7 @@ Round 8 go-public bypasses were found.
   verification in place returned `{"status":"clean"}`. `pending` and `tbc` are
   now recognised. This revises a documented decision rather than contradicting
   it silently: that note argued the shared pattern and `content-check.mjs`'s
-  wider one should not be *unified* — they still are not — but it never
+  wider one should not be _unified_ — they still are not — but it never
   addressed whether `pending` counts as evidence, and "met with verification
   pending" is self-contradictory by construction. Both additions are whole-cell
   only, so prose containing the word is unaffected.
@@ -889,7 +994,7 @@ the studio itself works.
   setting (that setting has no public API, so it still needs a one-time
   manual upload — see the repo's Settings → General → Social preview).
 - The phrase "Universal Agentic Studio" — an old marketing tagline — had
-  crept into the product's own displayed *name* rather than staying
+  crept into the product's own displayed _name_ rather than staying
   descriptive text: the VS Code extension's Marketplace listing
   (`displayName`) and command title, the CLI's and Google Antigravity
   bridge's own startup/status console output, and the plugin marketplace
@@ -1000,8 +1105,9 @@ Bug fixes only — no roster, Tier, or workflow changes. This release is also
 the first time 5.0.0's own changes (below) reach a published GitHub
 Release — 5.0.0 was merged to `main` on 2026-07-26 but never tagged or
 released, so this release covers both.
+
 - The VS Code extension's Status command ran `npx @gru953/studio-cli
-  status`, but `@gru953/studio-cli` has never actually been published to
+status`, but `@gru953/studio-cli` has never actually been published to
   npm and there is no publish step anywhere in this repo, so that command
   could never have worked. It now runs the CLI's own entry file directly
   (`node .../clients/cli/src/index.js`) when the extension is running from
@@ -1011,8 +1117,8 @@ released, so this release covers both.
 - Every generated AI-host rule file (`.cursorrules`, `.clinerules`,
   `.windsurfrules`, `.roomodes`, `.github/copilot-instructions.md`,
   `.agents/AGENTS.md`) told users to run the same never-published `npx
-  @gru953/studio-cli`. All now point at the real, working `node
-  <checkout>/clients/cli/src/index.js` command instead.
+@gru953/studio-cli`. All now point at the real, working `node
+<checkout>/clients/cli/src/index.js` command instead.
 - Five of a project's own gates — `quality-gate.mjs`, `content-check.mjs`,
   `traceability-check.mjs` and `memory-integrity.mjs` — read markdown
   tables and previously only tolerated **bold** column headers, not bold
@@ -1043,6 +1149,7 @@ declare — change their exact shape.
 **The checks themselves got more honest.** Before this release, several of
 the plugin's own safety and quality checks could report "all clear" without
 really having looked:
+
 - The "is this task really done?" check no longer accepts a failing test
   run as proof that it passed.
 - The dependency-licence scanner now actually looks. It used to check only
@@ -1073,6 +1180,7 @@ specialist roles and all thirty-five skills as broken, simply because of how
 Windows writes line endings.
 
 **Every "runs on every platform" promise is now real, not aspirational.**
+
 - The studio now actually asks which platform you want your app on, as one
   of its very first questions.
 - The skill that maps your answer onto real build instructions for every
@@ -1091,6 +1199,7 @@ Windows writes line endings.
   pretending to work.
 
 **Packaging clean-up.**
+
 - Removed a bundled, experimental protocol server that had never
   successfully started since it was added, and was the one thing making
   "zero third-party code dependencies" untrue.
@@ -1109,6 +1218,7 @@ individual finding, with the exact file and line it was found at.
 A **feature release** taking GRU953-Studio beyond a Claude Code plugin, deployable across all major 2026 AI coding platforms (Cursor, Windsurf, Copilot, Devin, Replit, Aider, OpenHands, Cline, Augment Code, Tabnine, JetBrains AI).
 
 **Universal Platform Support:**
+
 - Added `skills/universal-platform-integration/SKILL.md` (the 34th skill), establishing the Universal Agentic Protocol.
 - Mapped the studio's 38 specialized roles, 34 skills, and token-cheap memory graph system (`Dev-Memory`) to IDE-native rules (`.cursorrules`, `.windsurfrules`), CLI dispatch (Aider), autonomous sandboxes (Devin, OpenHands), and enterprise swarms (Augment Code, Tabnine).
 - Shifted the positioning in README.md, ROSTER.md, plugin.json, and marketplace.json to reflect universal support.
@@ -1122,6 +1232,7 @@ incorporating dynamic Gemini model routing, expanding the skill set to 33 skills
 `google-antigravity-integration`, and applying multi-loop SME safety and quality hardening.
 
 **Google Antigravity & Multi-Platform Support:**
+
 - Added `skills/google-antigravity-integration/SKILL.md` establishing the protocol for
   running GRU953-Studio on Google Antigravity (AGY SDK & Gemini Antigravity IDE).
 - Updated `model-router` to support Gemini models (Gemini 3.6 Flash, Gemini 2.5 Pro/Flash,
@@ -1134,6 +1245,7 @@ incorporating dynamic Gemini model routing, expanding the skill set to 33 skills
   Google Antigravity SDK (`google-antigravity`) usage.
 
 **SME Audit & Quality Hardening:**
+
 - Verified all 12 structural invariants in `repo-integrity.mjs` across agents, skills, hooks, and manifests.
 - Expanded `hooks.test.mjs` test suite to cover Google Antigravity integration, skill resolution, and edge-case handling.
 - Kept baseline agent count at 38 roles and expanded skill count to 33 skills.
@@ -1146,6 +1258,7 @@ real bugs — including two security-gate gaps — and adds many tests. No chang
 you use the tool; the roster stays 38 agents / 32 skills.
 
 **Security fixes:**
+
 - Closed a way to bypass the publish / go-public safety gate using GitHub's
   `gh api` command — in both its spaced (`-f name=x`) and attached (`-fname=x`)
   forms, and including repo creation that defaults to public. Ordinary reads (e.g.
@@ -1185,6 +1298,7 @@ you use the tool; the roster stays 38 agents / 32 skills.
   message — a very common way secrets leak — not just keys inside files.
 
 **Correctness & reliability:**
+
 - The licence check no longer false-blocks publishing on ordinary npm/TypeScript
   projects (it stopped treating npm's `.bin`/`.cache` tooling folders as packages).
 - Fixed false "all clear" and false "blocked" results in several internal checks
@@ -1210,6 +1324,7 @@ you use the tool; the roster stays 38 agents / 32 skills.
   proof-of-testing requirement either.
 
 **Under the hood:**
+
 - The automated test suite was grown substantially, with new mechanical guards so
   each fix above cannot silently regress; all five safety checks stay green.
 
@@ -1268,6 +1383,7 @@ fix, a clarity improvement, or new documentation/website content.
 
 **Real bugs fixed, found by a deep multi-lens audit (with adversarial
 verification against the live code, not just review):**
+
 - `traceability-check.mjs` — a composite task id like `P1-T3` was silently
   split into two separate ids (`P1`, `T3`); an unrelated bare `T3` elsewhere
   could then collide with and overwrite the composite's entry, hiding real
@@ -1288,7 +1404,7 @@ verification against the live code, not just review):**
   id, a bare non-ASCII filename, or a markdown-link-formatted `INDEX.md` cell
   were silently skipped from validation even when genuinely dangling/stale.
 - `quality-gate.mjs` — the Definition-of-Done table parser swept rows from
-  *every* Item+Status-shaped table in the file, so an unrelated later table
+  _every_ Item+Status-shaped table in the file, so an unrelated later table
   (e.g. a backlog list) could leak a spurious row into a required
   dimension's matching. Now reads only the first, intended table.
 - `session-start.mjs` — an ephemeral-environment env-var check treated any
@@ -1310,6 +1426,7 @@ verification against the live code, not just review):**
   already-correct edge cases (117 → 135 behavioural tests, all pass).
 
 **Documentation & website (new):**
+
 - `README.md` rewritten as a full product description and user guide:
   installation through every sample use case, the complete team, features
   and skills, in plain UK English.
@@ -1396,7 +1513,7 @@ way a new agent cannot land without a roster entry. Locked in by a test.
 
 **Resume rehearsal on cloud.** The pre-Publish "prove the memory folder alone is
 enough to resume" rehearsal now, on a cloud session with persistence enabled,
-additionally proves the *branch-persisted* memory rehydrates a fresh container —
+additionally proves the _branch-persisted_ memory rehydrates a fresh container —
 not just the soon-to-be-wiped local copy.
 
 **Scheduler safety.** A fired "schedule for later" resume is treated as a fresh
@@ -1413,10 +1530,11 @@ architecture, full plan, final task states).
 
 **Programme complete.** Across 3.4.0 → 4.0.0 this delivered: the guardrail &
 gold-standard spine (focus/drift/quality/traceability), the task command centre
-+ HTML dashboard, indexed knowledge-graph memory, the automatic model+effort
-router, six native language specialists, the warframe Prototype stage,
-MVP-then-phases building, per-phase backup checkpoints, and Claude Code on the
-web support — each phase committed with all gates green.
+
+- HTML dashboard, indexed knowledge-graph memory, the automatic model+effort
+  router, six native language specialists, the warframe Prototype stage,
+  MVP-then-phases building, per-phase backup checkpoints, and Claude Code on the
+  web support — each phase committed with all gates green.
 
 ## 3.9.0 — 2026-07-19
 
@@ -1636,7 +1754,7 @@ Definition of Done — acceptance criteria, tests, independent review,
 security/licence/privacy, accessibility, documentation, and a reproducible
 build — recorded per phase in `Dev-Memory/QUALITY-GATE.md` and mechanically
 enforced before every backup checkpoint and before Publish. Its one
-gold-standard rule: a dimension may be marked *not-applicable with a reason*
+gold-standard rule: a dimension may be marked _not-applicable with a reason_
 but never silently omitted — the required list lives in the hook, so
 deleting a row BLOCKS rather than passes. Fails closed, because a false
 "clean" is worse than a false block: nobody re-checks a green result before
@@ -1703,6 +1821,7 @@ fact-checked against Anthropic's own current docs before being built (one
 research thread initially cited a folder path that had been reorganised
 outside this session — caught, and re-verified from the real current
 location before trusting anything downstream of it):
+
 - `cost-monitor` can now show real spending figures (`cost.total_cost_usd`,
   and `rate_limits.*` for Pro/Max subscribers only — verified, not every
   billing plan gets this) instead of a rough transcript-size proxy, via a
@@ -1846,7 +1965,7 @@ does not replace or duplicate — it adds a task-aware recommendation layer
 on top).
 
 **New: `tdd-workflow` skill.** On Standard/Complex Tier, the Build stage
-now writes one small test per task that must genuinely fail *before* the
+now writes one small test per task that must genuinely fail _before_ the
 Builder implements anything — inspired by an idea a FOSS tool called
 "TDD Guard" enforces (not its code). Tiny Tier is unaffected, matching this
 product's existing "no rigour where it doesn't earn its keep" reasoning.
@@ -1965,6 +2084,7 @@ push/go-public gate matcher** (`plugins/gru953-studio/hooks/lib.mjs`,
 `false` for a command that genuinely executes a push, which makes
 `gate.mjs` `allow()` immediately — a complete, unconditional bypass of
 every confirmation gate:
+
 - Array assignment and subscript access (`arr=(pull push); git "${arr[1]}"`),
   including variable/arithmetic/bare-name/negative indices, array length
   used in same-command arithmetic (`i=${#arr[@]}; i=$((i-1))`), brace
@@ -1987,6 +2107,7 @@ every confirmation gate:
 **CRITICAL — publish-safety structural gaps** (`hooks/gate.mjs`,
 `hooks/confirm-publish.mjs`, `hooks/confirm-go-public.mjs`,
 `hooks/repo-integrity.mjs`, `hooks/hooks.json`):
+
 - The private-publish and go-public confirmation tokens were never
   deleted by any code (only by prose instruction), and had no expiry —
   a legitimate confirmation could silently authorise unlimited later
@@ -2321,7 +2442,7 @@ survivor it merged into.
   recognised at all.** Bash resolves `$'public'` to the literal text
   `public`, so `gh repo edit me/app --visibility $'public'` bypassed the
   go-public gate the same way. Reproduced directly (`x=$'public'; echo
-  "$x"` → `public`) before fixing. Fixed by stripping `$'...'` to its raw
+"$x"` → `public`) before fixing. Fixed by stripping `$'...'` to its raw
   content as the very first normalization step.
 - `repo-integrity.mjs`'s README role/skill-count check used only the FIRST
   match anywhere in the file with no `/g` — a later, wrong count could hide
@@ -2407,7 +2528,7 @@ re-testing prior fixes:**
   exception to its delegate-only rule), `memory-keeper` owns everything
   else.
 - The agent-manipulation security pass confirmed a genuine PASS on the
-  core guarantee — no skill or agent file lets a memory file's *claimed*
+  core guarantee — no skill or agent file lets a memory file's _claimed_
   approval substitute for a live `AskUserQuestion` answer on an
   irreversible action — but surfaced two real, bounded, disclosed-not-fixed
   limitations, documented in `governance/SECURITY.md`: the publish token is
@@ -2648,9 +2769,9 @@ end-user experience.
   confirmation was recorded yet. An unbreakable deadlock with no way to
   ever create the record. Fixed with a narrowly-scoped exemption (matches
   ONLY a plain `node <path-ending-in-one-of-these-two-scripts>
-  [one optional arg]` invocation with no chained commands anywhere in the
+[one optional arg]` invocation with no chained commands anywhere in the
   string — verified a decoy like `git push origin main; node
-  confirm-publish.mjs` is still correctly caught, not exempted). Existing
+confirm-publish.mjs` is still correctly caught, not exempted). Existing
   tests never caught this because they invoke the confirm scripts directly
   via `spawnSync` (bypassing the Bash-tool hook layer entirely) rather than
   through the actual PreToolUse interface; a new test exercises the real
@@ -2795,6 +2916,7 @@ project's proven design.
 
 Same-day gold-standard audit (multi-perspective review → fix loop) closed
 before first publish:
+
 - Retired the `minimalist` role (redundant with `reviewer`'s own
   whole-product trim pass) and added `ai-developer` in its place — net
   role count unchanged at 16, per this project's bounded-growth rule.
@@ -2818,6 +2940,7 @@ before first publish:
   workflow.
 
 Rounds 2-4 of the same audit found and fixed further real issues:
+
 - A residual git-alias-reuse bypass class (disclosed as a limitation in
   `SECURITY.md`, not fully closable with stateless per-command matching),
   plus `git send-pack`/`gh alias set` detection added to `hooks/lib.mjs`.
@@ -2854,6 +2977,7 @@ rounds" convergence rule was satisfied before this version was published.
 Aligned the whole repository to the established GRU953 brand system (the
 GRU953 Brand & Engineering Guidebook), rather than the generic choices made
 during the audit:
+
 - Licence changed again, from Polyform Noncommercial License 1.0.0 to the
   **GRU953 Community Licence 1.0** — the same licence used across every
   other GRU953 product. Same free-noncommercial/paid-commercial intent,

@@ -160,7 +160,7 @@ for (const c of CASES) {
 // healthy project with advice that was simply wrong.
 //
 // A false alarm on ordinary prose is worse than this gap, and an equivalent guess caused a
-// regression here earlier the same day. So it stays open, disclosed in RESIDUALS.md.
+// regression here earlier the same day. So it stays open, disclosed in SECURITY.md.
 //
 // This case is asserted in its CURRENT state rather than left unmentioned. If someone
 // later teaches the parser to read these rows, this assertion fails and they must come
@@ -173,7 +173,7 @@ for (const c of CASES) {
     die(
       'D2 now blocks. That may be an improvement, but it may also be the F6 false alarm ' +
         'returning — a pipe inside ordinary prose read as a malformed row. Re-read the note ' +
-        'above this check, confirm prose with a pipe is still safe, then update RESIDUALS.md ' +
+        'above this check, confirm prose with a pipe is still safe, then update SECURITY.md ' +
         'and this assertion deliberately.',
     );
   }

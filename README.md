@@ -37,7 +37,16 @@ published safely to your own GitHub account, under your name.<br>
 ## What is GRU953-Studio?
 
 You talk to GRU953-Studio in plain English inside **Claude Code**. That is the
-only place it runs.
+only place it builds anything: the specialists, the safety gates and the
+unattended run loop are all Claude Code features.
+
+The installer will also put the plugin into **Claude Desktop**, where its skills
+and agents show up on the Plugins page. That is an install path, not a second
+place to work — the studio's build loop needs Claude Code, and this project
+recorded as far back as 5.0.0 that the plugin does not run in Claude Desktop.
+Whether to keep offering that install at all is an open question, noted in
+`docs/RELEASING-7.0.0.md`; it is described here as what it is rather than left for
+somebody to discover.
 
 > **7.0.0 dropped every other host (2026-08-27).** This paragraph named Claude
 > Desktop and Google Antigravity, and said rules files reached GitHub Copilot,
@@ -179,12 +188,23 @@ Piping a script from the internet into your shell is a real risk, whoever
 publishes it — [SECURITY.md](SECURITY.md) explains how to download and read it
 first instead, which gets the same result.
 
-**Prefer a download?** Every release has a ready-made installer for **Claude
-Code** on [the releases page](https://github.com/GRU-953/GRU953-Studio/releases),
-with step-by-step instructions inside. (7.0.0: the Claude Desktop, Antigravity and
-VS Code installers were removed with their hosts —
-`tools/build-release-assets.mjs` now builds the Claude Code targets and a Windows
-portable zip, and nothing else.)
+**Prefer a download?** Every release has ready-made installers on
+[the releases page](https://github.com/GRU-953/GRU953-Studio/releases), with
+step-by-step instructions inside: one for **Claude Code**, one for **Claude
+Desktop**, and a Windows portable package. (7.0.0 removed the Antigravity and
+VS Code installers with their hosts. The Claude Desktop package is still built: it
+installs the plugin so its skills and agents appear, but building a project needs
+Claude Code, and the app's own Plugins page is the route Anthropic documents — so
+the CLI treats a filesystem install there as unverified and asks first.)
+
+_Corrected 2026-08-27, two hours after it was written._ This paragraph briefly
+said the Claude Desktop installer had been removed too. It had not: Phase 4 took
+out Antigravity and the VS Code family and deliberately kept Claude Desktop, which
+`clients/cli/src/detect.js` still lists as a `claude-plugin` target. Acting on my
+own wrong sentence, I then deleted the Claude Desktop asset from the builder and
+its verification steps from `docs/INSTALL-VERIFY.md` — both restored. It is
+recorded because it is the exact failure this release is about, made while
+documenting it: a claim written down, and then trusted instead of the code.
 
 **Two free tools it relies on.** [Node.js](https://nodejs.org) (powers the
 built-in safety checks — install once) and, only when you publish, the
@@ -227,12 +247,12 @@ the machinery. A tiny website wakes a handful; a bigger app with logins, data an
 content wakes more. There are **36 specialist roles in total**, and you never
 manage any of them yourself.
 
-| Group | Roles |
-| :-- | :-- |
-| **Core team** (most projects) | Project Lead, Interviewer, Architect, Scope Guardian, Builder, Reviewer, Tester, Security & Compliance Auditor, Brand Guardian, AI Developer, Fixer, Cost Monitor, Publisher, Memory Keeper |
-| **Content team** (after you approve the mock-up) | Content Director, Text Content Specialist, and — only with your yes — Image, Audio and Video Content Specialists |
-| **A native specialist per platform** | Flutter/Dart, Kotlin, Swift, Java, C#, Python, Rust, Go, C++, TypeScript |
-| **Brought in only when needed** | Maintenance Agent, DevOps Engineer, Responsible-AI Reviewer, UX Designer, Accessibility Specialist, Technical Writer, Data Engineer, Localisation Specialist, Researcher |
+| Group                                            | Roles                                                                                                                                                                                       |
+| :----------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Core team** (most projects)                    | Project Lead, Interviewer, Architect, Scope Guardian, Builder, Reviewer, Tester, Security & Compliance Auditor, Brand Guardian, AI Developer, Fixer, Cost Monitor, Publisher, Memory Keeper |
+| **Content team** (after you approve the mock-up) | Content Director, Text Content Specialist, and — only with your yes — Image, Audio and Video Content Specialists                                                                            |
+| **A native specialist per platform**             | Flutter/Dart, Kotlin, Swift, Java, C#, Python, Rust, Go, C++, TypeScript                                                                                                                    |
+| **Brought in only when needed**                  | Maintenance Agent, DevOps Engineer, Responsible-AI Reviewer, UX Designer, Accessibility Specialist, Technical Writer, Data Engineer, Localisation Specialist, Researcher                    |
 
 → Every role explained in plain English: **[The team of specialists](https://github.com/GRU-953/GRU953-Studio/wiki/The-Team)** · the playbooks they follow: **[Skills and capabilities](https://github.com/GRU-953/GRU953-Studio/wiki/Skills-and-Capabilities)**.
 
@@ -257,23 +277,23 @@ Type any of these between square brackets, or something like them:
 
 You never have to sit and watch. A few simple commands, typed any time:
 
-| Command | What it does |
-| :-- | :-- |
-| `/studio-start` | Start a new project, or resume the current one. |
-| `/studio-status` | A plain-English progress report. |
-| `/studio-pause` · `/studio-resume` | Pause, then pick up exactly where you left off. |
-| `/studio-stop` | Set everything down cleanly for the day. |
-| `/studio-skip` | Set the current task aside and move on; nothing is deleted. |
-| `/studio-schedule` | Ask it to pick a task back up at a time you choose. |
-| `/studio-dashboard` | Open a one-page visual summary of your project. |
-| `/studio-publish` | Publish privately to your own GitHub (with confirmations). |
-| `/studio-update` | Manually check for and apply a studio update right now. |
+| Command                            | What it does                                                |
+| :--------------------------------- | :---------------------------------------------------------- |
+| `/studio-start`                    | Start a new project, or resume the current one.             |
+| `/studio-status`                   | A plain-English progress report.                            |
+| `/studio-pause` · `/studio-resume` | Pause, then pick up exactly where you left off.             |
+| `/studio-stop`                     | Set everything down cleanly for the day.                    |
+| `/studio-skip`                     | Set the current task aside and move on; nothing is deleted. |
+| `/studio-schedule`                 | Ask it to pick a task back up at a time you choose.         |
+| `/studio-dashboard`                | Open a one-page visual summary of your project.             |
+| `/studio-publish`                  | Publish privately to your own GitHub (with confirmations).  |
+| `/studio-update`                   | Manually check for and apply a studio update right now.     |
 
 ---
 
 ## Safety and honesty
 
-The built-in checks reliably stop *accidental* early publishing and *obvious*
+The built-in checks reliably stop _accidental_ early publishing and _obvious_
 leaked passwords — a careful safety net for normal, honest use. They protect
 against honest mistakes, not deliberate sabotage, and we say so plainly rather
 than overclaiming. There is no "100% secure" here — the exact protections and
@@ -304,7 +324,7 @@ still need a person.
 unattended build. `tools/e2e/headless-build.mjs` runs the studio against a
 plain-text idea and asserts on both the filesystem and the session transcript —
 that specialists were dispatched rather than impersonated, that the Definition of
-Done was *executed* rather than described, and that **nothing was pushed**. It has
+Done was _executed_ rather than described, and that **nothing was pushed**. It has
 found real defects on four of its six runs, which is the only reason to trust the
 rest of this section.
 

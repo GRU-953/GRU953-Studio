@@ -6,12 +6,20 @@
 # the owner chose: deterministic gates on every change, this one nightly and on demand. Running it
 # per-push would make every pull request slow and expensive for a signal that changes rarely.
 #
-# WHY IT IS NOT (YET) A HARD GATE ON RELEASES. It needs credentials this repository does not have
-# configured. A `needs:` on a job that cannot authenticate would fail every release for a reason
-# unrelated to the release — and a gate wired to a secret that does not exist is a broken gate,
-# not a strict one. So: the release checklist requires a green run of this workflow before a tag
-# is pushed, and once ANTHROPIC_API_KEY exists as a repository secret it should become a `needs:`
-# in publish.yml alongside the `gates` job. That is a one-line change and a deliberate one.
+# IT IS NOW A HARD GATE ON RELEASES (2026-08-27). `publish.yml` calls this workflow with
+# `require-measurement: true`, and both publishing jobs depend on it, so nothing reaches npm or a
+# release page unless this ran and passed.
+#
+# The input is why that is safe to wire before the secret exists. Called WITHOUT it — the nightly,
+# a manual dispatch — an absent ANTHROPIC_API_KEY ends this workflow GREEN with a warning, because
+# a nightly alert that is always red is an alert nobody reads, and its absence when it matters is
+# then invisible. Called WITH it, an absent secret FAILS. So a release cannot be published on a
+# pass that measured nothing, which would be the same defect as a Definition of Done written by
+# the work it grades — the defect this whole release removes.
+#
+# The consequence, stated plainly: until ANTHROPIC_API_KEY is configured, pushing a version tag
+# will fail at this job. That is intended. It is the difference between a release that cannot be
+# published and a release published without its one product-level proof.
 #
 # It distinguishes its own three outcomes, which is the point of running it unattended at all:
 #   exit 0  the studio built working software
@@ -43,7 +51,23 @@ on:
       timeout-minutes:
         description: 'Minutes to allow the unattended build'
         required: false
-        default: '90'   # Tiny Tier only — a Complex brief measured >170 min on 2026-08-27
+        default: '90' # Tiny Tier only — a Complex brief measured >170 min on 2026-08-27
+  # Callable, so publish.yml can depend on it (2026-08-27). `require-measurement` is the whole
+  # point of the input: on the nightly, absent credentials must NOT be a red failure, because an
+  # alert that is always red is an alert nobody reads. On a RELEASE, absent credentials must be a
+  # hard failure, because "we did not measure" and "we measured and it passed" are the two things
+  # this workflow exists to keep apart — and a release gate that passes by not measuring is the
+  # exact defect 7.0.0 is about, one level up.
+  workflow_call:
+    inputs:
+      timeout-minutes:
+        required: false
+        type: string
+        default: '90'
+      require-measurement:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -52,7 +76,7 @@ jobs:
   headless-build:
     name: build a small app from a plain-text idea, unattended
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # the harness's own 90 plus headroom for install and checks.
+    timeout-minutes: 120 # the harness's own 90 plus headroom for install and checks.
     # 2026-08-27: sized for the TINY brief this workflow runs. A Complex-Tier brief (sign-in,
     # database, TypeScript) reached 18 of 19 tasks and did NOT finish in 170 minutes — see
     # docs/RELEASING-7.0.0.md. Do not raise the default without raising this too.
@@ -73,9 +97,23 @@ jobs:
         run: |
           if [ -n "$KEY" ]; then
             echo "have=yes" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.require-measurement }}" = "true" ]; then
+            echo "have=no" >> "$GITHUB_OUTPUT"
+            echo "::error::ANTHROPIC_API_KEY is not configured, and this run was asked to REQUIRE a measurement — so it fails rather than reporting an unmeasured pass. Add the secret in Settings > Secrets and variables > Actions."
+            {
+              echo '## Refusing to pass without measuring'
+              echo ''
+              echo 'This run was called with `require-measurement: true` (a release), and no'
+              echo '`ANTHROPIC_API_KEY` secret is configured, so the unattended build could not run.'
+              echo ''
+              echo 'Reporting green here would mean publishing a release whose one product-level'
+              echo 'proof never executed. That is the failure this workflow exists to prevent, so it'
+              echo 'fails instead.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           else
             echo "have=no" >> "$GITHUB_OUTPUT"
-            echo "::warning::ANTHROPIC_API_KEY is not configured, so the product was NOT MEASURED tonight. This is not a pass and not a defect. Add the secret to make this workflow meaningful, then add \`needs: e2e\` to publish.yml."
+            echo "::warning::ANTHROPIC_API_KEY is not configured, so the product was NOT MEASURED tonight. This is not a pass and not a defect. Add the secret to make this workflow meaningful — publish.yml already depends on this workflow with require-measurement: true."
             {
               echo '## Not measured'
               echo ''
@@ -117,4 +155,4 @@ jobs:
           else
             echo "harness exit code: ${{ steps.e2e.outputs.code }}"
             echo "0 = built working software | 1 = product defect | 2 = could not measure"
-          fi"
+          fi

@@ -29,11 +29,19 @@
 // the product is broken". A harness that reports success when it never ran is the exact fault
 // this file exists to catch, so it refuses to.
 //
-// NOT YET RUN AGAINST A LIVE SESSION. A nested `claude -p` cannot authenticate from inside a
-// Claude Code session (`OAuth session expired and could not be refreshed`), so this was written
-// and syntax-checked but never executed end to end. That is recorded rather than glossed: until
-// it has run green once, in CI or from an authenticated terminal, it is an untested test — and an
-// untested test is a claim, not evidence.
+// HAS RUN GREEN, and the history matters more than the fact. When first written this header said
+// NOT YET RUN AGAINST A LIVE SESSION: a nested `claude -p` cannot authenticate from inside a Claude
+// Code session (`OAuth session expired and could not be refreshed`), so it was syntax-checked and
+// never executed. The cause turned out to be `ANTHROPIC_BASE_URL` being set in the parent
+// environment, which makes the CLI expect an API key; `env -u ANTHROPIC_BASE_URL` fixes it.
+//
+// It has since run six times from an authenticated terminal. Best result: 18 of 18 assertions in
+// 70.9 minutes, 21 dispatches across 8 specialists, nothing pushed. Four of the six runs found
+// real defects, including one where `--plugin-dir` pointed one level too high, so the plugin never
+// loaded and the run measured a plain Claude session that had built the app unaided — and passed.
+//
+// Its own judgements are unit-tested in `tools/e2e/judge.mjs`, because at 71 minutes a run they
+// were never exercised otherwise, and three of them were wrong.
 //
 // Usage:
 //   node tools/e2e/headless-build.mjs [--keep] [--timeout-minutes N] [--model <id>]

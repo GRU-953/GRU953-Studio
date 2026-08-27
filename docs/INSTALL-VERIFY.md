@@ -13,7 +13,8 @@ that follows it installs something. Every such step is marked
 plugin. (The other two such steps — Part 4's `--install-extension` and Part 5's
 `gru953-studio install` — went with those Parts in 7.0.0.) You can stop before any of them if you only wanted to look.
 
-**How long:** about four minutes. You can stop after Part 1 if you only want to
+**How long:** about seven minutes — Part 1 two, Part 2 two, Part 3 three. You can
+stop after Part 1 if you only want to
 confirm the command itself works.
 
 ---
@@ -22,15 +23,15 @@ confirm the command itself works.
 
 So you know what you are and are not confirming:
 
-| Already proved by tests | Needs you |
-| :-- | :-- |
-| The installer finds the tools on a machine, and says which | Whether each app actually loads the studio once installed |
-| Files land in the exact locations each vendor documents | |
-| Every downloadable package opens, and is laid out correctly | |
-| The same source always builds byte-identical packages | |
-| Install, then uninstall, leaves nothing behind and never damages the studio's own files | |
-| All of the above on macOS, Windows and Linux | |
-| Free AI models are told apart from paid ones by real price | |
+| Already proved by tests                                                                 | Needs you                                                 |
+| :-------------------------------------------------------------------------------------- | :-------------------------------------------------------- |
+| The installer finds the tools on a machine, and says which                              | Whether each app actually loads the studio once installed |
+| Files land in the exact locations each vendor documents                                 |                                                           |
+| Every downloadable package opens, and is laid out correctly                             |                                                           |
+| The same source always builds byte-identical packages                                   |                                                           |
+| Install, then uninstall, leaves nothing behind and never damages the studio's own files |                                                           |
+| All of the above on macOS, Windows and Linux                                            |                                                           |
+| Free AI models are told apart from paid ones by real price                              |                                                           |
 
 ---
 
@@ -92,17 +93,69 @@ one.
 
 ---
 
-## Parts 3 to 5 were removed in 7.0.0
+## Part 3 — Claude Desktop (3 minutes)
 
-They verified Claude Desktop, VS Code / Cursor / Windsurf, and Google Antigravity.
-**7.0.0 targets Claude Code only** — those host adapters, the VS Code extension and
-the Antigravity client were all deleted, so there is nothing left for those steps to
-check. Parts 1 and 2 above are now the whole of it.
+**What this Part does and does not prove.** It proves the plugin is installed and
+that Claude Desktop can see its skills and agents. It does not prove the studio
+can build a project there, because it cannot: the build loop, the specialists and
+the safety gates are Claude Code features. If you only want to build something,
+Part 2 is the one that matters and you can stop there.
 
-(Removed 2026-08-27. This file was the last one still describing the 6.x product: it
-was never touched during the v7 rebuild, and README.md links to it as the authority on
-"which parts still need a person" — so the one page whose job was to say what is and
-is not proven was itself describing three hosts that no longer exist.)
+**Step 9.** Open Claude Desktop. (This is the Claude chat app, not Claude Code.)
+
+**Step 10.** In the sidebar on the left, click **Customize**.
+
+**Step 11.** Click **Plugins**.
+
+**Step 12.** Look for **GRU953-Studio** in the list.
+
+- **If it is there:** click it. You should see its skills and agents listed. That
+  is a pass — stop here.
+- **If it is not there:** it has not been installed yet. Continue to Step 13.
+
+> **INSTALLS SOMETHING — Steps 13 to 16.** These add a marketplace to Claude
+> Desktop and install the plugin from it. Stop here if you only wanted to check
+> what is already on your computer. (It said "to Claude Code" until 2026-08-27 —
+> a copy of Part 2's wording, in the part about a different app.)
+
+**Step 13.** Click **Add marketplace**.
+
+**Step 14.** Type exactly this, then press Enter:
+
+```
+GRU-953/GRU953-Studio
+```
+
+**Step 15.** Find GRU953-Studio in the list and click **Install**.
+
+**Step 16.** Click it and check its skills and agents appear.
+
+> **A note on the downloadable file.** Each release also has a
+> `gru953-studio-claude-desktop-<version>.zip` you can upload on that same
+> Plugins page. Step 13 above is the route Anthropic documents, so it is the one
+> to use first. The downloadable file is there for a computer that cannot reach
+> GitHub — and, said plainly, Anthropic's documentation does not state which file
+> type that upload expects, so if the .zip is refused, that is why, and the
+> marketplace route above always works.
+
+---
+
+## Parts 4 and 5 were removed in 7.0.0
+
+They verified VS Code / Cursor / Windsurf and Google Antigravity. Those host
+adapters, the VS Code extension and the Antigravity client were all deleted in
+7.0.0, so there is nothing left for those steps to check.
+
+(Removed 2026-08-27. This file was the last one still describing the 6.x product:
+it was never touched during the v7 rebuild, and README.md links to it as the
+authority on "which parts still need a person" — so the one page whose job was to
+say what is and is not proven was itself describing hosts that no longer exist.
+**Part 3 was removed in the same edit and then put back an hour later**: I had
+written in README.md that the Claude Desktop installer went with the others, and
+then believed my own sentence rather than checking `clients/cli/src/detect.js`,
+which still lists Claude Desktop as a supported target. Recorded rather than
+tidied away, because deleting a verification step for a host that still works is
+exactly how a product ends up unverified.)
 
 ## If something did not pass
 

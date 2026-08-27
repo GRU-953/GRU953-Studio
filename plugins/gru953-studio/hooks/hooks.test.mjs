@@ -147,7 +147,7 @@ function assertStepAside(r, message) {
 // But it was ALSO carrying a second, different meaning at 19 call sites: "the secret scan found
 // nothing to object to". Those were the same observable until X272, and they are not any more —
 // scan.mjs now returns `ask` on a clean push, because the operating charter requires the owner's own
-// fresh yes before anything is published and (measured, gap 9) a silent hook produces no prompt at
+// fresh yes before anything is published and (measured 2026-08-22) a silent hook produces no prompt at
 // all in the `auto` permission mode that is now the default.
 //
 // So the no-false-positive controls need to assert what they were actually FOR, which is that the
@@ -1962,7 +1962,7 @@ test('repo-integrity.mjs INV24: a publishing job that does not depend on the gat
   const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
   const before = fs.readFileSync(wf, 'utf8');
   const after = before.replace(
-    '    name: Publish @gru953/studio-cli to npm\n    needs: gates\n',
+    '    name: Publish @gru953/studio-cli to npm\n    needs: [gates, e2e]\n',
     '    name: Publish @gru953/studio-cli to npm\n',
   );
   assert.notEqual(after, before, 'fixture did not mutate — the needs: line is no longer where this test expects it');
@@ -7386,6 +7386,83 @@ test('docs-consistency.mjs: DC13 refuses an unqualified mid-build pop-up', () =>
 // reported ZERO hits on a deliberately reintroduced mid-build pop-up. A gate that passes because
 // its exemption is too generous is the defect this whole file exists to catch, written into a new
 // check on the same day the old ones were fixed.
+// DC14, 2026-08-27, Stage 5. `docs/STABILITY.md` promises for the whole life of 7.0.x that no
+// hook contains a network client. Before this check, the only thing behind that promise was a
+// comment inside docs-consistency.mjs itself which said the property was "finally true" and then
+// said, in the next sentence, that nothing checked it — and named the sweep that would.
+//
+// The counter-example is not hypothetical: v6's `openrouter-models.mjs` read a public catalogue
+// with Node's built-in `fetch`, and it was deleted for unrelated reasons. Nothing would have
+// noticed it coming back.
+test('docs-consistency.mjs: DC14 refuses a hook that reaches the network', () => {
+  const dir = mkTmp('gru-dc14-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-catalogue.mjs');
+  fs.writeFileSync(f, "const r = await fetch('https://openrouter.ai/api/v1/models');\nconsole.log(r);\n");
+  const r = runDocsConsistency(dir);
+  assert.notEqual(r.status, 0, 'a hook with its own network client must not pass');
+  assert.ok(
+    (r.json.problems || []).some((p) => /zz-catalogue\.mjs:1 contains a network client/.test(p)),
+    `expected DC14 to name the file and line, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The import spelling, kept separate because the call and the import are two different mistakes
+// and a check that catches one is routinely assumed to catch the other. Measured this session:
+// twelve tests of a config guard all used the one spelling the code handled, and the other
+// spelling was silently unguarded for a day.
+test('docs-consistency.mjs: DC14 catches the import spelling, not only fetch()', () => {
+  const dir = mkTmp('gru-dc14-imp-');
+  copyRepoTo(dir);
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-client.mjs'),
+    "import https from 'node:https';\nhttps.get('https://example.com', () => {});\n",
+  );
+  assert.notEqual(runDocsConsistency(dir).status, 0, 'importing a network module is the same property');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Two controls, and they are the ones that matter. This check's OWN header names `fetch(` and
+// `node:net` while explaining what is forbidden, and the test suite sits in the directory it
+// guards and writes every forbidden spelling into fixtures on purpose. The first version of DC14
+// flagged hooks.test.mjs on the real tree and took eight unrelated tests down with it — which is
+// how a gate earns being switched off, after which its absence is invisible.
+test('docs-consistency.mjs: DC14 does not fire on prose about fetch, or on identifiers containing it', () => {
+  const dir = mkTmp('gru-dc14-ok-');
+  copyRepoTo(dir);
+  fs.writeFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-prose.mjs'),
+    [
+      "// This hook must never call fetch('https://...') and must not require('https').",
+      "/* An import from 'node:net' is named here only to say it is forbidden. */",
+      'const prefetched = new Map();',
+      "function refetchLater(k) { return prefetched.get(k); }",
+      "console.log(refetchLater('a'));",
+      '',
+    ].join('\n'),
+  );
+  assert.equal(
+    runDocsConsistency(dir).json.status,
+    'clean',
+    'a comment cannot open a socket, and `prefetched` is not a network client',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The exclusion is narrow BY CONSTRUCTION and this asserts why: a `.test.mjs` file is never wired
+// into hooks.json, so nothing ever executes it as a hook, so excluding it cannot hide a live
+// client. If that ever stops being true, this test is where it shows up.
+test('docs-consistency.mjs: DC14 skips the test suite, and no .test.mjs file is wired as a hook', () => {
+  const hooksJson = JSON.parse(
+    fs.readFileSync(path.join(REPO_ROOT, 'plugins', 'gru953-studio', 'hooks', 'hooks.json'), 'utf8'),
+  );
+  assert.ok(
+    !JSON.stringify(hooksJson).includes('.test.mjs'),
+    'hooks.json must reference no .test.mjs file — DC14 excludes them on the grounds that nothing runs them',
+  );
+});
+
 test('docs-consistency.mjs: DC13 permits a pop-up that says which context it belongs to', () => {
   const dir = mkTmp('gru-dc13-ok-');
   copyRepoTo(dir);
@@ -7427,7 +7504,16 @@ test('docs-consistency.mjs: DC12 refuses a safety guarantee resting on the delet
   const dir = mkTmp('gru-dc12-');
   copyRepoTo(dir);
   const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
-  fs.appendFileSync(f, '\nA scheduled resume is safe because the publish token has a 60-minute TTL.\n');
+  // 2026-08-27: this appended the fixture with a single blank line, which made the test depend on
+  // whatever happened to be at the END of that file — and when an unrelated correction note ending
+  // "was removed in 7.0.0" landed there, the fixture fell inside DC12's ±2-line exemption window
+  // and this test went GREEN on the defect it exists to catch. The check was then tightened so an
+  // explanation must be in the same SENTENCE as the subject, and the fixture is separated far
+  // enough that no neighbour can explain it either way.
+  fs.appendFileSync(
+    f,
+    '\n\n## An unrelated heading\n\n\nA scheduled resume is safe because the publish token has a 60-minute TTL.\n',
+  );
   const r = runDocsConsistency(dir);
   assert.notEqual(r.status, 0);
   assert.ok(
@@ -11208,3 +11294,304 @@ test('X1: scan.mjs is veto-only — it never emits an approval on any path', () 
   );
 });
 
+
+// 2026-08-27, Stage 5, finding R1. `.github/workflows/e2e.yml` carried a stray `"` on the last
+// line of a `run:` block, which made the whole block a bash syntax error — so the nightly
+// end-to-end job failed on EVERY run, defeating the "a nightly that cannot measure must not be a
+// nightly that fails" design documented in that same file. It had been there for a day, and the
+// owner has since chosen to make that job a hard release gate (`needs: e2e`), which would have
+// made the release unpublishable for a reason nothing pointed at.
+//
+// Workflow shell scripts are the only code in this repository that nothing executed and nothing
+// tested: `node --check` does not read YAML, eslint does not read YAML, and the scripts
+// themselves only ever run on GitHub's infrastructure. `bash -n` parses without executing, which
+// is exactly the right instrument — it would have caught this in under a second.
+//
+// Deliberately parse-only. It does not lint style, and it skips PowerShell blocks (the Windows
+// leg's, which are not bash and would fail a bash parse for correct reasons).
+test('workflows: every bash run: block parses — a syntax error must not wait for the nightly', () => {
+  const dir = path.join(REPO_ROOT, '.github', 'workflows');
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+    .sort();
+  assert.ok(files.length > 0, 'found no workflow files to check — a check that reads nothing must not pass');
+
+  let checked = 0;
+  for (const f of files) {
+    const text = fs.readFileSync(path.join(dir, f), 'utf8');
+    // Each `run: |` block, with its own indentation stripped so bash sees the script alone.
+    const re = /^([ \t]+)run: \|\s*\n((?:\1[ \t]{2}.*\n|[ \t]*\n)+)/gm;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      const pad = m[1] + '  ';
+      const body = m[2]
+        .split('\n')
+        .map((l) => (l.startsWith(pad) ? l.slice(pad.length) : l))
+        .join('\n');
+      // A `shell: pwsh`/`powershell` line inside the same step means this is not bash.
+      const step = text.slice(text.lastIndexOf('- name:', m.index), m.index);
+      if (/shell:\s*(pwsh|powershell)/i.test(step)) continue;
+      const line = text.slice(0, m.index).split('\n').length;
+      const r = spawnSync('bash', ['-n'], { input: body, encoding: 'utf8' });
+      assert.equal(
+        r.status,
+        0,
+        `.github/workflows/${f}, run: block at line ${line} is not valid bash — it would fail on every CI run:\n${r.stderr}`,
+      );
+      checked++;
+    }
+  }
+  assert.ok(checked >= 10, `expected to parse at least 10 run: blocks across the workflows, parsed ${checked}`);
+});
+
+// The accidental exemption, reproduced. 2026-08-27: a correction note two lines above a token
+// guarantee — about something else entirely, and ending in the ordinary word "removed" — exempted
+// it. Nothing was wrong with either sentence; they were merely adjacent. This is the case that
+// made DC12's exemption require the retirement word and the subject to be in ONE SENTENCE.
+test('docs-consistency.mjs: DC12 is not exempted by an unrelated "removed" two lines away', () => {
+  const dir = mkTmp('gru-dc12-adj-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(
+    f,
+    [
+      '',
+      '(It said "Claude Code and Google Antigravity" until 2026-08-27; Antigravity',
+      'support was removed in 7.0.0 and the claim outlived it.)',
+      '',
+      'A scheduled resume is safe because the publish token has a 60-minute TTL.',
+      '',
+    ].join('\n'),
+  );
+  const r = runDocsConsistency(dir);
+  assert.notEqual(r.status, 0, 'a nearby unrelated retirement word must not excuse a live token guarantee');
+  assert.ok(
+    (r.json.problems || []).some((p) => /dev-memory.*TOKEN mechanism, which was deleted/.test(p)),
+    `expected DC12 to still catch it, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The other direction, and it is the reason the window exists at all: a correction whose sentence
+// WRAPS across two lines must still be permitted. Narrowing the exemption must not reintroduce the
+// false alarm that widening it fixed.
+test('docs-consistency.mjs: DC12 permits a correction whose sentence wraps across lines', () => {
+  const dir = mkTmp('gru-dc12-wrap-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(
+    f,
+    '\nThis used to say that a scheduled resume was safe because the publish\ntoken had a 60-minute TTL. It was deleted on 2026-08-16.\n',
+  );
+  assert.equal(
+    runDocsConsistency(dir).json.status,
+    'clean',
+    'a wrapped correction that names the token in the same sentence is the legitimate form',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The same accidental exemption, on DC11 and DC13. 2026-08-27: DC12's was found by accident — an
+// unrelated correction note landed at the end of the file DC12's own test appends its fixture to,
+// and the test went green on the defect it exists to catch. These four were then found by trying
+// it deliberately on the siblings, and every marker involved is ordinary English:
+//
+//   "The studio never guesses a value."       excused a live `blocked` state
+//   "Keep the old notes for reference."       excused a live `blocked` state
+//   "Record it rather than asking."           excused a live `blocked` state
+//   "Antigravity support was removed ..."     excused a live mid-build pop-up
+//
+// All three checks now share `sameSentenceRe`, so they cannot drift apart again.
+for (const [label, nearby] of [
+  ['never', 'The studio never guesses a value.'],
+  ['old', 'Keep the old notes for reference.'],
+  ['rather than', 'Record it rather than asking.'],
+]) {
+  test(`docs-consistency.mjs: DC11 is not exempted by an unrelated "${label}" two lines away`, () => {
+    const dir = mkTmp('gru-dc11-adj-');
+    copyRepoTo(dir);
+    fs.appendFileSync(
+      path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md'),
+      `\n${nearby}\n\nMark the task \`blocked\` and stop.\n`,
+    );
+    const r = runDocsConsistency(dir);
+    assert.notEqual(r.status, 0, `an unrelated "${label}" must not excuse a live retired task state`);
+    assert.ok(
+      (r.json.problems || []).some((p) => /dev-memory.*names the task state `blocked`/.test(p)),
+      `expected DC11 to still catch it, got: ${JSON.stringify(r.json && r.json.problems)}`,
+    );
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+test('docs-consistency.mjs: DC13 is not exempted by an unrelated "was removed" two lines away', () => {
+  const dir = mkTmp('gru-dc13-adj-');
+  copyRepoTo(dir);
+  fs.appendFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md'),
+    '\n(Antigravity support was removed in 7.0.0.)\n\nShow the user an `AskUserQuestion` pop-up before each task.\n',
+  );
+  const r = runDocsConsistency(dir);
+  assert.notEqual(r.status, 0, 'an unrelated retirement note must not excuse a live mid-build pop-up');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The control for the fix itself, and it is the one the fix got wrong first. The initial
+// sentence rule bounded the distance with `[^.]`, treating every full stop as a sentence end —
+// and this codebase's prose is full of filenames. `task-ledger.mjs` alone broke it, so two
+// legitimate correction notes already in the repository were reported as live defects. A check
+// that fires on honest work is as serious as one that misses, and this is what stops that
+// specific mistake returning.
+test('docs-consistency.mjs: a retirement note containing a filename is still an explanation', () => {
+  const dir = mkTmp('gru-dc-dots-');
+  copyRepoTo(dir);
+  fs.appendFileSync(
+    path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md'),
+    '\nThe state `blocked` was retired; `task-ledger.mjs` REFUSES it.\n',
+  );
+  assert.equal(
+    runDocsConsistency(dir).json.status,
+    'clean',
+    'dots inside a filename are not sentence boundaries — `mjs` is not a new sentence',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// INV24, extended 2026-08-27 (Stage 6). The nine gates prove the machinery is sound; none of them
+// builds anything, so none can prove the product works. The owner's decision made the unattended
+// build a hard release gate, and `publish.yml` now calls `e2e.yml` with `require-measurement: true`.
+//
+// That input is the load-bearing part. Called WITHOUT it, e2e.yml ends green when no
+// ANTHROPIC_API_KEY is configured — on purpose, because a nightly that is always red is an alert
+// nobody reads. Wiring `needs:` to that behaviour would publish a release on a pass that measured
+// nothing: the same defect as a Definition of Done written by the work it grades, moved to the
+// release path. All three ways of undoing it are guarded, because two of them look like tidying.
+test('repo-integrity.mjs INV24: dropping require-measurement from the e2e job is caught', () => {
+  const dir = mkTmp('gru-inv24-rm-');
+  copyRepoTo(dir);
+  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
+  const before = fs.readFileSync(wf, 'utf8');
+  const after = before.replace('      require-measurement: true\n', '');
+  assert.notEqual(after, before, 'fixture did not mutate — require-measurement is not where this test expects it');
+  fs.writeFileSync(wf, after);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'an e2e gate that can pass without measuring must be caught');
+  assert.match(JSON.stringify(r.json.problems), /require-measurement/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV24: an e2e job pointing at a different workflow is caught', () => {
+  const dir = mkTmp('gru-inv24-uses-');
+  copyRepoTo(dir);
+  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
+  const before = fs.readFileSync(wf, 'utf8');
+  const after = before.replace('uses: ./.github/workflows/e2e.yml', 'uses: ./.github/workflows/ci.yml');
+  assert.notEqual(after, before, 'fixture did not mutate — the e2e `uses:` line moved');
+  fs.writeFileSync(wf, after);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'a job named e2e that runs something else must be caught');
+  assert.match(JSON.stringify(r.json.problems), /does not call/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('repo-integrity.mjs INV24: a publishing job that drops the e2e dependency is caught', () => {
+  const dir = mkTmp('gru-inv24-dep-');
+  copyRepoTo(dir);
+  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
+  const before = fs.readFileSync(wf, 'utf8');
+  const after = before.replace('    needs: [gates, e2e]\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli', '    needs: [gates]\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli');
+  assert.notEqual(after, before, 'fixture did not mutate — the publish-npm-cli needs: line moved');
+  fs.writeFileSync(wf, after);
+  const r = runRepoIntegrity(dir);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping the e2e dependency must be caught');
+  assert.match(JSON.stringify(r.json.problems), /needs: e2e/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// licence-scan.mjs: Ruby and PHP. 2026-08-27, Stage 5, and it was measured before anything was
+// written. A project whose ONLY dependencies were a `Gemfile` and a `composer.json`, both naming
+// deliberately GPL-shaped packages, was reported `{"status":"clean"}` with exit 0. Not "not
+// checked" for those two ecosystems — clean. The cause was two absent entries in
+// `MANIFEST_FILE_NAMES`: neither file made a directory a manifest directory, so no ecosystem
+// result was produced and the scan fell through to the clean report at the bottom.
+//
+// This gate answers "may this be published?" and it is one of the nine the release path re-runs.
+// It must never answer yes about a language it did not know it was looking at.
+function runLicenceScan(dir) {
+  const r = spawnSync(process.execPath, [path.join(HERE, 'licence-scan.mjs'), dir], {
+    encoding: 'utf8',
+  });
+  let json = null;
+  try {
+    json = JSON.parse(r.stdout);
+  } catch {
+    /* left null — the assertion below reports the raw output */
+  }
+  return { status: r.status, json, stdout: r.stdout, stderr: r.stderr };
+}
+
+test('licence-scan.mjs: a Ruby-and-PHP-only project is not reported clean', () => {
+  const dir = mkTmp('gru-lic-rubyphp-');
+  fs.writeFileSync(path.join(dir, 'Gemfile'), "source 'https://rubygems.org'\ngem 'some-agpl-gem'\n");
+  fs.writeFileSync(path.join(dir, 'composer.json'), '{ "name": "acme/app" }\n');
+  const r = runLicenceScan(dir);
+  assert.ok(r.json, `expected JSON, got: ${r.stdout}${r.stderr}`);
+  assert.notEqual(r.status, 0, 'a project in two unscanned languages must not exit 0');
+  assert.match(r.json.status, /INCOMPLETE/, `expected INCOMPLETE, got ${r.json.status}`);
+  const named = JSON.stringify(r.json.notChecked || []);
+  assert.match(named, /ruby\/bundler/, 'Ruby must be named as not checked');
+  assert.match(named, /php\/composer/, 'PHP must be named as not checked');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// PHP gets a real scan, because `composer.lock` records a `license` array per package — no install
+// and no external tool needed. Ruby cannot: Bundler lockfiles carry no licence data at all, so an
+// honest "not checked" is the best answer available and is what it returns.
+for (const [label, lock, expect] of [
+  ['a GPL package', '{"packages":[{"name":"v/gpl","license":["GPL-3.0-only"]}]}', /BLOCKED/],
+  ['an MIT package', '{"packages":[{"name":"v/mit","license":["MIT"]}]}', /^clean$/],
+  // Composer's array means "any of these" — an SPDX OR. A dual GPL-or-MIT package is permissive,
+  // because the consumer may choose MIT.
+  ['dual GPL-or-MIT', '{"packages":[{"name":"v/d","license":["GPL-2.0-only","MIT"]}]}', /^clean$/],
+  ['dual AGPL-or-GPL', '{"packages":[{"name":"v/t","license":["AGPL-3.0","GPL-3.0"]}]}', /BLOCKED/],
+  ['no license field', '{"packages":[{"name":"v/none"}]}', /NEEDS HUMAN REVIEW/],
+  // A GPL dev dependency still ships its obligations to anyone building the project.
+  ['a GPL dev dependency', '{"packages":[],"packages-dev":[{"name":"d/g","license":["GPL-3.0-only"]}]}', /BLOCKED/],
+  ['an unreadable lockfile', '{ not json', /INCOMPLETE/],
+  ['a lockfile with no packages array', '{"foo":1}', /INCOMPLETE/],
+]) {
+  test(`licence-scan.mjs: PHP — ${label}`, () => {
+    const dir = mkTmp('gru-lic-php-');
+    fs.writeFileSync(path.join(dir, 'composer.json'), '{ "name": "acme/app" }\n');
+    fs.writeFileSync(path.join(dir, 'composer.lock'), lock);
+    const r = runLicenceScan(dir);
+    assert.ok(r.json, `expected JSON, got: ${r.stdout}${r.stderr}`);
+    assert.match(r.json.status, expect, `${label}: got ${r.json.status}`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// The false BLOCK, and it was not confined to the new PHP path — it was in `isAllowed()` and so
+// reached npm, Dart, Cargo and Maven too. `(GPL-2.0-only OR MIT)` was reported blocked, because
+// the whole-string FLAG_SUBSTRINGS test ran BEFORE the SPDX parser and matched the substring
+// "GPL", making the parser's correct answer unreachable. A guard that stops an honest project
+// publishing is as serious as one that lets a GPL dependency through, and this pins the ORDER.
+test('licence-scan.mjs: a compound expression is parsed before the substring flag test', async () => {
+  const { classifySpdxExpr } = await import(pathToFileURL(path.join(HERE, 'licence-scan.mjs')).href);
+  // The parser was always right; only its reachability was wrong. Both halves are asserted so a
+  // future reorder cannot silently restore either failure.
+  assert.equal(classifySpdxExpr('(GPL-2.0-only OR MIT)'), true, 'an OR offering a permissive choice is permissive');
+  assert.equal(classifySpdxExpr('MIT AND GPL-3.0-only'), false, 'AND means both apply — still blocked');
+  assert.equal(classifySpdxExpr('(AGPL-3.0 OR GPL-3.0)'), false, 'an OR with no permissive branch is still blocked');
+
+  const dir = mkTmp('gru-lic-dual-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"a","version":"1.0.0"}\n');
+  fs.writeFileSync(
+    path.join(dir, 'package-lock.json'),
+    '{"name":"a","lockfileVersion":3,"packages":{"":{"name":"a"},"node_modules/dual":{"version":"1.0.0","license":"(GPL-2.0-only OR MIT)"}}}',
+  );
+  const r = runLicenceScan(dir);
+  assert.ok(r.json, `expected JSON, got: ${r.stdout}${r.stderr}`);
+  assert.equal(r.json.status, 'clean', `a dual-licensed npm package must not be blocked, got ${r.json.status}`);
+  fs.rmSync(dir, RM_OPTS);
+});

@@ -949,7 +949,7 @@ function main() {
   }
 
   // 2026-08-24, X5 / X6 / X15 — Phase 3, "escalate instead of guess". PROGRESS.md gated this on
-  // Phase 0's effect being measured first; that measurement was taken on 2026-08-22 (RESIDUALS gap 9).
+  // Phase 0's effect being measured first; that measurement was taken on 2026-08-22.
   //
   // Before standing aside, RESOLVE the indirection rather than guessing at it from the command's
   // wording. `isPushCapable` decides whether `npm run build` might publish by testing the string
@@ -2025,7 +2025,7 @@ function main() {
     // reimplementing the permission prompt Claude Code" already provides. That premise has since
     // been MEASURED, and it does not hold in the mode that is now the default.
     //
-    // The live-runtime measurement of 2026-08-22 (RESIDUALS gap 9) established two things from a real
+    // The live-runtime measurement of 2026-08-22 established two things from a real
     // session transcript: a `deny` from this hook genuinely blocks a tool call, AND the session ran
     // in `auto` mode, where a hook that stays silent produces NO user prompt — auto mode makes its
     // own risk assessment and may simply proceed. So after X214 a clean push had nothing asking

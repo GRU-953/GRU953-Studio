@@ -36,7 +36,7 @@
 //   E  the real repository at this commit                        quiet (control: proves all four real
 //                                                                assertions are actually repaired)
 //
-// DISCLOSED RESIDUAL, recorded here and in RESIDUALS.md rather than left implied: paragraph scope
+// DISCLOSED RESIDUAL, recorded here and under "Known limitations" in SECURITY.md: paragraph scope
 // means one disclosure excuses every OTHER removed identifier in that paragraph — which is precisely
 // how X226 survived. The paragraph disclosed that the CHECKPOINT token was gone, then asserted
 // GO-PUBLIC-APPROVED was still checked first. This rule does not close that, and both tighter scopes

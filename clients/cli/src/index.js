@@ -369,44 +369,22 @@ function cmdUpdate() {
     process.exitCode = r.status === null ? 1 : r.status;
 }
 
-// 2026-08-22, X251: read from clients/vscode/package.json where it can be, rather than hardcoded,
-// because a printed command that goes stale is worse than no command — the user would run it, see it
-// fail, and have no idea why. Falls back to the current literal if that file is not in the package,
-// which is the normal case for an installed copy.
-const VSCODE_EXTENSION_ID = (() => {
-    const fallback = 'GRU953.gru953-studio';
-    try {
-        const pkg = JSON.parse(
-            fs.readFileSync(path.join(__dirname, '..', '..', 'vscode', 'package.json'), 'utf8'),
-        );
-        return pkg.publisher && pkg.name ? `${pkg.publisher}.${pkg.name}` : fallback;
-    } catch {
-        return fallback;
-    }
-})();
+// The VSCODE_EXTENSION_ID lookup that stood here read clients/vscode/package.json to print an
+// accurate uninstall command. Both it and the vscode-family branch below went on 2026-08-27:
+// detect.js has produced only `claude-plugin` hosts since 7.0.0, so neither could ever run.
 
 function cmdUninstall() {
     heading('Removing GRU953-Studio from this computer');
     const { found } = detectHosts();
     let removed = 0;
-    let left = 0;
     for (const host of found) {
-        // 2026-08-22, X251: this was a bare `continue`. The three VS Code-family hosts are built
-        // with a configDir and NO installDir (detect.js:109-117), so every one of them was skipped
-        // in complete silence — and then the closing line reported how many places it had removed
-        // from, with no mention of the editor extension still sitting installed. `install` sets
-        // those hosts up; `uninstall` cannot, because there is no directory of ours to delete: the
-        // extension is managed by the editor. So the honest answer is to say so and give the command.
-        //
-        // The command is PRINTED, never run. Running `--uninstall-extension` would be a new
-        // destructive action against the user's editor, and that needs their explicit say-so rather
-        // than being folded into a fix for a missing message.
+        // X251 (2026-08-22) added a branch here so that VS Code-family hosts, which have a
+        // configDir and no installDir, were not skipped in silence: it printed the editor's own
+        // uninstall command rather than pretending nothing was left behind. That branch was
+        // removed on 2026-08-27 because detect.js has produced only `claude-plugin` hosts since
+        // 7.0.0, so it could not run. If a host without an installDir is ever added back, X251's
+        // finding applies again — a bare `continue` here is silence, not success.
         if (!host.installDir) {
-            if (host.kind === 'vscode-family') {
-                console.log(`  left      ${host.name} — the extension is still installed.`);
-                console.log(`            Remove it with: ${host.command} --uninstall-extension ${VSCODE_EXTENSION_ID}`);
-                left++;
-            }
             continue;
         }
         if (!fs.existsSync(host.installDir)) {
@@ -432,11 +410,6 @@ function cmdUninstall() {
     if (au.enabled || au.known === false) console.log(`  ${autoupdate.disable().message}`);
     console.log('');
     console.log(`Removed from ${removed} place${removed === 1 ? '' : 's'}. Your projects and their files are untouched.`);
-    if (left > 0) {
-        console.log(
-            `${left} editor extension${left === 1 ? '' : 's'} ${left === 1 ? 'is' : 'are'} still installed — see the "left" line${left === 1 ? '' : 's'} above. This command does not remove them for you.`,
-        );
-    }
     console.log('Any line added to your shell profile was left alone — remove the GRU953-STUDIO block by hand if you want it gone.');
 }
 

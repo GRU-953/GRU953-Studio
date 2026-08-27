@@ -1327,7 +1327,7 @@ if (ciYmlText === null) {
 //
 // DISCLOSED RESIDUAL: paragraph scope means one disclosure excuses every OTHER removed identifier in
 // that paragraph, which is precisely how X226 survived. This does not close that. Recorded in
-// RESIDUALS.md rather than left implied.
+// "Known limitations" in SECURITY.md rather than left implied.
 {
   const REMOVED_IDENTIFIERS = [
     ['PUBLISH-APPROVED', /(?<![A-Z-])PUBLISH-APPROVED/],
@@ -1856,17 +1856,47 @@ if (fs.existsSync(packagedRoot)) {
       }
     }
     // Every job that publishes or attaches anything must depend on it.
+    // 2026-08-27, Stage 6. The `e2e` job joined `gates` as a release dependency when the owner
+    // made the unattended build a hard release gate. It is guarded here for the same reason
+    // `gates` is: a `needs:` entry is one word to delete, and its absence looks exactly like a
+    // workflow that never had one.
+    //
+    // `require-measurement: true` is guarded too, and that is the half that matters. Without the
+    // input, e2e.yml ends GREEN when no ANTHROPIC_API_KEY is configured — deliberately, so the
+    // nightly is not permanently red and therefore ignored. A `needs:` wired to that behaviour
+    // would publish a release on a pass that measured nothing: a gate passing blind, which is the
+    // exact defect this release removes, relocated to the release path.
+    const e2eJob = jobs.find((j) => j.name === 'e2e');
+    if (!e2eJob) {
+      fail(
+        '.github/workflows/publish.yml has no `e2e` job — the release path would publish without ever building anything, and the nine gates beside it do not build: they check the machinery, not the product',
+      );
+    } else {
+      if (!/uses:\s*\.\/\.github\/workflows\/e2e\.yml/.test(e2eJob.body)) {
+        fail(
+          ".github/workflows/publish.yml's `e2e` job does not call `./.github/workflows/e2e.yml` — a job named after the unattended build without running it is worse than no job at all",
+        );
+      }
+      if (!/require-measurement:\s*true/.test(e2eJob.body)) {
+        fail(
+          ".github/workflows/publish.yml's `e2e` job does not pass `require-measurement: true` — without it e2e.yml ends green when no ANTHROPIC_API_KEY is configured, so a release would be published on a pass that measured nothing",
+        );
+      }
+    }
+
     for (const j of jobs) {
-      if (j.name === 'gates') continue;
+      if (j.name === 'gates' || j.name === 'e2e') continue;
       const publishes =
         /npm publish|softprops\/action-gh-release|gh release (create|upload)|vsce publish/.test(
           j.body,
         );
       if (!publishes) continue;
-      if (!/^ {4}needs:.*\bgates\b/m.test(j.body)) {
-        fail(
-          `.github/workflows/publish.yml's \`${j.name}\` job publishes or attaches release artefacts but does not declare \`needs: gates\` — a tag could ship it from a tree that failed every check`,
-        );
+      for (const dep of ['gates', 'e2e']) {
+        if (!new RegExp(`^ {4}needs:.*\\b${dep}\\b`, 'm').test(j.body)) {
+          fail(
+            `.github/workflows/publish.yml's \`${j.name}\` job publishes or attaches release artefacts but does not declare \`needs: ${dep}\` — a tag could ship it from a tree that ${dep === 'gates' ? 'failed every check' : 'never built anything'}`,
+          );
+        }
       }
     }
   }

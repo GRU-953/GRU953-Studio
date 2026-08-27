@@ -2362,7 +2362,7 @@ function isConfirmScriptOnly(c) {
   // anchored to end-of-string and admits at most ONE further token, so a command
   // that also pushes can never match it. `node confirm-publish.mjs & git push …`
   // fails the anchor; `node confirm-publish.mjs &` matches but runs a file that
-  // does not exist. Recorded as a disclosed residual in RESIDUALS.md.
+  // does not exist. Disclosed under "Known limitations" in SECURITY.md.
   return (
     base === 'confirm-publish.mjs' ||
     base === 'confirm-go-public.mjs' ||
