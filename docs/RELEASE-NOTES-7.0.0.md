@@ -118,9 +118,11 @@ network call" — which an earlier draft did — was not true.
   valid and naming the next task. It treated the end of a turn as the end of the job,
   so the Definition of Done never ran and nothing was committed: 13 of 18 assertions.
   The instruction it was missing is now in the coordinator and in `project-lead`, and
-  the harness now names that cause instead of reporting its five symptoms. **Re-run it
-  and replace this bullet with the result before publishing** —
-  `docs/RELEASING-7.0.0.md` carries the command.
+  the harness now names that cause instead of reporting its five symptoms. **That fix is
+  NOT YET VERIFIED against a run:** the re-run stopped at a session limit and the harness
+  reported exit 2, "could not measure" — correctly, and that refusal is itself the
+  three-valued exit code doing its job. **Re-run it and replace this bullet with the
+  result before publishing** — `docs/RELEASING-7.0.0.md` carries the command.
 - Standard tier has not been run.
 
   This is stated as it stands rather than smoothed over. A Tiny brief has few enough

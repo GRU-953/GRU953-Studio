@@ -178,6 +178,35 @@ defect this release removes.
 
 ## Before the tag: the three-Tier proof (2026-08-28)
 
+**State as of 2026-08-28, so nobody repeats the diagnosis:**
+
+| Tier     | Result                                                         |
+| :------- | :------------------------------------------------------------- |
+| Tiny     | **green** — 18/18 in 71 minutes, 21 dispatches, nothing pushed |
+| Standard | not run                                                        |
+| Complex  | **one real defect found, fixed, NOT YET VERIFIED**             |
+
+The Complex defect and its evidence, because it is the reason the three-Tier rule exists:
+a run dispatched 14 specialists, wrote 92 passing tests, completed 5 of 22 tasks and then
+ENDED — `stop_reason: "end_turn"`, `terminal_reason: "completed"`,
+`api_error_status: null`, no permission denials — while `task-ledger.mjs` exited 0 and
+named `T6` as next. Its last message was "Now the terminal interface, the largest task,
+tests first." It announced the next task and treated the end of a turn as the end of the
+job. `dod.json`, the evidence directory and the commits were all downstream of that.
+
+The fix is in `skills/studio/SKILL.md` ("THE RUN IS NOT OVER WHILE THE LEDGER SAYS IT CAN
+CONTINUE") and in `agents/project-lead.md`, and the harness now asserts the cause rather
+than its symptoms. **A run must confirm it.** The attempt to do so returned exit 2 —
+"could not measure" — on a session limit, which is the harness refusing to grade a run it
+could not observe.
+
+Two signals to read the re-run by:
+
+- **tasks done** — anything short of 22 with a valid ledger is the same defect;
+- **`Dev-Memory/evidence/` file count** — it was ZERO before, because the run never
+  reached the Definition of Done. A non-zero count is the first direct proof `dod.mjs`
+  executed on a Complex project.
+
 The owner's decision is that all three Tiers are proven unattended, not just the fast
 one. The briefs are committed so anyone can repeat this:
 
