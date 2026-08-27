@@ -11351,7 +11351,52 @@ test('X1: scan.mjs is veto-only — it never emits an approval on any path', () 
 // So it now finds every `run:` key at any indentation, handles all four scalar forms, resolves the
 // shell from the whole step plus job- and workflow-level `defaults.run.shell`, and asserts a
 // coverage floor derived from the real files rather than a round number.
-function workflowRunScripts(text) {
+// GitHub accepts a shell name quoted, and also as an absolute path with arguments
+// (`/bin/bash -e {0}` is the documented form). The first version compared against the exact string
+// `bash`, so all three spellings were silently counted as non-bash and their scripts skipped —
+// taking any syntax error in them along (2026-08-28).
+function normaliseShell(raw) {
+  const bare = String(raw)
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .split(/\s+/)[0];
+  const base = bare.split('/').pop();
+  return base || 'bash';
+}
+
+// YAML folding for a `>` block: blank lines become newlines, and consecutive non-blank lines are
+// joined with a single space. `join(' ')` collapsed blank lines too, producing a script different
+// from the one GitHub runs.
+function foldYamlScalar(lines) {
+  const out = [];
+  let buf = [];
+  const flush = () => {
+    if (buf.length) {
+      out.push(buf.join(' '));
+      buf = [];
+    }
+  };
+  for (const l of lines) {
+    if (l.trim() === '') {
+      flush();
+      out.push('');
+      continue;
+    }
+    // A more-indented line in a folded scalar keeps its own newlines (YAML rule); treating it as
+    // foldable would join lines the runner keeps apart.
+    buf.push(l.trim());
+  }
+  flush();
+  return out.join('\n');
+}
+
+function workflowRunScripts(rawText) {
+  // CRLF is normalised FIRST, and this is not cosmetic: JavaScript's `.` does not match `\r`, so
+  // the `run:(.*)$` pattern below matched NOTHING on a CRLF checkout — measured, zero scripts
+  // against four on the same file with LF endings. This repository has a `hooks-crlf` CI job whose
+  // entire purpose is to run this suite against a CRLF-encoded tree, so the first version of this
+  // extractor would have reddened that leg on its first run (2026-08-28).
+  const text = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = text.split('\n');
   const out = [];
   const indentOf = (l) => l.length - l.replace(/^\s*/, '').length;
@@ -11376,7 +11421,10 @@ function workflowRunScripts(text) {
     let script = null;
     let lastLine = i;
 
-    if (/^[|>][-+]?$/.test(rest)) {
+    // `|`, `|-`, `|+`, `>`, `>-`, `>+` and the explicit-indentation forms `|2`, `|-2`, `|2-`.
+    // Omitting the indicator made `run: |2` parse as a ONE-LINE script whose text was "|2", which
+    // bash rejects — a false alarm on valid YAML (2026-08-28).
+    if (/^[|>][-+]?\d?[-+]?$/.test(rest)) {
       const folded = rest.startsWith('>');
       const body = [];
       let j = i + 1;
@@ -11393,7 +11441,10 @@ function workflowRunScripts(text) {
       const real = body.filter((l) => l !== '');
       const pad = real.length ? Math.min(...real.map(indentOf)) : 0;
       const stripped = body.map((l) => (l === '' ? '' : l.slice(pad)));
-      script = folded ? stripped.join(' ') : stripped.join('\n');
+      // YAML folding is not `join(' ')`: a run of blank lines folds to newlines, and only
+      // non-blank neighbours are joined with a space. Joining everything produced a script
+      // different from the one GitHub runs, in both directions (2026-08-28).
+      script = folded ? foldYamlScalar(stripped) : stripped.join('\n');
     } else if (rest !== '') {
       script = rest;
     } else {
@@ -11416,10 +11467,24 @@ function workflowRunScripts(text) {
         break;
       }
     }
-    // The whole step, so a `shell:` after `run:` counts — key order carries no meaning in YAML.
-    const stepText = lines.slice(stepStart, stepEnd).join('\n');
-    const own = stepText.match(/^\s*shell:\s*(\S+)/m);
-    const shell = (own && own[1]) || fileShell || 'bash';
+    // The step's own `shell:` key, read from the step's KEYS ONLY — never from inside the `run:`
+    // block body. Scanning the whole step text meant any script containing a line beginning
+    // `shell:` (a heredoc writing a workflow, an action.yml, a YAML fixture) hijacked the step's
+    // shell and could make a real bash script be skipped as PowerShell (2026-08-28).
+    //
+    // Read from the whole step rather than only above `run:`, because YAML key order carries no
+    // meaning: `shell: pwsh` written AFTER `run:` is the same step.
+    const stepKeyPad = ' '.repeat(keyIndent);
+    const stepKeyLines = [];
+    for (let k = stepStart; k < stepEnd; k++) {
+      if (k > lastLine || k <= i) {
+        const l = lines[k];
+        // A key of this step: at the step's key indentation, or on the `- ` line itself.
+        if (l.startsWith(stepKeyPad + 'shell:') || /^\s*-\s+shell:/.test(l)) stepKeyLines.push(l);
+      }
+    }
+    const own = stepKeyLines.length ? stepKeyLines[0].match(/shell:\s*(.+?)\s*$/) : null;
+    const shell = normaliseShell((own && own[1]) || fileShell || 'bash');
 
     out.push({ line: i + 1, script, shell });
   }
@@ -11469,8 +11534,12 @@ test('workflows: the run: extractor sees every form, including single-line steps
   let total = 0;
   let inline = 0;
   for (const f of fs.readdirSync(dir).filter((x) => /\.ya?ml$/.test(x))) {
-    const text = fs.readFileSync(path.join(dir, f), 'utf8');
-    const raw = (text.match(/^\s*(?:- )?run:/gm) || []).length;
+    const text = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n');
+    // Counted on the same normalised text the extractor sees, and EXCLUDING a `run:` with an empty
+    // value — the `defaults:\n  run:\n    shell: bash` stanza is a mapping key, not a script, and
+    // comparing a counter that includes it against an extractor that correctly skips it made this
+    // assertion fail on a standard workflow (2026-08-28).
+    const raw = (text.match(/^[ \t]*(?:- )?run:[ \t]*\S/gm) || []).length;
     const seen = workflowRunScripts(text);
     assert.equal(
       seen.length,
@@ -11951,4 +12020,145 @@ test('docs-consistency.mjs: DC15 permits a line saying a file is NOT rendered', 
     'denying that a file is rendered is the remedy, and must not itself be an offence',
   );
   fs.rmSync(dir, RM_OPTS);
+});
+
+// The extractor's own behaviour, pinned. 2026-08-28: a second adversarial pass over the rewritten
+// extractor found six defects in it, and the worst would have reddened CI on its first run — JS's
+// `.` does not match `\r`, so on the `hooks-crlf` job's CRLF-encoded tree it saw ZERO `run:` keys.
+// Measured: 59 scripts on LF, 0 on CRLF.
+test('workflows: the extractor is CRLF-blind-proof — a Windows checkout sees the same scripts', () => {
+  const dir = path.join(REPO_ROOT, '.github', 'workflows');
+  let lf = 0;
+  let crlf = 0;
+  for (const f of fs.readdirSync(dir).filter((x) => /\.ya?ml$/.test(x))) {
+    const t = fs.readFileSync(path.join(dir, f), 'utf8');
+    lf += workflowRunScripts(t).length;
+    crlf += workflowRunScripts(t.replace(/\n/g, '\r\n')).length;
+  }
+  assert.ok(lf > 50, `expected the LF tree to yield scripts, got ${lf}`);
+  assert.equal(crlf, lf, `a CRLF checkout must yield the same scripts: LF ${lf}, CRLF ${crlf}`);
+});
+
+// GitHub accepts a shell name quoted, and as an absolute path with arguments — `/bin/bash -e {0}`
+// is the form its own documentation prints. Comparing against the exact string `bash` silently
+// counted all three as non-bash and skipped their scripts, syntax errors included.
+test('workflows: a shell name is recognised quoted, bare, or as an absolute path', () => {
+  for (const [raw, want] of [
+    ['bash', 'bash'],
+    ['"bash"', 'bash'],
+    ["'bash'", 'bash'],
+    ['/bin/bash -e {0}', 'bash'],
+    ['/usr/bin/sh', 'sh'],
+    ['pwsh', 'pwsh'],
+    ['powershell', 'powershell'],
+    ['python', 'python'],
+  ]) {
+    assert.equal(normaliseShell(raw), want, `shell: ${raw}`);
+  }
+});
+
+// A script that WRITES yaml — a heredoc, an action.yml, a fixture — contains lines beginning
+// `shell:`. Reading the step's shell from the whole step text including the run: body let such a
+// script hijack its own step's shell, so a real bash script could be skipped as PowerShell.
+test('workflows: a heredoc containing a shell: line does not hijack the step', () => {
+  const wf =
+    'name: t\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n' +
+    "      - name: writes a workflow\n        run: |\n          cat > wf.yml <<'EOF'\n          shell: pwsh\n          EOF\n          echo done\n";
+  assert.deepEqual(
+    workflowRunScripts(wf).map((s) => s.shell),
+    ['bash'],
+    "the step's shell comes from its keys, never from inside the script",
+  );
+});
+
+// Block scalars may carry an explicit indentation indicator. Omitting it made `run: |2` parse as a
+// one-line script whose text was "|2", which bash rejects — a false alarm on valid YAML.
+test('workflows: every block-scalar form is recognised, indicators included', () => {
+  const wf = (ind) =>
+    `name: t\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - name: x\n        run: ${ind}\n          echo one\n`;
+  for (const ind of ['|', '|-', '|+', '|2', '|-2', '|2-', '>', '>-', '>2']) {
+    const r = workflowRunScripts(wf(ind));
+    assert.equal(r.length, 1, `run: ${ind} — expected one script, got ${r.length}`);
+    assert.equal(r[0].script.trim(), 'echo one', `run: ${ind}`);
+  }
+});
+
+// YAML folding is not `join(' ')`: a blank line folds to a NEWLINE. Joining everything produced a
+// script different from the one GitHub runs, so a broken script could pass and a valid one fail.
+test('workflows: a folded > scalar is folded the way YAML folds it', () => {
+  assert.equal(foldYamlScalar(['echo a', '', 'echo b']), 'echo a\n\necho b');
+  assert.equal(foldYamlScalar(['echo', 'a']), 'echo a');
+});
+
+// The licence parser's two guards, asserted. 2026-08-28: the previous commit message claimed
+// "fourteen expressions and the deep-nesting probe are asserted, in both directions", and
+// licence-scan.mjs's own comment claimed "both controls stay in the suite". Neither was true — I
+// had verified both by hand at the terminal and never written the tests. A pass caught the false
+// claim, which is exactly the class of defect this release is about: something asserted in prose
+// with nothing behind it.
+test('licence-scan classifySpdxExpr: an unconsumed tail is never permissive', async () => {
+  const { classifySpdxExpr } = await import(pathToFileURL(path.join(HERE, 'licence-scan.mjs')).href);
+  // The defect this guards. `parseOr` halts at the first token it cannot use and returns the
+  // verdict for the PREFIX, so `(MIT) GPL-3.0-only` classified as MIT and the GPL identifier was
+  // never looked at. Reachable because the parser now runs BEFORE the whole-string copyleft veto.
+  for (const expr of ['(MIT) GPL-3.0-only', 'MIT OR GPL-3.0 AND', '(MIT) AND', 'MIT)']) {
+    assert.equal(
+      classifySpdxExpr(expr),
+      null,
+      `${expr}: unconsumed input means "I did not understand this", which must never read as permissive`,
+    );
+  }
+  // Unbalanced: `(MIT` consumed every token and so satisfied the all-consumed check on its own.
+  assert.equal(classifySpdxExpr('(MIT'), null, 'an unbalanced expression is malformed, not permissive');
+  // And the fall-through is what makes `null` safe: the parser says "I did not understand this",
+  // and the whole-string copyleft veto then blocks. Asserted END TO END through the scanner rather
+  // than by importing `isAllowed`, which is not exported — the first version of this test read the
+  // export and guarded on `typeof === 'function'`, so it SILENTLY SKIPPED the only assertion that
+  // covers the security-relevant half. A guarded assertion that can quietly do nothing is the
+  // defect this whole release is about (2026-08-28).
+  const dir = mkTmp('gru-lic-tail-');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"a","version":"1.0.0"}\n');
+  fs.writeFileSync(
+    path.join(dir, 'package-lock.json'),
+    '{"name":"a","lockfileVersion":3,"packages":{"":{"name":"a"},"node_modules/x":{"version":"1.0.0","license":"(MIT) GPL-3.0-only"}}}',
+  );
+  const r = spawnSync(process.execPath, [path.join(HERE, 'licence-scan.mjs'), dir], { encoding: 'utf8' });
+  const out = JSON.parse(r.stdout);
+  assert.equal(
+    out.status,
+    'BLOCKED',
+    `a dropped tail naming GPL must still block end to end, got ${out.status}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('licence-scan classifySpdxExpr: a deeply nested expression is refused, never a crash', async () => {
+  const { classifySpdxExpr } = await import(pathToFileURL(path.join(HERE, 'licence-scan.mjs')).href);
+  // 5,000 nested parentheses produced `RangeError: Maximum call stack size exceeded`, so the gate
+  // died printing a stack trace instead of a verdict — and a gate that crashes has not said
+  // "blocked", it has said nothing. A licence field is free text written by strangers.
+  const deep = '('.repeat(5000) + 'GPL-3.0' + ')'.repeat(5000);
+  let threw = null;
+  let got;
+  try {
+    got = classifySpdxExpr(deep);
+  } catch (e) {
+    threw = e;
+  }
+  assert.equal(threw, null, `must not throw, got ${threw && threw.constructor.name}`);
+  assert.equal(got, null, 'too deep to be real means "needs a human look"');
+  // The bound must not fire on any depth a real expression reaches.
+  assert.equal(classifySpdxExpr('((MIT OR Apache-2.0) AND BSD-3-Clause)'), true, 'real nesting still classifies');
+  assert.equal(classifySpdxExpr('(((MIT)))'), true, 'three levels is ordinary');
+});
+
+test('licence-scan classifySpdxExpr: state does not leak between calls', async () => {
+  const { classifySpdxExpr } = await import(pathToFileURL(path.join(HERE, 'licence-scan.mjs')).href);
+  // `overflowed` is per-call state. If it leaked, a malformed expression would poison every later
+  // answer — so the same input must give the same verdict whatever preceded it.
+  const seq = ['(MIT', 'MIT', '(MIT) GPL-3.0-only', 'Apache-2.0', '('.repeat(200) + 'MIT', 'MIT'];
+  const first = seq.map((e) => classifySpdxExpr(e));
+  const again = [...seq].reverse().map((e) => classifySpdxExpr(e)).reverse();
+  assert.deepEqual(first, again, 'a verdict must not depend on what was classified before it');
+  assert.equal(classifySpdxExpr('MIT'), true, 'MIT is permissive regardless of history');
 });

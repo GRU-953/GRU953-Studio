@@ -1409,74 +1409,210 @@ function explainedNear(lines, i, re, radius = 2) {
 // end an expression — and it only has to hold for this repository's own hook sources, which the
 // suite pins by asserting the real tree stays clean.
 const MASK_CODE = 'c';
+
+// Keywords after which a `/` starts a REGEX, not a division. Compared as whole tokens: the first
+// version compared the previous CHARACTER, so `return /can't/` looked like division-after-`n`,
+// which had a consequence far worse than a misclassified regex — see the containment note below.
+const REGEX_AFTER_KEYWORD = new Set([
+  'return',
+  'typeof',
+  'instanceof',
+  'in',
+  'of',
+  'new',
+  'delete',
+  'void',
+  'yield',
+  'await',
+  'throw',
+  'do',
+  'else',
+  'case',
+]);
+
+// Characters that CAN end an expression, so a following `/` is division.
+const CAN_END_EXPR = /[0-9A-Za-z_$)\]]/;
+
 function sourceMask(src) {
   const mask = new Array(src.length).fill(MASK_CODE);
   const set = (from, to, kind) => {
     for (let k = from; k < to && k < src.length; k++) mask[k] = kind;
   };
-  let i = 0;
-  let prevSignificant = '';
   const n = src.length;
-  const CAN_END_EXPR = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$)]';
+  const eol = (from) => {
+    const at = src.indexOf('\n', from);
+    return at === -1 ? n : at;
+  };
+
+  let i = 0;
+  // The previous significant token, as a token rather than a character: either the string
+  // 'ident:<name>' or a single operator character. This is what makes keyword handling possible.
+  let prev = '';
+  const prevEndsExpr = () => {
+    if (prev.startsWith('ident:')) return !REGEX_AFTER_KEYWORD.has(prev.slice(6));
+    if (prev === '++' || prev === '--') return true; // postfix: `i++ / 2` is division
+    return CAN_END_EXPR.test(prev);
+  };
+
   while (i < n) {
     const c = src[i];
     const d = src[i + 1];
+
     if (c === '/' && d === '/') {
       const from = i;
-      while (i < n && src[i] !== '\n') i++;
+      i = eol(i);
       set(from, i, 'm');
       continue;
     }
     if (c === '/' && d === '*') {
+      // The only construct besides a template literal that may legitimately span lines.
       const from = i;
       i += 2;
       while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++;
       i = Math.min(i + 2, n);
       set(from, i, 'm');
+      prev = ' ';
       continue;
     }
-    if (c === '"' || c === "'" || c === '`') {
+
+    if (c === '"' || c === "'") {
+      // CONTAINED TO ONE LINE, and this is the fix that matters most. A single- or double-quoted
+      // string cannot span a line in valid JavaScript, so an unterminated one means this scanner
+      // guessed wrong somewhere — and the first version then masked every remaining byte of the
+      // file as string. Measured: a hook containing `return /can't/.test(s)` was scanned as code
+      // (the keyword bug above), the apostrophe opened a phantom string, nothing closed it, and
+      // DC14 reported the file CLEAN with a live `fetch` and a `new WebSocket` in it. A wrong
+      // guess must cost at most one line, never the rest of the file.
       const quote = c;
       const from = i;
+      const limit = eol(i);
+      let j = i + 1;
+      let closed = false;
+      while (j < limit) {
+        if (src[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (src[j] === quote) {
+          j++;
+          closed = true;
+          break;
+        }
+        j++;
+      }
+      i = closed ? j : limit;
+      set(from, i, 's');
+      prev = 'x';
+      continue;
+    }
+
+    if (c === '`') {
+      // A template literal MAY span lines. Its `${ ... }` substitutions are CODE, not string:
+      // masking them hid a live client inside `${await fetch(u)}` from every pattern.
+      const from = i;
       i++;
+      let lastSpan = from;
       while (i < n) {
         if (src[i] === '\\') {
           i += 2;
           continue;
         }
-        if (src[i] === quote) {
+        if (src[i] === '`') {
           i++;
           break;
         }
-        i++;
-      }
-      set(from, i, 's');
-      prevSignificant = 'x';
-      continue;
-    }
-    if (c === '/' && !CAN_END_EXPR.includes(prevSignificant)) {
-      const from = i;
-      i++;
-      let inClass = false;
-      while (i < n && src[i] !== '\n') {
-        if (src[i] === '\\') {
+        if (src[i] === '$' && src[i + 1] === '{') {
+          set(lastSpan, i, 's');
           i += 2;
+          // Scan the substitution as code, tracking brace depth so a nested object literal or a
+          // nested template does not end it early.
+          let depth = 1;
+          while (i < n && depth > 0) {
+            if (src[i] === '{') depth++;
+            else if (src[i] === '}') depth--;
+            else if (src[i] === '`' || src[i] === '"' || src[i] === "'") {
+              // A nested literal inside the substitution: skip it so its braces do not count.
+              const q = src[i];
+              const stop = q === '`' ? n : eol(i);
+              let k = i + 1;
+              while (k < stop) {
+                if (src[k] === '\\') {
+                  k += 2;
+                  continue;
+                }
+                if (src[k] === q) {
+                  k++;
+                  break;
+                }
+                k++;
+              }
+              set(i, k, 's');
+              i = k;
+              continue;
+            }
+            i++;
+          }
+          lastSpan = i;
           continue;
         }
-        if (src[i] === '[') inClass = true;
-        else if (src[i] === ']') inClass = false;
-        else if (src[i] === '/' && !inClass) {
-          i++;
-          break;
-        }
         i++;
       }
-      while (i < n && /[a-z]/.test(src[i])) i++; // flags
-      set(from, i, 'r');
-      prevSignificant = 'x';
+      set(lastSpan, i, 's');
+      prev = 'x';
       continue;
     }
-    if (!/\s/.test(c)) prevSignificant = c;
+
+    if (c === '/' && !prevEndsExpr()) {
+      // A regex literal, also CONTAINED TO ONE LINE: a regex cannot span a line in JavaScript, so
+      // an unterminated one means the guess was wrong and the damage stops here.
+      const from = i;
+      const limit = eol(i);
+      let j = i + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < limit) {
+        if (src[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (src[j] === '[') inClass = true;
+        else if (src[j] === ']') inClass = false;
+        else if (src[j] === '/' && !inClass) {
+          j++;
+          closed = true;
+          break;
+        }
+        j++;
+      }
+      if (!closed) {
+        // Not a regex after all: it was division, or this scanner is confused. Treat the `/` as
+        // one code character and carry on, rather than swallowing the line.
+        prev = '/';
+        i++;
+        continue;
+      }
+      while (j < limit && /[a-z]/.test(src[j])) j++; // flags
+      set(from, j, 'r');
+      i = j;
+      prev = 'x';
+      continue;
+    }
+
+    if (/[A-Za-z_$]/.test(c)) {
+      let j = i;
+      while (j < n && /[A-Za-z0-9_$]/.test(src[j])) j++;
+      prev = 'ident:' + src.slice(i, j);
+      i = j;
+      continue;
+    }
+
+    if ((c === '+' && d === '+') || (c === '-' && d === '-')) {
+      prev = c + d;
+      i += 2;
+      continue;
+    }
+
+    if (!/\s/.test(c)) prev = c;
     i++;
   }
   return mask;
@@ -1494,12 +1630,12 @@ function sourceMask(src) {
       what: 'a `.fetch` member access such as `globalThis.fetch`',
     },
     {
-      re: new RegExp(String.raw`\bfrom\s*${Q}(?:node:)?(?:${NET})${Q}`, 'g'),
+      re: new RegExp(String.raw`\bfrom\s*${Q}(?:node:)?(?:${NET})(?:/[A-Za-z0-9_./-]+)?${Q}`, 'g'),
       what: 'an import of a network module',
     },
     {
       re: new RegExp(
-        String.raw`\b(?:require|import)\s*\(\s*${Q}(?:node:)?(?:${NET})${Q}\s*\)`,
+        String.raw`\b(?:require|import)\s*\(\s*${Q}(?:node:)?(?:${NET})(?:/[A-Za-z0-9_./-]+)?${Q}\s*\)`,
         'g',
       ),
       what: 'a require/import of a network module',
@@ -1508,7 +1644,11 @@ function sourceMask(src) {
     // outright. A hook has no legitimate need for a computed module specifier; measured on the
     // real tree there are none, so this costs nothing and closes the whole obfuscation family.
     {
-      re: new RegExp(String.raw`\b(?:require|import)\s*\(\s*(?!${Q}[^'"\`]*${Q}\s*\))`, 'g'),
+      // The literal may be followed by a COMMA as well as a close paren: Node's import attributes
+      // (`import("./x.json", { with: { type: "json" } })`) are a plain literal specifier with a
+      // second argument, and requiring `)` immediately after flagged that honest, standard syntax
+      // as an unresolvable specifier (2026-08-28).
+      re: new RegExp(String.raw`\b(?:require|import)\s*\(\s*(?!${Q}[^'"\`]*${Q}\s*[,)])`, 'g'),
       what: 'a module specifier that is not a plain string literal, so it cannot be checked by reading',
     },
     {
@@ -1516,7 +1656,13 @@ function sourceMask(src) {
       what: '`createRequire`, which can load a module this check cannot see',
     },
     {
-      re: new RegExp(String.raw`\bnew\s+(?:WebSocket|XMLHttpRequest|EventSource)\b`, 'g'),
+      // `new globalThis.WebSocket(...)` is a working client and the first version's `\bnew\s+(?:...)`
+      // missed it — the same member-access blind spot that made this whole check miss
+      // `globalThis.fetch`, in the rule written after that lesson (2026-08-28).
+      re: new RegExp(
+        String.raw`\bnew\s+(?:[A-Za-z_$][\w$]*\s*\.\s*)*(?:WebSocket|XMLHttpRequest|EventSource)\b`,
+        'g',
+      ),
       what: 'a global network constructor',
     },
   ];
@@ -1607,8 +1753,14 @@ function sourceMask(src) {
 // `PLAN.md` and renders it into HTML; that is a consumer, not a producer, and a check satisfied by
 // a mention is the mistake X116 is about.
 {
-  const RENDER_CLAIM =
-    /\b(?:is|are)\s+(?:RENDERED|rendered|GENERATED|generated)\b|\b(?:RENDERED|rendered|GENERATED|generated)\s+from\b/;
+  // The vocabulary this repository actually uses, widened 2026-08-28 after a pass carried false
+  // claims through with "produced from", "derived from" and "comes from". It is an allow-list and
+  // so incomplete by nature: DC15 catches the phrasings in use, not every possible English
+  // sentence, and that limit is stated rather than implied.
+  const RENDER_VERB = 'RENDERED|rendered|GENERATED|generated|produced|derived|emitted';
+  const RENDER_CLAIM = new RegExp(
+    `\\b(?:is|are)\\s+(?:${RENDER_VERB})\\b|\\b(?:${RENDER_VERB})\\s+from\\b|\\bcomes\\s+from\\b`,
+  );
   const hookSrcs = [];
   (function collect(dir) {
     for (const d of listDir(dir)) {
@@ -1631,9 +1783,19 @@ function sourceMask(src) {
   } else {
     const writtenByAHook = (base) => {
       const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`writeFileSync\\s*\\([^;]{0,300}['"\`]${esc}['"\`]`);
-      return hookSrcs.some((src) => re.test(src));
+      return hookSrcs.some((src) =>
+        new RegExp(`writeFileSync\\s*\\([^;]{0,300}['"\`]${esc}['"\`]`).test(src),
+      );
     };
+
+    // A hook that writes its output through a VARIABLE cannot satisfy the rule above, and a pass
+    // on 2026-08-28 reported that as a latent false alarm. Widening it — accepting any hook that
+    // names the file and calls writeFileSync anywhere — was measured and is strictly worse: it
+    // made `writtenByAHook('PLAN.md')` return TRUE, because `dashboard.mjs` READS PLAN.md and
+    // writes its own HTML, so every catch case of this check went silent. A false negative in the
+    // gate is worse than a false alarm that has no instance: nothing in this repository is
+    // currently documented as rendered AND written through a variable. If that ever happens, the
+    // remedy is in the message below — name the writing hook on the line — not a looser rule.
     for (const dir of ['skills', 'agents', 'commands']) {
       for (const file of walk(path.join(pluginRoot, dir))) {
         if (!file.endsWith('.md')) continue;
@@ -1657,9 +1819,17 @@ function sourceMask(src) {
           const claim = line.match(RENDER_CLAIM);
           if (!claim) continue;
           // A line explaining that something is NOT rendered is the fix this check asks for, so it
-          // must not then be reported. Same shape as DC11 to DC13's exemptions.
-          if (/\bnot\b[^.]{0,60}\brender/i.test(line) || /\brender[^.]{0,60}\bnot\b/i.test(line))
-            continue;
+          // must not then be reported. Three corrections on 2026-08-28:
+          //   - it required the literal "render", so the honest denial "`PLAN.md` is not GENERATED
+          //     from the ledger" was blocked while the same sentence with "rendered" passed;
+          //   - it recognised a denial only BEFORE the verb, so a past-tense correction in this
+          //     repository's own house style read as a live claim;
+          //   - it skipped the ENTIRE line, so one line could deny one file and falsely assert
+          //     another. It is now applied per subject, below.
+          const DENIAL = new RegExp(
+            `\\b(?:not|never|no longer|nothing)\\b[^.]{0,80}\\b(?:${RENDER_VERB})|\\b(?:${RENDER_VERB})\\b[^.]{0,80}\\b(?:not|never|no longer|nothing)\\b`,
+            'i',
+          );
 
           // The SUBJECT is the filename nearest the claim, not any filename on the line. Same-line
           // alone was still too loose: dev-memory's `OBJECTIVE.md` row is a long table cell that
@@ -1667,7 +1837,10 @@ function sourceMask(src) {
           // read as a false claim about the second. Nearest-wins is a distance rather than a list,
           // which is the fourth time on this codebase that comparing a quantity has beaten
           // enumerating cases.
-          const names = [...line.matchAll(/`([A-Z][A-Za-z-]*\.md)`/g)];
+          // A backticked PATH counts: ``Dev-Memory/PLAN.md`` yielded no subject at all, so the
+          // whole line went unchecked — and a path is the spelling this repository most often uses
+          // (2026-08-28).
+          const names = [...line.matchAll(/`(?:[A-Za-z0-9_./-]*\/)?([A-Z][A-Za-z-]*\.md)`/g)];
           if (names.length === 0) continue;
           let subject = names[0];
           for (const n of names) {
@@ -1677,8 +1850,12 @@ function sourceMask(src) {
           for (const m of [subject]) {
             const base = m[1];
             if (writtenByAHook(base)) continue;
+            // The denial must be about THIS subject, so a line denying one file cannot excuse a
+            // false claim about another.
+            const near = line.slice(Math.max(0, m.index - 120), m.index + 160);
+            if (DENIAL.test(near)) continue;
             fail(
-              `${rel}:${i + 1} says \`${base}\` is RENDERED, and no hook writes it — every hook was searched for a \`writeFileSync\` naming it. A file documented as generated that nothing generates is worse than an undocumented one: whoever was writing it by hand stops, and whoever reads it finds nothing. Either make a hook render it, or say who writes it (DC15)`,
+              `${rel}:${i + 1} says \`${base}\` is RENDERED, and no hook writes it — every hook was searched for a \`writeFileSync\` naming it. A file documented as generated that nothing generates is worse than an undocumented one: whoever was writing it by hand stops, and whoever reads it finds nothing. Either make a hook render it, or say who writes it — and if a hook does write it through a variable rather than a literal filename, say so on the line, because this check looks for the name inside the writeFileSync call (DC15)`,
             );
           }
         }

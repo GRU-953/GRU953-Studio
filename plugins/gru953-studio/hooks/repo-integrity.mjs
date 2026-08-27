@@ -1864,7 +1864,27 @@ if (fs.existsSync(packagedRoot)) {
   // GitHub does not require lowercase — the first version's `[a-z][a-z0-9-]*` missed `publish_npm`
   // and `publishNpm` entirely, so such a job was never checked at all.
   const splitJobs = (src) => {
-    const headerRe = /^ {2}([A-Za-z_][A-Za-z0-9_-]*):[ \t]*$/gm;
+    // The job indentation is DERIVED from the `jobs:` block, not guessed. Requiring exactly two
+    // spaces meant a four-space file yielded no jobs at all — and a check that finds no jobs
+    // examines no publishing job and reports clean. But widening to `^ {2,4}` was worse: it
+    // matched `    steps:` as a job name and fragmented every real job, reporting four false
+    // ungated-publish problems against the correct file. Both attempts on 2026-08-28.
+    //
+    // So: find `jobs:`, take the indentation of its first child key, and use exactly that. A key
+    // may also be quoted.
+    const jobsAt = src.search(/^jobs:[ \t]*$/m);
+    if (jobsAt < 0) return [];
+    const after = src.slice(jobsAt).split('\n').slice(1);
+    let indent = null;
+    for (const l of after) {
+      if (/^\s*$/.test(l) || /^\s*#/.test(l)) continue;
+      const m = l.match(/^(\s+)\S/);
+      if (!m) break; // dedented back out of `jobs:` without finding a key
+      indent = m[1].length;
+      break;
+    }
+    if (indent === null) return [];
+    const headerRe = new RegExp(`^ {${indent}}['"]?([A-Za-z_][A-Za-z0-9_-]*)['"]?:[ \t]*$`, 'gm');
     const headers = [...src.matchAll(headerRe)];
     return headers.map((m, i) => ({
       name: m[1],
@@ -1883,7 +1903,8 @@ if (fs.existsSync(packagedRoot)) {
   // boundary, which is how a pair of no-op look-alike jobs satisfied the whole invariant.
   const needsOf = (body) => {
     const set = new Set();
-    const m = body.match(/^ {4}needs:[ \t]*(.*)$/m);
+    // Any indentation, because the job body's own indentation varies with the file's.
+    const m = body.match(/^[ \t]*needs:[ \t]*(.*)$/m);
     if (!m) return set;
     const inline = m[1].trim();
     if (inline) {
@@ -1896,15 +1917,21 @@ if (fs.existsSync(packagedRoot)) {
     const after = body.slice(body.indexOf(m[0]) + m[0].length).split('\n');
     for (const line of after) {
       if (/^\s*$/.test(line)) continue;
-      const item = line.match(/^ {6,}-[ \t]+(['"]?)([A-Za-z_][A-Za-z0-9_-]*)\1[ \t]*$/);
+      // A comment line between `needs:` and its items is legal; skip it rather than stopping.
+      if (/^[ \t]*#/.test(line)) continue;
+      const item = line.match(/^[ \t]+-[ \t]+(['"]?)([A-Za-z_][A-Za-z0-9_-]*)\1[ \t]*$/);
       if (!item) break;
       set.add(item[2]);
     }
     return set;
   };
 
+  // Widened 2026-08-28: the previous six spellings missed mainstream publishing actions entirely,
+  // so a job attaching every release asset through one of them needed no `needs:` at all. This is
+  // still an allow-list and so still incomplete by nature — which is why the cross-file arm below
+  // now ALSO requires an unrecognised workflow to route through publish.yml.
   const PUBLISHES =
-    /npm publish|softprops\/action-gh-release|gh release (?:create|upload)|vsce publish|npm run (?:release|publish)|twine upload/i;
+    /npm publish|pnpm publish|yarn npm publish|npm dist-tag|softprops\/action-gh-release|actions\/create-release|JS-DevTools\/npm-publish|gh release (?:create|upload|edit)|gh api[^\n]*\/releases|vsce publish|npm run (?:release|publish)|twine upload|docker push/i;
 
   const wfDir = path.join(repoRoot, '.github', 'workflows');
   const wfFiles = listDir(wfDir)
@@ -1943,6 +1970,24 @@ if (fs.existsSync(packagedRoot)) {
         '.github/workflows/publish.yml has no `gates` job — the release path would publish without running any of the checks CI runs on every ordinary push',
       );
     } else {
+      // 2026-08-28. A gate command is only a gate if it can FAIL the job. Appending `|| true`,
+      // `; true`, `|| :` or `|| exit 0` to all nine leaves every required string present while
+      // making the release unfailable — measured: six commands neutralised, and INV24 reported
+      // clean. `continue-on-error` on the job or the step does the same thing in YAML.
+      for (const line of gatesJob.body.split('\n')) {
+        if (!REQUIRED_GATE_STEPS.some((r) => line.includes(r))) continue;
+        const neutralised = /\|\|\s*(?:true|:|exit\s+0)\b|;\s*true\s*$/.test(line);
+        if (neutralised) {
+          fail(
+            `.github/workflows/publish.yml's \`gates\` job runs a required check with its failure suppressed: ${line.trim().slice(0, 110)} — a gate that cannot fail the job is not a gate, and every required command would still be "present"`,
+          );
+        }
+      }
+      if (/^\s*continue-on-error:\s*true\s*$/m.test(gatesJob.body)) {
+        fail(
+          ".github/workflows/publish.yml's `gates` job declares `continue-on-error: true`, so the release proceeds however the checks end — the same defect as appending `|| true` to every command, written in YAML instead of shell",
+        );
+      }
       const missing = REQUIRED_GATE_STEPS.filter((r) => !gatesJob.body.includes(r));
       if (missing.length > 0) {
         fail(
@@ -2003,10 +2048,21 @@ if (fs.existsSync(packagedRoot)) {
       if (name === 'publish.yml') continue;
       const other = read(path.join(wfDir, name));
       if (other === null) continue;
-      for (const j of splitJobs(stripYamlComments(other))) {
+      const otherJobs = splitJobs(stripYamlComments(other));
+      for (const j of otherJobs) {
         if (!PUBLISHES.test(j.body)) continue;
-        if (needsOf(j.body).has('gates')) continue;
         if (/uses:\s*\.\/\.github\/workflows\/publish\.yml/.test(j.body)) continue;
+        // `needs: gates` in another workflow means nothing unless that workflow HAS a gates job
+        // running the checks. The first version accepted the word alone, so a second workflow
+        // could publish on the same tag with a one-line no-op `gates` job — or none at all
+        // (2026-08-28).
+        const needs = needsOf(j.body);
+        const localGates = otherJobs.find((x) => x.name === 'gates');
+        const gatesReal =
+          needs.has('gates') &&
+          localGates &&
+          REQUIRED_GATE_STEPS.every((r) => localGates.body.includes(r));
+        if (gatesReal) continue;
         fail(
           `.github/workflows/${name}'s \`${j.name}\` job publishes or attaches release artefacts, and it is not publish.yml — so none of the release gating applies to it. Either route it through publish.yml, or give it the same \`needs: [gates, e2e]\``,
         );
@@ -2040,7 +2096,21 @@ if (fs.existsSync(packagedRoot)) {
         '.github/workflows/e2e.yml declares no `require-measurement` input (looked for the input declaration itself, not the words: prose in a shell string does not count), so the value publish.yml passes is ignored and a release would be published on a run that measured nothing',
       );
     }
-    if (!/inputs\.require-measurement/.test(e2e) || !/exit 1/.test(e2e)) {
+    // The two searches must be CAUSALLY related, not merely both present. The first version asked
+    // only that `inputs.require-measurement` and `exit 1` each appear somewhere in the file, so
+    // changing one word in the comparison left both satisfied while a release with no
+    // ANTHROPIC_API_KEY ended GREEN having measured nothing (2026-08-28). This requires the
+    // comparison and the failure to be in the same shell branch.
+    // The comparison and the `exit 1` must be in the SAME shell branch — the test is that no
+    // branch keyword (`elif`, `else`, `fi`) intervenes between them. Two unanchored searches were
+    // the first attempt, and they were satisfied by the words appearing anywhere in the file: the
+    // header comment alone contains "exit 1". So changing one word in the comparison left the
+    // check green while an unmeasured release passed.
+    const branch = e2e.match(
+      /inputs\.require-measurement[^\n]*=[^\n]*true[^\n]*\][^\n]*then\n([\s\S]*?)(?:\n\s*(?:elif|else|fi)\b)/,
+    );
+    const enforced = Boolean(branch) && /\bexit 1\b/.test(branch[1]);
+    if (!enforced) {
       fail(
         '.github/workflows/e2e.yml declares `require-measurement` but never both READS `inputs.require-measurement` and fails (`exit 1`) on it — so an absent ANTHROPIC_API_KEY would end the release gate GREEN having measured nothing. That is the defect this release removes, relocated to the release path',
       );
@@ -2240,7 +2310,16 @@ if (fs.existsSync(packagedRoot)) {
       'hooks/licence-scan.mjs is missing or unreadable, so the languages the studio can build in cannot be checked against the ecosystems its licence gate covers (INV27)',
     );
   } else {
-    const listMatch = scanSrc.match(/const MANIFEST_FILE_NAMES = \[([\s\S]*?)\];/);
+    // Comments are stripped BEFORE the array is located, which fixes two defects at once
+    // (2026-08-28). The non-greedy `[\s\S]*?` stopped at the first `];` anywhere in the region,
+    // so an ordinary comment containing `];` truncated the list from 24 names to 5 and produced
+    // eight false accusations against fully covered languages. And names were read out of
+    // COMMENTS, so block-commenting an entry removed it from the scanner while INV27 still
+    // reported that language covered — the exact defect INV27 exists to prevent.
+    const scanCode = scanSrc
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|\n)[ \t]*\/\/[^\n]*/g, '$1');
+    const listMatch = scanCode.match(/const MANIFEST_FILE_NAMES = \[([\s\S]*?)\];/);
     if (!listMatch) {
       fail(
         'hooks/licence-scan.mjs no longer declares its manifests as `const MANIFEST_FILE_NAMES = [...]`, so INV27 cannot read them. Restore that shape or update this check — do not leave it reading nothing, which is a gate that passes because it measured nothing (INV27)',
@@ -2275,9 +2354,10 @@ if (fs.existsSync(packagedRoot)) {
         // Any backticked token that looks like a filename. Compared against the scanner's own
         // list, so a pack naming a manifest the scanner knows passes and one naming only
         // manifests it does not know fails.
-        const named = new Set(
-          [...text.matchAll(/`([A-Za-z0-9_.+-]+\.[A-Za-z0-9_.+-]+)`/g)].map((m) => m[1]),
-        );
+        // A dot was required, so the two extensionless entries in MANIFEST_FILE_NAMES — `Gemfile`
+        // and `Pipfile`, one of them the Ruby manifest added the day before — could never be
+        // recognised, and a pack naming only those would be reported uncovered (2026-08-28).
+        const named = new Set([...text.matchAll(/`([A-Za-z0-9_.+-]+)`/g)].map((m) => m[1]));
         const covered = [...named].filter((n) => known.has(n));
         if (covered.length === 0) {
           fail(

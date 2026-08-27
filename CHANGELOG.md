@@ -211,8 +211,8 @@ release's own new machinery, plus the audit described in section 1, then found
 | Skills                           |        37 |        34 |
 | Commands                         |        11 |        10 |
 | Enforcement hooks                |        24 |        24 |
-| Tests                            |       468 |       729 |
-| Standing context load            | 127,762 B | 157,984 B |
+| Tests                            |       468 |       737 |
+| Standing context load            | 127,762 B | 158,516 B |
 | Hooks carrying a network client  |         1 |         0 |
 | Third-party runtime dependencies |         0 |         0 |
 
@@ -236,8 +236,8 @@ with `127,762 → 137,728` and a stated method — and got the second number wro
 because it was measured mid-session and this release then added several thousand more
 bytes of exactly the prose being measured. Measured at the release commit by the same
 stated rule — the coordinator skill plus every companion skill it names as a standing
-rule, `git show`n from `v6.1.0` for the baseline — it is **127,762 B → 157,984 B: up
-23.7%**, not down 16% and not up 8%.
+rule, `git show`n from `v6.1.0` for the baseline — it is **127,762 B → 158,516 B: up
+24.1%**, not down 16% and not up 8%.
 
 It is stated that way round because the alternative is a release note claiming an
 improvement that did not happen. The cause is not mysterious: a large share of that
@@ -246,9 +246,14 @@ a great deal of it. Phase 4 removed the subset that could be removed safely; the
 is a known cost, recorded here as a real number so that whoever looks at it next
 starts from one.
 
-**Two of these rows drift with every commit** — tests, and the context load. They are
-measured at the release commit, and `docs/RELEASING-7.0.0.md` carries a step to
-re-measure them at the tag. The other four are re-derived by `repo-integrity.mjs` on
+**Two of these rows drift with every commit** — tests, and the context load — and both
+are therefore DATED measurements rather than live claims: they are true of the commit
+that wrote them, and `docs/RELEASING-7.0.0.md` carries the command to re-measure both
+at the tag. That is not a formality. The context-load figure has now been corrected
+three times, the third time because the very commit that corrected it added several
+hundred more bytes of the prose it measures: 157,984 on the 27th became 158,516 by
+the end of the same commit. A number that changes when you write about it has to name
+the point it was taken at, or it is wrong by the time anyone reads it. The other four are re-derived by `repo-integrity.mjs` on
 every commit, so they cannot go stale quietly.
 
 **Hooks carrying a network client** replaced a row reading "Outbound network calls
