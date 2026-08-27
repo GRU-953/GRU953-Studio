@@ -72,6 +72,28 @@ canonical `skills/operating-charter/SKILL.md` for Claude hosts, and
 a Claude skill — and this gate compares them clause by clause so the two can
 never quietly say different things.
 
+**`actionlint` is worth running locally on any workflow change, and is deliberately NOT in
+CI (decided 2026-08-28).** Nothing validates the workflow files themselves — YAML structure,
+`uses:` references, job dependencies, GitHub expression syntax — and that gap is real: a
+stray `"` in `e2e.yml` made a whole `run:` block invalid bash and the nightly failed on every
+run for a day, unnoticed. It is not wired into CI because every other `uses:` in
+`.github/workflows/` is pinned to a full-length SHA, and adding it means either a mutable
+`docker://rhysd/actionlint:TAG` — the only unpinned reference in the repository, in a job
+that runs on every push — or a digest that has to be looked up online. Shipping an LTS whose
+one supply-chain exception was added for a convenience is the wrong trade. To wire it up
+later, resolve the image digest and pin it the way the other five are pinned.
+
+Half of what it would have caught is already covered: the test suite's `workflows:` tests
+parse every `run:` script in every workflow with `bash -n`, in all four YAML scalar forms and
+on a CRLF tree. Run actionlint by hand when you touch a workflow:
+
+```
+actionlint -shellcheck= .github/workflows/*.yml
+```
+
+(`-shellcheck=` sets the shellcheck executable to nothing, which is how actionlint is told to
+skip a pass the suite already does.)
+
 The gates above are the ones CI itself runs and are mandatory on every commit —
 **nine steps**: the syntax check, the suite, `repo-integrity`, `roster-check`,
 `licence-scan`, `docs-consistency`, `charter-check`, `npm run lint` and
@@ -205,6 +227,12 @@ line. Measured on a real session on this machine before building against it: 424
 usage-bearing rows carrying only 162 distinct ids, 136 repeated with byte-identical
 usage, so summing rows inflates output tokens by **2.84x**. A budget built on the
 naive sum halts a run at a third of its allowance.
+
+Measured again on 2026-08-28, on a live Complex-Tier run twelve minutes in: **299 rows,
+58 distinct ids — 5.2x**. The factor is not a constant, which strengthens the case
+rather than weakening it: a correction factor could be applied to a naive sum only if
+the factor were stable, and it is not. Keying by `message.id` is the only thing that
+gives the same answer whatever shape the transcript takes.
 
 `stall-check.mjs` exits 2 for "wedged", 1 for "cannot tell", 0 for healthy — the same
 three-way convention as `task-ledger.mjs`, for the same reason. Its suppression rule
