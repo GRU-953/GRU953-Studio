@@ -36,17 +36,20 @@ published safely to your own GitHub account, under your name.<br>
 
 ## What is GRU953-Studio?
 
-You talk to GRU953-Studio in plain English inside **Claude Code**, **Claude
-Desktop** or **Google Antigravity**. It can also write rules files that some other
-AI coding tools read on their own — today that reaches GitHub Copilot, Aider,
-Cursor and Windsurf, and `skills/universal-platform-integration/SKILL.md` carries
-the honest per-tool table, including the two it does not currently reach and the
-seven for which no file is written at all.
+You talk to GRU953-Studio in plain English inside **Claude Code**. That is the
+only place it runs.
 
-> **Corrected 2026-08-22 (X45).** This paragraph used to say you "can project it
-> into any major 2026 AI coding platform" and name eleven. Writing a file another
-> tool may or may not read is not the same as working there, and five of the
-> eleven had no file written for them.
+> **7.0.0 dropped every other host (2026-08-27).** This paragraph named Claude
+> Desktop and Google Antigravity, and said rules files reached GitHub Copilot,
+> Aider, Cursor and Windsurf. All of that went with the host adapters: there is no
+> Antigravity client, no VS Code extension, and no universal-platform-integration
+> skill — this paragraph was still citing that deleted file by path, which
+> `repo-integrity.mjs` refuses to let any live text do. Supporting one host properly is the
+> trade 7.0.0 makes, and it is what let the product become genuinely unattended.
+>
+> (It also carried a correction from 2026-08-22, X45, about an earlier version
+> claiming eleven platforms. That correction is kept in `CHANGELOG.md`; repeating
+> it here described a paragraph that no longer exists.)
 
 You tell it what you want — "a habit tracker for my phone", "a page that lists my
 recipes". It asks a few multiple-choice questions to understand exactly what you
@@ -176,10 +179,12 @@ Piping a script from the internet into your shell is a real risk, whoever
 publishes it — [SECURITY.md](SECURITY.md) explains how to download and read it
 first instead, which gets the same result.
 
-**Prefer a download?** Every release has a ready-made installer for Claude Code,
-Claude Desktop, Antigravity and VS Code on
-[the releases page](https://github.com/GRU-953/GRU953-Studio/releases), each with
-step-by-step instructions inside.
+**Prefer a download?** Every release has a ready-made installer for **Claude
+Code** on [the releases page](https://github.com/GRU-953/GRU953-Studio/releases),
+with step-by-step instructions inside. (7.0.0: the Claude Desktop, Antigravity and
+VS Code installers were removed with their hosts —
+`tools/build-release-assets.mjs` now builds the Claude Code targets and a Windows
+portable zip, and nothing else.)
 
 **Two free tools it relies on.** [Node.js](https://nodejs.org) (powers the
 built-in safety checks — install once) and, only when you publish, the
@@ -191,31 +196,26 @@ fails silently.
 
 ---
 
-## Optional: connect Ollama, OpenRouter and Gemini
+## No external model integrations (7.0.0)
 
-All three are entirely optional, and all three always ask before doing anything.
+Earlier versions offered optional connections to **Ollama**, **OpenRouter** and
+**Google Gemini** — a local model runner, a multi-model gateway, and Gemini for
+generated images, audio and video. **All three were removed in 7.0.0**, along with
+the `/studio-models` command that listed them.
 
-- **[Ollama](https://github.com/GRU-953/GRU953-Studio/wiki/Connecting-Ollama)** —
-  a free tool that runs AI models directly on your own computer, no cloud needed.
-  The studio can use it as a private, free alternative to the cloud for an app it
-  builds, or as a free second opinion for its own team. Claude stays the default;
-  it always asks before installing anything or downloading a model.
-- **[OpenRouter](https://openrouter.ai/)** — one account that reaches hundreds
-  of AI models made by many different companies, including some that are free to
-  use. The studio can offer it as a backend for an app it builds, and it
-  **only ever picks free models unless you say otherwise** — decided by each
-  model's real price, not by a name that happens to say "free". Run
-  `/studio-models` to see what is free today and choose one. Worth knowing
-  before you turn it on: the words your app sends go to OpenRouter and then on
-  to the company that runs the model you picked.
-- **[Gemini](https://github.com/GRU-953/GRU953-Studio/wiki/Connecting-Gemini)** —
-  Google's cloud models, used **only** for generated images, audio and video (all
-  written text is always produced by Claude). It is off until you turn it on, uses
-  your own Google key, and shows a cost estimate and asks before every generation.
+The studio's own specialists always ran on Claude; those three were only ever for
+the apps it builds. Removing them means the plugin now reads no API key, stores no
+credential, and its hooks contact nothing — and it removed a per-generation
+approval pop-up that an unattended run could never have answered, which was the
+point. Media is now **specified** rather than generated:
+`media-content-specialist` writes a precise, platform-correct asset brief with
+alt-text and a rights note, plus a step-by-step guide for producing it, and you
+supply the file.
 
-GRU953-Studio's own team of specialists always runs on Claude. Claude Code does
-not support running on other companies' models, so these three are for the apps
-the studio builds for you, not for the studio itself.
+Three roles do still use **your session's own web search** when a build turns on a
+current external fact — a model name, a library's present API. See
+[docs/STABILITY.md](docs/STABILITY.md), which states exactly where network access
+happens and where it does not.
 
 ---
 
@@ -267,7 +267,6 @@ You never have to sit and watch. A few simple commands, typed any time:
 | `/studio-schedule` | Ask it to pick a task back up at a time you choose. |
 | `/studio-dashboard` | Open a one-page visual summary of your project. |
 | `/studio-publish` | Publish privately to your own GitHub (with confirmations). |
-| `/studio-models` | See which AI models are free to use right now, and pick one. |
 | `/studio-update` | Manually check for and apply a studio update right now. |
 
 ---
@@ -287,20 +286,30 @@ a throwaway folder, every downloadable **archive** is opened and checked for the
 files that make it work, and every archive is rebuilt from the same source and
 compared byte for byte.
 
-**The VS Code `.vsix` is the one exception, and this section exists to say so.**
-The checks confirm it was built; they do not open it and they do not rebuild it —
-the reproducibility comparison runs with `--skip-vsix` because packaging it shells
-out to another tool. (Corrected 2026-08-22, X184: this used to say "every
-downloadable package is opened and inspected, and the packaging is proved to
-produce identical files from identical source", and neither half covered the
-`.vsix`. In the one section whose stated purpose is to say how much is actually
-proven, an unqualified "every" was the wrong word.) What no automatic test can do is open Claude Desktop, VS Code
-or Antigravity and confirm they load what was installed — so
-[docs/INSTALL-VERIFY.md](docs/INSTALL-VERIFY.md) is a ten-minute set of steps you
-can follow yourself, and it says plainly which parts still need a person.
+**"Every" now means every, because the exception was removed (2026-08-27).** This
+paragraph used to carve out the VS Code `.vsix`: the checks confirmed it was built
+but never opened or rebuilt it, and the reproducibility comparison ran with
+`--skip-vsix` because packaging shelled out to another tool. 7.0.0 removed the VS
+Code extension altogether, so there is no longer an archive that escapes the
+comparison. (The original correction was 2026-08-22, X184 — worth keeping in mind
+as the reason the wording here is careful: in the one section whose stated purpose
+is to say how much is actually proven, an unqualified "every" was the wrong word.)
+
+What no automatic test can do is open **Claude Code** and confirm it loads what
+was installed — so [docs/INSTALL-VERIFY.md](docs/INSTALL-VERIFY.md) is a
+four-minute set of steps you can follow yourself, and it says plainly which parts
+still need a person.
+
+**And one thing the automatic checks now DO cover, which is new in 7.0.0:** a real
+unattended build. `tools/e2e/headless-build.mjs` runs the studio against a
+plain-text idea and asserts on both the filesystem and the session transcript —
+that specialists were dispatched rather than impersonated, that the Definition of
+Done was *executed* rather than described, and that **nothing was pushed**. It has
+found real defects on four of its six runs, which is the only reason to trust the
+rest of this section.
 
 GRU953-Studio is an **independent, unofficial** plugin. It is not made or endorsed
-by Anthropic (the makers of Claude) or Google (the makers of Gemini).
+by Anthropic, the makers of Claude.
 
 ---
 

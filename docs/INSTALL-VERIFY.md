@@ -3,20 +3,18 @@
 This is a short set of checks you can run yourself, in plain steps, one action at
 a time. It exists because of an honest limit: automated tests can prove the
 installer puts the right files in the right places, and they do — but they cannot
-open Claude Desktop, VS Code or Antigravity and confirm those apps actually load
-what was installed. Only a person sitting at the computer can do that.
+open Claude Code and confirm it actually loads what was installed. Only a person sitting at the computer can do that.
 
 **Corrected 2026-08-22 (finding X257): this page used to say "Nothing here
 changes anything. Every step only looks." That was not true.** The CHECKS only
 look and change nothing — but where a check finds something missing, the step
 that follows it installs something. Every such step is marked
-**INSTALLS SOMETHING** below: Steps 13-16 add a marketplace and install the
-plugin, Part 4's `--install-extension` command installs the editor extension, and
-Part 5's `gru953-studio install` writes configuration into the editors on this
-computer. You can stop before any of them if you only wanted to look.
+**INSTALLS SOMETHING** below: the steps that add a marketplace and install the
+plugin. (The other two such steps — Part 4's `--install-extension` and Part 5's
+`gru953-studio install` — went with those Parts in 7.0.0.) You can stop before any of them if you only wanted to look.
 
-**How long:** about ten minutes for all of it. You can stop after Part 1 if you
-only use Claude Code.
+**How long:** about four minutes. You can stop after Part 1 if you only want to
+confirm the command itself works.
 
 ---
 
@@ -94,104 +92,17 @@ one.
 
 ---
 
-## Part 3 — Claude Desktop (3 minutes)
+## Parts 3 to 5 were removed in 7.0.0
 
-**Step 9.** Open Claude Desktop. (This is the Claude chat app, not Claude Code.)
+They verified Claude Desktop, VS Code / Cursor / Windsurf, and Google Antigravity.
+**7.0.0 targets Claude Code only** — those host adapters, the VS Code extension and
+the Antigravity client were all deleted, so there is nothing left for those steps to
+check. Parts 1 and 2 above are now the whole of it.
 
-**Step 10.** In the sidebar on the left, click **Customize**.
-
-**Step 11.** Click **Plugins**.
-
-**Step 12.** Look for **GRU953-Studio** in the list.
-
-- **If it is there:** click it. You should see its skills and agents listed. That
-  is a pass — stop here.
-- **If it is not there:** it has not been installed yet. Continue to Step 13.
-
-> **INSTALLS SOMETHING — Steps 13 to 16.** These add a marketplace to Claude Code
-> and install the plugin from it. Stop here if you only wanted to check what is
-> already on your computer.
-
-**Step 13.** Click **Add marketplace**.
-
-**Step 14.** Type exactly this, then press Enter:
-
-```
-GRU-953/GRU953-Studio
-```
-
-**Step 15.** Find GRU953-Studio in the list and click **Install**.
-
-**Step 16.** Click it and check its skills and agents appear.
-
-> **A note on the downloadable file.** Each release also has a
-> `gru953-studio-claude-desktop-<version>.zip` you can upload on that same
-> Plugins page. Step 13 above is the route Anthropic documents, so it is the one
-> to use first. The downloadable file is there for a computer that cannot reach
-> GitHub — and, said plainly, Anthropic's documentation does not state which file
-> type that upload expects, so if the .zip is refused, that is why, and the
-> marketplace route above always works.
-
----
-
-## Part 4 — VS Code, Cursor or Windsurf (2 minutes)
-
-Skip this if you do not use any of them.
-
-**Step 17.** Open VS Code (or Cursor, or Windsurf).
-
-**Step 18.** Press `Cmd`+`Shift`+`P` on a Mac, or `Ctrl`+`Shift`+`P` on Windows
-and Linux. A box opens at the top.
-
-**Step 19.** Type `GRU953` and look at the list underneath.
-
-**Step 20.** You should see **GRU953-Studio: Status**. Click it. A message should
-appear. That is a pass.
-
-If nothing named GRU953 appears, the extension is not installed. Download
-`gru953-studio-<version>.vsix` from
-[the releases page](https://github.com/GRU-953/GRU953-Studio/releases), then in
-your terminal type:
-
-> **INSTALLS SOMETHING.** The command below installs the editor extension.
-
-```
-code --install-extension the-file-you-downloaded.vsix
-```
-
-(Replace `code` with `cursor` or `windsurf` if you use one of those.)
-
----
-
-## Part 5 — Google Antigravity (2 minutes)
-
-Skip this if you do not use Antigravity.
-
-**Step 21.** Open Antigravity.
-
-**Step 22.** Type this into it, in plain words:
-
-```
-What is the GRU953-Studio protocol, and how many specialists does it have?
-```
-
-**Step 23.** It should answer describing the studio, and give a number of
-specialist roles. That means it has read the installed rules and skills. If it
-does not know what you are talking about, the plugin has not been installed —
-run `gru953-studio install` in your terminal, then restart Antigravity.
-**INSTALLS SOMETHING:** that command writes configuration files into the editors
-it finds on this computer, and re-running it replaces ones you may have edited by
-hand.
-
-**Two things to expect in Antigravity, which are limitations rather than faults:**
-
-- The `/studio` commands do not exist there. They are a Claude Code feature. Ask
-  in plain words instead — "carry on with my project", "where are we up to".
-- The specialists are provided as a rules file Antigravity follows itself, rather
-  than as genuinely separate helpers. That is because Antigravity's plugin format
-  has no place for separate agents. It works, but Claude Code does this better.
-
----
+(Removed 2026-08-27. This file was the last one still describing the 6.x product: it
+was never touched during the v7 rebuild, and README.md links to it as the authority on
+"which parts still need a person" — so the one page whose job was to say what is and
+is not proven was itself describing three hosts that no longer exist.)
 
 ## If something did not pass
 
