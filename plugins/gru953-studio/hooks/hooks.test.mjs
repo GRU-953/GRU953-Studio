@@ -2948,6 +2948,16 @@ const DOD_ALL_NA = {
   review: { notApplicable: 'x' },
   docs: { notApplicable: 'x' },
 };
+// A coverage command that genuinely WRITES its report, because dod.mjs now refuses a report the
+// run did not produce (a 2020-dated file with 99% in it used to satisfy an 80% floor). The old
+// fixtures ran `node -e ''` beside a pre-written file — artificial in exactly the way the check
+// now catches, so they had to become honest rather than be exempted.
+const coverageCmd = (rel, pct) => [
+  process.execPath,
+  '-e',
+  `const fs=require('fs'),p=require('path');const f=${JSON.stringify(rel)};fs.mkdirSync(p.dirname(f),{recursive:true});fs.writeFileSync(f,JSON.stringify({total:{lines:{pct:${pct}}}}))`,
+];
+
 function writeDod(dir, dimensions, schemaVersion = 1) {
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
   fs.writeFileSync(
@@ -3040,11 +3050,9 @@ test('dod.mjs: a command that cannot be started is "could-not-run", never a pass
 // tool's own machine-readable report, never scraped from stdout prose.
 test('dod.mjs: coverage BELOW its floor blocks even though the command exited 0', () => {
   const dir = mkTmp('gru-dod-cov-');
-  fs.mkdirSync(path.join(dir, 'coverage'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'coverage', 'summary.json'), JSON.stringify({ total: { lines: { pct: 41.2 } } }));
   writeDod(dir, {
     ...DOD_ALL_NA,
-    coverage: { command: [process.execPath, '-e', ''], minPercent: 80, reportPath: 'coverage/summary.json' },
+    coverage: { command: coverageCmd('coverage/summary.json', 41.2), minPercent: 80, reportPath: 'coverage/summary.json' },
   });
   const r = runScript('dod.mjs', dir);
   assert.notEqual(r.code, 0, 'exit 0 from a coverage tool is not the same as adequate coverage');
@@ -3075,13 +3083,11 @@ test('dod.mjs: a judged dimension must name the artefact it judged', () => {
 // codes rather than composed by the agent being graded.
 test('dod.mjs: a passing project writes evidence and generates a QUALITY-GATE.md that quality-gate.mjs accepts', () => {
   const dir = mkTmp('gru-dod-pass-');
-  fs.mkdirSync(path.join(dir, 'coverage'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'coverage', 'summary.json'), JSON.stringify({ total: { lines: { pct: 91.5 } } }));
   const ok = [process.execPath, '-e', ''];
   writeDod(dir, {
     build: { command: ok },
     tests: { command: ok },
-    coverage: { command: ok, minPercent: 80, reportPath: 'coverage/summary.json' },
+    coverage: { command: coverageCmd('coverage/summary.json', 91.5), minPercent: 80, reportPath: 'coverage/summary.json' },
     lint: { command: ok },
     types: { command: ok },
     security: { command: ok },
@@ -3188,10 +3194,9 @@ test('quality-gate.mjs: a table older than its own evidence is STALE and refused
 // dod.mjs's own weaknesses. Each of these was a way to keep the gate and lose the measurement.
 test('dod.mjs: a coverage floor of 0 is refused — a check that cannot fail is not a check', () => {
   const dir = mkTmp('gru-dod-floor0-');
-  fs.writeFileSync(path.join(dir, 'c.json'), JSON.stringify({ total: { lines: { pct: 0 } } }));
   writeDod(dir, {
     ...DOD_ALL_NA,
-    coverage: { command: [process.execPath, '-e', ''], minPercent: 0, reportPath: 'c.json' },
+    coverage: { command: coverageCmd('c.json', 0), minPercent: 0, reportPath: 'c.json' },
   });
   const r = runScript('dod.mjs', dir);
   assert.notEqual(r.code, 0, 'this used to render "coverage 0% meets the 0% floor" as a pass');
@@ -3202,8 +3207,7 @@ test('dod.mjs: a coverage floor of 0 is refused — a check that cannot fail is 
 test('dod.mjs: a floor below the product minimum needs a stated reason, and then is allowed', () => {
   const mk = (spec) => {
     const dir = mkTmp('gru-dod-lowfloor-');
-    fs.writeFileSync(path.join(dir, 'c.json'), JSON.stringify({ total: { lines: { pct: 45 } } }));
-    writeDod(dir, { ...DOD_ALL_NA, coverage: { command: [process.execPath, '-e', ''], ...spec } });
+    writeDod(dir, { ...DOD_ALL_NA, coverage: { command: coverageCmd('c.json', 45), ...spec } });
     return dir;
   };
   const bare = mk({ minPercent: 30, reportPath: 'c.json' });
@@ -3263,7 +3267,7 @@ test('dod.mjs: an n/a the project itself contradicts is refused, and an honest o
   writeDod(withTests, { ...DOD_ALL_NA, tests: { notApplicable: 'this project has no tests' } });
   const r1 = runScript('dod.mjs', withTests);
   assert.notEqual(r1.code, 0);
-  assert.match(JSON.stringify(r1.json), /declares a .?test.? script/);
+  assert.match(JSON.stringify(r1.json), /declares a real .?test.? script/);
   fs.rmSync(withTests, RM_OPTS);
 
   // Control: a project that genuinely has no tests may say so. The refutation must come from the
@@ -3272,6 +3276,116 @@ test('dod.mjs: an n/a the project itself contradicts is refused, and an honest o
   writeDod(without, { ...DOD_ALL_NA, tests: { notApplicable: 'this project has no tests' } });
   assert.equal(runScript('dod.mjs', without).code, 0);
   fs.rmSync(without, RM_OPTS);
+});
+
+// 2026-08-27, THIRD correction. The refutation above took a FILENAME as evidence, and three
+// ordinary projects were refused for it. The first is the worst: `npm init -y` writes
+// `"test": "echo \"Error: no test specified\" && exit 1"` — the commonest starting state a Node
+// project has, and a placeholder meaning THERE ARE NO TESTS, read as proof that there were. Such
+// a project could then neither mark `tests` n/a (refused) nor give it a command (nothing to run).
+// No legal move: the same deadlock shape as the dod.json guard, on the default scaffold.
+for (const [label, setup] of [
+  ['the npm init placeholder test script', (d) => fs.writeFileSync(path.join(d, 'package.json'),
+    JSON.stringify({ name: 'x', scripts: { test: 'echo "Error: no test specified" && exit 1' } }))],
+  ['a tsconfig.json kept only for editor IntelliSense', (d) => {
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'x' }));
+    fs.writeFileSync(path.join(d, 'tsconfig.json'), '{}');
+  }],
+  ['a spec/ directory holding written specifications', (d) => {
+    fs.mkdirSync(path.join(d, 'spec'));
+    fs.writeFileSync(path.join(d, 'spec', 'behaviour.md'), '# how it should behave\n');
+  }],
+  ['an empty test/ directory', (d) => fs.mkdirSync(path.join(d, 'test'))],
+]) {
+  test(`dod.mjs: an honest n/a survives ${label} (false-alarm control)`, () => {
+    const dir = mkTmp('gru-dod-fa-');
+    setup(dir);
+    writeDod(dir, { ...DOD_ALL_NA });
+    assert.equal(
+      runScript('dod.mjs', dir).code,
+      0,
+      'a gate that fires on a correct project is a gate that gets switched off',
+    );
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+for (const [label, setup] of [
+  ['a real test script', (d) => fs.writeFileSync(path.join(d, 'package.json'),
+    JSON.stringify({ name: 'x', scripts: { test: 'node --test' } }))],
+  ['an actual test file', (d) => {
+    fs.mkdirSync(path.join(d, 'test'));
+    fs.writeFileSync(path.join(d, 'test', 'a.test.mjs'), 'import t from "node:test"\n');
+  }],
+  ['real TypeScript sources beside the tsconfig', (d) => {
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'x' }));
+    fs.writeFileSync(path.join(d, 'tsconfig.json'), '{}');
+    fs.mkdirSync(path.join(d, 'src'));
+    fs.writeFileSync(path.join(d, 'src', 'a.ts'), 'export const a = 1\n');
+  }],
+  ['a declared type-check script', (d) => {
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'x', scripts: { typecheck: 'tsc --noEmit' } }));
+    fs.writeFileSync(path.join(d, 'tsconfig.json'), '{}');
+  }],
+]) {
+  test(`dod.mjs: the n/a refutation still bites on ${label}`, () => {
+    const dir = mkTmp('gru-dod-bite-');
+    setup(dir);
+    writeDod(dir, { ...DOD_ALL_NA });
+    assert.notEqual(runScript('dod.mjs', dir).code, 0, `${label} is real capability, not a filename`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// The coverage percentage was read from a file the run never caused. A report dated 2020, authored
+// by nobody knows what, satisfied an 80% floor — and unlike dod.json and evidence/, the report file
+// is not guarded, so anything may write it. An executed Definition of Done that reads a number it
+// did not produce is an attestation with extra steps.
+test('dod.mjs: a coverage report older than the run that claims it is refused', () => {
+  const dir = mkTmp('gru-dod-stale-cov-');
+  fs.writeFileSync(path.join(dir, 'c.json'), JSON.stringify({ total: { lines: { pct: 99 } } }));
+  fs.utimesSync(path.join(dir, 'c.json'), new Date('2020-01-01'), new Date('2020-01-01'));
+  writeDod(dir, {
+    ...DOD_ALL_NA,
+    coverage: { command: [process.execPath, '-e', ''], minPercent: 80, reportPath: 'c.json' },
+  });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0, '99% from a file this run did not write is not this run’s coverage');
+  assert.match(JSON.stringify(r.json), /BEFORE the coverage command started/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// This repository's own committed golden fixture gained a Dev-Memory/evidence/ directory, and the
+// guard then refused to let anyone maintain it — the product blocking work on its own test data.
+// That is scan.mjs's finding X22 reached again by a different route, so it is answered the same
+// way: what this hook protects is a project's LIVE substrate, and fixtures are not that.
+test('config-protection.mjs: a Dev-Memory under test fixtures is test data, not a live substrate', () => {
+  const dir = mkTmp('gru-cfg-fixture-');
+  const fixture = path.join(dir, 'hooks', 'test', 'fixtures', 'golden', 'Dev-Memory', 'evidence');
+  fs.mkdirSync(fixture, { recursive: true });
+  fs.writeFileSync(path.join(fixture, 'tests.json'), '{"verdict":"pass"}');
+  const input = JSON.stringify({
+    tool_name: 'Edit',
+    tool_input: { file_path: path.join(fixture, 'tests.json') },
+    cwd: dir,
+  });
+  const r = spawnSync(NODE, [path.join(HERE, 'config-protection.mjs')], { input, encoding: 'utf8' });
+  assert.equal((r.stdout || '').trim(), '', 'a repository must be able to maintain its own fixtures');
+
+  // ...and the live substrate of a real project is still guarded, which is the whole point.
+  const live = mkTmp('gru-cfg-live-');
+  fs.mkdirSync(path.join(live, 'Dev-Memory', 'evidence'), { recursive: true });
+  fs.writeFileSync(path.join(live, 'Dev-Memory', 'evidence', 'tests.json'), '{"verdict":"pass"}');
+  const r2 = spawnSync(NODE, [path.join(HERE, 'config-protection.mjs')], {
+    input: JSON.stringify({
+      tool_name: 'Edit',
+      tool_input: { file_path: path.join(live, 'Dev-Memory', 'evidence', 'tests.json') },
+      cwd: live,
+    }),
+    encoding: 'utf8',
+  });
+  assert.match(r2.stdout || '', /"permissionDecision":"deny"/);
+  fs.rmSync(dir, RM_OPTS);
+  fs.rmSync(live, RM_OPTS);
 });
 
 // The contract a project author has to write. It was enforced by dod.mjs and documented nowhere,
@@ -3333,10 +3447,9 @@ test('the dod.json contract documented in skills/quality-gate/SKILL.md matches w
 // protocol specifies.
 test('dod.mjs: a dimension this gate REFUSES is blocked in the record, not only in the exit code', () => {
   const dir = mkTmp('gru-dod-refused-');
-  fs.writeFileSync(path.join(dir, 'c.json'), JSON.stringify({ total: { lines: { pct: 95 } } }));
   writeDod(dir, {
     ...DOD_ALL_NA,
-    coverage: { command: [process.execPath, '-e', ''], minPercent: 0, reportPath: 'c.json' },
+    coverage: { command: coverageCmd('c.json', 95), minPercent: 0, reportPath: 'c.json' },
   });
   const r = runScript('dod.mjs', dir);
   assert.notEqual(r.code, 0, 'precondition: dod.mjs must refuse a zero floor');

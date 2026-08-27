@@ -41,19 +41,31 @@ Apache-2.0: commercial use becomes free for everyone, permanently, and the paid
 commercial licence is retired. You confirmed this deliberately; it is repeated here
 because a tag is where it becomes real.
 
-**The end-to-end test has never run green.** `tools/e2e/headless-build.mjs` is the only
-test that judges whether the studio actually builds working software, and it cannot
-authenticate from inside a Claude Code session. It is written, syntax-checked, and
-proven to fail honestly rather than reporting a false pass — but it has not once
-completed. Either run it from an authenticated terminal before tagging:
+**The end-to-end test now runs, and it has found real defects.** `tools/e2e/headless-build.mjs`
+is the only test that judges whether the studio actually builds working software. On
+2026-08-27 it completed for the first time, in 14 minutes, and returned **17 of 18**:
+the studio built a working, tested, committed command-line expense tracker, its
+Definition of Done was executed rather than attested, and nothing was pushed.
+
+The one failure was the product's own premise. The run used **zero specialist
+dispatches** — a complete app built by the coordinator alone, with the 36-role roster
+unused. Nothing was wrong with the app; what was missing was the studio. Cause and fix
+are in `X401-X413`; `INV26` now guards it.
+
+Run it from an authenticated terminal before tagging:
 
 ```bash
-node tools/e2e/headless-build.mjs --timeout-minutes 30
+env -u ANTHROPIC_BASE_URL node tools/e2e/headless-build.mjs --timeout-minutes 75
 ```
 
-...or tag knowing that this specific proof is outstanding. Exit `0` means it built
-working software, `1` means a real defect, `2` means it could not measure — and `2` is
-not a pass.
+Exit `0` means it built working software, `1` means a real defect, `2` means it could
+not measure — and `2` is not a pass. On any failure it now preserves the session
+transcript and the work tree and prints where, because the run that needs
+investigating is the one that fails.
+
+(`env -u ANTHROPIC_BASE_URL` matters: with that variable set, the CLI expects an API
+key instead of the OAuth login and fails to authenticate on a machine that IS signed
+in. X379.)
 
 ## 4. The commands
 

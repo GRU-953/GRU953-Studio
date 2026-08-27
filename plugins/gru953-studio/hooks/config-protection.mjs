@@ -139,6 +139,19 @@ const GUARDED_BASENAMES = new Set([
 ]);
 
 function isGuardedPath(abs) {
+  // TEST FIXTURES ARE NOT THE LIVE SUBSTRATE. 2026-08-27: this repository's own committed golden
+  // fixture gained a `Dev-Memory/evidence/` directory earlier the same day, and this hook then
+  // refused to let anyone maintain it — the product blocking work on its own test data, which is
+  // the shape of finding X22 in scan.mjs, reached again by a different route.
+  //
+  // The rule is general rather than special-cased to this repository: what this hook protects is a
+  // project's LIVE measurement substrate, and a path under a fixtures directory is by construction
+  // test data. RESIDUAL, STATED: a project that kept real evidence under `test/fixtures/` would go
+  // unguarded. That is a strange thing to do and it is named here rather than left to be found.
+  const posixAbs = abs.replace(/\\/g, '/');
+  if (/(^|\/)(?:tests?|spec)\/fixtures\//.test(posixAbs) || /(^|\/)__fixtures__\//.test(posixAbs)) {
+    return null;
+  }
   const base = path.basename(abs).toLowerCase();
   if (GUARDED_BASENAMES.has(base)) return 'quality tooling configuration';
 

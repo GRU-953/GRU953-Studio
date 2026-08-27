@@ -452,6 +452,27 @@ function checkCoverageFloor(spec, res) {
       `coverage: \`reportPath\` resolves to ${rp}, which is outside the project root ${rootAbs}. A coverage figure read from another repository is that repository's figure.`,
     );
   }
+  // THE NUMBER MUST COME FROM THIS RUN. 2026-08-27: dod.mjs ran the coverage command and then
+  // read `reportPath`, never checking that the file was written BY that command. A report dated
+  // 2020, sitting in the tree and produced by nobody knows what, satisfied an 80% floor — and
+  // unlike dod.json and evidence/, the report file is not guarded, so anything could author it.
+  // An executed Definition of Done that reads a number it did not cause is an attestation with
+  // extra steps.
+  try {
+    const st = fs.statSync(rp);
+    const startedAt = Date.parse(res.startedAt);
+    if (Number.isFinite(startedAt) && st.mtimeMs < startedAt - 2000) {
+      return refuse(
+        res,
+        `coverage: ${spec.reportPath} was last written ${new Date(st.mtimeMs).toISOString()}, BEFORE the coverage command started at ${res.startedAt}. This run did not produce that report, so the percentage in it is not this run's coverage. Make the coverage command write its report, or point reportPath at the file it does write.`,
+      );
+    }
+  } catch (e) {
+    return refuse(
+      res,
+      `coverage: could not inspect ${spec.reportPath} to confirm this run produced it — ${formatFsError(e)}`,
+    );
+  }
   const raw = readOrBlock(rp);
   if (raw === MISSING) {
     res.verdict = 'could-not-run';
@@ -519,34 +540,64 @@ function refuteNotApplicable(key) {
   } catch {
     pkg = null;
   }
-  const script = (name) =>
-    pkg && pkg.scripts && typeof pkg.scripts[name] === 'string' && pkg.scripts[name].trim() !== '';
+  // 2026-08-27, second correction. The first version of this took a FILENAME as evidence, and
+  // three ordinary projects were refused for it:
+  //   * `npm init -y` writes `"test": "echo \"Error: no test specified\" && exit 1"`. That is the
+  //     commonest starting state a Node project has, and it is a placeholder meaning THERE ARE NO
+  //     TESTS — read here as proof that there were. The project could then neither mark `tests`
+  //     n/a (refused) nor give it a command (there is nothing to run): no legal move.
+  //   * a plain-JavaScript project keeping a `tsconfig.json` purely for editor IntelliSense was
+  //     told it must run a type check it has no types for.
+  //   * a `spec/` directory holding written specifications, not test files, counted as tests.
+  //
+  // The rule is now: refute only on evidence of the CAPABILITY, never of a filename. If this
+  // cannot find something that would actually run, it says nothing — which leaves the honest n/a
+  // standing, and that is the right way for this to fail.
+  const PLACEHOLDER_SCRIPT =
+    /no test specified|not implemented|^\s*(true|exit\s+0|echo\b[^&|;]*)\s*$/i;
+  const realScript = (name) => {
+    if (!pkg || !pkg.scripts || typeof pkg.scripts[name] !== 'string') return null;
+    const body = pkg.scripts[name].trim();
+    if (body === '' || PLACEHOLDER_SCRIPT.test(body)) return null;
+    return body;
+  };
 
-  // Test files, found without walking the whole tree: the conventional directories plus the
-  // conventional suffixes one level down. A project hiding tests somewhere unconventional is not
-  // what this is for — an honest project marking `tests` n/a while `npm test` works is.
+  // Files that would actually be RUN as tests. A directory's existence is not enough: `spec/` and
+  // `test/` hold prose in plenty of real projects.
+  const testFiles = () => {
+    const RE = /\.(test|spec)\.[cm]?[jt]sx?$|^test_.*\.py$|_test\.(py|go|rb)$|Test\.java$/;
+    const look = (dir) => {
+      let names = [];
+      try {
+        names = fs.readdirSync(path.join(rootAbs, dir), { withFileTypes: true });
+      } catch {
+        return null;
+      }
+      const hit = names.find((d) => d.isFile() && RE.test(d.name));
+      return hit ? path.join(dir, hit.name) : null;
+    };
+    for (const d of ['.', 'test', 'tests', '__tests__', 'spec', 'src']) {
+      const hit = look(d);
+      if (hit) return hit;
+    }
+    return null;
+  };
+
   const testEvidence = () => {
-    if (script('test')) return 'package.json declares a `test` script';
-    for (const d of ['test', 'tests', '__tests__', 'spec']) {
-      if (has(d)) return `a ${d}/ directory exists`;
-    }
-    let names = [];
-    try {
-      names = fs.readdirSync(rootAbs);
-    } catch {
-      names = [];
-    }
-    const hit = names.find((n) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(n) || /_test\.py$/.test(n));
-    return hit ? `${hit} is a test file` : null;
+    const script = realScript('test');
+    if (script)
+      return `package.json declares a real \`test\` script (${JSON.stringify(script.slice(0, 40))})`;
+    const f = testFiles();
+    return f ? `${f} is a test file` : null;
   };
 
   switch (key) {
     case 'tests':
       return testEvidence();
     case 'build':
-      return script('build') ? 'package.json declares a `build` script' : null;
+      return realScript('build') ? 'package.json declares a real `build` script' : null;
     case 'lint': {
-      if (script('lint')) return 'package.json declares a `lint` script';
+      if (realScript('lint')) return 'package.json declares a real `lint` script';
       for (const c of [
         'eslint.config.js',
         'eslint.config.mjs',
@@ -560,8 +611,34 @@ function refuteNotApplicable(key) {
       }
       return null;
     }
-    case 'types':
-      return has('tsconfig.json') ? 'tsconfig.json exists, so this project is type-checked' : null;
+    case 'types': {
+      if (!has('tsconfig.json')) return null;
+      if (realScript('typecheck') || realScript('tsc') || realScript('types')) {
+        return 'tsconfig.json exists and package.json declares a type-check script';
+      }
+      // A tsconfig with no TypeScript in the tree is an editor convenience, not a type check.
+      let names = [];
+      try {
+        names = fs.readdirSync(rootAbs, { withFileTypes: true });
+      } catch {
+        names = [];
+      }
+      const dirs = ['.', 'src', 'lib', 'app'];
+      for (const d of dirs) {
+        let entries = [];
+        try {
+          entries = fs.readdirSync(path.join(rootAbs, d), { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        const ts = entries.find(
+          (e) => e.isFile() && /\.tsx?$/.test(e.name) && !/\.d\.ts$/.test(e.name),
+        );
+        if (ts) return `tsconfig.json exists and ${path.join(d, ts.name)} is TypeScript`;
+      }
+      void names;
+      return null;
+    }
     case 'dependencies':
       return pkg &&
         ((pkg.dependencies && Object.keys(pkg.dependencies).length) ||
