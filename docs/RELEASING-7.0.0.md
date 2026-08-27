@@ -1,5 +1,9 @@
 # Releasing 7.0.0 — the handover
 
+> **Current state: see [../HANDOVER.md](../HANDOVER.md).** This runbook is the procedure;
+> the handover says which steps are done, which are blocked on the owner, and that one
+> verification run is still outstanding. Read it first.
+
 Everything is prepared. Nothing has been pushed. This file is the one thing left to
 read, and the commands at the end are the only actions still outstanding.
 

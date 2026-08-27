@@ -11,6 +11,14 @@ Obhijatra), that project gets its own `Dev-Memory/` and its own `CLAUDE.md`
 in its own working directory — this file only governs work on GRU953-Studio
 itself.
 
+## Picking this up mid-flight? Read HANDOVER.md first
+
+[HANDOVER.md](HANDOVER.md) is the current state of the 7.0.0 LTS release: what is green,
+the one thing blocking a verified release, what only the owner can do, and the facts that
+cost a day each to find. Written 2026-08-28 on branch `v7-lts-rebuild`. Read it before
+starting work on the release; this file governs how to work on the repo, that one says
+where the work currently stands.
+
 ## Before committing changes to this repo
 
 Run the same gates CI runs, and keep them all green:
@@ -102,7 +110,7 @@ lint and format:check being added to the block, and `publish.yml` had copied the
 same stale number. A count restated in prose is the commonest stale claim in this
 repository, which is what `docs-consistency.mjs` exists for.) A GRU953-Studio project's own `Dev-Memory/` additionally carries eight
 project-level gates (no-ops on this repo, since it has no `Dev-Memory/` of its
-own) that a project built *by* the plugin must pass before a phase checkpoint
+own) that a project built _by_ the plugin must pass before a phase checkpoint
 or Publish — run these too whenever you touch the skill/hook that documents
 them, so the documented requirement and the enforcing script never drift apart:
 
@@ -132,7 +140,7 @@ journey, accessibility, performance budgets — records each real exit code and
 output under `Dev-Memory/evidence/`, and then REGENERATES `QUALITY-GATE.md` from
 that evidence. So `quality-gate.mjs` still does its job, but on a table written
 from measurements rather than from claims. Two dimensions no machine can measure
-(independent review, documentation) are kept explicitly separate as *judged*, and
+(independent review, documentation) are kept explicitly separate as _judged_, and
 each must name the artefact it judged, so a verdict is bound to something concrete
 rather than becoming a permanent tick nobody re-earns.
 
@@ -142,8 +150,8 @@ a Definition of Done.
 
 **`task-ledger.mjs` exits 2, and that is not a failure (2026-08-26, v7 Phase 3).**
 It has three outcomes, not two: `0` the ledger is valid and the run can continue
-(or everything is done), `1` the ledger is *invalid* — bad schema, a dependency
-cycle, a `done` task with no evidence — and `2` the ledger is *valid* and says
+(or everything is done), `1` the ledger is _invalid_ — bad schema, a dependency
+cycle, a `done` task with no evidence — and `2` the ledger is _valid_ and says
 nothing is runnable while work remains. An unattended caller has to tell "this
 file is wrong" from "this file is right and I am stuck", so a plain `&&` chain
 over these gates will read a legitimate 2 as a failure. Check for it explicitly.
@@ -160,7 +168,7 @@ the run stop, and then it reports which of the two applies, per task.
 
 `Dev-Memory/tasks.json` is the authoritative ledger and `PROGRESS.md` is rendered
 from it. That direction is deliberate: this repository carries eight separate
-reproductions for failures of *reading* that markdown table (X122, X138, X141,
+reproductions for failures of _reading_ that markdown table (X122, X138, X141,
 X142, X144, X146, X147, X192/X193), every one of them the same mistake of using a
 human presentation format as a data structure. A rendered file cannot be torn,
 because nothing parses it back. The rendered output is still in the shape
