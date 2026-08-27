@@ -36,8 +36,14 @@ spend. Enforce that, not a generic "be efficient" instinct.
    cost ceiling, seeded by `first-run`/`cost-guard`, recorded in
    `~/.gru953-studio/profile.md`" — no such numeric, seeded, per-task
    threshold exists anywhere in this codebase; `cost-guard` and `first-run`
-   were both checked directly), hand the Project Lead a plain-English pop-up
-   before it runs — this is the sole exception to the router's silence.
+   were both checked directly), record the estimate and the cheaper alternative
+   in `Dev-Memory/decisions/`, take the cheaper option, and carry on. **(2026-08-27:
+   this said "hand the Project Lead a plain-English pop-up before it runs — this
+   is the sole exception to the router's silence". It was not the sole exception,
+   and it fired on ordinary build events, so an unattended run stopped on the
+   first large task. A ceiling that a machine can act on is `tokenBudget` in
+   `Dev-Memory/run.json`, measured by `hooks/session-cost.mjs`.)** With a person
+   present who has asked to be consulted, show the pop-up.
    Second, keep the router **reviewable**: record, per task, the model and
    effort actually used and the deciding signal, in a short ledger under
    `Dev-Memory/` (written via `memory-keeper`, since this role holds no

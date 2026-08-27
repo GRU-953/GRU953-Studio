@@ -40,9 +40,14 @@ skill only ever touches local Build/Test/Fix work, never the Publish gate.
    `Dev-Memory/SESSION-LOG.md` as it happens, not after the fact —
    self-healing avoids interrupting flow for something small and
    quickly resolved, it is never quiet about *what* happened.
-3. **A hard ceiling: 2 quiet attempts, then escalate.** If the same
-   failure is still present after 2 attempts, stop self-healing and
-   invoke the full Stuck Protocol exactly as already defined — tell the
+3. **A hard ceiling: 2 quiet attempts, then park — and only then escalate.** If
+   the same failure is still present after 2 attempts, stop self-healing.
+   **Unattended, park the task as `blocked-on-defect` and take the next runnable
+   task (2026-08-27)** — `Dev-Memory/tasks.json` records the attempts and
+   `hooks/task-ledger.mjs` enforces the ceiling as data rather than as this
+   agent's memory. The full Stuck Protocol is for when the ledger reports nothing
+   runnable at all (its exit 2). With a person present, invoke the full Stuck
+   Protocol exactly as already defined — tell the
    user what currently works, what's blocking, and the options. The
    ceiling exists so a genuinely hard problem doesn't quietly loop forever
    chewing through time and cost; 2 is deliberately small, matching

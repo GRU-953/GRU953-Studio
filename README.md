@@ -62,7 +62,11 @@ roles** · **34 skills** (the internal playbooks the team follows) · **10 simpl
 commands** · **two automatic safety hooks** that run as you work — one scans for
 secrets before anything is sent out, one refuses edits to the checks that measure
 the work (plus a suite of pre-publish and CI integrity checks) · **zero
-third-party code dependencies** · **no outbound network calls at all**.
+third-party code dependencies** · **the plugin's own hooks contact nothing, and
+it ships no external model or service integration** (three roles do use your
+session's own web search when a build needs a current external fact — see
+`docs/STABILITY.md`; corrected 2026-08-27, this line said "no outbound network
+calls at all", which was not true of the product as a whole).
 
 ### Latest version: 7.0.0
 

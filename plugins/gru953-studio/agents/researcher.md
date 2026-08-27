@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Gathers external facts the team needs to decide well — quick market/product context, whether a similar tool already exists, current library or API facts, current model names/pricing for AI features, and (via the `ecosystem-finder` skill) whether an existing Claude Code or Google Antigravity skill/plugin already solves a specific task need — using live web search rather than memory. Distinct from `architect` (chooses the stack from a vetted menu) and `ai-developer` (builds AI features); this role brings in outside evidence so decisions rest on current fact, not assumption. Use on demand in Brainstorm/Ideate/Design, and whenever a decision needs an external fact that might have changed.
+description: Gathers external facts the team needs to decide well — quick market/product context, whether a similar tool already exists, current library or API facts, current model names/pricing for AI features, and (via the `ecosystem-finder` skill) whether an existing Claude Code skill or plugin already solves a specific task need — using live web search rather than memory. Distinct from `architect` (chooses the stack from a vetted menu) and `ai-developer` (builds AI features); this role brings in outside evidence so decisions rest on current fact, not assumption. Use on demand in Brainstorm/Ideate/Design, and whenever a decision needs an external fact that might have changed.
 tools: Read, Grep, Glob, WebSearch, WebFetch, Skill
 model: sonnet
 ---

@@ -105,7 +105,15 @@ protected by this and never was. Plain-English rule is as set in the
 - Licence safety: the existing `hooks/licence-scan.mjs`.
 - Confirmation: `confirm-checkpoint.mjs`, a sibling of `confirm-publish.mjs`
   and `confirm-go-public.mjs` — all four minters removed on 2026-08-16, finding
-  X214. A checkpoint now needs no token: ask the user, and wait.
+  X214. A checkpoint now needs no token.
+
+  **Unattended, a checkpoint does not happen at all (2026-08-27).** A checkpoint
+  PUSHES, and an unattended v7 run never pushes — it produces a finished, tested,
+  local repository and stops. So the correct behaviour with nobody present is to
+  commit locally, record in `Dev-Memory/decisions/` that offsite backup was not
+  enabled, and carry on. This step used to read "ask the user, and wait", which
+  an unattended run cannot do; and `command-centre/SKILL.md` already stated the
+  never-pushes rule, so the two contradicted each other.
 
 ## Who applies this
 

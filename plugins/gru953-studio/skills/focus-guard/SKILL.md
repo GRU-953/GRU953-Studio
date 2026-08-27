@@ -93,9 +93,14 @@ Before any task is started, confirm it traces to BOTH:
   warframe).
 
 A task that traces to neither is drift. Do not silently build it: hand it to
-`scope-guardian`, which logs it to `UNBUILT.md` and, only if it seems genuinely
-valuable, hands the Project Lead a single pop-up for the user (keep to plan, or
-add this now with the honest trade-off?). Waking a task the brief genuinely
+`scope-guardian`, which logs it to `UNBUILT.md`. **Unattended, that is the whole
+of it: the task stays unbuilt and logged, and the run keeps to the plan
+(2026-08-27).** Keeping to the approved plan is the safe default and needs no
+permission — `UNBUILT.md` is exactly the record that lets the owner pick it up
+deliberately later. Only with a person present who has asked to be consulted does
+`scope-guardian` hand the Project Lead a single pop-up (keep to plan, or add this
+now with the honest trade-off?); before this, a drift check runs before EVERY
+task, so an unattended run could stop at any of them. Waking a task the brief genuinely
 needs is not drift; adding one it does not need is — the same boundary
 `scope-guardian` already guards, now applied per task, not only per proposal.
 

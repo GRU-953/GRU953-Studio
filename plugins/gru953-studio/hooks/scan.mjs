@@ -487,6 +487,24 @@ const isScanAllowed = (ln, file) => {
   for (const sigil of sigils) {
     if (text.endsWith(`${sigil} ${body}`)) return true;
   }
+  // A format with NO line-comment syntax accepts the same marker as DATA — quoted, anywhere on
+  // the offending line.
+  //
+  // 2026-08-27. Before this, the refusal told the author to end the line with
+  // `// scan-allow: known test fixture` and then admitted, in its own text, "a JSON file has no
+  // comments, so there is nowhere in one to put it". So a project that legitimately needs a
+  // token-shaped string in a `.json` fixture — a recorded OAuth response, an API test vector —
+  // had NO legal move: it could not write the file and could not annotate it either. Unattended,
+  // that is a run that stops with nothing to try.
+  //
+  // Parity is the right fix rather than an exemption, because this marker was never a security
+  // boundary: a comment can be typed by anyone who can write the file, so requiring one proved
+  // nothing an author could not also assert in a string. What it does is make the claim
+  // DELIBERATE and visible on the line it excuses, and a quoted string does that identically in
+  // a format that has only strings.
+  if (sigils.length === 0) {
+    if (text.includes(`"${body}"`) || text.includes(`'${body}'`)) return true;
+  }
   return false;
 };
 
@@ -657,11 +675,14 @@ function main() {
             `${typeof ti.file_path === 'string' ? ti.file_path : 'a file'}. ${found.join('; ')}. ` +
             'Nothing has been written. Put the value in an environment variable, or in a file your ' +
             'project ignores, and reference it from the code instead. If it is a deliberate test ' +
-            'fixture, end that line with a comment saying `scan-allow: known test fixture` — using the ' +
-            'comment character your file actually uses (`//` in JavaScript and TypeScript, `#` in shell, ' +
-            'YAML, Makefiles and .env files, `--` in SQL). It must be a real comment in that kind of ' +
-            'file, or it is ignored — and a JSON file has no comments, so there is nowhere in one to ' +
-            'put it.',
+            'fixture, mark that line `scan-allow: known test fixture`. In a file with comments, put ' +
+            "it in a real comment using that language's character (`//` in JavaScript and TypeScript, " +
+            '`#` in shell, YAML, Makefiles and .env files, `--` in SQL) — a marker that is not a real ' +
+            'comment in that kind of file is ignored. In a format with NO comments (JSON, CSV, ' +
+            'Markdown, HTML) put the same marker on the line as a quoted string: ' +
+            '`"scan-allow: known test fixture"`. (Corrected 2026-08-27: this text used to end by ' +
+            'admitting a JSON file had nowhere to put the marker, which left such a file no legal ' +
+            'move at all.)',
         );
       }
     }

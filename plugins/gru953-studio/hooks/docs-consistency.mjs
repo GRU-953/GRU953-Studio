@@ -1038,7 +1038,15 @@ if (changelogText !== null) {
 // reintroduced defect — the check reported zero hits on the exact regression it was written for.
 // A window is the honest unit: a wrapped sentence spans one or two lines, a list does not.
 function explainedNear(lines, i, re, radius = 2) {
-  return re.test(lines.slice(Math.max(0, i - radius), i + radius + 1).join('\n'));
+  // Whitespace COLLAPSED, not joined with newlines. Prose wraps: "approval is only / ever a
+  // fresh AskUserQuestion answer" is one phrase split across two lines, and a window joined with
+  // `\n` cannot match it. Found the same way twice — DC12 needed a window because a quotation
+  // wrapped, and DC13 then failed to recognise its own exemption phrases for the same reason.
+  const window = lines
+    .slice(Math.max(0, i - radius), i + radius + 1)
+    .join(' ')
+    .replace(/\s+/g, ' ');
+  return re.test(window);
 }
 
 // ---- DC11: the task states the product INSTRUCTS must be states the ledger accepts ------
@@ -1144,6 +1152,83 @@ function explainedNear(lines, i, re, radius = 2) {
       fail(
         `${rel}:${i + 1} states a safety guarantee resting on the publish/checkpoint/memory-persist TOKEN mechanism, which was deleted on 2026-08-16 (X214) because a token proves nothing — anything a hook can read, an agent can write. A promise made by machinery that does not exist is worse than no promise, because a reader stops looking for the real protection. State what actually enforces it, or, if this line is explaining the removal, say so on the line (DC12)`,
       );
+    }
+  }
+}
+
+// ---- DC13: a mid-build pop-up is a run that stops -------------------------------------------
+// 2026-08-27. The product's decision 1 is "one interview at kick-off, then silent". An audit of
+// every place an unattended run could stop found FOURTEEN mid-build `AskUserQuestion` gates,
+// including one at each of eleven stage boundaries, one per phase, and one before every task.
+// Every one cited the operating charter's interview clause as its authority. The decision had been
+// recorded and nothing implemented it, and the one test that proves the product happened to build
+// a Tiny-Tier CLI, which reaches none of them.
+//
+// So: an instruction to show a pop-up must SAY which of the legitimate contexts it is in. The
+// three are the kick-off interview, a publish-or-push path, and an explicit "only when a person is
+// present" scoping. Notes about the tool's own limitations count too — several roles correctly
+// record that they cannot call it themselves.
+//
+// This cannot know intent, only whether the context was stated. That is the point: stating it is
+// the discipline, and an unqualified pop-up is the shape the fourteen defects had.
+{
+  const ASK = /AskUserQuestion|pop-up MCQ|pop-up \(MCQ\)/;
+  // DISTINCTIVE PHRASES ONLY. The first version of this list carried bare common words —
+  // `never`, `recorded`, `cannot`, `push`, `setup`, `confirmation` — and they appear near almost
+  // any prose in this repository, so the check exempted everything: measured, it reported ZERO
+  // hits on a deliberately reintroduced mid-build pop-up. A gate that passes because its
+  // exemption swallowed the input is the defect this whole file is about, written into a new
+  // check on the day the old ones were fixed. Every entry below must be a phrase somebody would
+  // only write when they actually mean one of the three legitimate contexts.
+  const LEGITIMATE = new RegExp(
+    [
+      // explicitly scoped to a person actually being there
+      'a person is present',
+      'asked to be consulted',
+      'unattended',
+      'if a human is',
+      // the kick-off interview — decision 1's one permitted interview
+      'kick-off',
+      'first-run',
+      'the interview',
+      'one-off setup',
+      'onboarding',
+      // outward-facing or irreversible: these keep their fresh-yes requirement
+      'publish',
+      'going public',
+      'irreversible',
+      'propose it upstream',
+      'contribution',
+      'install it',
+      'spending money',
+      'pulling a model',
+      'cost approval',
+      // notes about the TOOL rather than instructions to use it
+      'cannot call',
+      'cannot pause',
+      'same restriction',
+      'needs the main conversation',
+      'session state',
+      'and relays',
+      'only ever comes from',
+      'only ever a fresh',
+    ].join('|'),
+    'i',
+  );
+  for (const dir of ['skills', 'agents', 'commands']) {
+    for (const file of walk(path.join(pluginRoot, dir))) {
+      if (!file.endsWith('.md')) continue;
+      const rel = path.relative(repoRoot, file);
+      const text = read(file);
+      if (text === null) continue;
+      const lines = text.split(/\r?\n/);
+      for (const [i, line] of lines.entries()) {
+        if (!ASK.test(line)) continue;
+        if (explainedNear(lines, i, LEGITIMATE)) continue;
+        fail(
+          `${rel}:${i + 1} instructs a pop-up (\`AskUserQuestion\`) without saying which context it belongs to. An unattended run cannot answer one: it stops there, and this product's decision 1 is one interview at kick-off then silent — fourteen gates like this were found on 2026-08-27, every one citing the charter as authority. Say the context on or near the line: the kick-off interview, a publish/push path, or "only when a person is present and has asked to be consulted" — and otherwise record the decision in Dev-Memory/decisions/ and carry on (DC13)`,
+        );
+      }
     }
   }
 }

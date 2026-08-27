@@ -41,6 +41,17 @@ purpose and honest notice — checked as fact, not asked as a favour.
    `clean` result clears this gate. This closes the gap that let earlier
    tools risk shipping copyleft dependency code that conflicts with the
    project's own licence.
+
+   **Which verdicts stop a CHECKPOINT rather than a PUBLISH (2026-08-27).** All
+   three stop a **Publish**, always — that is not relaxed. At a per-phase
+   **checkpoint**, `INCOMPLETE` and `NEEDS HUMAN REVIEW` are RECORDED in
+   `Dev-Memory/decisions/` and the build continues; a real `BLOCKED` still stops
+   it. `INCOMPLETE` usually means an ecosystem's dependencies are not installed
+   on this machine — `hooks/licence-scan.mjs` records the `cargo`-not-on-PATH
+   case explicitly — which is a fact about the environment rather than about the
+   code, and an unattended run has no move against it. Both readings were
+   supportable from this text before, and one of them stalled every unattended
+   build on a machine missing a toolchain.
 4. **Progress-evidence check.** Run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/verify-progress.mjs" .` — a non-zero
    exit means some task was marked "done" in `PROGRESS.md` without the

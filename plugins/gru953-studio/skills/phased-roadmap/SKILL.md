@@ -53,10 +53,18 @@ For each phase, in order:
    complete micro-task breakdown per `micro-task-planning` — every task the
    phase needs, each with its one acceptance criterion, verification
    command, and dependencies, recorded in `PLAN.md` under this phase.
-   `project-lead` then runs **one** blocking `AskUserQuestion` gate for the
-   whole phase's task list. Approve → continue to step 1. Change requested →
-   revise the breakdown and re-present; nothing in the phase is built
-   against an unapproved plan. Once a phase is approved, its individual
+   `project-lead` then settles **one** approval for the whole phase's task list —
+   never one per task. Unattended, that approval is RECORDED in
+   `Dev-Memory/decisions/` (the phase, its task list, and anything deferred) and
+   step 1 begins. With a person present who has asked to be consulted, it is one
+   blocking `AskUserQuestion`: approve → continue to step 1; change requested →
+   revise the breakdown and re-present, and nothing in the phase is built against
+   an unapproved plan.
+
+   (2026-08-27: this was unconditionally blocking, and it fires once per phase —
+   so on a five-phase project an unattended run stopped five times. Recording the
+   decision keeps the audit trail the gate was for; the pop-up was the part
+   nothing could answer.) Once a phase is approved, its individual
    tasks and subtasks are never separately re-approved — they are
    documented in `PLAN.md`, tracked in `PROGRESS.md`, and executed.
 1. Build and test the phase's micro-tasks (the normal Build/Test/Fix/Review

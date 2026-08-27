@@ -1,6 +1,6 @@
 ---
 name: content-creation
-description: The Content stage — after a prototype is approved, plan and generate the app's real content (text, image, audio, video) from the spec and warframe, before Build consumes it. Defines the content plan, the Dev-Memory/CONTENT.md manifest (provenance, approval, rights, alt-text), platform-appropriate output, and how content tasks weave into the phased build. Text is generated natively by Claude in Bangla + English; image/audio/video use the opt-in gemini-integration. Use at the Content stage and whenever an asset is generated or revised.
+description: The Content stage — after a prototype is approved, plan and generate the app's real content (text, image, audio, video) from the spec and warframe, before Build consumes it. Defines the content plan, the Dev-Memory/CONTENT.md manifest (provenance, approval, rights, alt-text), platform-appropriate output, and how content tasks weave into the phased build. Text is generated natively by Claude in Bangla + English; image, audio and video are SPECIFIED by media-content-specialist as platform-correct asset briefs with alt-text and a rights note, for the owner to supply — 7.0.0 carries no external media provider. Use at the Content stage and whenever an asset is generated or revised.
 ---
 
 # Content Creation
@@ -61,7 +61,7 @@ needs, in which languages, which media) and records every asset in
 
 | Asset | Path | Medium | Source | Approved | Rights | Alt/Caption |
 | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| welcome_hero.png | assets/img/welcome_hero.png | image | Gemini image, prompt #4 | approved | AI-generated, user owns output | Family using the app |
+| welcome_hero.png | assets/img/welcome_hero.png | image | brief in CONTENT.md — owner-supplied | approved | owner-supplied, rights held by owner | Family using the app |
 | onboarding copy | | text | Claude (bn+en) | approved | original | — |
 
 **The `Path` column** (added 2026-08-15, finding X121). It records where the asset actually is,
@@ -113,9 +113,17 @@ produce. A project with no generated content declares none (and
 
 ## Who applies this
 
-- **content-director** runs the stage, owns the plan and `CONTENT.md`, holds the
-  Gemini opt-in decision.
-- **text/image/audio/video content specialists** generate their medium.
-- **project-lead** shows the per-media-generation approval pop-up;
-  **memory-keeper** writes `CONTENT.md`; **security-compliance-auditor** runs
+- **content-director** runs the stage and owns the plan and `CONTENT.md`.
+- **text-content-specialist** generates text natively; **media-content-specialist**
+  writes an asset brief plus a step-by-step guide for every image, audio and video
+  asset, and generates none of them.
+- **memory-keeper** writes `CONTENT.md`; **security-compliance-auditor** runs
   `content-check.mjs` before Publish.
+
+  (2026-08-27: this section said content-director "holds the Gemini opt-in
+  decision", that four specialists "generate their medium", and that project-lead
+  "shows the per-media-generation approval pop-up". All three describe 7.0.0's
+  removed provider, and the last is a prompt an unattended run cannot answer —
+  already contradicted by `media-content-specialist.md`, which records that
+  removing it was the point. A missing decorative asset never blocks working
+  software: record the placeholder against its brief and carry on.)

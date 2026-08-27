@@ -27,7 +27,18 @@ is a `7.1` at least — not a patch.
 | **The task states** | `todo`, `in-progress`, `done`, `blocked-on-defect`, `blocked-on-human`. No state will be removed or renamed. |
 | **The gate commands and their names** | The commands in `CLAUDE.md` keep working, from the same paths. |
 | **That nothing is published for you** | A run finishes with a committed local project and stops. No 7.0.x release will add automatic pushing, repository creation, or going public. |
-| **That there are no outbound network calls** | The plugin makes none. No 7.0.x release will add one. |
+| **That the plugin's own hooks make no network call** | Its 24 hooks contact nothing. No 7.0.x release will change that. **Corrected 2026-08-27:** this row used to promise "there are no outbound network calls" flatly, and that was not true of the product as a whole — see the note below. A stability contract that overstates is worse than one that is narrow, because it is the row somebody relies on. |
+| **That the plugin ships no external model or service integration** | It reads no API key, holds no credential, and talks to no model provider. 7.0.0 removed the last of them. |
+
+**Where network access does happen, stated plainly.** Three roles — `researcher`,
+`ai-developer` and the `ecosystem-finder` skill — are instructed to use **the
+host's own web search** when a build turns on a current external fact (a model
+name, a library's present API, whether a tool already exists). That is your
+session's tool, using your session's access; the plugin supplies no credentials
+and receives nothing back that it stores. Separately, the dependency tooling
+`hooks/licence-scan.mjs` invokes (`npm`, `pip-licenses`, `cargo metadata`,
+`dart pub`) may contact a package registry to resolve a lockfile, exactly as it
+would if you ran it yourself.
 | **Zero third-party runtime dependencies** | The plugin ships only Node's standard library. |
 | **Apache-2.0** | The licence will not become more restrictive on this line. |
 

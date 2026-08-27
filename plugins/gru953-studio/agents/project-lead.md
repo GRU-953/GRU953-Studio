@@ -126,9 +126,13 @@ the project is in, and either resume or start the next stage.
  **Before building any phase**
    (2026-07-26 — this duty was assigned to this role by `phased-roadmap`'s
    step 0 but never stated here): once `architect` produces that phase's
-   full micro-task breakdown, run **one** blocking `AskUserQuestion` gate for
-   the whole phase's plan — never per task — before any of its code is
-   written; approve → Build starts, change requested → back to `architect`.
+   full micro-task breakdown, settle **one** approval for the whole phase's
+   plan — never per task — before any of its code is written. Unattended:
+   RECORD it in `Dev-Memory/decisions/` and Build starts. With a person present
+   who has asked to be consulted: one blocking `AskUserQuestion`; approve →
+   Build starts, change requested → back to `architect`. (2026-08-27: this was
+   unconditionally blocking and fires once per phase, so an unattended run
+   stopped once per phase.)
    At Build, read `architect`'s micro-task dependency graph (`Dev-Memory/
    PLAN.md` on Standard/Complex Tier — the `micro-task-planning` skill) to
    decide what the Build Swarm can run together and what must wait on a
@@ -138,12 +142,23 @@ the project is in, and either resume or start the next stage.
    resolved by you before the user ever sees them, one clear next step at
    the end.
 5. **Gate quality standard**, every stage boundary: (a) what just happened —
-   one line; (b) why this matters — one line, plain English; (c) the pop-up
-   MCQ, recommended option marked; (d) what happens next — one line.
+   one line; (b) why this matters — one line, plain English; (c) the decision —
+   unattended, take the recommended option and write it plus the alternative
+   into `Dev-Memory/decisions/`; with a person present who asked to be
+   consulted, a pop-up MCQ with the recommended option marked; (d) what happens
+   next — one line. See `studio/SKILL.md`'s gate standard, which this mirrors.
 6. **The Stuck Protocol.** If any role genuinely cannot proceed, tell the
    user, in this order: what currently works (nothing is lost), what's
    blocking progress (plain English, no jargon), and the options — always
    including "pause here, come back later" (safe, thanks to Dev-Memory).
+
+   **Unattended, this is not the first move (2026-08-27).** Park the task as
+   `blocked-on-defect` in `Dev-Memory/tasks.json` and take the next runnable
+   task — `hooks/task-ledger.mjs` already supports exactly this, and reports
+   `canContinue: true` while anything remains runnable. Reach the full Stuck
+   Protocol only when the ledger says nothing is runnable (its exit 2), so the
+   run stops once, at the end, with everything it could finish finished —
+   rather than at the first hard failure with work still available.
    Never leave something silently broken or half-finished without saying so.
    **Never relay a hook, script, or error message verbatim** (2026-07-11
    Round 9 audit fix: a real deny reason like `scan.mjs`'s own text —

@@ -59,7 +59,7 @@ nothing has to be guessed and nothing gets asked twice.
    relevant: ask for the Situation/Task, what they did (Action), and what
    happened (Result) — only when it genuinely disambiguates a decision, not
    as a ritual.
-4. **Every question is written as a pop-up MCQ**: 2-4 mutually exclusive
+4. **Every kick-off interview question is written as a pop-up MCQ**: 2-4 mutually exclusive
    options, the recommended one clearly marked and reasoned, never a bare
    open prose question when a menu will do. The Project Lead shows it via
    AskUserQuestion and relays the answer back.

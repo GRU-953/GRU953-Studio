@@ -43,8 +43,15 @@ no basis for.
 
 **Ownership is asked, never guessed.** Whether a mark in a build is a violation or simply
 the user's own logo depends entirely on whose brand it is, and no file on disk answers
-that. Ask once, record the answer, and if it is `undeclared`, say so in every later
-verdict rather than picking the flattering reading.
+that. Ask once at kick-off, record the answer, and if it is `undeclared`, say so in every
+later verdict rather than picking the flattering reading.
+
+**Unattended, `undeclared` is the answer (2026-08-27).** If the kick-off brief did not
+settle ownership, record `undeclared` and carry on — every later verdict then says so,
+which is precisely the honest reading this paragraph already required. Before this, the
+instruction to "ask once" was reached mid-build for nearly every project (any build
+carrying a logo, icon, wordmark or app name), and an unattended run stopped there. The
+`undeclared` fallback already existed; what was missing was permission to use it.
 
 ## What intake writes
 

@@ -65,10 +65,18 @@ question needs outside evidence" rule `researcher` already follows.
    it looks actively maintained.
 4. **Recommend at most one or two**, not a long list — the point is a
    fitting answer to the task at hand, not a survey.
-5. **Hand the recommendation to `project-lead`**, who presents it as a
-   pop-up (`AskUserQuestion`): what it is, what it does, its licence in
-   plain terms, and why it fits — with "install it", "no thanks", and
-   "show me another option" as choices. Never installed without this.
+5. **Hand the recommendation to `project-lead`.** Installing third-party
+   software on the owner's machine needs their explicit yes — that requirement
+   is in the `operating-charter` and is NOT relaxed here.
+
+   **Unattended, therefore, nothing is installed (2026-08-27).** Write the
+   recommendation into `Dev-Memory/decisions/` — what it is, what it does, its
+   licence in plain terms, why it fits — and continue building without it. An
+   unattended run cannot obtain consent, and the answer to "I need consent and
+   cannot get it" is to proceed without the thing, not to stop the build. With a
+   person present, `project-lead` presents it as a pop-up
+   (`AskUserQuestion`) with "install it", "no thanks", and "show me another
+   option" as choices.
 6. **Only after a clear "yes"**, `builder` runs the install (it already
    has `Bash`; `researcher` does not, deliberately — recommending and
    executing are different jobs with different risk, the same separation

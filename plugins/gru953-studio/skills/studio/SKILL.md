@@ -322,9 +322,19 @@ clickable HTML "warframe" (a wireframe prototype — no external calls) plus the
 phased build plan — the roadmap's *shape* only (how many phases, what each one
 delivers), never a per-phase micro-task breakdown this early (2026-07-26: that
 detail is planned and approved separately, once per phase, right before each
-phase is built — see `phased-roadmap`'s step 0) — and the Project Lead runs a
-**hard, blocking approval gate** (`AskUserQuestion`) on both. No implementation
-code is written until the user approves. On a pure CLI/library, a short text
+phase is built — see `phased-roadmap`'s step 0) — and the Project Lead **records
+the approval decision** on both under the gate standard below. Unattended, the
+warframe and the roadmap shape are written into `Dev-Memory/decisions/` and the
+build proceeds; with a person present who has asked to be consulted, this is a
+blocking `AskUserQuestion` and no implementation code is written until they
+approve.
+
+(2026-08-27: this was an unconditional "hard, blocking approval gate", stated as
+"no implementation code is written until the user approves". It sits between
+Design and Plan — after kick-off — so an unattended run reached it and stopped,
+having written no code at all. `warframe-prototype/SKILL.md` additionally called
+it "the one place a pop-up is shown", which was not true even then: nine other
+places showed one.) On a pure CLI/library, a short text
 walkthrough stands in for the visual warframe. The approved warframe becomes
 the reference the built MVP is checked against at Review.
 
@@ -378,8 +388,27 @@ Every stage boundary follows this gate standard:
 1. **What just happened** — one line.
 2. **Why this matters** — one line, plain English, what's actually being
    decided and what's at stake.
-3. **The pop-up MCQ (multiple-choice question)** (AskUserQuestion) — recommended option marked.
+3. **The decision, and where it goes.**
+   - **Unattended (the default for v7):** take the recommended option, write it
+     and the alternative you did not take into `Dev-Memory/decisions/`, and carry
+     on. Never a pop-up.
+   - **A person is present and has asked to be consulted:** a pop-up MCQ
+     (`AskUserQuestion`) with the recommended option marked.
 4. **What happens next** — one line.
+
+**Why step 3 has two halves (2026-08-27).** It used to have only the pop-up. The
+lifecycle above has eleven stages, so a build asked the owner roughly ten times —
+and this product's own decision 1 is "one interview at kick-off, then silent". An
+unattended run cannot answer a pop-up: it stops there, having produced nothing.
+That was true of every stage gate in this file, of the prototype gate, of the
+per-phase gate and of eight other places, none of which had been changed when the
+decision was taken. A decision recorded in `Dev-Memory/decisions/` is reviewable,
+reversible and does not require anybody to be awake — which is strictly more
+useful than a question nobody answers.
+
+**What is NOT covered by this and still needs a fresh, explicit yes, every
+time:** publishing, going public, installing software on the owner's machine, and
+spending money. Those are in the `operating-charter` and are unchanged.
 
 ## The Stuck Protocol
 
@@ -388,6 +417,18 @@ currently works (nothing is lost), what's blocking progress (plain English,
 no jargon), and the options, always including "pause here and come back
 later" (safe, thanks to Dev-Memory). Delegate the actual repair to `fixer`.
 Never leave something silently broken or half-finished without saying so.
+
+**Unattended, this is the LAST move, not the first (2026-08-27).** Park the task
+as `blocked-on-defect` in `Dev-Memory/tasks.json` and take the next runnable one.
+`hooks/task-ledger.mjs` is built for exactly this: it reports `canContinue: true`
+while anything remains runnable, and exit **2** only when nothing is and work
+remains. Reach the full Stuck Protocol on that exit 2 — so the run stops **once,
+at the end, with everything it could finish finished**, and then reports which
+tasks are `blocked-on-defect` and which are `blocked-on-human`.
+
+Before this, one hard failure ended a run however much independent work remained
+— the defect the split blocked-state and the attempt cap were built to prevent.
+The machinery was there; nothing told this protocol to use it.
 
 Before this full escalation, `builder`/`tester` first give `fixer` a
 quieter, bounded chance (the `self-healing` skill): up to 2 quiet attempts

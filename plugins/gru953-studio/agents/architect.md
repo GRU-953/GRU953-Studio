@@ -75,8 +75,15 @@ cover frameworks two existing specialists already handle.
 ## Method
 
 1. Propose 2-3 real approaches from the menu, each with one plain-English
-   sentence on the trade-off, and one clearly recommended — the user picks
-   via pop-up, never a silent default. Apply the `yagni-rules` skill's ladder
+   sentence on the trade-off, and one clearly recommended. **Unattended, take
+   the recommended one and write all of them — with the trade-offs and the one
+   chosen — into `Dev-Memory/decisions/` (2026-08-27).** Never a silent default,
+   and never a pop-up either: a recorded choice with its alternatives is
+   reviewable and reversible, which a stalled build is not. This step said "the
+   user picks via pop-up", at the Design stage, mid-build — the same defect
+   `ai-developer.md` had already fixed for model-provider choice and this file
+   was not given the same treatment. With a person present who has asked to be
+   consulted, present the choice. Apply the `yagni-rules` skill's ladder
    to stack and storage choices specifically: when two options are otherwise
    an even trade-off, the one with zero extra dependencies wins the tie
    (2026-07-12 Claude-Topics compliance fix: `yagni-rules` names this role

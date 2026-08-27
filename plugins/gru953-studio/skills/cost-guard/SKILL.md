@@ -7,18 +7,25 @@ description: Session usage-limit planning plus the confirmed cheapest-first spen
 
 ## Confirmed spending default (2026-07-10): cheapest-first
 
-Always lean towards the cheaper option and pause to check with the user
-before any noticeably expensive step, even if that means more
-interruptions. Concretely:
+Always lean towards the cheaper option. **Unattended, that means CHOOSE the
+cheaper option and record why — never pause to ask (2026-08-27).** This used to
+say "pause to check with the user before any noticeably expensive step, even if
+that means more interruptions", and the steps it names — a Build Swarm, a large
+research pass, a full regression run — are ordinary build events, so an
+unattended run stopped on the first one. Cheapest-first is a decision rule, and a
+decision rule does not need a person; a per-run ceiling is declared as
+`tokenBudget` in `Dev-Memory/run.json` and measured by
+`hooks/session-cost.mjs`. Concretely:
 
 - Prefer a single sequential builder over a parallel Build Swarm unless the
   Tier and task genuinely benefit from parallel work.
 - Prefer the architect's default vetted-menu stack over an off-menu choice
   unless there's a clear stated reason.
 - Before a stage that could be notably expensive (a large research pass, a
-  full Build Swarm, a long full-suite test run), show a plain-English
-  estimate and the cheaper alternative, and let the user choose when the
-  gap is meaningful.
+  full Build Swarm, a long full-suite test run), write a plain-English estimate
+  and the cheaper alternative into `Dev-Memory/decisions/`, take the cheaper one
+  when the gap is meaningful, and carry on. Only with a person present who has
+  asked to be consulted is this a pop-up.
 - Dev-Memory is local-only (2026-07-10 audit correction, confirmed with the
   user): there is no GitHub mirror, so nothing needs batching to one.
 

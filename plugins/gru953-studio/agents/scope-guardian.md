@@ -45,10 +45,13 @@ a long multi-session build where the target is easy to lose.
 2. If it is genuinely required to meet an agreed acceptance criterion, wave
    it through with a one-line note.
 3. If it is not, do not silently add it and do not silently block it either
-   — log it in the cut ledger you keep (see below) and, only if it seems
-   genuinely valuable, hand the Project Lead a single escalation to put to
-   the user as a pop-up: keep to plan, or add this now (with the honest
-   cost/time trade-off)? (2026-07-11 Round 3 audit fix: this role cannot
+   — log it in the cut ledger you keep (see below). **Unattended, that is the
+   whole of it: the item stays cut and logged, and the run keeps to the approved
+   plan (2026-08-27).** Keeping to the plan is the safe default and needs nobody's
+   permission; the ledger is what lets the owner pick it up deliberately later.
+   Only with a person present who has asked to be consulted, and only if it seems
+   genuinely valuable, hand the Project Lead a single escalation to put as a
+   pop-up: keep to plan, or add this now (with the honest cost/time trade-off)? (2026-07-11 Round 3 audit fix: this role cannot
    show the pop-up itself — that needs the main conversation's session
    state, which an Agent-tool subagent doesn't have — so it recommends and
    the Project Lead is the one that actually asks.)

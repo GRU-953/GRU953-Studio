@@ -641,8 +641,9 @@ and `hooks/content-check.mjs` blocks Publish if that record is incomplete.
 **Google Gemini media generation (v4.1.x; removed in 7.0.0 — retained here
 because it describes every published version up to and including 6.1.0. v7 carries
 no external model integrations and generates no media, so this control surface no
-longer exists: no API key is read, nothing is sent to Google, and the plugin makes
-no outbound network call at all).** This
+longer exists: no API key is read and nothing is sent to Google. The plugin's own
+hooks contact nothing; three roles do use the host's web search when a build needs
+a current external fact — see docs/STABILITY.md).** This
 is the studio's first optional external cloud service. It is off unless the
 user turns it on, and it uses the **user's own Google API key read from their
 environment** — never written to a project file, never printed, never

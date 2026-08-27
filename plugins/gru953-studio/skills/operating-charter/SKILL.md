@@ -46,10 +46,30 @@ technical term is unavoidable, explain it in one plain sentence. Use UK English.
   perspectives and adopting the Semi-Structured (depth-focused) + Panel
   Interview method and STAR techniques, asking me as many questions as you need
   to avoid wrong assumptions or rework, and to deliver to the point.
-- Always present questions as pop-up MCQs (multiple-choice questions), with
-  multiple best possible options to choose from and the recommended options
-  properly marked.
+- Always present the kick-off interview's questions as pop-up MCQs
+  (multiple-choice questions), with multiple best possible options to choose
+  from and the recommended options properly marked.
 - Once I confirm, restate the workflow plan in one or two lines, then proceed.
+- **This interview happens ONCE, at kick-off (added 2026-08-27).** "Before
+  starting any task" means before starting the work — not before each of the
+  hundred micro-tasks the work turns out to contain. Once the brief is
+  confirmed, decisions taken during the build are **recorded** in
+  `Dev-Memory/decisions/` and the build continues; it does not stop to ask
+  again.
+
+  This is not a relaxation, it is what the clause always meant, written down
+  because the product read it the other way. Fourteen separate places were
+  found asking mid-build, every one of them citing this clause as its
+  authority — a stage-boundary pop-up at each of eleven stages, one per phase,
+  one per task, and more. An unattended run stopped at the first of them,
+  having produced nothing. A recorded decision is reviewable and reversible; a
+  question nobody is present to answer is neither.
+
+  The exceptions are in "What this charter does not do" below and are
+  **unchanged**: publishing, going public, a checkpoint push, installing
+  software, pulling a model and spending money each still need their own
+  explicit, fresh "yes", every time. Those are not build decisions — they reach
+  outside the project or outside the machine.
 
 ## CHARTER-CLAUSE: HOW TO WORK
 

@@ -32,16 +32,22 @@ whenever content is added or revised. Follow the `content-creation` skill.
    software. (Until v7.0.0 this step decided an opt-in to paid Google generation,
    with a per-generation cost and data-egress approval. That provider is gone,
    and with it a prompt no unattended run could answer.)
-   **Also own the capability registry's currency** (2026-07-26 — `gemini-
-   integration`'s "Who applies this" assigns this role ownership of "the
-   registry currency," never stated here until now): before delegating any
-   media task, confirm the capability → current-model mapping (image/video/
-   audio) in `gemini-integration`'s registry is still accurate — Google
-   renames and reprices these often — rather than assuming a name from
-   memory.
-3. **Delegate per medium**: `text-content-specialist` (Claude, bn+en),
-   `image-`/`audio-`/`video-content-specialist` (Gemini). Each uses the shared
+   (2026-08-27: a step here used to require confirming the capability →
+   current-model mapping in `gemini-integration`'s registry before delegating any
+   media task. That skill was deleted in 7.0.0 along with every external model
+   integration, so the step sent this role to a file that does not exist — and
+   the Content stage could not proceed. There is no registry to check now,
+   because there is no provider to check it against.)
+3. **Delegate per medium**: `text-content-specialist` (Claude, bn+en) and
+   `media-content-specialist` for images, audio and video. Each uses the shared
    `model-router` to pick/switch model + effort.
+
+   (2026-08-27: this named `image-`/`audio-`/`video-content-specialist`. All
+   three were merged into `media-content-specialist` in 7.0.0 — they were one
+   role trisected by medium — so a dispatch by any of those three names could not
+   resolve. `media-content-specialist` SPECIFIES assets rather than generating
+   them: it writes a precise, platform-correct brief plus a step-by-step guide
+   the owner can follow, which was already the documented no-provider fallback.)
 4. **Weave into the build**: bulk content up front; assets that depend on final
    UI become content tasks in the phased `PLAN.md`, so each is ready when Build
    needs it.

@@ -56,11 +56,22 @@ list is planned and approved separately, in its own single gate, right before
 that phase is built — see `phased-roadmap`'s step 0. Approving the shape here
 does not pre-approve any phase's task-level detail, including Phase 1's.)
 
-## The hard approval gate (blocking)
+## The approval gate
 
-Before Plan/Build, the Project Lead shows an `AskUserQuestion` pop-up asking the
-user to approve **both** the warframe and the phased plan together. This gate is
-**blocking**: no real implementation code is written until the user approves.
+Before Plan/Build, the Project Lead settles approval of **both** the warframe and
+the phased plan together, under the gate standard in `studio/SKILL.md`:
+
+- **Unattended (the v7 default):** record the approval decision — the warframe,
+  the roadmap shape, and anything deliberately deferred — in
+  `Dev-Memory/decisions/`, and proceed to Plan. Also record the backup choice
+  below as **off**, which is the safe default because backup means pushing.
+- **A person is present and has asked to be consulted:** an `AskUserQuestion`
+  pop-up, and this gate is then **blocking** — no real implementation code is
+  written until they approve.
+
+(2026-08-27: this was unconditionally blocking. It is reached after kick-off, so
+an unattended run stopped here having written no implementation code — which made
+the product's own decision 1, "one interview then silent", untrue in practice.)
 
 **Also ask here whether to turn on stage-by-stage backup, and say plainly what it
 does and does not cover (2026-08-23, X182).** `checkpoint-commit`'s step 3 states
@@ -123,7 +134,11 @@ the underlying reason was a technical constraint rather than a design choice.
 ## Who applies this
 
 - **ux-designer** leads the warframe; a **builder** implements the HTML.
-- **project-lead** presents the warframe + phased plan and runs the blocking
-  approval gate (the one place a pop-up is shown).
+- **project-lead** presents the warframe + phased plan and settles the approval
+  gate — recorded unattended, a pop-up only when a person is present and has
+  asked to be consulted.
+
+  (2026-08-27: this said "the one place a pop-up is shown". It was not: an audit
+  found fourteen. Saying so here made the others harder to find.)
 - **memory-keeper** records the approval decision and links the warframe in the
   recall index/graph.

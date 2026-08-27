@@ -422,6 +422,124 @@ if (!exists) stepAside();
 //
 // FAILS CLOSED. If the proposal cannot be reconstructed or does not parse, this falls through to
 // the refusal below. A change that cannot be shown to be safe is not shown to be safe.
+// Reconstruct what the file WOULD contain after this call. Shared by both arms below: a Write
+// hands over the whole content, an Edit hands over a replacement to apply. Returns null when the
+// result cannot be determined — the two arms then differ deliberately on what null means.
+function proposedContent() {
+  if (typeof ti.content === 'string') return ti.content; // Write
+  let text;
+  try {
+    text = fs.readFileSync(abs, 'utf8');
+  } catch {
+    return null;
+  }
+  const edits =
+    Array.isArray(ti.edits) && ti.edits.length
+      ? ti.edits
+      : typeof ti.old_string === 'string'
+        ? [{ old_string: ti.old_string, new_string: ti.new_string }]
+        : null;
+  if (!edits) return null;
+  for (const e of edits) {
+    if (typeof e.old_string !== 'string' || typeof e.new_string !== 'string') return null;
+    if (!text.includes(e.old_string)) return null;
+    text = e.replace_all
+      ? text.split(e.old_string).join(e.new_string)
+      : text.replace(e.old_string, e.new_string);
+  }
+  return text;
+}
+
+// ---- tooling configuration: refuse a WEAKENING, not every edit ------------------------------
+//
+// THE DEADLOCK THIS RESOLVES. Until 2026-08-27 this hook denied ANY edit to an existing
+// tsconfig.json, eslint config, .prettierrc, ruff.toml, .golangci.* and the rest. Measured: a
+// TypeScript project could not add a directory to `include`, so the product — which ships a
+// TypeScript specialist and a lang-typescript skill — could not build a TypeScript project at
+// all. Adding `dist/` to a linter's ignore list is ordinary work too. There was no escape and no
+// documentation of the rule anywhere.
+//
+// WHAT IS ACTUALLY THE THREAT. Not "the config changed" — a build configures its own tooling.
+// The threat is a config weakened IN RESPONSE TO A FAILING GATE, so the gate then measures
+// nothing. That is a narrow, nameable set of changes, and the rest are legitimate:
+//   REFUSED  a strictness flag flipped to false; a suppression directive introduced into the
+//            config itself; a rule that was error-level becoming off or warn.
+//   ALLOWED  adding an include/exclude/ignore path, adding a rule, tightening one, reformatting.
+//
+// FAILS OPEN, DELIBERATELY, AND UNLIKE dod.json. If the proposal cannot be reconstructed or the
+// comparison cannot be made, the edit is ALLOWED. That is the opposite stance to the Definition
+// of Done substrate below, and the reason is the deadlock above: for a file a build legitimately
+// owns, refusing what cannot be proven safe stops the product outright, and a stopped product is
+// a worse failure than a missed weakening. The backstop is that dod.mjs records the hash of the
+// config it ran against (see its lint/types evidence), so a config that changed mid-run is
+// visible in the record even when this hook allowed it.
+//
+// RESIDUAL, STATED: enumerated and directional, so a weakening spelled some other way — renaming
+// a rule, restructuring the file, moving config into a preset — is not caught here.
+if (isGuardedPath(abs) === 'quality tooling configuration') {
+  const before = (() => {
+    try {
+      return fs.readFileSync(abs, 'utf8');
+    } catch {
+      return null;
+    }
+  })();
+  const after = proposedContent();
+  if (before === null || after === null) stepAside();
+
+  const problems = [];
+
+  // A strictness flag turned off. Enumerated per ecosystem rather than guessed.
+  const STRICTNESS =
+    /["']?(strict|strictNullChecks|strictFunctionTypes|noImplicitAny|noImplicitThis|noUnusedLocals|noUnusedParameters|noFallthroughCasesInSwitch|alwaysStrict|checkJs|declaration)["']?\s*[:=]\s*(?:false|0|"false"|'false')/gi;
+  const offBefore = new Set([...before.matchAll(STRICTNESS)].map((m) => m[1].toLowerCase()));
+  for (const m of after.matchAll(STRICTNESS)) {
+    const flag = m[1].toLowerCase();
+    if (!offBefore.has(flag)) problems.push(`\`${m[1]}\` is switched off`);
+  }
+
+  // A suppression directive introduced into the CONFIG file itself.
+  for (const [re, what] of [
+    [/@ts-nocheck/g, 'a @ts-nocheck suppression'],
+    [/eslint-disable(?!-next-line\s+no-undef)/g, 'an eslint-disable directive'],
+    [/\bnoqa\b/g, 'a noqa suppression'],
+  ]) {
+    const b = (before.match(re) || []).length;
+    const a = (after.match(re) || []).length;
+    if (a > b) problems.push(`${what} is added (${b} → ${a})`);
+  }
+
+  // A rule that was error-level and is now off or warn. Paired by name, so adding a NEW rule as
+  // "off" — a legitimate way to record a rule you have considered and do not want — is allowed.
+  const RULE = /["']([\w@/-]+)["']\s*:\s*["']?(off|warn|error|0|1|2)["']?/g;
+  const rank = { off: 0, 0: 0, warn: 1, 1: 1, error: 2, 2: 2 };
+  const levels = (text) => {
+    const out = new Map();
+    for (const m of text.matchAll(RULE)) out.set(m[1], rank[m[2].toLowerCase()]);
+    return out;
+  };
+  const lb = levels(before);
+  const la = levels(after);
+  for (const [rule, wasLevel] of lb) {
+    if (!la.has(rule)) continue;
+    if (la.get(rule) < wasLevel) {
+      problems.push(
+        `the rule \`${rule}\` is relaxed from ${['off', 'warn', 'error'][wasLevel]} to ${['off', 'warn', 'error'][la.get(rule)]}`,
+      );
+    }
+  }
+
+  if (problems.length === 0) stepAside();
+  deny(
+    `studio config protection: this edit WEAKENS ${path.basename(abs)} — ${problems.join('; ')}. ` +
+      'A build may configure its own tooling: adding an include or ignore path, declaring a new ' +
+      'rule, or tightening one are all allowed and this hook does not object to them. Turning a ' +
+      'check off is different, because from then on the gate that check feeds measures nothing. ' +
+      'If the check is failing, fix what it reports. If the standard itself should change, that ' +
+      'is a deliberate decision for the person who owns the project.',
+  );
+}
+
 if (/(^|[\\/])Dev-Memory[\\/]dod\.json$/.test(abs.replace(/\\/g, '/'))) {
   const proposed = (() => {
     if (typeof ti.content === 'string') return ti.content; // Write
