@@ -277,8 +277,15 @@ wording or that answer):
 2. Only then: `gh repo edit <login>/<project-name> --visibility public`.
 3. Verify: `gh repo view <login>/<project-name> --json visibility` shows
    `public`, and report this back to the user plainly.
-4. Delete `Dev-Memory/GO-PUBLIC-APPROVED` afterwards (2026-07-12 Round 11
-   audit fix — this step existed for `PUBLISH-APPROVED` above but was
-   never mirrored here), so a later visibility change must be
-   re-confirmed by the user, the same way step 5's private-publish token
-   is handled.
+4. **This step is dead, and is kept only to say so (2026-08-27).** It used to
+   read: "Delete `Dev-Memory/GO-PUBLIC-APPROVED` afterwards … so a later
+   visibility change must be re-confirmed by the user, the same way step 5's
+   private-publish token is handled." Nothing writes that file and no hook reads
+   it — the token layer was removed on 2026-08-16 by X214, because a token proves
+   nothing: anything a hook can read, an agent on the same machine can write.
+
+   What actually makes a later visibility change need re-confirming is that going
+   public is asked for explicitly, every time, per the `operating-charter` —
+   there is no standing authorisation to expire, because none is ever granted.
+   That is a stronger guarantee than the one this step described, and it was true
+   the whole time this step was pointing at a file that does not exist.

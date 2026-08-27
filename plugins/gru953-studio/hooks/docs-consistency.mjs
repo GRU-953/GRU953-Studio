@@ -1028,6 +1028,19 @@ if (changelogText !== null) {
   }
 }
 
+// Both DC11 and DC12 exempt a claim the surrounding prose explains. Scoped to a SMALL WINDOW —
+// the line plus the two either side — because the commonest legitimate use is a correction that
+// QUOTES the text it retires, and a quotation wraps.
+//
+// The first attempt scoped to the whole paragraph and was measured to be useless: markdown lists
+// carry no blank lines, so a ten-step numbered list is one "paragraph", and a single "(removed
+// 2026-08-16)" in step 1 exempted a live claim in step 4. Worse, it exempted a deliberately
+// reintroduced defect — the check reported zero hits on the exact regression it was written for.
+// A window is the honest unit: a wrapped sentence spans one or two lines, a list does not.
+function explainedNear(lines, i, re, radius = 2) {
+  return re.test(lines.slice(Math.max(0, i - radius), i + radius + 1).join('\n'));
+}
+
 // ---- DC11: the task states the product INSTRUCTS must be states the ledger accepts ------
 // 2026-08-27 (contract sweep). `commands/studio-resume.md` told the studio to "set its Status back
 // to `doing`" — and `doing` is not a state `hooks/task-ledger.mjs` accepts, so obeying the resume
@@ -1080,13 +1093,57 @@ if (changelogText !== null) {
           for (const dead of RETIRED) {
             if (accepted.has(dead)) continue; // still a real state — nothing to say
             if (!new RegExp('`' + dead + '`').test(line)) continue;
-            if (RETIREMENT_WORDS.test(line)) continue;
+            if (explainedNear(lines, i, RETIREMENT_WORDS)) continue;
             fail(
               `${rel}:${i + 1} names the task state \`${dead}\`, which hooks/task-ledger.mjs does not accept (it accepts ${[...accepted].map((a) => `\`${a}\``).join(', ')}). Following this instruction writes a ledger the gate blocks on — which is how the pause/resume cycle dead-ended. Use the current state name, or, if this line is explaining the rename, say so on the line (DC11 looks for words like "no longer", "used to", "is now") (DC11)`,
             );
           }
         }
       }
+    }
+  }
+}
+
+// ---- DC12: no safety GUARANTEE may rest on machinery that was deleted -----------------------
+// 2026-08-27. `skills/command-centre/SKILL.md` told the reader that a scheduled wake-up "can
+// never silently trigger a push" BECAUSE "the publish/checkpoint/memory-persist tokens are all
+// short-lived (60-minute TTL) and long expired". Those tokens were deleted on 2026-08-16 (X214),
+// for the reason recorded in scan.mjs: a token proves nothing, because anything a hook can read
+// an agent on the same machine can write. It was ceremony.
+//
+// So a load-bearing safety promise went on being made, in the product's own words, by a mechanism
+// that no longer existed — for eleven days and through an entire rebuild phase, with nothing
+// objecting. This was H2 in the rebuild's own bug ledger, the register of defects v7 was supposed
+// to prove it does not repeat, and it was still there.
+//
+// A guarantee resting on nothing is worse than no guarantee: a reader who believes it stops
+// looking for the real protection. This refuses the claim wherever it is made, and — like DC11 —
+// lets it be DISCUSSED on a line that says it was removed, because explaining why ceremony was
+// dropped is worth keeping.
+{
+  // The phrases that ASSERT the mechanism. Enumerated, not swept: `token` alone is an ordinary
+  // word (an auth token in an example, a lexer token), and a gate that fired on it would be
+  // switched off within a day.
+  const CLAIMS = [
+    /\btoken gate\b/i,
+    /\b(?:publish|checkpoint|memory-persist)[- ]tokens?\b/i,
+    /\btokens?\b[^\n]{0,60}\bTTL\b/i,
+    /\bTTL\b[^\n]{0,60}\btokens?\b/i,
+  ];
+  const REMOVED_WORDS =
+    /\b(?:removed|deleted|no longer|no such|there is no|used to|was ceremony|retired|corrected|X214|does not exist|never existed|never required)\b/i;
+  for (const file of walk(pluginRoot)) {
+    if (!file.endsWith('.md')) continue;
+    const rel = path.relative(repoRoot, file);
+    const text = read(file);
+    if (text === null) continue;
+    const dcLines = text.split(/\r?\n/);
+    for (const [i, line] of dcLines.entries()) {
+      if (!CLAIMS.some((re) => re.test(line))) continue;
+      if (explainedNear(dcLines, i, REMOVED_WORDS)) continue;
+      fail(
+        `${rel}:${i + 1} states a safety guarantee resting on the publish/checkpoint/memory-persist TOKEN mechanism, which was deleted on 2026-08-16 (X214) because a token proves nothing — anything a hook can read, an agent can write. A promise made by machinery that does not exist is worse than no promise, because a reader stops looking for the real protection. State what actually enforces it, or, if this line is explaining the removal, say so on the line (DC12)`,
+      );
     }
   }
 }

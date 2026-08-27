@@ -136,7 +136,8 @@ Five commands drive the machine (see `commands/studio-*.md`). Each: reads
   the session's scheduler (below).
 
 None of these ever touches Publish or any push-capable action — control is
-local; publishing still needs its own explicit confirmation and token gate.
+local; publishing still needs its own explicit, fresh confirmation from the
+owner, exactly as the `operating-charter` requires.
 
 ## Scheduling for later (portable, degrades gracefully)
 
@@ -150,13 +151,27 @@ or after it — never a silent promise to wake up that the environment cannot
 keep. A scheduled resume re-runs the normal re-orientation read and still never
 auto-publishes.
 
-**Scheduler safety (2026-07-19, Phase 5).** A fired scheduled resume is treated
-as a fresh session, not a pre-authorised one: it re-runs the `focus-guard`
-recall, and it never carries any standing authorisation to push or publish — the
-publish/checkpoint/memory-persist tokens are all short-lived (60-minute TTL) and
-long expired by the time a "later" schedule fires, so a scheduled wake-up can
-never silently trigger a push. Publishing always needs a fresh, explicit
-confirmation, exactly as from any other session.
+**Scheduler safety (2026-07-19, Phase 5; corrected 2026-08-27).** A fired
+scheduled resume is treated as a fresh session, not a pre-authorised one: it
+re-runs the `focus-guard` recall and carries no standing authorisation to push or
+publish. Publishing always needs a fresh, explicit confirmation, exactly as from
+any other session.
+
+*What actually enforces that, stated accurately.* Until 2026-08-27 this paragraph
+said a scheduled wake-up "can never silently trigger a push" **because** the
+"publish/checkpoint/memory-persist tokens are all short-lived (60-minute TTL) and
+long expired". Those tokens were deleted on 2026-08-16 (X214), for the reason
+recorded in `hooks/scan.mjs`: a token proves nothing, because anything a hook can
+read, an agent on the same machine can write. It was ceremony. So this passage
+went on promising safety from a mechanism that no longer existed — a guarantee
+resting on nothing, which is worse than no guarantee, because a reader stops
+looking for the real one.
+
+The real protections are three, and none of them is a token: `hooks/scan.mjs`
+refuses any push it cannot prove clean and escalates every push-capable command;
+none of the commands above touches a publish path at all; and an unattended v7 run
+never pushes, by design — it produces a finished, tested, local repository and
+stops.
 
 ## The HTML dashboard
 

@@ -6674,6 +6674,61 @@ test('docs-consistency.mjs: DC11 refuses a command that instructs a task state t
   fs.rmSync(dir, RM_OPTS);
 });
 
+// DC12, 2026-08-27. This was H2 in the rebuild's own bug ledger — the register of defects v7 was
+// supposed to prove it does not repeat — and it was still alive eleven days and a whole rebuild
+// phase after the machinery it rests on was deleted. `command-centre/SKILL.md` promised that a
+// scheduled wake-up "can never silently trigger a push" BECAUSE the publish/checkpoint tokens
+// have a 60-minute TTL. Those tokens went on 2026-08-16 (X214), for the reason scan.mjs records:
+// a token proves nothing, because anything a hook can read an agent can write. It was ceremony.
+//
+// A guarantee resting on nothing is worse than no guarantee: a reader who believes it stops
+// looking for the real protection.
+test('docs-consistency.mjs: DC12 refuses a safety guarantee resting on the deleted token layer', () => {
+  const dir = mkTmp('gru-dc12-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(f, '\nA scheduled resume is safe because the publish token has a 60-minute TTL.\n');
+  const r = runDocsConsistency(dir);
+  assert.notEqual(r.status, 0);
+  assert.ok(
+    (r.json.problems || []).some((p) => /dev-memory.*TOKEN mechanism, which was deleted/.test(p)),
+    `expected DC12 to name the file and the deleted mechanism, got: ${JSON.stringify(r.json && r.json.problems)}`,
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// Two controls, and both encode a mistake this check made on the way in.
+//
+// FIRST: explaining the removal must be allowed, and a correction QUOTES the text it retires, so
+// the explanation and the quotation land on different lines. The first version scoped the
+// exemption to the whole PARAGRAPH to cope with that — and markdown lists carry no blank lines,
+// so a ten-step list is one paragraph and a single "(removed …)" in step 1 exempted a live claim
+// in step 4. Measured: it then reported ZERO hits on the exact regression above. A window is the
+// honest unit — a wrapped sentence spans a line or two; a list does not.
+test('docs-consistency.mjs: DC12 permits a correction that quotes the text it is retiring', () => {
+  const dir = mkTmp('gru-dc12-ok-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(
+    f,
+    '\nThis used to say the "publish token has a 60-minute TTL".\nThat token was deleted on 2026-08-16 (X214).\n',
+  );
+  assert.equal(runDocsConsistency(dir).json.status, 'clean', 'a gate that fires on the sentence written to satisfy it teaches people to delete explanations');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// SECOND: a NEGATION is an explanation. studio/SKILL.md says "there is no checkpoint token",
+// which is exactly the correction this check wants, and the first version flagged it because
+// "no" was not in its removal vocabulary.
+test('docs-consistency.mjs: DC12 permits a line that says the token does not exist', () => {
+  const dir = mkTmp('gru-dc12-neg-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(f, '\nWhat authorises it: there is no checkpoint token — `hooks/scan.mjs` refuses an unclean push.\n');
+  assert.equal(runDocsConsistency(dir).json.status, 'clean');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // The control that keeps DC11 usable: a retired state may still be DISCUSSED. A product that
 // cannot describe its own rename has to delete the explanation, and then nobody learns why the
 // word changed. The rule is that the line must say the word is retired — which is the sentence a

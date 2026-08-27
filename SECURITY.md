@@ -355,11 +355,15 @@ undisclosed findings, all confirmed by direct execution before being fixed:
   declares, vendors or installs one, and `docs-consistency.mjs` fails closed if
   that changes. **Corrected 2026-08-22 (X183): this used to say "zero third-party
   dependencies anywhere in the repo (no `package.json`, lockfile, or
-  `node_modules`)", and the repository has EIGHT tracked manifests** —
-  `package.json` and `package-lock.json` at the root and in each of
-  `clients/cli`, `clients/antigravity` and `clients/vscode`. So a
-  Dependabot/CVE-scanning gap does have something to expose; what it cannot
-  expose is anything reaching the plugin, because the plugin has none.
+  `node_modules`)", and the repository has tracked manifests** — as of 7.0.0,
+  FOUR: `package.json` and `package-lock.json` at the root and in `clients/cli`.
+  (Re-counted 2026-08-27. This said EIGHT, in `clients/cli`, `clients/antigravity`
+  and `clients/vscode` — but the latter two client packages were deleted in 7.0.0,
+  so the figure had been wrong since. A stale count in a security document is not
+  a cosmetic error: this one is the premise of the Dependabot argument that
+  follows it.) So a Dependabot/CVE-scanning gap does have something to expose;
+  what it cannot expose is anything reaching the plugin, because the plugin has
+  none.
   `licence-scan.mjs` is honest about `licence-scan.mjs` is honest about
   covering licence text only, not vulnerability data. Worth re-assessing
   if a dependency is ever added.
@@ -994,7 +998,12 @@ What reduces it here, and what does not:
   with. If that risk matters to you, download, read, then run — or install from
   npm, which at least pins a version you can inspect.
 
-### OpenRouter API keys
+### OpenRouter API keys (removed in 7.0.0 — retained here because it describes every published version up to and including 6.1.0)
+
+<!-- 2026-08-27: this section carried no such marker while the neighbouring Ollama and Gemini
+     sections did, so it read as a current feature of a product that no longer has any external
+     model integration at all. v7 targets Claude Code only and makes no outbound network call. -->
+
 
 - The key lives in the `OPENROUTER_API_KEY` environment variable. GRU953-Studio
   never writes it to a project file, never stores it, and never puts it in
