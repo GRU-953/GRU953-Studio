@@ -52,6 +52,31 @@ dispatches** — a complete app built by the coordinator alone, with the 36-role
 unused. Nothing was wrong with the app; what was missing was the studio. Cause and fix
 are in `X401-X413`; `INV26` now guards it.
 
+**Tier drives wall clock far harder than anything else — measured 2026-08-27.**
+
+| Brief | Tier | Result |
+|:--|:--|:--|
+| Tiny CLI expense tracker | Tiny | **PASS 18/18 in 70.9 min**, 21 dispatches across 8 specialists |
+| Household expenses web app (sign-in, SQLite, TypeScript, a11y) | **Complex** | **COULD NOT MEASURE — did not finish in 170 min** |
+
+The Complex run is worth reading properly rather than as a failure. At the 170-minute
+cut-off it had completed **18 of 19 tasks**; the outstanding one was the last,
+"README, dod.json, and the quality gate green". `stall-check.mjs` reported it
+**clean, 0 unanswered calls, idle 1 minute, 4175 records** — actively working when
+the harness killed it, not wedged. The app it built has **155 tests, all passing**:
+TypeScript with `strict: true` (which it did not weaken), SQLite with a STRICT
+schema, scrypt password hashing, signed session cookies, CSRF tokens and security
+headers. It ran test-first — two testers wrote 96 failing tests before any
+implementation — and recorded four decision records, one of which settles six
+places where its own design documents were underspecified, each flagged rather
+than guessed.
+
+So: **a Complex-Tier build needs well over three hours.** The harness default of 90
+minutes and `e2e.yml`'s 120-minute job ceiling are sized for Tiny only. Raise
+`--timeout-minutes` to at least 240 for anything with a login and a database, and
+treat exit 2 as "give it longer", not "the product is broken" — which is precisely
+what exit 2 means and why it is distinct from 1.
+
 **Delegation costs roughly five times the wall clock — measured, not estimated.** The same class
 of app took **14.2 minutes** on the run that dispatched nothing and **69.1 minutes** on the run
 that dispatched 21 times across 8 specialists. Both built working software. So the harness's

@@ -43,7 +43,7 @@ on:
       timeout-minutes:
         description: 'Minutes to allow the unattended build'
         required: false
-        default: '90'
+        default: '90'   # Tiny Tier only — a Complex brief measured >170 min on 2026-08-27
 
 permissions:
   contents: read
@@ -52,7 +52,10 @@ jobs:
   headless-build:
     name: build a small app from a plain-text idea, unattended
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # the harness's own 90 plus headroom for install and checks
+    timeout-minutes: 120  # the harness's own 90 plus headroom for install and checks.
+    # 2026-08-27: sized for the TINY brief this workflow runs. A Complex-Tier brief (sign-in,
+    # database, TypeScript) reached 18 of 19 tasks and did NOT finish in 170 minutes — see
+    # docs/RELEASING-7.0.0.md. Do not raise the default without raising this too.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

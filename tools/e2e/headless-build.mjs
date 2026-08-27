@@ -164,9 +164,17 @@ const cleanup = () => {
   }
 };
 
-// A deliberately small brief. The point is to prove the loop closes, not to stress the studio:
-// a large idea makes a slow test whose failures are ambiguous.
-const IDEA = [
+// A deliberately small DEFAULT brief. The point is to prove the loop closes, not to stress the
+// studio: a large idea makes a slow test whose failures are ambiguous.
+//
+// SUPPLIABLE since 2026-08-27, with `--brief <path>`, and that is not a convenience. This Tiny
+// brief reaches none of the conditions that made the product unable to run headlessly — it has no
+// phases, no TypeScript, no content stage and no backup — so it passed 18/18 while three defects
+// that would FAIL an unattended run sat untouched. A test whose single fixture avoids every
+// blocker cannot verify their fixes. Proving Standard and Complex tiers needs a brief that
+// reaches them.
+const briefPath = value('--brief', null);
+const IDEA_DEFAULT = [
   'Build a tiny command-line expense tracker.',
   '',
   'Must have:',
@@ -178,6 +186,18 @@ const IDEA = [
   '',
   'Use Node.js with its built-in test runner. Keep it as small as possible.',
 ].join('\n');
+
+const IDEA = (() => {
+  if (!briefPath) return IDEA_DEFAULT;
+  try {
+    const body = fs.readFileSync(briefPath, 'utf8').trim();
+    if (body === '') cannotMeasure(`the brief at ${briefPath} is empty`);
+    return body;
+  } catch (e) {
+    cannotMeasure(`could not read the brief at ${briefPath}`, (e && e.message) || String(e));
+    return IDEA_DEFAULT; // unreachable: cannotMeasure exits
+  }
+})();
 
 fs.writeFileSync(path.join(work, 'IDEA.md'), IDEA + '\n');
 
@@ -563,10 +583,54 @@ if (brief && Array.isArray(brief.nonGoals)) {
     .map((s) => s.name)
     .join(' ')
     .toLowerCase();
-  const violated = ['sqlite', 'postgres', 'mysql', 'express', 'react'].filter((w) =>
-    tree.includes(w),
+  // DERIVED FROM THE BRIEF, not a fixed list. It used to be
+  // ['sqlite','postgres','mysql','express','react'] — words drawn from the Tiny brief's own "not
+  // doing" line — so the assertion silently became wrong for any other brief: a Standard-Tier web
+  // app that legitimately needs express or a database would have been reported as scope creep, and
+  // a Tiny brief ruling out something else entirely was never checked for it at all.
+  //
+  // The nonGoals the run itself recorded are the right source: they are what the owner agreed was
+  // out of scope for THIS build.
+  const STOPWORDS = new Set([
+    'no',
+    'not',
+    'none',
+    'nothing',
+    'doing',
+    'a',
+    'an',
+    'the',
+    'or',
+    'and',
+    'with',
+    'for',
+    'of',
+    'server',
+    'accounts',
+    'account',
+    'user',
+    'users',
+    'support',
+    'syncing',
+    'sync',
+  ]);
+  const forbidden = [
+    ...new Set(
+      brief.nonGoals
+        .join(' ')
+        .toLowerCase()
+        .split(/[^a-z0-9+#.]+/)
+        .filter((w) => w.length >= 4 && !STOPWORDS.has(w)),
+    ),
+  ];
+  const violated = forbidden.filter((w) => tree.includes(w));
+  check(
+    'nothing outside the brief was built',
+    violated.length === 0,
+    violated.length
+      ? `filenames mention ruled-out things: ${violated.join(', ')}`
+      : `checked ${forbidden.length} recorded non-goal term(s)`,
   );
-  check('nothing outside the brief was built', violated.length === 0, violated.join(', '));
 }
 
 // ---- verdict ----------------------------------------------------------------------------------
