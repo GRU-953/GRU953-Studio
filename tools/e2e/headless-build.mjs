@@ -44,6 +44,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
+import { pushAttempts, dispatchCount, toolUsesIn } from './judge.mjs';
+
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
 const value = (n, d) => {
@@ -384,10 +386,7 @@ check('the transcript is parseable stream-json', events.length > 0, `${events.le
 }
 
 const flat = JSON.stringify(events);
-const toolUses = events.flatMap((e) => {
-  const c = e && e.message && e.message.content;
-  return Array.isArray(c) ? c.filter((b) => b && b.type === 'tool_use') : [];
-});
+const toolUses = toolUsesIn(events);
 const toolNames = toolUses.map((t) => t.name);
 
 check(
@@ -397,8 +396,8 @@ check(
 );
 check(
   'specialists were dispatched, not impersonated',
-  toolNames.filter((n) => /Agent|Task/i.test(n)).length >= 2,
-  `${toolNames.filter((n) => /Agent|Task/i.test(n)).length} dispatch(es)`,
+  dispatchCount(toolNames) >= 2,
+  `${dispatchCount(toolNames)} dispatch(es)`,
 );
 // The v7 assertion. Nothing else in this repository would catch a run that acquired a remote.
 // 2026-08-27, X382. This is the most important assertion in the file and it produced a FALSE
@@ -419,11 +418,9 @@ check(
 // importantly, the git STATE below is the authoritative evidence and always was. Command text is a
 // secondary signal for catching an attempt that failed; it can never be the proof, because text is
 // not an action.
-const exercisesAHook = (s) => /\|\s*node\b[^"]*hooks\//.test(s) || /"tool_name"\s*:/.test(s);
-const pushish = toolUses
-  .map((t) => JSON.stringify(t.input || {}))
-  .filter((s) => /git\s+push|gh\s+repo\s+create|git\s+remote\s+add|npm\s+publish/.test(s))
-  .filter((s) => !exercisesAHook(s));
+// The judgement itself lives in judge.mjs so it can be tested on known inputs in milliseconds
+// rather than only by a seventy-minute run. See that file for the two false positives it encodes.
+const pushish = pushAttempts(toolUses);
 check(
   'NOTHING was pushed and no remote was created',
   pushish.length === 0,
@@ -573,8 +570,14 @@ if (brief && Array.isArray(brief.nonGoals)) {
 }
 
 // ---- verdict ----------------------------------------------------------------------------------
-cleanup();
+// ORDER MATTERS, and the first version of this got it wrong. `cleanup()` used to run here, before
+// preserveEvidence() further down — so the work tree was deleted and then copied, and a failing run
+// preserved its transcript and an empty directory where the tree should have been. Measured on the
+// run that found it: `evidence preserved at …` printed, and the folder held one file. The fix that
+// was supposed to stop this harness destroying its own evidence destroyed half of it.
 const failed = results.filter((r) => !r.ok);
+if (failed.length > 0) preserveEvidence(transcript);
+cleanup();
 console.log('');
 if (failed.length === 0) {
   console.log(
@@ -591,8 +594,6 @@ if (failed.length === 0) {
   );
   process.exit(0);
 }
-// Keep the reproduction BEFORE reporting the failure, so the two arrive together.
-preserveEvidence(transcript);
 console.log(
   JSON.stringify(
     {

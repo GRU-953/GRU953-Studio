@@ -52,6 +52,13 @@ dispatches** — a complete app built by the coordinator alone, with the 36-role
 unused. Nothing was wrong with the app; what was missing was the studio. Cause and fix
 are in `X401-X413`; `INV26` now guards it.
 
+**Delegation costs roughly five times the wall clock — measured, not estimated.** The same class
+of app took **14.2 minutes** on the run that dispatched nothing and **69.1 minutes** on the run
+that dispatched 21 times across 8 specialists. Both built working software. So the harness's
+75–90 minute default is right for a Tiny-Tier app and leaves little room for a Standard or
+Complex one; raise `--timeout-minutes` rather than reading a timeout as a defect, and note that
+`e2e.yml`'s job ceiling of 120 minutes is the real constraint in CI.
+
 Run it from an authenticated terminal before tagging:
 
 ```bash

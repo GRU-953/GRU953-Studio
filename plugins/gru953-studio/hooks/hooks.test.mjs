@@ -3278,6 +3278,87 @@ test('dod.mjs: an n/a the project itself contradicts is refused, and an honest o
   fs.rmSync(without, RM_OPTS);
 });
 
+// ---------------------------------------------------------------------------
+// tools/e2e/judge.mjs — the judgements the product's only end-to-end test makes.
+//
+// It had NO tests, and on 2026-08-27 it produced four false positives in one day, twice on the
+// assertion that matters most: "nothing was pushed". Each time it reported the product broken
+// while the product was fine. A test that cries wolf about a release gate is worse than no test,
+// because it gets switched off and its absence is then invisible.
+//
+// It kept happening because the judgements lived inside a script that costs seventy minutes and
+// real money to run once, so they were never exercised on a known input. Here they are, on known
+// inputs, in milliseconds.
+// ---------------------------------------------------------------------------
+const JUDGE = await import(
+  pathToFileURL(path.join(HERE, '..', '..', '..', 'tools', 'e2e', 'judge.mjs')).href
+);
+
+test('judge.mjs: a real push attempt through an executing tool IS reported', () => {
+  const uses = [{ name: 'Bash', input: { command: 'git push origin main' } }];
+  assert.equal(JUDGE.pushAttempts(uses).length, 1, 'this is the one thing the harness exists to catch');
+});
+
+test('judge.mjs: gh repo create, git remote add and npm publish are all reported', () => {
+  for (const command of ['gh repo create x --private', 'git remote add origin git@x:y.git', 'npm publish']) {
+    assert.equal(JUDGE.pushAttempts([{ name: 'Bash', input: { command } }]).length, 1, command);
+  }
+});
+
+// X382. The studio fed a synthetic payload to its own push-safety hook to confirm the guard fires,
+// and the harness read the words inside that payload as a push.
+test('judge.mjs: exercising this plugin’s own push guard is not a push (X382)', () => {
+  const uses = [
+    {
+      name: 'Bash',
+      input: {
+        command:
+          'echo \'{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}\' | node /p/hooks/scan.mjs',
+      },
+    },
+  ];
+  assert.deepEqual(JUDGE.pushAttempts(uses), [], 'a studio that tests its own safety controls must not be failed for it');
+});
+
+// 2026-08-27. The input to an Agent/Task call is a PROMPT — English sent to a subagent — and the
+// studio's prompts routinely name the publish protocol, most often to say it is not being run.
+// Measured: dispatching memory-keeper to "Close ledger and run DoD gate" was reported as a push
+// attempt, while no remote existed and the reflog was empty.
+test('judge.mjs: a DISPATCH PROMPT that merely names pushing is not a push', () => {
+  const uses = [
+    {
+      name: 'Agent',
+      input: {
+        description: 'Close ledger and run DoD gate',
+        subagent_type: 'gru953-studio:memory-keeper',
+        prompt: 'Do not run git push or npm publish. Publishing is a separate step the owner takes.',
+      },
+    },
+    { name: 'Edit', input: { file_path: 'README.md', new_string: 'Run `git push` yourself when ready.' } },
+    { name: 'Read', input: { file_path: 'docs/RELEASING.md' } },
+  ];
+  assert.deepEqual(JUDGE.pushAttempts(uses), [], 'text is not an action — the git state is the proof');
+});
+
+test('judge.mjs: dispatches are counted however the CLI names the tool', () => {
+  assert.equal(JUDGE.dispatchCount(['Agent', 'Bash', 'Task', 'Read', 'Agent']), 3);
+  assert.equal(JUDGE.dispatchCount(['Bash', 'Read', 'Write']), 0, 'a run that impersonates its specialists must score zero');
+  assert.equal(JUDGE.dispatchCount(null), 0, 'and a missing list is zero, not a crash');
+});
+
+test('judge.mjs: toolUsesIn survives the shapes a real transcript contains', () => {
+  const events = [
+    'a bare string line',
+    null,
+    { type: 'system', subtype: 'init' },
+    { message: { content: 'a string, not an array' } },
+    { message: { content: [{ type: 'text', text: 'hello' }, { type: 'tool_use', name: 'Bash', input: {} }] } },
+  ];
+  const uses = JUDGE.toolUsesIn(events);
+  assert.equal(uses.length, 1);
+  assert.equal(uses[0].name, 'Bash');
+});
+
 // 2026-08-27, THIRD correction. The refutation above took a FILENAME as evidence, and three
 // ordinary projects were refused for it. The first is the worst: `npm init -y` writes
 // `"test": "echo \"Error: no test specified\" && exit 1"` — the commonest starting state a Node
