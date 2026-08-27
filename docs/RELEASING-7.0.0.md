@@ -155,6 +155,31 @@ Verified badge on GitHub, and `CONTRIBUTING.md` will then be stating a rule this
 release did not follow — so change that file in the same commit rather than leaving
 the two disagreeing.
 
+## Before the tag: the three-Tier proof (2026-08-28)
+
+The owner's decision is that all three Tiers are proven unattended, not just the fast
+one. The briefs are committed so anyone can repeat this:
+
+```bash
+env -u ANTHROPIC_BASE_URL node tools/e2e/headless-build.mjs --timeout-minutes 120
+```
+
+```bash
+env -u ANTHROPIC_BASE_URL node tools/e2e/headless-build.mjs --brief tools/e2e/briefs/standard.md --timeout-minutes 180
+```
+
+```bash
+env -u ANTHROPIC_BASE_URL node tools/e2e/headless-build.mjs --brief tools/e2e/briefs/complex.md --timeout-minutes 300
+```
+
+`env -u ANTHROPIC_BASE_URL` is required, not optional: with that variable set the CLI
+expects an API key and OAuth fails. Run them one at a time — concurrent runs compete for
+the same rate limit and make a slow run indistinguishable from a stalled one.
+
+Exit codes: `0` built working software, `1` a real product defect, `2` could not measure
+(a timeout, or an incomplete run). A `2` is not a pass. See `tools/e2e/briefs/README.md`
+for what each brief reaches and the measured wall-clock per Tier.
+
 ## Before the tag: re-measure the two drifting numbers (2026-08-27)
 
 `CHANGELOG.md`'s Numbers table carries two figures that change with every commit —

@@ -181,6 +181,11 @@ const cleanup = () => {
 // that would FAIL an unattended run sat untouched. A test whose single fixture avoids every
 // blocker cannot verify their fixes. Proving Standard and Complex tiers needs a brief that
 // reaches them.
+//
+// Those briefs are committed, in `tools/e2e/briefs/` with a README explaining what each one
+// reaches and the measured wall-clock for each Tier. Keeping them in the tree rather than in
+// somebody's shell history is the whole point: a verification nobody else can reproduce is a
+// verification that happened once.
 const briefPath = value('--brief', null);
 const IDEA_DEFAULT = [
   'Build a tiny command-line expense tracker.',

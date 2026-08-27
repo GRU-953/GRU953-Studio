@@ -7386,6 +7386,22 @@ test('docs-consistency.mjs: DC13 refuses an unqualified mid-build pop-up', () =>
 // reported ZERO hits on a deliberately reintroduced mid-build pop-up. A gate that passes because
 // its exemption is too generous is the defect this whole file exists to catch, written into a new
 // check on the same day the old ones were fixed.
+// A HAZARD OF THIS MACHINE, not of this suite — recorded here because it looked exactly like 74
+// real regressions. On 2026-08-28 a run reported 663 passing and 74 failing, every failure a repro
+// that SPAWNS a fresh process, every one carrying:
+//
+//   dyld: Library not loaded: /opt/homebrew/opt/simdutf/lib/libsimdutf.34.dylib
+//   Referenced from: .../Cellar/merve/1.2.2_1/lib/libmerve.1.2.2.dylib
+//
+// A Homebrew upgrade had moved `simdutf` to 35 while another formula still linked 34, so any
+// spawned process inheriting that environment failed to start. The suite had been 737/737 green
+// minutes earlier, and running the "failing" repro directly printed PASS with exit 0.
+//
+// The lesson is the same one this repository keeps writing down in the other direction: before
+// believing a failure, check whether the thing that changed was the code. A dyld error, a "cannot
+// create temporary file" (510 leaked fixtures once caused that), and a real defect all present as
+// a red test. Re-run once on a quiet machine before reaching for a fix.
+
 // DC14. `docs/STABILITY.md` promises for the whole life of 7.0.x that no hook carries a network
 // client. The check behind it was written on 2026-08-27 and REWRITTEN the same day, because an
 // adversarial pass measured it against the one file its own header named as the counter-example it
