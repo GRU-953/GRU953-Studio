@@ -177,6 +177,23 @@ let maxAttempts = 3;
         1,
       );
     }
+    // `run.json` is documented as schema-versioned, and session-cost.mjs refuses a version it
+    // does not understand. This reader ignored the field entirely, so the same file was strict
+    // for one consumer and unchecked for the other — and a v2 run.json would have had its
+    // maxAttemptsPerTask read under v1 assumptions by whichever gate did not care. Added
+    // 2026-08-27; absent is still fine, because the file itself is optional.
+    if (cfg && cfg.schemaVersion !== undefined && cfg.schemaVersion !== SCHEMA_VERSION) {
+      out(
+        {
+          status: 'BLOCKED',
+          problems: [
+            `Dev-Memory/run.json declares schemaVersion ${JSON.stringify(cfg.schemaVersion)}, and this gate understands ${SCHEMA_VERSION}. It refuses rather than reading a run's limits under assumptions that may no longer hold.`,
+          ],
+          root,
+        },
+        1,
+      );
+    }
     if (cfg && cfg.maxAttemptsPerTask !== undefined) {
       if (!Number.isInteger(cfg.maxAttemptsPerTask) || cfg.maxAttemptsPerTask < 1) {
         out(
@@ -443,6 +460,12 @@ if (all.length === done.length) {
     {
       status: 'clean',
       reason: 'every task is done and backed by recorded evidence',
+      // Stated explicitly rather than left absent. Four shipped commands were rewritten on
+      // 2026-08-27 to read this gate's `next` field instead of re-deriving the next task from
+      // the rendered table — and on the one run that matters most, the finished one, the field
+      // simply was not there. "Absent" is not an answer a caller can act on; "null, because
+      // everything is done" is.
+      next: null,
       canContinue: false,
       ...summary,
       root,

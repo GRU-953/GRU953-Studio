@@ -53,7 +53,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { readStdin, deny, stepAside, shellSegments, shellTokens } from './lib.mjs';
+import { readStdin, deny, stepAside, shellTokensDetailed } from './lib.mjs';
 
 // Matched on the BASENAME, lowercased. A curated list is the whole intellectual content here:
 // the value is in knowing that `eslint.config.mts` and `.eslintrc.cjs` are both real and both
@@ -229,60 +229,102 @@ const target =
 // this cannot parse is left to the other hooks exactly as before.
 function writeTargetsIn(command) {
   const found = [];
-  for (const seg of shellSegments(command)) {
-    const toks = shellTokens(seg);
+  // A `cd` in an earlier segment changes what a later relative path MEANS.
+  // `cd Dev-Memory/evidence && echo x > tests.json` wrote a guarded file while this hook read
+  // "tests.json", resolved it against the project root, found nothing there and stepped aside.
+  let rel = '.';
+  for (const toks of shellTokensDetailed(command)) {
     if (toks.length === 0) continue;
-    const program = path.basename(toks[0]).toLowerCase();
-    const isFlag = (t) => t.startsWith('-') && t !== '-';
+    const words = toks.filter((t) => !t.redirect && !t.descriptor);
+    if (words.length === 0) continue;
 
-    // Redirection, whether spaced (`> path`) or attached (`>path`, `2>path`).
-    for (let i = 0; i < toks.length; i++) {
-      const t = toks[i];
-      const m = /^\d*>>?(.*)$/.exec(t);
-      if (!m) continue;
-      if (m[1] !== '') found.push(m[1]);
-      else if (toks[i + 1] && !isFlag(toks[i + 1])) found.push(toks[i + 1]);
+    // Unwrap the programs that run another program. `["env","true"]` and `nice true` and
+    // `timeout 5 true` all reach `true`, and checking only the first word saw `env`.
+    const WRAPPERS = new Set([
+      'env',
+      'nice',
+      'nohup',
+      'time',
+      'timeout',
+      'stdbuf',
+      'command',
+      'builtin',
+      'exec',
+      'sudo',
+      'doas',
+    ]);
+    let pi = 0;
+    while (
+      pi < words.length - 1 &&
+      (WRAPPERS.has(path.basename(words[pi].value).toLowerCase()) ||
+        /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[pi].value) ||
+        (pi > 0 && words[pi].value.startsWith('-')))
+    ) {
+      pi += 1;
+    }
+    const program = path.basename(words[pi].value || '').toLowerCase();
+
+    if (program === 'cd' && words[pi + 1]) {
+      rel = path.join(rel, words[pi + 1].value);
+      continue;
     }
 
-    const rest = toks.slice(1).filter((t) => !isFlag(t) && !/^\d*>>?/.test(t));
+    const at = (t) => ({ target: t, base: rel });
+    const isFlag = (t) => t.value.startsWith('-') && t.value !== '-';
+
+    // Redirection, from the SCANNER's judgement rather than from the token text: a `>` that was
+    // quoted is an argument a program receives, not something the shell does.
+    for (let i = 0; i < toks.length; i++) {
+      if (!toks[i].redirect) continue;
+      const next = toks[i + 1];
+      if (next && !next.redirect && !next.descriptor && toks[i].value[0] === '>')
+        found.push(at(next.value));
+    }
+
+    const rest = words
+      .slice(pi + 1)
+      .filter((t) => !isFlag(t))
+      .map((t) => t.value);
     switch (program) {
       case 'tee':
       case 'rm':
       case 'truncate':
       case 'shred':
       case 'unlink':
-        found.push(...rest);
+        found.push(...rest.map(at));
         break;
       case 'sed':
       case 'perl':
       case 'ruby':
-        // Only in-place editing writes a file. `sed -i ''` on BSD takes a suffix argument, which
-        // the filter above already dropped as a non-flag token only if it were a flag — it is
-        // an empty string, so it never survives shellTokens. Both spellings land here.
-        if (toks.some((t) => t === '-i' || /^-i\S/.test(t) || t === '--in-place')) {
-          found.push(...rest);
+        // Clustered flags count: `perl -pi -e` is the canonical in-place spelling and the old
+        // exact-match on `-i` never saw the `i` inside `-pi`.
+        if (
+          words.some(
+            (t) =>
+              t.value === '--in-place' ||
+              /^--in-place=/.test(t.value) ||
+              (/^-[A-Za-z]*i/.test(t.value) && !t.value.startsWith('--')),
+          )
+        ) {
+          found.push(...rest.map(at));
         }
         break;
       case 'mv':
-        // EVERY operand. A move writes its destination and REMOVES its sources, so
-        // `mv Dev-Memory/evidence /tmp/gone` destroys the measurements just as surely as deleting
-        // them — and checking only the destination, as the copy family below correctly does,
-        // waved it straight through.
-        found.push(...rest);
+        // EVERY operand: a move writes its destination and REMOVES its sources.
+        found.push(...rest.map(at));
         break;
       case 'cp':
       case 'install':
       case 'ln':
-        // The destination is the last operand; the others are only READ.
-        if (rest.length >= 1) found.push(rest[rest.length - 1]);
+      case 'rsync':
+        if (rest.length >= 1) found.push(at(rest[rest.length - 1]));
         break;
-      case 'dd': {
-        for (const t of toks) {
-          const of = /^of=(.+)$/.exec(t);
-          if (of) found.push(of[1]);
+      case 'dd':
+        for (const t of words) {
+          const of = /^of=(.+)$/.exec(t.value);
+          if (of) found.push(at(of[1]));
         }
         break;
-      }
       default:
         break;
     }
@@ -290,10 +332,23 @@ function writeTargetsIn(command) {
   return found;
 }
 
-const shellCommand = typeof ti.command === 'string' ? ti.command : '';
+// This product's own lib.mjs reads a command from more than one field, because different tools
+// spell it differently. Reading only `command` meant this arm did nothing at all on the
+// PowerShell / Monitor / run_command surfaces that INV10 now certifies it is wired for.
+const shellCommand =
+  (typeof ti.command === 'string' && ti.command) ||
+  (typeof ti.script === 'string' && ti.script) ||
+  (typeof ti.CommandLine === 'string' && ti.CommandLine) ||
+  (typeof ti.cmd === 'string' && ti.cmd) ||
+  '';
 if (target === '' && shellCommand !== '') {
-  for (const candidate of writeTargetsIn(shellCommand)) {
-    const abs = path.resolve(cwd, candidate);
+  for (const { target: candidate, base } of writeTargetsIn(shellCommand)) {
+    let abs = path.resolve(cwd, base, candidate);
+    // A GLOB never matches a real path, so statSync said "does not exist", which this hook reads
+    // as first-time creation and waves through: `rm -f Dev-Memory/evidence/*.json` deleted every
+    // measurement unchallenged. A pattern cannot be resolved without expanding it, but its
+    // DIRECTORY can — and for everything guarded here, the directory is the thing that matters.
+    if (/[*?[\]]/.test(candidate)) abs = path.dirname(abs);
     const what = isGuardedPath(abs);
     if (!what) continue;
     // A file OR a directory. `rm -rf Dev-Memory/evidence` is a write to the substrate however it
@@ -333,6 +388,104 @@ try {
   exists = false;
 }
 if (!exists) stepAside();
+
+// ---- dod.json: refuse a WEAKENING, not every edit -------------------------------------------
+//
+// THE DEADLOCK THIS RESOLVES. Two guards added on 2026-08-27 combine into a trap. dod.mjs now
+// refuses `lint: notApplicable` in a project that HAS a linter — correct, and reachable the
+// moment a build adds one after `dod.json` was written, which is the normal order of work. The
+// only way out is to give `lint` a command, which means editing `dod.json` — which this hook
+// refused outright. dod.mjs blocks, the fix is blocked, and an unattended run stops with no
+// legal move. Neither guard was wrong on its own; together they were a product that could not
+// finish.
+//
+// The threat was never "dod.json changed". It is "the bar was LOWERED to make a failing build
+// pass". So compare the proposal with what is on disk and refuse exactly that:
+//   * a dimension losing its command, or moving from a command to `notApplicable`
+//   * a coverage floor going DOWN
+//   * a dimension disappearing
+// Raising the bar — n/a becoming a real command, a floor going up, a new dimension declared —
+// is the fix the gates are asking for, and it is allowed.
+//
+// FAILS CLOSED. If the proposal cannot be reconstructed or does not parse, this falls through to
+// the refusal below. A change that cannot be shown to be safe is not shown to be safe.
+if (/(^|[\\/])Dev-Memory[\\/]dod\.json$/.test(abs.replace(/\\/g, '/'))) {
+  const proposed = (() => {
+    if (typeof ti.content === 'string') return ti.content; // Write
+    let text;
+    try {
+      text = fs.readFileSync(abs, 'utf8');
+    } catch {
+      return null;
+    }
+    const edits =
+      Array.isArray(ti.edits) && ti.edits.length
+        ? ti.edits
+        : typeof ti.old_string === 'string'
+          ? [{ old_string: ti.old_string, new_string: ti.new_string }]
+          : null;
+    if (!edits) return null;
+    for (const e of edits) {
+      if (typeof e.old_string !== 'string' || typeof e.new_string !== 'string') return null;
+      if (!text.includes(e.old_string)) return null;
+      text = e.replace_all
+        ? text.split(e.old_string).join(e.new_string)
+        : text.replace(e.old_string, e.new_string);
+    }
+    return text;
+  })();
+
+  const weakenings = [];
+  if (proposed !== null) {
+    let before = null;
+    let after = null;
+    try {
+      before = JSON.parse(fs.readFileSync(abs, 'utf8'));
+      after = JSON.parse(proposed);
+    } catch {
+      before = after = null;
+    }
+    if (before && after && before.dimensions && after.dimensions) {
+      for (const [key, was] of Object.entries(before.dimensions)) {
+        const now = after.dimensions[key];
+        if (now === undefined) {
+          weakenings.push(`${key} has been removed entirely`);
+          continue;
+        }
+        const hadCommand = was && Array.isArray(was.command);
+        const hasCommand = now && Array.isArray(now.command);
+        if (hadCommand && !hasCommand) {
+          weakenings.push(
+            `${key} loses its command${now && now.notApplicable ? ' and becomes notApplicable' : ''} — a dimension that was being measured would stop being measured`,
+          );
+        }
+        if (
+          typeof (was || {}).minPercent === 'number' &&
+          typeof (now || {}).minPercent === 'number' &&
+          now.minPercent < was.minPercent
+        ) {
+          weakenings.push(
+            `${key}'s floor drops from ${was.minPercent}% to ${now.minPercent}% — that is the bar being lowered by the work it grades`,
+          );
+        }
+      }
+      if (weakenings.length === 0) {
+        // Nothing here lowers the bar. This is the edit the gates are asking for.
+        stepAside();
+      }
+    }
+  }
+  deny(
+    `studio config protection: this edit changes ${what} — ${path.basename(abs)} — in a way that ` +
+      (weakenings.length
+        ? `LOWERS the bar: ${weakenings.join('; ')}. `
+        : 'this hook cannot verify leaves the bar intact (the proposed content could not be reconstructed or does not parse as JSON). ') +
+      'Raising the bar is allowed and is often exactly what a failing gate is asking for — ' +
+      'giving a dimension a real command, or raising a coverage floor. Lowering it is not: ' +
+      'if a check is failing, fix what it is reporting. Changing the standard itself is a ' +
+      'deliberate decision for the person who owns the project.',
+  );
+}
 
 deny(
   `studio config protection: this edit changes ${what} — ${path.basename(abs)}. ` +

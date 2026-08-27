@@ -118,8 +118,22 @@ labelled as judgements, because no machine measures them:
 
 **`notApplicable`** takes a real reason, and the reason has to be true: `tests`
 marked n/a in a project that has a test suite is refused, and so are `build`,
-`lint`, `types`, `coverage` and `dependencies` where the tree plainly
-contradicts the claim.
+`lint`, `types` and `dependencies` where the tree plainly contradicts the claim.
+
+`coverage` is deliberately NOT in that list, though this section briefly said it
+was. "We have tests but no coverage instrumentation" is an ordinary, honest state
+for a small project, and refusing it would force a coverage dependency onto every
+Tiny-Tier build to satisfy a check. Coverage is held honest by the floor rules
+instead — which act when a project says it IS measuring, and that is the claim
+capable of being hollow.
+
+**Changing `dod.json` after it exists.** `hooks/config-protection.mjs` allows an
+edit that RAISES the bar — giving an n/a dimension a real command, raising a
+floor, declaring a dimension that was missing — because that is exactly what a
+blocked gate is asking for. It refuses one that lowers it: a measured dimension
+becoming `notApplicable`, a floor going down, a dimension deleted. If it cannot
+reconstruct or parse your proposed content, it refuses, because a change that
+cannot be shown safe has not been shown safe.
 
 **Never edit `Dev-Memory/evidence/` or `QUALITY-GATE.md` by hand.**
 `hooks/config-protection.mjs` refuses it, through an edit tool or the shell, and

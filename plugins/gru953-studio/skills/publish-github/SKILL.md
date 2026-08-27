@@ -253,8 +253,9 @@ not yet published — report the failure plainly, do not report success.
 ## 7. Report
 
 Tell the user in plain English: the repository's address, that it is
-private, what was published, that all seven pre-flight checks came back
-clean, and that a real Release (not just a tag) exists — quote the
+private, what was published, that every pre-flight check in section 3 came back
+clean (name them rather than counting — a count in prose goes stale, and this one did:
+it still said "seven" after the list became nine on 2026-08-27), and that a real Release (not just a tag) exists — quote the
 `isDraft: false` confirmation. Record the address, tag and date in
 `Dev-Memory/PROGRESS.md` and `SESSION-LOG.md`. Delete
 `Dev-Memory/PUBLISH-APPROVED` afterwards — **that file was removed on 2026-08-16 by

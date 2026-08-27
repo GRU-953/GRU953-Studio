@@ -277,7 +277,45 @@ function execute(key, spec) {
     );
     return null;
   }
-  const program = path.basename(argv[0]);
+  // Look THROUGH the programs whose job is to run another program, and past environment
+  // assignments and their flags. 2026-08-27: `["env","true"]` gave ten green executed dimensions
+  // and two clean gates having measured nothing, because this checked argv[0] and argv[0] was
+  // `env`. `["sh","-c","true"]` is caught by the same walk reaching the script text.
+  const RUNNERS = new Set([
+    'env',
+    'nice',
+    'nohup',
+    'time',
+    'timeout',
+    'stdbuf',
+    'command',
+    'exec',
+    'xargs',
+    'sudo',
+    'doas',
+  ]);
+  let pi = 0;
+  while (
+    pi < argv.length - 1 &&
+    (RUNNERS.has(path.basename(argv[pi]).toLowerCase()) ||
+      /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[pi]) ||
+      (pi > 0 && argv[pi].startsWith('-')))
+  ) {
+    pi += 1;
+  }
+  const program = path.basename(argv[pi]);
+  // `sh -c 'true'` / `bash -c ':'` — the vacuity is in the script text, not in argv[0].
+  if (/^(sh|bash|zsh|dash|ksh)$/.test(program)) {
+    const dashC = argv.indexOf('-c');
+    const script = dashC >= 0 ? (argv[dashC + 1] || '').trim() : '';
+    const firstWord = path.basename(script.split(/\s+/)[0] || '');
+    if (script === '' || VACUOUS_PROGRAMS.has(firstWord)) {
+      fail(
+        `${key}: \`${argv.join(' ')}\` cannot measure ${key} — the shell script it runs (${JSON.stringify(script.slice(0, 60))}) does nothing but produce an exit code. Declare the command that actually checks this dimension, or mark it \`notApplicable\` with a reason.`,
+      );
+      return null;
+    }
+  }
   if (VACUOUS_PROGRAMS.has(program)) {
     fail(
       `${key}: \`${argv.join(' ')}\` cannot measure ${key}. \`${program}\` produces an exit code without inspecting anything, so this row would be green whatever the state of the code. Declare the command that actually checks this dimension, or mark it \`notApplicable\` with a reason.`,
@@ -351,19 +389,42 @@ function execute(key, spec) {
  * own machine-readable report file — never scraped from stdout prose, which is how a
  * "coverage: see report" evidence cell used to satisfy the old gate.
  */
+/**
+ * Refuse this dimension AND mark the result, in one act.
+ *
+ * 2026-08-27, found by attacking the fix that added the coverage floor. `fail()` records a
+ * problem for THIS process's exit code; it does not touch the result object. So a refusal left
+ * `res.verdict` at 'pass' (set from the command's exit code), and the run went on to write
+ * `{"verdict":"pass"}` into evidence and render `| Test coverage | pass | ... |` into
+ * QUALITY-GATE.md. dod.mjs exited 1 — but quality-gate.mjs, reading the table it had just
+ * written, returned CLEAN. Measured end to end: a `minPercent: 0` project, refused by dod.mjs,
+ * certified by the gate immediately after.
+ *
+ * The two must never diverge again: a dimension this gate refuses is BLOCKED in the record as
+ * well as in the exit code. Everything downstream reads the record.
+ */
+function refuse(res, message) {
+  fail(message);
+  if (res && typeof res === 'object') {
+    res.verdict = 'blocked';
+    res.why = message;
+  }
+  return res;
+}
+
 function checkCoverageFloor(spec, res) {
   const floor = spec.minPercent;
   if (typeof floor !== 'number' || !(floor >= 0 && floor <= 100)) {
-    fail(
+    return refuse(
+      res,
       'coverage: `minPercent` must be a number between 0 and 100. Without a stated floor this dimension measures nothing — a run at 3% would pass',
     );
-    return res;
   }
   if (floor <= 0) {
-    fail(
+    return refuse(
+      res,
       'coverage: `minPercent` is 0, so this dimension cannot fail and therefore is not a check. A floor of zero is refused outright — no reason makes a measurement that always passes into a measurement. Either state a real floor or mark coverage `notApplicable` with a reason, which is at least honest about not measuring it.',
     );
-    return res;
   }
   if (floor < MIN_COVERAGE_FLOOR) {
     const because =
@@ -371,25 +432,25 @@ function checkCoverageFloor(spec, res) {
         ? spec.floorBelowProductMinimumBecause.trim()
         : '';
     if (because === '') {
-      fail(
+      return refuse(
+        res,
         `coverage: \`minPercent\` is ${floor}, below this product's minimum floor of ${MIN_COVERAGE_FLOOR}. A floor set beneath the bar is the bar being lowered by the work being graded. If the project genuinely needs a lower one, declare \`floorBelowProductMinimumBecause\` with the reason, so the exception is a recorded decision rather than a quiet number.`,
       );
-      return res;
     }
     res.floorBelowProductMinimum = { floor, productMinimum: MIN_COVERAGE_FLOOR, because };
   }
   if (typeof spec.reportPath !== 'string' || spec.reportPath === '') {
-    fail(
+    return refuse(
+      res,
       "coverage: `reportPath` must name the coverage tool's machine-readable report. The percentage is never scraped from stdout — prose is not a measurement",
     );
-    return res;
   }
   const rp = path.resolve(rootAbs, spec.reportPath);
   if (!(rp === rootAbs || rp.startsWith(rootAbs + path.sep))) {
-    fail(
+    return refuse(
+      res,
       `coverage: \`reportPath\` resolves to ${rp}, which is outside the project root ${rootAbs}. A coverage figure read from another repository is that repository's figure.`,
     );
-    return res;
   }
   const raw = readOrBlock(rp);
   if (raw === MISSING) {
@@ -630,6 +691,15 @@ for (const dim of JUDGED) {
     '     that can be edited by the work it grades is not a Definition of Done. -->',
     '',
     `Generated: ${iso(Date.now())}`,
+    '',
+    // The RUN's own verdict, stated in the file it produces. Belt and braces over the row-level
+    // fix above: this generator has now been shown once to write a green row for a dimension it
+    // had refused, and the whole cost of that bug was that the table and the exit code could
+    // disagree at all. A reader of this file — human or gate — should not have to have seen the
+    // exit code. quality-gate.mjs refuses a table whose Result line says BLOCKED.
+    problems.length > 0
+      ? `Result: BLOCKED — this run recorded ${problems.length} problem(s); see the run's output. Do not treat this table as a pass.`
+      : 'Result: clean',
     '',
     '| Item | Status | Evidence |',
     '| :-- | :-- | :-- |',

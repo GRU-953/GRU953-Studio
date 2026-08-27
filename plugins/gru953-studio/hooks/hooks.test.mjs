@@ -3319,6 +3319,192 @@ test('the dod.json contract documented in skills/quality-gate/SKILL.md matches w
   }
 });
 
+// ---------------------------------------------------------------------------
+// 2026-08-27, SECOND PASS. The fixes above were themselves attacked, and eleven of them were
+// defective. Every one is the same shape as what they were fixing: a guard that looked right and
+// measured the wrong thing. These are their reproductions.
+// ---------------------------------------------------------------------------
+
+// THE WORST OF THEM. `fail()` records a problem for dod.mjs's exit code; it does not touch the
+// result object. So a REFUSED dimension kept the verdict its exit code had given it, and the run
+// went on to write {"verdict":"pass"} into evidence and render a green row — after which
+// quality-gate.mjs, reading the table dod.mjs had just written, returned CLEAN. The coverage
+// floor added hours earlier was undone by running the two gates in the order the publish
+// protocol specifies.
+test('dod.mjs: a dimension this gate REFUSES is blocked in the record, not only in the exit code', () => {
+  const dir = mkTmp('gru-dod-refused-');
+  fs.writeFileSync(path.join(dir, 'c.json'), JSON.stringify({ total: { lines: { pct: 95 } } }));
+  writeDod(dir, {
+    ...DOD_ALL_NA,
+    coverage: { command: [process.execPath, '-e', ''], minPercent: 0, reportPath: 'c.json' },
+  });
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0, 'precondition: dod.mjs must refuse a zero floor');
+
+  const ev = JSON.parse(
+    fs.readFileSync(path.join(dir, 'Dev-Memory', 'evidence', 'coverage.json'), 'utf8'),
+  );
+  assert.equal(ev.verdict, 'blocked', 'the evidence must record the refusal, not the exit code');
+
+  const table = fs.readFileSync(path.join(dir, 'Dev-Memory', 'QUALITY-GATE.md'), 'utf8');
+  assert.match(table, /^Result: BLOCKED/m, 'the table must state the run it came from was refused');
+  assert.ok(
+    !/\|\s*Test coverage\s*\|\s*pass\s*\|/.test(table),
+    'the refused dimension must not render as a pass',
+  );
+
+  const qg = runScript('quality-gate.mjs', dir);
+  assert.notEqual(qg.code, 0, 'and the gate that reads that table must not certify it clean');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('quality-gate.mjs: freshness does not fail OPEN when no evidence carries a timestamp', () => {
+  const dir = mkTmp('gru-qg-undated-');
+  writeGate(dir, FULL_DOD);
+  const evidence = path.join(dir, 'Dev-Memory', 'evidence');
+  for (const f of fs.readdirSync(evidence)) {
+    const rec = JSON.parse(fs.readFileSync(path.join(evidence, f), 'utf8'));
+    delete rec.endedAt;
+    delete rec.recordedAt;
+    fs.writeFileSync(path.join(evidence, f), JSON.stringify(rec));
+  }
+  const r = runScript('quality-gate.mjs', dir);
+  assert.notEqual(r.code, 0, 'undated evidence is exactly the case where staleness cannot be ruled out');
+  assert.match(JSON.stringify(r.json), /carry no .?endedAt/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// `["true"]` was refused and `["env","true"]` was not — ten green executed dimensions, nothing run.
+for (const [label, command] of [
+  ['a runner wrapping it', ['env', 'true']],
+  ['a shell running it', ['sh', '-c', 'true']],
+  ['a shell running the null command', ['bash', '-c', ':']],
+  ['a timeout wrapping it', ['timeout', '5', 'true']],
+  ['an environment assignment before it', ['CI=1', 'true']],
+]) {
+  test(`dod.mjs: vacuity is refused through ${label}`, () => {
+    const dir = mkTmp('gru-dod-wrap-');
+    writeDod(dir, { ...DOD_ALL_NA, tests: { command } });
+    assert.notEqual(runScript('dod.mjs', dir).code, 0, `${command.join(' ')} measures nothing`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+for (const [label, command] of [
+  ['a plain command', [process.execPath, '-e', 'process.exit(0)']],
+  ['a real command through a runner', ['env', process.execPath, '-e', 'process.exit(0)']],
+  ['a real shell command', ['sh', '-c', `${process.execPath} -e ""`]],
+]) {
+  test(`dod.mjs: ${label} still runs (control for the vacuity rule)`, () => {
+    const dir = mkTmp('gru-dod-wrapok-');
+    writeDod(dir, { ...DOD_ALL_NA, tests: { command } });
+    assert.equal(runScript('dod.mjs', dir).code, 0, `${command.join(' ')} is a real check`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// The shell arm split raw text on operators and then threw the quotes away, which produced both
+// failure directions at once: a quoted `>` handed to a program as DATA read as a redirection,
+// and `>|` was missed because `|` had already been treated as a separator.
+for (const [label, command, want] of [
+  ['a cd into the guarded directory first', 'cd Dev-Memory/evidence && echo x > tests.json', 'deny'],
+  ['the clobber-anyway redirection', 'echo x >| Dev-Memory/evidence/tests.json', 'deny'],
+  ['clustered in-place flags', 'perl -pi -e s/a/b/ Dev-Memory/dod.json', 'deny'],
+  ['a glob over the evidence', 'rm -f Dev-Memory/evidence/*.json', 'deny'],
+  ['vacuity through a runner', 'env true && echo x > Dev-Memory/dod.json', 'deny'],
+  ['a QUOTED redirection character passed as data', 'grep -l ">" Dev-Memory/evidence/tests.json', null],
+  ['a descriptor duplication', 'cmd 2>&1 | tee /tmp/log', null],
+  ['redirecting the gate\'s own output elsewhere', 'node hooks/dod.mjs . > /tmp/out.json', null],
+  ['a commit message that merely names a guarded file', 'git commit -m "note; see Dev-Memory/dod.json"', null],
+]) {
+  test(`config-protection.mjs: ${label}`, () => {
+    const dir = cfgProject('gru-cfg-quote-');
+    const r = runHook('config-protection.mjs', command, dir);
+    assert.equal(r.decision, want, `${command} → expected ${want || 'no objection'}`);
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// TWO GUARDS ADDED THE SAME DAY COMBINED INTO A DEADLOCK. dod.mjs refuses `lint: notApplicable`
+// once the project has a linter — correct, and reached the moment a build adds one after
+// dod.json was written, which is the normal order of work. The only fix is to give lint a
+// command, which means editing dod.json, which config-protection refused outright. No legal
+// move; an unattended run stops. So the rule became "refuse a WEAKENING", not "refuse an edit".
+{
+  const BASE = {
+    schemaVersion: 1,
+    dimensions: {
+      lint: { notApplicable: 'no linter configured' },
+      tests: { command: ['npm', 'test'] },
+      coverage: { command: ['npm', 'run', 'cov'], minPercent: 80, reportPath: 'c.json' },
+    },
+  };
+  const propose = (mutate) => {
+    const dir = mkTmp('gru-cfg-dod-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'dod.json'), JSON.stringify(BASE, null, 2));
+    const next = JSON.parse(JSON.stringify(BASE));
+    mutate(next);
+    const input = JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: 'Dev-Memory/dod.json', content: JSON.stringify(next, null, 2) },
+      cwd: dir,
+    });
+    const r = spawnSync(NODE, [path.join(HERE, 'config-protection.mjs')], { input, encoding: 'utf8' });
+    fs.rmSync(dir, RM_OPTS);
+    return (r.stdout || '').trim();
+  };
+
+  for (const [label, mutate] of [
+    ['giving an n/a dimension a real command', (d) => { d.dimensions.lint = { command: ['npm', 'run', 'lint'] }; }],
+    ['raising a coverage floor', (d) => { d.dimensions.coverage.minPercent = 90; }],
+    ['declaring a dimension that was missing', (d) => { d.dimensions.types = { command: ['tsc', '--noEmit'] }; }],
+    ['swapping one real command for another', (d) => { d.dimensions.tests = { command: ['node', '--test'] }; }],
+  ]) {
+    test(`config-protection.mjs: ALLOWS ${label} — raising the bar is what a blocked gate asks for`, () => {
+      assert.equal(propose(mutate), '', `${label} must not be refused`);
+    });
+  }
+  for (const [label, mutate] of [
+    ['lowering a coverage floor', (d) => { d.dimensions.coverage.minPercent = 10; }],
+    ['disarming a measured dimension', (d) => { d.dimensions.tests = { notApplicable: 'flaky' }; }],
+    ['deleting a dimension outright', (d) => { delete d.dimensions.tests; }],
+  ]) {
+    test(`config-protection.mjs: REFUSES ${label}`, () => {
+      const out = propose(mutate);
+      assert.notEqual(out, '', `${label} lowers the bar and must be refused`);
+      assert.match(out, /LOWERS the bar/, 'and the refusal must name what was lowered');
+    });
+  }
+}
+
+test('task-ledger.mjs: a finished run states next: null rather than omitting the field', () => {
+  const dir = mkTmp('gru-ledger-next-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'tasks.json'),
+    JSON.stringify({ schemaVersion: 1, tasks: [{ id: 't1', title: 'x', state: 'done', evidence: EV() }] }),
+  );
+  const r = runScript('task-ledger.mjs', dir);
+  assert.equal(r.code, 0);
+  assert.ok('next' in r.json, 'four shipped commands branch on this field; absent is not an answer');
+  assert.equal(r.json.next, null);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('task-ledger.mjs: run.json is schema-checked here too, not only by session-cost.mjs', () => {
+  const dir = mkTmp('gru-ledger-runver-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'tasks.json'),
+    JSON.stringify({ schemaVersion: 1, tasks: [{ id: 't1', title: 'x', state: 'todo' }] }),
+  );
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'run.json'), JSON.stringify({ schemaVersion: 2 }));
+  const r = runScript('task-ledger.mjs', dir);
+  assert.notEqual(r.code, 0, 'the same file was strict for one reader and unchecked for the other');
+  assert.match(JSON.stringify(r.json), /run\.json declares schemaVersion 2/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // 2026-08-26, X372. Found by running dod.mjs for the first time: a template bug there emitted
 // `| Independent code review | pass | undefined |` and quality-gate.mjs reported the whole
 // Definition of Done clean, because "undefined" was not a placeholder form. The generator bug is
@@ -6311,6 +6497,28 @@ test('docs-consistency.mjs: DC11 permits a retired state named on a line that sa
 // The gate that EXECUTES the Definition of Done was in no pre-flight list, no checkpoint list, and
 // required by nothing — so Publish cleared the bar from a table the graded agents had written.
 // INV12 had been pinned at the same seven hooks it held before v7, which reads like coverage.
+// INV26, 2026-08-27. The first unattended run that measured it built a complete, tested,
+// committed app with ZERO specialist dispatches. Nothing was wrong with the app; what was missing
+// was the studio. The cause was of the same class as everything else found that day: the mechanism
+// existed (36 role files), the instruction existed ("delegate each stage's work to the right
+// specialist agents"), and no file the coordinator loads named the `Agent` tool that connects
+// them — so the instruction was unactionable and the roster was decoration.
+//
+// This cannot enforce runtime behaviour; only tools/e2e/headless-build.mjs measures that. It
+// enforces that an agent told to delegate can find out HOW from the file it was handed.
+test('repo-integrity.mjs: INV26 requires the coordinator skill to name the tool it delegates with', () => {
+  const dir = mkTmp('gru-inv26-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'studio', 'SKILL.md');
+  const before = fs.readFileSync(f, 'utf8');
+  assert.match(before, /`Agent` tool/, 'precondition: the coordinator must currently name the mechanism');
+  fs.writeFileSync(f, before.split('`Agent` tool').join('right specialist').split('Agent tool').join('specialist'));
+  const r = runScript('repo-integrity.mjs', dir);
+  assert.notEqual(r.code, 0, 'an instruction with no mechanism attached must not pass');
+  assert.match(JSON.stringify(r.json), /never names the .?Agent.? tool/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('repo-integrity.mjs: INV12 requires the Publish protocol to name dod.mjs and task-ledger.mjs', () => {
   for (const hook of ['dod.mjs', 'task-ledger.mjs']) {
     const dir = mkTmp('gru-inv12-');

@@ -827,6 +827,28 @@ for (const s of skillDirs) {
     );
 }
 
+// ---- INV 26: the coordinator names the mechanism it delegates WITH -----------
+// 2026-08-27, found by the first unattended run that measured it. `studio/SKILL.md` told the
+// coordinator to "delegate each stage's work to the right specialist agents" and no file it
+// loads named the `Agent` tool — the thing that actually performs a dispatch. So the instruction
+// had no mechanism attached, and the measured result was a complete, tested, committed app built
+// with ZERO dispatches: 36 role files, none of them used. The product's whole premise is a studio
+// of specialists, and it was decoration.
+//
+// This does not and cannot enforce runtime behaviour — only the end-to-end test measures that.
+// What it enforces is that the instruction stays ACTIONABLE: an agent told to delegate must be
+// able to find out how from the file it was given.
+{
+  const coordinator = read(path.join(pluginRoot, 'skills', 'studio', 'SKILL.md'));
+  if (coordinator === null) {
+    fail('skills/studio/SKILL.md is missing — the coordinator skill cannot be verified (INV26)');
+  } else if (!/\bAgent\b[^\n]{0,40}\btool\b|\btool\b[^\n]{0,40}\bAgent\b/.test(coordinator)) {
+    fail(
+      'skills/studio/SKILL.md instructs the coordinator to delegate but never names the `Agent` tool that performs a dispatch, so the instruction has no mechanism attached. Measured 2026-08-27: an unattended run built a complete, tested, committed app with ZERO dispatches — the roster unused and nothing objecting (INV26)',
+    );
+  }
+}
+
 // ---- INV 12: the publish protocol enumerates every pre-flight check ---------
 // 2026-07-21 audit fix: publish-github/SKILL.md listed only FOUR pre-flight
 // checks while security-compliance-auditor.md (the gate's owner) declares SEVEN

@@ -34,7 +34,9 @@
 // output in a careless implementation, and the first silently disables the control.
 //
 // Usage:
-//   node session-cost.mjs [projectRoot] [--transcript <path>] [--json]
+//   node session-cost.mjs [projectRoot] [--transcript <path>]
+// (There is no --json flag and there never was one: the output is JSON already. The usage line
+//  advertised one until 2026-08-27, and a role had been told to pass it.)
 // Exit 0 = measured, and within budget (or no budget declared).
 // Exit 1 = could not measure, or the budget is exceeded.
 

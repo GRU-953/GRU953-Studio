@@ -1039,40 +1039,158 @@ export function parseTables(text) {
 }
 
 /**
- * Split a shell command line into the segments a shell would run separately.
+ * One quote-aware scanner behind shellSegments / shellTokens / shellTokensDetailed.
  *
- * Added 2026-08-27 for config-protection.mjs's Bash arm. A guard that inspects only the FIRST
- * command in `npm test && sed -i "" s/80/0/ Dev-Memory/dod.json` inspects the harmless half.
+ * 2026-08-27. The first version of these helpers split the raw command text on operators and then
+ * stripped quotes from the pieces. Attacking it found both failure directions at once:
+ *   * FALSE ALARM — `grep -l ">" Dev-Memory/evidence/tests.json` was refused as a redirection
+ *     into the next argument, because a `>` handed to a program AS DATA is indistinguishable
+ *     from a `>` the shell acts on once you have thrown the quotes away.
+ *   * BYPASS — `echo x >| Dev-Memory/evidence/tests.json` was missed, because `|` is a segment
+ *     separator and the split happened before anything understood that `>|` is one operator.
+ * Both are the same mistake: deciding what the shell would do without tracking what the shell
+ * tracks. So the scanner walks the string once, knowing where quoting starts and stops, and
+ * everything else is derived from that.
  *
- * Deliberately syntactic and shallow: this splits on the operators, it does not understand the
- * shell. What it is FOR is finding the write targets a person or an agent would plausibly type,
- * not for deciding that a command is safe — nothing here is ever the basis of an allow.
+ * DELIBERATELY SHALLOW, AND SAID PLAINLY. It knows quoting, escaping and the operators. It is
+ * not a shell: it does not expand variables, globs, substitutions or aliases. Nothing here is
+ * ever the basis of an ALLOW — a caller that cannot understand a command must fall through to
+ * whatever it would have done anyway, never to a pass.
+ */
+function scanShell(input) {
+  const text = String(input == null ? '' : input);
+  const segments = [];
+  let tokens = [];
+  let cur = '';
+  let curQuoted = false;
+  let has = false;
+  let quote = null; // "'" or '"' or null
+
+  const endToken = () => {
+    if (has) tokens.push({ value: cur, quoted: curQuoted });
+    cur = '';
+    curQuoted = false;
+    has = false;
+  };
+  const endSegment = () => {
+    endToken();
+    if (tokens.length) segments.push(tokens);
+    tokens = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      else {
+        // Inside double quotes a backslash still escapes; inside single quotes it does not.
+        if (c === '\\' && quote === '"' && i + 1 < text.length) {
+          i += 1;
+          cur += text[i];
+          has = true;
+          continue;
+        }
+        cur += c;
+        has = true;
+      }
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      curQuoted = true;
+      has = true;
+      continue;
+    }
+    if (c === '\\' && i + 1 < text.length) {
+      i += 1;
+      cur += text[i];
+      has = true;
+      continue;
+    }
+    // Operators, longest first. `>|`, `>>`, `&>` and `2>&1` are single tokens, not separators.
+    if (c === '&' || c === '|' || c === ';' || c === '\n') {
+      // `&>` and `>&` are redirections; only a lone/doubled & or | separates.
+      if (c === '&' && text[i + 1] === '>') {
+        endToken();
+        let j = i + 2;
+        cur = '>';
+        has = true;
+        i = j - 1;
+        continue;
+      }
+      if (c === '&' && text[i + 1] === '&') i += 1;
+      else if (c === '|' && text[i + 1] === '|') i += 1;
+      endSegment();
+      continue;
+    }
+    if (c === '>' || c === '<') {
+      endToken();
+      let op = c;
+      if (text[i + 1] === c) {
+        op += c;
+        i += 1;
+      }
+      // `>|` — the "clobber anyway" form. One operator, and its `|` must never separate.
+      if (op[0] === '>' && text[i + 1] === '|') i += 1;
+      // `>&2` / `2>&1` — a descriptor duplication, not a file.
+      if (text[i + 1] === '&') {
+        i += 1;
+        let d = '';
+        while (i + 1 < text.length && /[0-9-]/.test(text[i + 1])) {
+          i += 1;
+          d += text[i];
+        }
+        tokens.push({ value: `${op}&${d}`, quoted: false, redirect: false, descriptor: true });
+        continue;
+      }
+      tokens.push({ value: op, quoted: false, redirect: true });
+      continue;
+    }
+    if (c === ' ' || c === '\t' || c === '\r') {
+      endToken();
+      continue;
+    }
+    cur += c;
+    has = true;
+  }
+  if (quote) {
+    // An unterminated quote is a command a shell would reject. Keep what we have rather than
+    // dropping the segment: a caller that guards writes must still see what it can.
+    endToken();
+  }
+  endSegment();
+  return segments;
+}
+
+/**
+ * Split a shell command line into the segments a shell would run separately, respecting quotes.
+ *
+ * `npm test && sed -i "" s/80/0/ Dev-Memory/dod.json` is two commands, and a guard that inspects
+ * only the first inspects the harmless half.
  */
 export function shellSegments(cmd) {
-  return String(cmd == null ? '' : cmd)
-    .split(/&&|\|\||[;\n|&]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return scanShell(cmd).map((toks) =>
+    toks.map((t) => (t.redirect || t.descriptor ? t.value : t.value)).join(' '),
+  );
 }
 
 /**
  * Tokenise one segment, keeping quoted spans together and stripping one surrounding quote pair.
- *
- * The same quote-aware discipline scan.mjs applies to git pathspecs, and for the same reason: a
- * plain whitespace split tears `"Dev-Memory/my project/dod.json"` into two tokens that match
+ * A plain whitespace split tears `"Dev-Memory/my project/dod.json"` into two tokens that match
  * nothing, and filenames with spaces are ordinary rather than exotic.
  */
 export function shellTokens(segment) {
-  const out = [];
-  for (const raw of String(segment == null ? '' : segment).match(/"[^"]*"|'[^']*'|[^\s'"]+/g) ||
-    []) {
-    let tok = raw;
-    if ((tok.startsWith('"') && tok.endsWith('"')) || (tok.startsWith("'") && tok.endsWith("'"))) {
-      tok = tok.slice(1, -1);
-    }
-    if (tok !== '') out.push(tok);
-  }
-  return out;
+  const segs = scanShell(segment);
+  return segs.length ? segs[0].map((t) => t.value) : [];
+}
+
+/**
+ * The same, but keeping what the scanner knows about each token: whether it was QUOTED (and so
+ * is data, never an operator the shell acts on) and whether it IS a redirection operator.
+ * A caller deciding "is this a write?" needs both, and the token text alone carries neither.
+ */
+export function shellTokensDetailed(cmd) {
+  return scanShell(cmd);
 }
 
 export function splitPipeCells(line) {

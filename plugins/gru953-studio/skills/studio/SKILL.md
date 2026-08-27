@@ -209,10 +209,13 @@ it is not scope creep; adding one the brief does not need is.
 **Footnote (2026-07-10 Round 4 audit fix; extended 2026-07-12):**
 `security-compliance-auditor` only appears in the table from Standard Tier
 up, but its Publish-gate checks (secrets/vulnerability/licence/progress-
-evidence, plus the `quality-gate` Definition of Done via
-`hooks/quality-gate.mjs`, requirements traceability via
+evidence, plus the EXECUTED Definition of Done via `hooks/dod.mjs` and its
+verification via `hooks/quality-gate.mjs`, the task ledger via
+`hooks/task-ledger.mjs`, requirements traceability via
 `hooks/traceability-check.mjs`, and content approval/provenance/rights via
-`hooks/content-check.mjs` — 2026-07-19) run before Publish on EVERY Tier,
+`hooks/content-check.mjs` — 2026-07-19; dod.mjs and task-ledger.mjs added
+2026-08-27, having been omitted here while the protocol itself required them)
+run before Publish on EVERY Tier,
 including Tiny — the table
 lists which roles are part of day-to-day Build work; the Publish gate
 itself is universal and never skipped. The same applies to the roster
@@ -245,6 +248,20 @@ Brainstorm → Ideate → Design → **Prototype** → **Content** → Plan → 
 Test → Fix → Review → Publish (plus Maintain for returning projects). Delegate
 each stage's work to the right specialist agents (parallel where independent);
 never do specialist work yourself.
+
+**Delegating means dispatching a subagent with the `Agent` tool**, naming the
+role from the roster below — not reading that role's file and doing the work in
+this session. Independent specialists are dispatched together in one message so
+they run in parallel.
+
+*Why this had to be spelled out.* Until 2026-08-27 this section said "delegate
+to the right specialist agents" and no file the coordinator loads named the tool
+that performs a dispatch — so the instruction was unactionable and the roster was
+decoration. The first unattended run measured it: a complete, tested, committed
+app, built with **zero** dispatches. Nothing was wrong with the app; what was
+missing was the studio. With a person watching, nobody notices a team that never
+convened. `tools/e2e/headless-build.mjs` now fails the run when it happens, which
+is how this was found at all.
 
 ### Three gates the lifecycle now runs through (v7.0.0)
 

@@ -51,7 +51,7 @@ spend. Enforce that, not a generic "be efficient" instinct.
 3. **Measure it, do not estimate it** (2026-08-27). Run:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/hooks/session-cost.mjs" . --json
+   node "${CLAUDE_PLUGIN_ROOT}/hooks/session-cost.mjs" .
    ```
 
    It reads the session transcript and totals the **tokens** actually used,

@@ -73,6 +73,8 @@ const check = (name, ok, detail) => {
 };
 
 function cannotMeasure(why, hint) {
+  // A timeout is the case most in need of a reproduction and the case that used to leave none.
+  preserveEvidence(null);
   console.log(
     JSON.stringify(
       {
@@ -125,6 +127,29 @@ if (!Number.isFinite(TIMEOUT_MIN) || TIMEOUT_MIN <= 0) {
 
 // ---- the throwaway project -------------------------------------------------------------------
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'gru953-e2e-'));
+// Where the evidence goes when something fails. Until 2026-08-27 this harness discarded the
+// transcript it had just captured (826 KB of it on the run that found this) and deleted the work
+// tree, so a FAILING run — the only kind anybody needs to investigate — left nothing behind to
+// investigate with. A test that reports a defect and destroys the reproduction is most of a test.
+let preserved = null;
+// Held at module scope so cannotMeasure() — which is declared long before the transcript exists,
+// and fires on a TIMEOUT, where the half-built tree is the whole of the evidence — can preserve
+// without reaching a `const` that is still in its temporal dead zone.
+let capturedTranscript = null;
+function preserveEvidence(transcriptText) {
+  const text = transcriptText || capturedTranscript;
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gru953-e2e-evidence-'));
+    if (text) fs.writeFileSync(path.join(dir, 'transcript.jsonl'), text);
+    if (fs.existsSync(work)) fs.cpSync(work, path.join(dir, 'work'), { recursive: true });
+    preserved = dir;
+    console.log(`\n  evidence preserved at ${dir}`);
+    console.log('    transcript.jsonl — the full session; work/ — the tree as the studio left it');
+  } catch (e) {
+    console.log(`\n  (could not preserve evidence: ${e && e.message})`);
+  }
+}
+
 const cleanup = () => {
   if (KEEP) {
     console.log(`\n(--keep) project left at ${work}`);
@@ -234,6 +259,7 @@ const run = spawnSync('claude', args, {
 const elapsedMin = ((Date.now() - started) / 60000).toFixed(1);
 
 const transcript = `${run.stdout || ''}`;
+capturedTranscript = transcript;
 const stderr = `${run.stderr || ''}`;
 
 if (run.error && run.error.code === 'ETIMEDOUT') {
@@ -470,10 +496,17 @@ for (const [rel, label] of [
     [path.join(REPO, 'plugins', 'gru953-studio', 'hooks', 'quality-gate.mjs'), work],
     { encoding: 'utf8' },
   );
+  // quality-gate.mjs answers "not a studio project" with exit 0 for a tree that has no
+  // Dev-Memory/ at all — correct for the gate, and a VACUOUS pass here: a run that built nothing
+  // would have satisfied the assertion that its Definition of Done was acceptable. So the
+  // no-op answer is refused explicitly rather than counted.
+  const qgOut = String(qg.stdout || '');
   check(
     "the studio's own Definition-of-Done record satisfies quality-gate.mjs",
-    qg.status === 0,
-    `exit ${qg.status}: ${String(qg.stdout || '').slice(0, 200)}`,
+    qg.status === 0 && !/not a studio project/.test(qgOut),
+    /not a studio project/.test(qgOut)
+      ? 'the gate found no Dev-Memory to grade — a pass here would mean nothing'
+      : `exit ${qg.status}: ${qgOut.slice(0, 200)}`,
   );
 }
 
@@ -558,6 +591,8 @@ if (failed.length === 0) {
   );
   process.exit(0);
 }
+// Keep the reproduction BEFORE reporting the failure, so the two arrive together.
+preserveEvidence(transcript);
 console.log(
   JSON.stringify(
     {
@@ -566,6 +601,7 @@ console.log(
       passed: results.length - failed.length,
       of: results.length,
       minutes: Number(elapsedMin),
+      evidence: preserved,
     },
     null,
     2,
