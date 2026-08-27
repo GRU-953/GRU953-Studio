@@ -155,6 +155,28 @@ Verified badge on GitHub, and `CONTRIBUTING.md` will then be stating a rule this
 release did not follow — so change that file in the same commit rather than leaving
 the two disagreeing.
 
+## Before the tag: re-measure the two drifting numbers (2026-08-27)
+
+`CHANGELOG.md`'s Numbers table carries two figures that change with every commit —
+the test count and the standing context load. They are measured at the release
+commit, and the tag is usually a few commits later. Re-measure both and update the
+table before step 3, or the release notes ship a number that was true last week.
+
+The other four rows (roles, skills, commands, hooks) are re-derived by
+`repo-integrity.mjs` on every commit and cannot go stale quietly.
+
+```bash
+node plugins/gru953-studio/hooks/hooks.test.mjs 2>&1 | grep -E '^. (tests|pass|fail)'
+```
+
+```bash
+node -e 'const{execSync}=require("child_process");const s=f=>{try{return execSync(`git show HEAD:${f}`,{encoding:"utf8",maxBuffer:1e8})}catch{return null}};const b="plugins/gru953-studio/skills";const c=s(`${b}/studio/SKILL.md`);const k=c.slice(c.indexOf("Also load and follow these companion skills"));const e=k.indexOf("\n\n#");const n=[...new Set([...(e>0?k.slice(0,e):k).matchAll(/^- `([a-z0-9-]+)`/gm)].map(m=>m[1]))];let t=Buffer.byteLength(c,"utf8");for(const x of n){const y=s(`${b}/${x}/SKILL.md`);if(y)t+=Buffer.byteLength(y,"utf8")}console.log(t.toLocaleString()+" B across "+(n.length+1)+" files")'
+```
+
+This is the whole method the changelog states, so running it reproduces the figure
+in the table. The 6.1.0 baseline is the same command with `v6.1.0` in place of
+`HEAD`; it is fixed history and does not need re-running.
+
 ## An open decision, recorded rather than settled (2026-08-27)
 
 `clients/cli/src/detect.js` still lists **Claude Desktop** as an install target,

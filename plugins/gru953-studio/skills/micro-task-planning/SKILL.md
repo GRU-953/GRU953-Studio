@@ -60,8 +60,24 @@ that was always implicitly needed between Design and Build.
      `dev-memory` skill), using the states `hooks/task-ledger.mjs` accepts —
      `todo`, `in-progress`, `done`, `blocked-on-defect`, `blocked-on-human`,
      plus the three set-aside states the command-centre owns (`paused`,
-     `skipped`, `scheduled`). `PROGRESS.md` and `PLAN.md` are rendered from it,
-     so it's auditable and resumable the same way.
+     `skipped`, `scheduled`). `PROGRESS.md` is rendered from it by
+     `hooks/task-ledger.mjs`, so the ledger is auditable and resumable.
+
+     **`PLAN.md` is NOT rendered from it, and this line said it was until
+     2026-08-27.** Nothing renders `PLAN.md`: `task-ledger.mjs` writes exactly one
+     file and that is `PROGRESS.md`. The claim mattered in both directions — an
+     `architect` believing it would not write the file, and `builder` and `tester`
+     are told four bullets below to read task specifics FROM it. So the run either
+     read a file nobody wrote, or kept two task lists with nothing holding them in
+     step while the documentation asserted one came from the other.
+
+     The division, stated once so it is not guessed at: `architect` WRITES
+     `PLAN.md` — it is the design artefact, carrying the phase shape and each
+     task's acceptance criterion, which `tasks.json` does not hold. `tasks.json` is
+     the executable ledger and it is AUTHORITATIVE: where the two disagree about a
+     task's state, the ledger wins, because it is the file the gates read and the
+     only one an unattended run can act on. `docs-consistency.mjs` DC15 now refuses
+     any file claimed to be rendered that no hook writes.
 
      There is deliberately no bare `blocked`: `blocked-on-defect` parks a task
      and the run carries on with anything whose dependencies are satisfied,

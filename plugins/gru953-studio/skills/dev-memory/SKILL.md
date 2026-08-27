@@ -47,6 +47,14 @@ markdown files are now RENDERED from them: `OBJECTIVE.md`, `PROGRESS.md` and
 `QUALITY-GATE.md`. Editing a rendered file is pointless; the next gate run overwrites
 it. Change the JSON and re-run the gate.
 
+`PLAN.md` is in NEITHER category and that is deliberate, stated here because
+leaving it unsaid was a real defect: `micro-task-planning` claimed until 2026-08-27
+that it too was rendered from `tasks.json`, and nothing renders it. It is
+`architect`'s design artefact — the phase shape and each task's acceptance
+criterion, neither of which the ledger carries — written by hand and read by
+`builder`, `tester` and the dashboard. Where it and `tasks.json` disagree about a
+task's STATE, the ledger wins: it is what the gates read.
+
 The direction matters. This repository carries eight separate reproductions for
 failures of _reading_ the old markdown task table — a torn table, a pipe-less table, a
 row judged whole, miskeyed evidence, a path with a space in it — every one the same

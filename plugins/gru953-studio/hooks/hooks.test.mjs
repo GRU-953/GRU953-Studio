@@ -7386,81 +7386,117 @@ test('docs-consistency.mjs: DC13 refuses an unqualified mid-build pop-up', () =>
 // reported ZERO hits on a deliberately reintroduced mid-build pop-up. A gate that passes because
 // its exemption is too generous is the defect this whole file exists to catch, written into a new
 // check on the same day the old ones were fixed.
-// DC14, 2026-08-27, Stage 5. `docs/STABILITY.md` promises for the whole life of 7.0.x that no
-// hook contains a network client. Before this check, the only thing behind that promise was a
-// comment inside docs-consistency.mjs itself which said the property was "finally true" and then
-// said, in the next sentence, that nothing checked it — and named the sweep that would.
+// DC14. `docs/STABILITY.md` promises for the whole life of 7.0.x that no hook carries a network
+// client. The check behind it was written on 2026-08-27 and REWRITTEN the same day, because an
+// adversarial pass measured it against the one file its own header named as the counter-example it
+// existed to catch — v6.1.0's `openrouter-models.mjs` — and it reported CLEAN.
 //
-// The counter-example is not hypothetical: v6's `openrouter-models.mjs` read a public catalogue
-// with Node's built-in `fetch`, and it was deleted for unrelated reasons. Nothing would have
-// noticed it coming back.
-test('docs-consistency.mjs: DC14 refuses a hook that reaches the network', () => {
-  const dir = mkTmp('gru-dc14-');
+// That file's client is `fetchImpl = globalThis.fetch` (line 151 of the real file). The first
+// pattern was `(?:^|[^\w.])fetch\s*\(`, whose character class deliberately excluded a preceding
+// dot, so the single most natural spelling anybody reaching for a client would write was the one
+// spelling it let through. Every one of its own four tests used the spelling it handled.
+//
+// So this is a TABLE, and the table matters more than the check: fourteen spellings that must be
+// caught — each one a working client, proven during that pass by requests arriving at a real local
+// server — and eight that must not fire, each one text this repository actually contains. The
+// first row is the real historical bug in its real spelling.
+const DC14_MUST_CATCH = [
+  [
+    'the real v6 client: globalThis.fetch as a default parameter',
+    'export async function fetchModels({ fetchImpl = globalThis.fetch } = {}) {\n  return await fetchImpl("https://openrouter.ai/api/v1/models");\n}\n',
+  ],
+  ['a plain fetch call', 'const r = await fetch("https://x.example");\nvoid r;\n'],
+  ['globalThis.fetch called directly', 'await globalThis.fetch("https://x.example");\n'],
+  ['a member call through a local alias of globalThis', 'const g = globalThis;\nawait g.fetch("https://x.example");\n'],
+  ['fetch aliased to an identifier', 'const F = fetch;\nawait F("https://x.example");\n'],
+  ['a call split across a newline', 'const r = await fetch\n("https://x.example");\n'],
+  ['import from node:https', 'import https from "node:https";\nhttps.get("x", () => {});\n'],
+  [
+    'import from node:http2 — a real network module the first version omitted',
+    'import http2 from "node:http2";\nhttp2.connect("https://x.example");\n',
+  ],
+  ['require("https")', 'const https = require("https");\nhttps.get("x", () => {});\n'],
+  ['a backtick specifier', 'const https = require(`node:https`);\nhttps.get("x", () => {});\n'],
+  [
+    'a computed specifier through createRequire',
+    'const { createRequire } = await import("node:module");\nconst req = createRequire(import.meta.url);\nconst h = req("node:" + "https");\nh.get("x");\n',
+  ],
+  ['a concatenated dynamic import', 'const h = await import("node:" + "https");\nh.get("x");\n'],
+  ['new WebSocket', 'const ws = new WebSocket("wss://x.example");\nvoid ws;\n'],
+  ['new XMLHttpRequest', 'const x = new XMLHttpRequest();\nvoid x;\n'],
+];
+
+// Each of these is text this repository actually contains. The first version reported the block
+// comment as a network client — the "gate earns being switched off" failure its own header warned
+// about, in the check that warned about it — and a stricter rule over raw text would have flagged
+// this very file, whose own error message and pattern literal both contain the word.
+const DC14_MUST_NOT_FIRE = [
+  [
+    'a /* */ block whose body lines do not start with *',
+    '/*\n  This hook must never call fetch("https://...") or\n  require("https"). See docs/STABILITY.md.\n*/\nconsole.log(1);\n',
+  ],
+  ['a regex literal containing the word — lib.mjs has one', 'const RE = /(?:curl|wget|fetch|http|https)/i;\nconsole.log(RE.test("x"));\n'],
+  ['a message string — session-start.mjs has one', 'console.log("Never fetch, pull, rebase or stash");\n'],
+  ['prose inside a string naming require("https")', 'const help = "avoid require(\\"https\\") in a hook";\nconsole.log(help);\n'],
+  [
+    'identifiers that merely contain the letters',
+    'const prefetched = new Map();\nfunction refetchLater(k) {\n  return prefetched.get(k);\n}\nconsole.log(refetchLater("a"));\n',
+  ],
+  ['ordinary node imports', 'import fs from "node:fs";\nimport path from "node:path";\nconsole.log(fs, path);\n'],
+  ['a relative import', 'import { x } from "./lib.mjs";\nconsole.log(x);\n'],
+  ['a line comment naming the forbidden spellings', '// never fetch(), never require("https"), never new WebSocket()\nconsole.log(1);\n'],
+];
+
+for (const [label, body] of DC14_MUST_CATCH) {
+  test(`docs-consistency.mjs: DC14 catches ${label}`, () => {
+    const dir = mkTmp('gru-dc14-');
+    copyRepoTo(dir);
+    fs.writeFileSync(path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-client.mjs'), body);
+    const r = runDocsConsistency(dir);
+    assert.notEqual(r.status, 0, `${label} is a working network client and must not pass`);
+    assert.ok(
+      (r.json.problems || []).some((pr) => /zz-client\.mjs:\d+ contains /.test(pr)),
+      `expected DC14 to name the file and line, got: ${JSON.stringify(r.json && r.json.problems)}`,
+    );
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+for (const [label, body] of DC14_MUST_NOT_FIRE) {
+  test(`docs-consistency.mjs: DC14 does not fire on ${label}`, () => {
+    const dir = mkTmp('gru-dc14-ok-');
+    copyRepoTo(dir);
+    fs.writeFileSync(path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-prose.mjs'), body);
+    assert.equal(
+      runDocsConsistency(dir).json.status,
+      'clean',
+      `${label} is not a network client — a gate that fires on this gets switched off`,
+    );
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// A client one directory down was invisible to the first version, which read only top-level
+// `hooks/*.mjs`. A wired hook importing it phones home exactly as if the call were inline.
+test('docs-consistency.mjs: DC14 walks the hooks tree, not just its top level', () => {
+  const dir = mkTmp('gru-dc14-deep-');
   copyRepoTo(dir);
-  const f = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-catalogue.mjs');
-  fs.writeFileSync(f, "const r = await fetch('https://openrouter.ai/api/v1/models');\nconsole.log(r);\n");
-  const r = runDocsConsistency(dir);
-  assert.notEqual(r.status, 0, 'a hook with its own network client must not pass');
-  assert.ok(
-    (r.json.problems || []).some((p) => /zz-catalogue\.mjs:1 contains a network client/.test(p)),
-    `expected DC14 to name the file and line, got: ${JSON.stringify(r.json && r.json.problems)}`,
-  );
+  const sub = path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'net');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'agent.mjs'), 'export async function phoneHome(u) {\n  return await fetch(u);\n}\n');
+  assert.notEqual(runDocsConsistency(dir).status, 0, 'a client in a subdirectory of hooks/ is still a client');
   fs.rmSync(dir, RM_OPTS);
 });
 
-// The import spelling, kept separate because the call and the import are two different mistakes
-// and a check that catches one is routinely assumed to catch the other. Measured this session:
-// twelve tests of a config guard all used the one spelling the code handled, and the other
-// spelling was silently unguarded for a day.
-test('docs-consistency.mjs: DC14 catches the import spelling, not only fetch()', () => {
-  const dir = mkTmp('gru-dc14-imp-');
-  copyRepoTo(dir);
-  fs.writeFileSync(
-    path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-client.mjs'),
-    "import https from 'node:https';\nhttps.get('https://example.com', () => {});\n",
+// The exclusion is narrow BY CONSTRUCTION and this asserts why: nothing under `test/` and no
+// `.test.mjs` file is ever wired into hooks.json, so excluding them cannot hide a live client.
+test('docs-consistency.mjs: no .test.mjs file is wired as a hook, which is what lets DC14 skip them', () => {
+  const wired = fs.readFileSync(
+    path.join(REPO_ROOT, 'plugins', 'gru953-studio', 'hooks', 'hooks.json'),
+    'utf8',
   );
-  assert.notEqual(runDocsConsistency(dir).status, 0, 'importing a network module is the same property');
-  fs.rmSync(dir, RM_OPTS);
-});
-
-// Two controls, and they are the ones that matter. This check's OWN header names `fetch(` and
-// `node:net` while explaining what is forbidden, and the test suite sits in the directory it
-// guards and writes every forbidden spelling into fixtures on purpose. The first version of DC14
-// flagged hooks.test.mjs on the real tree and took eight unrelated tests down with it — which is
-// how a gate earns being switched off, after which its absence is invisible.
-test('docs-consistency.mjs: DC14 does not fire on prose about fetch, or on identifiers containing it', () => {
-  const dir = mkTmp('gru-dc14-ok-');
-  copyRepoTo(dir);
-  fs.writeFileSync(
-    path.join(dir, 'plugins', 'gru953-studio', 'hooks', 'zz-prose.mjs'),
-    [
-      "// This hook must never call fetch('https://...') and must not require('https').",
-      "/* An import from 'node:net' is named here only to say it is forbidden. */",
-      'const prefetched = new Map();',
-      "function refetchLater(k) { return prefetched.get(k); }",
-      "console.log(refetchLater('a'));",
-      '',
-    ].join('\n'),
-  );
-  assert.equal(
-    runDocsConsistency(dir).json.status,
-    'clean',
-    'a comment cannot open a socket, and `prefetched` is not a network client',
-  );
-  fs.rmSync(dir, RM_OPTS);
-});
-
-// The exclusion is narrow BY CONSTRUCTION and this asserts why: a `.test.mjs` file is never wired
-// into hooks.json, so nothing ever executes it as a hook, so excluding it cannot hide a live
-// client. If that ever stops being true, this test is where it shows up.
-test('docs-consistency.mjs: DC14 skips the test suite, and no .test.mjs file is wired as a hook', () => {
-  const hooksJson = JSON.parse(
-    fs.readFileSync(path.join(REPO_ROOT, 'plugins', 'gru953-studio', 'hooks', 'hooks.json'), 'utf8'),
-  );
-  assert.ok(
-    !JSON.stringify(hooksJson).includes('.test.mjs'),
-    'hooks.json must reference no .test.mjs file — DC14 excludes them on the grounds that nothing runs them',
-  );
+  assert.ok(!wired.includes('.test.mjs'), 'hooks.json must reference no .test.mjs file');
+  assert.ok(!wired.includes('hooks/test/'), 'hooks.json must reference nothing under hooks/test/');
 });
 
 test('docs-consistency.mjs: DC13 permits a pop-up that says which context it belongs to', () => {
@@ -11295,55 +11331,199 @@ test('X1: scan.mjs is veto-only — it never emits an approval on any path', () 
 });
 
 
-// 2026-08-27, Stage 5, finding R1. `.github/workflows/e2e.yml` carried a stray `"` on the last
-// line of a `run:` block, which made the whole block a bash syntax error — so the nightly
-// end-to-end job failed on EVERY run, defeating the "a nightly that cannot measure must not be a
-// nightly that fails" design documented in that same file. It had been there for a day, and the
-// owner has since chosen to make that job a hard release gate (`needs: e2e`), which would have
-// made the release unpublishable for a reason nothing pointed at.
+// 2026-08-27, finding R1, REWRITTEN the same day. `.github/workflows/e2e.yml` carried a stray `"`
+// that made a whole `run:` block invalid bash, so the nightly failed on EVERY run — defeating the
+// "a nightly that cannot measure must not be a nightly that fails" design documented in that same
+// file, and the owner has since made that job a hard release gate.
 //
-// Workflow shell scripts are the only code in this repository that nothing executed and nothing
-// tested: `node --check` does not read YAML, eslint does not read YAML, and the scripts
-// themselves only ever run on GitHub's infrastructure. `bash -n` parses without executing, which
-// is exactly the right instrument — it would have caught this in under a second.
+// The first version of this test extracted only blocks written exactly `run: |`. An adversarial
+// pass measured its coverage: **33 of the 59 `run:` keys in the real workflows are single-line**,
+// so it checked fewer than half of them, and an unbalanced quote in any one-liner passed. It also
+// missed `run: |-`, `run: |+` and `run: >`, never saw a step written `- run: |` with the key on the
+// hyphen line, and dropped the last body line of any file without a trailing newline — which turned
+// a valid script whose closing `fi` was that line into a reported syntax error.
 //
-// Deliberately parse-only. It does not lint style, and it skips PowerShell blocks (the Windows
-// leg's, which are not bash and would fail a bash parse for correct reasons).
-test('workflows: every bash run: block parses — a syntax error must not wait for the nightly', () => {
+// Its PowerShell exemption looked at the text between the nearest preceding `- name:` and the
+// block, so a step whose first key is `if:` or `uses:` inherited the PREVIOUS step's `shell: pwsh`
+// (silently skipping real bash), while honest PowerShell was parsed as bash whenever `shell: pwsh`
+// was written AFTER `run:` in the same step — valid YAML, since key order carries no meaning.
+//
+// So it now finds every `run:` key at any indentation, handles all four scalar forms, resolves the
+// shell from the whole step plus job- and workflow-level `defaults.run.shell`, and asserts a
+// coverage floor derived from the real files rather than a round number.
+function workflowRunScripts(text) {
+  const lines = text.split('\n');
+  const out = [];
+  const indentOf = (l) => l.length - l.replace(/^\s*/, '').length;
+
+  // `defaults: run: shell:` at any level. The innermost applying default wins, and a step's own
+  // `shell:` beats both — so the workflow-level value is only a fallback.
+  let fileShell = null;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)shell:\s*(\S+)/);
+    if (!m) continue;
+    // Only count it as a default if a `run:` mapping under `defaults:` encloses it.
+    for (let k = i - 1; k >= 0 && k > i - 4; k--) {
+      if (/^\s*defaults:/.test(lines[k])) fileShell = fileShell || m[2];
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)(- )?run:(.*)$/);
+    if (!m) continue;
+    const keyIndent = m[1].length + (m[2] ? 2 : 0);
+    const rest = m[3].trim();
+    let script = null;
+    let lastLine = i;
+
+    if (/^[|>][-+]?$/.test(rest)) {
+      const folded = rest.startsWith('>');
+      const body = [];
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        if (/^\s*$/.test(lines[j])) {
+          body.push('');
+          continue;
+        }
+        if (indentOf(lines[j]) <= keyIndent) break;
+        body.push(lines[j]);
+      }
+      lastLine = j - 1;
+      // Strip the common indentation so bash sees the script alone.
+      const real = body.filter((l) => l !== '');
+      const pad = real.length ? Math.min(...real.map(indentOf)) : 0;
+      const stripped = body.map((l) => (l === '' ? '' : l.slice(pad)));
+      script = folded ? stripped.join(' ') : stripped.join('\n');
+    } else if (rest !== '') {
+      script = rest;
+    } else {
+      continue; // `run:` with a next-line plain scalar; none exists in these files
+    }
+
+    // The step this `run:` belongs to: the nearest preceding `- ` at the key's own indentation.
+    let stepStart = i;
+    for (let k = i; k >= 0; k--) {
+      const l = lines[k];
+      if (/^\s*-\s/.test(l) && indentOf(l) === keyIndent - 2) {
+        stepStart = k;
+        break;
+      }
+    }
+    let stepEnd = lines.length;
+    for (let k = Math.max(stepStart + 1, lastLine + 1); k < lines.length; k++) {
+      if (/^\s*-\s/.test(lines[k]) && indentOf(lines[k]) === keyIndent - 2) {
+        stepEnd = k;
+        break;
+      }
+    }
+    // The whole step, so a `shell:` after `run:` counts — key order carries no meaning in YAML.
+    const stepText = lines.slice(stepStart, stepEnd).join('\n');
+    const own = stepText.match(/^\s*shell:\s*(\S+)/m);
+    const shell = (own && own[1]) || fileShell || 'bash';
+
+    out.push({ line: i + 1, script, shell });
+  }
+  return out;
+}
+
+test('workflows: every bash run: script parses — a syntax error must not wait for the nightly', () => {
   const dir = path.join(REPO_ROOT, '.github', 'workflows');
   const files = fs
     .readdirSync(dir)
     .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
     .sort();
-  assert.ok(files.length > 0, 'found no workflow files to check — a check that reads nothing must not pass');
+  assert.ok(files.length > 0, 'found no workflow files — a check that reads nothing must not pass');
 
   let checked = 0;
+  let skipped = 0;
   for (const f of files) {
     const text = fs.readFileSync(path.join(dir, f), 'utf8');
-    // Each `run: |` block, with its own indentation stripped so bash sees the script alone.
-    const re = /^([ \t]+)run: \|\s*\n((?:\1[ \t]{2}.*\n|[ \t]*\n)+)/gm;
-    for (let m = re.exec(text); m; m = re.exec(text)) {
-      const pad = m[1] + '  ';
-      const body = m[2]
-        .split('\n')
-        .map((l) => (l.startsWith(pad) ? l.slice(pad.length) : l))
-        .join('\n');
-      // A `shell: pwsh`/`powershell` line inside the same step means this is not bash.
-      const step = text.slice(text.lastIndexOf('- name:', m.index), m.index);
-      if (/shell:\s*(pwsh|powershell)/i.test(step)) continue;
-      const line = text.slice(0, m.index).split('\n').length;
-      const r = spawnSync('bash', ['-n'], { input: body, encoding: 'utf8' });
+    for (const { line, script, shell } of workflowRunScripts(text)) {
+      if (!/^(bash|sh)$/.test(shell)) {
+        skipped++;
+        continue;
+      }
+      const r = spawnSync('bash', ['-n'], { input: script, encoding: 'utf8' });
       assert.equal(
         r.status,
         0,
-        `.github/workflows/${f}, run: block at line ${line} is not valid bash — it would fail on every CI run:\n${r.stderr}`,
+        `.github/workflows/${f}, run: at line ${line} is not valid ${shell} — it would fail on every CI run:\n${r.stderr}\n--- script ---\n${script}`,
       );
       checked++;
     }
   }
-  assert.ok(checked >= 10, `expected to parse at least 10 run: blocks across the workflows, parsed ${checked}`);
+  // Derived from the real files (59 run: keys, one of them pwsh), not a round number: a floor that
+  // does not bind is not a floor, and the first version's `>= 10` was satisfied while it checked
+  // fewer than half.
+  assert.ok(
+    checked >= 55,
+    `expected to parse at least 55 bash run: scripts across the workflows, parsed ${checked} (skipped ${skipped} non-bash). If steps were legitimately removed, lower this floor deliberately and say so`,
+  );
 });
 
+// The extractor's own coverage, asserted separately from the parsing. A parser that silently sees
+// less than it should reports "all clear" over the part it never read — which is exactly what the
+// first version did, and the reason this number is pinned.
+test('workflows: the run: extractor sees every form, including single-line steps', () => {
+  const dir = path.join(REPO_ROOT, '.github', 'workflows');
+  let total = 0;
+  let inline = 0;
+  for (const f of fs.readdirSync(dir).filter((x) => /\.ya?ml$/.test(x))) {
+    const text = fs.readFileSync(path.join(dir, f), 'utf8');
+    const raw = (text.match(/^\s*(?:- )?run:/gm) || []).length;
+    const seen = workflowRunScripts(text);
+    assert.equal(
+      seen.length,
+      raw,
+      `${f}: the extractor found ${seen.length} run: scripts but the file has ${raw} run: keys — the difference is unchecked`,
+    );
+    total += seen.length;
+    inline += seen.filter((s) => !s.script.includes('\n')).length;
+  }
+  assert.ok(total >= 55, `expected at least 55 run: scripts in total, found ${total}`);
+  assert.ok(inline >= 25, `expected the single-line form to be well represented; found ${inline} of ${total}`);
+});
+
+// Both directions, on synthetic files, so the check is shown to bite and to stay quiet without
+// depending on the real workflows staying broken or whole.
+test('workflows: a broken script is caught in every scalar form, and PowerShell is left alone', () => {
+  const forms = [
+    ['block |', '      - name: x\n        run: |\n          if [ -z "$A ]; then echo hi; fi\n'],
+    ['block |-', '      - name: x\n        run: |-\n          if [ -z "$A ]; then echo hi; fi\n'],
+    ['single-line', '      - name: x\n        run: echo "unterminated\n'],
+    ['key on the hyphen line', '      - run: |\n          if [ -z "$A ]; then echo hi; fi\n'],
+    ['no trailing newline', '      - name: x\n        run: |\n          if [ -z "$A ]; then echo hi; fi'],
+  ];
+  for (const [label, step] of forms) {
+    const text = `name: t\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n${step}`;
+    const scripts = workflowRunScripts(text);
+    assert.equal(scripts.length, 1, `${label}: expected one script, got ${scripts.length}`);
+    const r = spawnSync('bash', ['-n'], { input: scripts[0].script, encoding: 'utf8' });
+    assert.notEqual(r.status, 0, `${label}: a broken script must not parse clean`);
+  }
+
+  // PowerShell must be skipped whether `shell:` comes before or after `run:` — key order carries
+  // no meaning in YAML, and the first version only looked before.
+  for (const [label, step] of [
+    ['shell before run', '      - name: x\n        shell: pwsh\n        run: |\n          if ($true) { Write-Host "ok" }\n'],
+    ['shell after run', '      - name: x\n        run: |\n          if ($true) { Write-Host "ok" }\n        shell: pwsh\n'],
+  ]) {
+    const text = `name: t\non: push\njobs:\n  j:\n    runs-on: windows-latest\n    steps:\n${step}`;
+    const scripts = workflowRunScripts(text);
+    assert.equal(scripts.length, 1, `${label}: expected one script`);
+    assert.equal(scripts[0].shell, 'pwsh', `${label}: the step's shell must be read from the whole step`);
+  }
+
+  // And a step whose first key is `if:` must not inherit the PREVIOUS step's shell.
+  const text =
+    'name: t\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n' +
+    '      - name: a\n        shell: pwsh\n        run: Write-Host "ok"\n' +
+    '      - if: always()\n        run: echo "unterminated\n';
+  const scripts = workflowRunScripts(text);
+  assert.equal(scripts.length, 2, 'both steps must be seen');
+  assert.equal(scripts[0].shell, 'pwsh');
+  assert.equal(scripts[1].shell, 'bash', 'a step with no shell: of its own is bash, not the previous step\'s pwsh');
+});
 // The accidental exemption, reproduced. 2026-08-27: a correction note two lines above a token
 // guarantee — about something else entirely, and ending in the ordinary word "removed" — exempted
 // it. Nothing was wrong with either sentence; they were merely adjacent. This is the case that
@@ -11457,56 +11637,138 @@ test('docs-consistency.mjs: a retirement note containing a filename is still an 
   fs.rmSync(dir, RM_OPTS);
 });
 
-// INV24, extended 2026-08-27 (Stage 6). The nine gates prove the machinery is sound; none of them
-// builds anything, so none can prove the product works. The owner's decision made the unattended
-// build a hard release gate, and `publish.yml` now calls `e2e.yml` with `require-measurement: true`.
+// INV24, REWRITTEN 2026-08-27 after an adversarial pass defeated the previous version NINE ways,
+// every one reproduced by execution against the real workflow files. The shape of all nine is one
+// thing: it read YAML with regexes over raw text, so a change that altered the text without
+// altering the meaning got through — and one that altered the meaning without altering the text
+// did too.
 //
-// That input is the load-bearing part. Called WITHOUT it, e2e.yml ends green when no
-// ANTHROPIC_API_KEY is configured — on purpose, because a nightly that is always red is an alert
-// nobody reads. Wiring `needs:` to that behaviour would publish a release on a pass that measured
-// nothing: the same defect as a Definition of Done written by the work it grades, moved to the
-// release path. All three ways of undoing it are guarded, because two of them look like tidying.
-test('repo-integrity.mjs INV24: dropping require-measurement from the e2e job is caught', () => {
-  const dir = mkTmp('gru-inv24-rm-');
+// This is a table of all nine, because the table is the deliverable. Eight must be caught; the
+// ninth is canonical YAML that actionlint accepts and must NOT be flagged, and it was the version's
+// false alarm. Each mutation asserts it actually changed the file before drawing any conclusion —
+// the first run of this table reported a MISS that turned out to be a probe with the wrong
+// indentation, which is the same trap the DC12 fixture fell into earlier the same day.
+const INV24_CASES = [
+  {
+    label: 'a gate step commented out, its text left behind',
+    caught: true,
+    file: 'publish.yml',
+    from: '        run: node plugins/gru953-studio/hooks/hooks.test.mjs',
+    to: '        # run: node plugins/gru953-studio/hooks/hooks.test.mjs',
+    expect: /does not run hooks\.test\.mjs/,
+  },
+  {
+    label: 'require-measurement: false with true in a comment above it',
+    caught: true,
+    file: 'publish.yml',
+    from: '      require-measurement: true',
+    to: '      # require-measurement: true\n      require-measurement: false',
+    expect: /does not pass `require-measurement: true`/,
+  },
+  {
+    label: 'needs: [gates-lite, e2e-lite] pointing at look-alike jobs',
+    caught: true,
+    file: 'publish.yml',
+    from: '    needs: [gates, e2e]',
+    to: '    needs: [gates-lite, e2e-lite]',
+    expect: /does not declare `needs: gates`/,
+  },
+  {
+    label: 'if: always() beside a correct needs:, which publishes when the gates FAILED',
+    caught: true,
+    file: 'publish.yml',
+    from: '    needs: [gates, e2e]\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli',
+    to: '    needs: [gates, e2e]\n    if: always()\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli',
+    expect: /carries a job-level `if: always\(\)`/,
+  },
+  {
+    label: 'secrets: inherit removed, so the callee cannot see the key',
+    caught: true,
+    file: 'publish.yml',
+    from: '    secrets: inherit\n',
+    to: '',
+    expect: /does not declare `secrets: inherit`/,
+  },
+  {
+    label: "e2e.yml's require-measurement input removed, leaving the caller asking for nothing",
+    caught: true,
+    file: 'e2e.yml',
+    from: '      require-measurement:\n        required: false\n        type: boolean\n        default: false\n',
+    to: '',
+    expect: /declares no `require-measurement` input/,
+  },
+  {
+    label: 'a second workflow that publishes on its own, outside publish.yml',
+    caught: true,
+    file: 'e2e.yml',
+    append:
+      '\n  sneaky-publish:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish --access public\n',
+    expect: /`sneaky-publish` job publishes .* and it is not publish\.yml/,
+  },
+  {
+    label: 'needs: written as a YAML block sequence — canonical YAML, and must NOT be flagged',
+    caught: false,
+    file: 'publish.yml',
+    from: '    needs: [gates, e2e]\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli',
+    to: '    needs:\n      - gates\n      - e2e\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli',
+  },
+];
+
+for (const c of INV24_CASES) {
+  test(`repo-integrity.mjs INV24: ${c.label}`, () => {
+    const dir = mkTmp('gru-inv24-');
+    copyRepoTo(dir);
+    const wf = path.join(dir, '.github', 'workflows', c.file);
+    const before = fs.readFileSync(wf, 'utf8');
+    let after;
+    if (c.append) {
+      after = before + c.append;
+    } else {
+      // At least one occurrence, and ALL of them are replaced. `needs: [gates, e2e]` appears
+      // twice — once per publishing job — and requiring exactly one made this table report a
+      // MISS that was really a no-op mutation. A no-op mutation reads exactly like a gate that
+      // caught nothing, which is why the count is asserted at all.
+      assert.ok(
+        before.split(c.from).length - 1 >= 1,
+        `fixture text is not present in ${c.file}, so the mutation would be a no-op — and a no-op mutation reads exactly like a gate that caught nothing`,
+      );
+      after = before.split(c.from).join(c.to);
+    }
+    assert.notEqual(after, before, 'fixture did not mutate');
+    fs.writeFileSync(wf, after);
+    const r = runRepoIntegrity(dir);
+    if (c.caught) {
+      assert.equal(r.json && r.json.status, 'BLOCKED', `${c.label} must be caught`);
+      assert.match(JSON.stringify(r.json.problems), c.expect, `expected the message naming this defeat`);
+    } else {
+      assert.equal(
+        r.json && r.json.status,
+        'clean',
+        `${c.label} is correct YAML — a gate that fires on it gets switched off. Got: ${JSON.stringify(r.json && r.json.problems)}`,
+      );
+    }
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
+// A job id GitHub allows but the first version's `[a-z][a-z0-9-]*` header pattern could not see, so
+// such a job was never examined at all — the strongest of the nine, because it needs no obfuscation.
+test('repo-integrity.mjs INV24: an underscored job id is still seen as a publishing job', () => {
+  const dir = mkTmp('gru-inv24-id-');
   copyRepoTo(dir);
   const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
   const before = fs.readFileSync(wf, 'utf8');
-  const after = before.replace('      require-measurement: true\n', '');
-  assert.notEqual(after, before, 'fixture did not mutate — require-measurement is not where this test expects it');
+  const after = before
+    .replace('  publish-npm-cli:', '  publish_npm_cli:')
+    .replace('    needs: [gates, e2e]\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli', '    runs-on: ubuntu-latest\n    environment: publish-npm-cli');
+  assert.notEqual(after, before, 'fixture did not mutate');
   fs.writeFileSync(wf, after);
   const r = runRepoIntegrity(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'an e2e gate that can pass without measuring must be caught');
-  assert.match(JSON.stringify(r.json.problems), /require-measurement/);
+  assert.equal(r.json && r.json.status, 'BLOCKED', 'an underscored job id must not hide an ungated publish');
+  assert.match(JSON.stringify(r.json.problems), /publish_npm_cli/);
   fs.rmSync(dir, RM_OPTS);
 });
 
-test('repo-integrity.mjs INV24: an e2e job pointing at a different workflow is caught', () => {
-  const dir = mkTmp('gru-inv24-uses-');
-  copyRepoTo(dir);
-  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
-  const before = fs.readFileSync(wf, 'utf8');
-  const after = before.replace('uses: ./.github/workflows/e2e.yml', 'uses: ./.github/workflows/ci.yml');
-  assert.notEqual(after, before, 'fixture did not mutate — the e2e `uses:` line moved');
-  fs.writeFileSync(wf, after);
-  const r = runRepoIntegrity(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'a job named e2e that runs something else must be caught');
-  assert.match(JSON.stringify(r.json.problems), /does not call/);
-  fs.rmSync(dir, RM_OPTS);
-});
-
-test('repo-integrity.mjs INV24: a publishing job that drops the e2e dependency is caught', () => {
-  const dir = mkTmp('gru-inv24-dep-');
-  copyRepoTo(dir);
-  const wf = path.join(dir, '.github', 'workflows', 'publish.yml');
-  const before = fs.readFileSync(wf, 'utf8');
-  const after = before.replace('    needs: [gates, e2e]\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli', '    needs: [gates]\n    runs-on: ubuntu-latest\n    environment: publish-npm-cli');
-  assert.notEqual(after, before, 'fixture did not mutate — the publish-npm-cli needs: line moved');
-  fs.writeFileSync(wf, after);
-  const r = runRepoIntegrity(dir);
-  assert.equal(r.json && r.json.status, 'BLOCKED', 'dropping the e2e dependency must be caught');
-  assert.match(JSON.stringify(r.json.problems), /needs: e2e/);
-  fs.rmSync(dir, RM_OPTS);
-});
 
 // licence-scan.mjs: Ruby and PHP. 2026-08-27, Stage 5, and it was measured before anything was
 // written. A project whose ONLY dependencies were a `Gemfile` and a `composer.json`, both naming
@@ -11593,5 +11855,100 @@ test('licence-scan.mjs: a compound expression is parsed before the substring fla
   const r = runLicenceScan(dir);
   assert.ok(r.json, `expected JSON, got: ${r.stdout}${r.stderr}`);
   assert.equal(r.json.status, 'clean', `a dual-licensed npm package must not be blocked, got ${r.json.status}`);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// DC15, 2026-08-27. `micro-task-planning/SKILL.md` told the product's own agents that "`PROGRESS.md`
+// and `PLAN.md` are rendered from it [tasks.json]". `PROGRESS.md` is. `PLAN.md` is written by
+// NOTHING: `task-ledger.mjs` contains one `writeFileSync` and `PLAN.md` appears nowhere in it.
+//
+// It mattered in both directions on a Standard or Complex unattended run. `architect` is told the
+// file is generated, so it may not write it — and `builder` and `tester` are told, four bullets
+// later, to read task specifics FROM it. Either the run reads a file nobody wrote, or it keeps two
+// task lists with nothing holding them in step while the docs assert one derives from the other.
+test('docs-consistency.mjs: DC15 refuses a file claimed RENDERED that no hook writes', () => {
+  const dir = mkTmp('gru-dc15-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'micro-task-planning', 'SKILL.md');
+  const before = fs.readFileSync(f, 'utf8');
+  const from = '`PROGRESS.md` is rendered from it by';
+  assert.equal(before.split(from).length - 1, 1, 'fixture text is not where this test expects it');
+  fs.writeFileSync(f, before.replace(from, '`PROGRESS.md` and `PLAN.md` are rendered from it by'));
+  const r = runDocsConsistency(dir);
+  assert.notEqual(r.status, 0, 'a promise of a generated file that nothing generates must be caught');
+  assert.match(JSON.stringify(r.json.problems), /`PLAN\.md` is RENDERED/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: DC15 catches a newly invented rendered file', () => {
+  const dir = mkTmp('gru-dc15-new-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(f, '\nThe `SUMMARY.md` file is rendered from `tasks.json`.\n');
+  const r = runDocsConsistency(dir);
+  assert.notEqual(r.status, 0, 'any claim of a generated file must name something that generates it');
+  assert.match(JSON.stringify(r.json.problems), /`SUMMARY\.md` is RENDERED/);
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// The controls, and they are what the check got wrong twice on the way in. The first version used a
+// ±1-line window and paired a NEIGHBOURING table row's "GENERATED from" with this row's filename,
+// reporting five honest rows of dev-memory's file table as undelivered promises. Narrowing to the
+// same line was still too loose: the `OBJECTIVE.md` row is a long cell that also mentions
+// `REQUIREMENTS.md`, so a correct claim about the first read as a false claim about the second. The
+// subject is now the filename NEAREST the claim.
+test('docs-consistency.mjs: DC15 leaves the three genuinely rendered files alone', () => {
+  const dir = mkTmp('gru-dc15-ok-');
+  copyRepoTo(dir);
+  assert.equal(
+    runDocsConsistency(dir).json.status,
+    'clean',
+    'PROGRESS.md, OBJECTIVE.md and QUALITY-GATE.md are all written by a hook — a gate that fires on these gets switched off',
+  );
+  // And the property those three rely on, asserted directly rather than inferred from a clean run.
+  const hooks = path.join(dir, 'plugins', 'gru953-studio', 'hooks');
+  for (const [file, hook] of [
+    ['PROGRESS.md', 'task-ledger.mjs'],
+    ['OBJECTIVE.md', 'run-brief.mjs'],
+    ['QUALITY-GATE.md', 'dod.mjs'],
+  ]) {
+    const src = fs.readFileSync(path.join(hooks, hook), 'utf8');
+    assert.match(
+      src,
+      new RegExp(`writeFileSync[^;]{0,300}['"\`]${file.replace('.', '\\.')}['"\`]`),
+      `${hook} must actually write ${file} — DC15's exemption for it rests on this`,
+    );
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
+test('docs-consistency.mjs: DC15 does not fire on a long table cell that names another file', () => {
+  const dir = mkTmp('gru-dc15-cell-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(
+    f,
+    '\n| `OBJECTIVE.md` | **GENERATED from `run-brief.json`.** Cross-checked against `NOTHING-WRITES-THIS.md` downstream. |\n',
+  );
+  assert.equal(
+    runDocsConsistency(dir).json.status,
+    'clean',
+    'the claim belongs to the filename nearest it, not to every filename in the row',
+  );
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// A line explaining that something is NOT rendered is the fix DC15 asks for, so it must not then be
+// reported — otherwise the only way to satisfy the gate would be to delete the explanation.
+test('docs-consistency.mjs: DC15 permits a line saying a file is NOT rendered', () => {
+  const dir = mkTmp('gru-dc15-neg-');
+  copyRepoTo(dir);
+  const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'dev-memory', 'SKILL.md');
+  fs.appendFileSync(f, '\n`PLAN.md` is not rendered from anything — `architect` writes it by hand.\n');
+  assert.equal(
+    runDocsConsistency(dir).json.status,
+    'clean',
+    'denying that a file is rendered is the remedy, and must not itself be an offence',
+  );
   fs.rmSync(dir, RM_OPTS);
 });

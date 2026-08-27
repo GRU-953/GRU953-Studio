@@ -205,47 +205,62 @@ release's own new machinery, plus the audit described in section 1, then found
 
 ### 5. Numbers
 
-|                                   |     6.1.0 |     7.0.0 |
-| :-------------------------------- | --------: | --------: |
-| Specialist roles                  |        38 |        36 |
-| Skills                            |        40 |        34 |
-| Commands                          |        11 |        10 |
-| Enforcement hooks                 |        19 |        24 |
-| Tests                             |       480 |       674 |
-| Standing context load             | 127,762 B | 137,728 B |
-| Hooks containing a network client |         1 |         0 |
-| Third-party runtime dependencies  |         0 |         0 |
+|                                  |     6.1.0 |     7.0.0 |
+| :------------------------------- | --------: | --------: |
+| Specialist roles                 |        38 |        36 |
+| Skills                           |        37 |        34 |
+| Commands                         |        11 |        10 |
+| Enforcement hooks                |        24 |        24 |
+| Tests                            |       468 |       729 |
+| Standing context load            | 127,762 B | 157,984 B |
+| Hooks carrying a network client  |         1 |         0 |
+| Third-party runtime dependencies |         0 |         0 |
 
-Three of those rows were wrong when this entry was first written on 26 August,
-and the corrections are worth more than the numbers.
+**Every figure above is measured, and the 6.1.0 column is measured from the
+`v6.1.0` tag rather than remembered.** That sentence is here because this table has
+now been wrong twice, and the second time was the correction.
 
-**Tests** said 520. It was 520 on the day, and then two adversarial passes over
-this release's own new machinery found forty-one further defects and brought
-another 154 tests with them. A count in a changelog is a measurement with a
-timestamp, so this one is re-measured at the tag rather than at first draft.
+The version written on 26 August said 40 skills, 19 enforcement hooks and 480 tests
+for 6.1.0, and 520 tests for 7.0.0. An adversarial pass on 27 August checked each
+against the release it describes. Running 6.1.0's own `repo-integrity.mjs` on
+6.1.0's own tree reports **37 skills and 24 hooks**; running its own suite reports
+**468 tests**. So the "19 → 24" row presented growth that never happened — the hook
+count did not move at all — and two of the three baselines were simply wrong.
+Nothing had caught them because nothing could: a number in prose is compared to
+nothing.
 
-**Standing context load** said `141,570 B → 118,731 B`, a 16% reduction. Neither
-figure had a recorded method anywhere in the repository, so neither could be
-reproduced or checked — it was a folk number. Measured properly, by one stated
-rule applied to both releases (the coordinator skill plus every companion skill
-it names as a standing rule, `git show`n from the `v6.1.0` tag for the baseline),
-the load **went up 8%**, not down 16%. It is stated that way round because the
-alternative is a release note claiming an improvement that did not happen. The
-cause is not a mystery: 44.5% of that text is now dated commentary explaining why
-a rule exists, and this release added a great deal of it. Phase 4 removed the
-subset that could be removed safely; the rest is a known cost, recorded here so
-that the next person to look at it starts from a real number.
+**Standing context load.** The 26 August entry said `141,570 B → 118,731 B`, a 16%
+reduction, and neither figure had a recorded method anywhere in the repository, so
+neither could be reproduced or argued with. The 27 August correction replaced them
+with `127,762 → 137,728` and a stated method — and got the second number wrong too,
+because it was measured mid-session and this release then added several thousand more
+bytes of exactly the prose being measured. Measured at the release commit by the same
+stated rule — the coordinator skill plus every companion skill it names as a standing
+rule, `git show`n from `v6.1.0` for the baseline — it is **127,762 B → 157,984 B: up
+23.7%**, not down 16% and not up 8%.
 
-**Outbound network calls** said `1 → 0`. The 1 was real — `openrouter-models.mjs`
-read a public model catalogue and went with the model integrations. The 0 was
-not: three roles are instructed to use _your_ session's web search when a build
-turns on a current external fact, and `licence-scan.mjs` invokes `cargo metadata`
-and `dart pub deps`, either of which contacts a package registry on a cold cache.
-The row now measures the narrower thing that is actually true and actually
-checkable — that no hook carries a network client of its own — and
-`docs-consistency.mjs` checks it on every commit (DC14), because the same
-sentence had been sitting in a comment for a day saying the property was "finally
-true" and, in its next line, that nothing checked it.
+It is stated that way round because the alternative is a release note claiming an
+improvement that did not happen. The cause is not mysterious: a large share of that
+text is now dated commentary explaining why each rule exists, and this release added
+a great deal of it. Phase 4 removed the subset that could be removed safely; the rest
+is a known cost, recorded here as a real number so that whoever looks at it next
+starts from one.
+
+**Two of these rows drift with every commit** — tests, and the context load. They are
+measured at the release commit, and `docs/RELEASING-7.0.0.md` carries a step to
+re-measure them at the tag. The other four are re-derived by `repo-integrity.mjs` on
+every commit, so they cannot go stale quietly.
+
+**Hooks carrying a network client** replaced a row reading "Outbound network calls
+1 → 0". The 1 was real — `openrouter-models.mjs` read a public model catalogue, and
+went with the model integrations. The 0 was not: three roles are instructed to use
+_your_ session's web search when a build turns on a current external fact, and
+`licence-scan.mjs` invokes `cargo metadata` and `dart pub deps`, either of which
+contacts a package registry on a cold cache. The row now measures the narrower thing
+that is both true and checkable, and `docs-consistency.mjs` DC14 checks it on every
+commit — after itself being rewritten, because the first version of that check did
+not detect `openrouter-models.mjs`, the one file its own header named as the reason
+it existed.
 
 ### 6. What LTS means here
 

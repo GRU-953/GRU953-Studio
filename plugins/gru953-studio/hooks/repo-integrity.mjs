@@ -1812,60 +1812,145 @@ if (fs.existsSync(packagedRoot)) {
 // wiring — the lesson this repository keeps relearning is that a control nothing invokes is a
 // control that does nothing, and the wiring needs guarding as much as the control.
 {
-  const wf = read(path.join(repoRoot, '.github', 'workflows', 'publish.yml'));
-  if (wf === null) {
+  // REWRITTEN 2026-08-27. An adversarial pass defeated the first version NINE ways, every one
+  // reproduced by execution, and the shape of the failures is one thing: it read YAML with regexes
+  // over raw text, so anything that changed the text without changing the meaning got through —
+  // and anything that changed the meaning without changing the text did too.
+  //
+  //   commenting a gate step out, leaving its text as a comment   satisfied `body.includes(...)`
+  //   `require-measurement: false`, `true` in a comment above     reported clean
+  //   `needs: [gates-lite, e2e-lite]` -> two no-op jobs           satisfied `\bgates\b`
+  //   `if: always()` beside a correct `needs:`                    publishes when the gates FAILED
+  //   `needs:` as a YAML block sequence — canonical, and          was reported as UNGATED:
+  //     accepted by actionlint                                      a false alarm on correct YAML
+  //   a job id with `_` or a capital, or a trailing comment       was not seen as a job at all
+  //   a second workflow publishing on the same tag trigger        entirely unguarded
+  //   nothing anywhere read e2e.yml, so deleting the branch       left the release gate
+  //     that honours `require-measurement` was invisible            green-on-nothing
+  //
+  // So it strips comments first, parses `needs:` in both spellings into a SET and tests membership
+  // exactly, refuses an `if:` on a publishing job, reads every workflow rather than one hard-coded
+  // path, and checks e2e.yml's own contract as well as its caller's.
+
+  // Blank YAML comments, keeping line positions. A `#` inside a quoted scalar is not a comment,
+  // which is why this tracks quotes rather than cutting at the first `#`.
+  const stripYamlComments = (src) => {
+    const out = [];
+    for (const line of src.split('\n')) {
+      let q = null;
+      let cut = -1;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (q) {
+          if (c === '\\') i++;
+          else if (c === q) q = null;
+          continue;
+        }
+        if (c === '"' || c === "'") {
+          q = c;
+          continue;
+        }
+        if (c === '#' && (i === 0 || /\s/.test(line[i - 1]))) {
+          cut = i;
+          break;
+        }
+      }
+      out.push(cut === -1 ? line : line.slice(0, cut));
+    }
+    return out.join('\n');
+  };
+
+  // Two-space-indented keys under `jobs:`. Job ids may contain letters, digits, `-` and `_`, and
+  // GitHub does not require lowercase — the first version's `[a-z][a-z0-9-]*` missed `publish_npm`
+  // and `publishNpm` entirely, so such a job was never checked at all.
+  const splitJobs = (src) => {
+    const headerRe = /^ {2}([A-Za-z_][A-Za-z0-9_-]*):[ \t]*$/gm;
+    const headers = [...src.matchAll(headerRe)];
+    return headers.map((m, i) => ({
+      name: m[1],
+      body: src.slice(
+        m.index + m[0].length,
+        i + 1 < headers.length ? headers[i + 1].index : src.length,
+      ),
+    }));
+  };
+
+  // `needs:` as a SET, in both spellings YAML allows:
+  //   needs: gates          needs: [gates, e2e]          needs:
+  //                                                        - gates
+  //                                                        - e2e
+  // Membership is exact, so `gates-lite` is not `gates`. `\bgates\b` treated a hyphen as a word
+  // boundary, which is how a pair of no-op look-alike jobs satisfied the whole invariant.
+  const needsOf = (body) => {
+    const set = new Set();
+    const m = body.match(/^ {4}needs:[ \t]*(.*)$/m);
+    if (!m) return set;
+    const inline = m[1].trim();
+    if (inline) {
+      for (const part of inline.replace(/^\[/, '').replace(/\]$/, '').split(',')) {
+        const name = part.trim().replace(/^['"]/, '').replace(/['"]$/, '');
+        if (name) set.add(name);
+      }
+      return set;
+    }
+    const after = body.slice(body.indexOf(m[0]) + m[0].length).split('\n');
+    for (const line of after) {
+      if (/^\s*$/.test(line)) continue;
+      const item = line.match(/^ {6,}-[ \t]+(['"]?)([A-Za-z_][A-Za-z0-9_-]*)\1[ \t]*$/);
+      if (!item) break;
+      set.add(item[2]);
+    }
+    return set;
+  };
+
+  const PUBLISHES =
+    /npm publish|softprops\/action-gh-release|gh release (?:create|upload)|vsce publish|npm run (?:release|publish)|twine upload/i;
+
+  const wfDir = path.join(repoRoot, '.github', 'workflows');
+  const wfFiles = listDir(wfDir)
+    .filter((d) => d.isFile() && /\.ya?ml$/.test(d.name))
+    .map((d) => d.name)
+    .sort();
+  if (wfFiles.length === 0) {
+    fail(
+      'INV24 found no workflow files under .github/workflows/, so it could not verify that publishing is gated. A check that reads nothing must never report its subject as fine.',
+    );
+  }
+
+  const REQUIRED_GATE_STEPS = [
+    'hooks.test.mjs',
+    'repo-integrity.mjs',
+    'roster-check.mjs',
+    'licence-scan.mjs',
+    'docs-consistency.mjs',
+    'charter-check.mjs',
+    'npm run lint',
+    'npm run format:check',
+  ];
+
+  const publishYml = read(path.join(wfDir, 'publish.yml'));
+  if (publishYml === null) {
     fail(
       '.github/workflows/publish.yml is missing or unreadable — cannot verify that publishing is gated',
     );
   } else {
-    // Job headers are two-space-indented keys inside `jobs:`. Each job's block runs to the next
-    // such header, which is enough structure to read `needs:` per job without a YAML parser (this
-    // plugin ships zero dependencies, so there is no parser to use).
-    const headerRe = /^ {2}([a-z][a-z0-9-]*):[ \t]*$/gm;
-    const headers = [...wf.matchAll(headerRe)];
-    const jobs = headers.map((m, i) => ({
-      name: m[1],
-      body: wf.slice(
-        m.index + m[0].length,
-        i + 1 < headers.length ? headers[i + 1].index : wf.length,
-      ),
-    }));
+    const src = stripYamlComments(publishYml);
+    const jobs = splitJobs(src);
+
     const gatesJob = jobs.find((j) => j.name === 'gates');
     if (!gatesJob) {
       fail(
         '.github/workflows/publish.yml has no `gates` job — the release path would publish without running any of the checks CI runs on every ordinary push',
       );
     } else {
-      // The gate job must actually RUN the gates, not merely be named after them. A job called
-      // `gates` that runs nothing is the shape of defect this whole repository is a record of.
-      const REQUIRED = [
-        'hooks.test.mjs',
-        'repo-integrity.mjs',
-        'roster-check.mjs',
-        'licence-scan.mjs',
-        'docs-consistency.mjs',
-        'charter-check.mjs',
-        'npm run lint',
-        'npm run format:check',
-      ];
-      const missing = REQUIRED.filter((r) => !gatesJob.body.includes(r));
+      const missing = REQUIRED_GATE_STEPS.filter((r) => !gatesJob.body.includes(r));
       if (missing.length > 0) {
         fail(
-          `.github/workflows/publish.yml's \`gates\` job does not run ${missing.join(', ')} — it is named after the checks without performing them, so a release would pass a gate that measured nothing`,
+          `.github/workflows/publish.yml's \`gates\` job does not run ${missing.join(', ')} — it is named after the checks without performing them, so a release would pass a gate that measured nothing. Commented-out steps do not count: this reads the file with comments stripped.`,
         );
       }
     }
-    // Every job that publishes or attaches anything must depend on it.
-    // 2026-08-27, Stage 6. The `e2e` job joined `gates` as a release dependency when the owner
-    // made the unattended build a hard release gate. It is guarded here for the same reason
-    // `gates` is: a `needs:` entry is one word to delete, and its absence looks exactly like a
-    // workflow that never had one.
-    //
-    // `require-measurement: true` is guarded too, and that is the half that matters. Without the
-    // input, e2e.yml ends GREEN when no ANTHROPIC_API_KEY is configured — deliberately, so the
-    // nightly is not permanently red and therefore ignored. A `needs:` wired to that behaviour
-    // would publish a release on a pass that measured nothing: a gate passing blind, which is the
-    // exact defect this release removes, relocated to the release path.
+
     const e2eJob = jobs.find((j) => j.name === 'e2e');
     if (!e2eJob) {
       fail(
@@ -1877,27 +1962,88 @@ if (fs.existsSync(packagedRoot)) {
           ".github/workflows/publish.yml's `e2e` job does not call `./.github/workflows/e2e.yml` — a job named after the unattended build without running it is worse than no job at all",
         );
       }
-      if (!/require-measurement:\s*true/.test(e2eJob.body)) {
+      if (!/^\s*require-measurement:\s*true\s*$/m.test(e2eJob.body)) {
         fail(
-          ".github/workflows/publish.yml's `e2e` job does not pass `require-measurement: true` — without it e2e.yml ends green when no ANTHROPIC_API_KEY is configured, so a release would be published on a pass that measured nothing",
+          ".github/workflows/publish.yml's `e2e` job does not pass `require-measurement: true` — without it e2e.yml ends green when no ANTHROPIC_API_KEY is configured, so a release would be published on a pass that measured nothing. A `true` in a comment does not count.",
+        );
+      }
+      if (!/^\s*secrets:\s*inherit\s*$/m.test(e2eJob.body)) {
+        fail(
+          ".github/workflows/publish.yml's `e2e` job does not declare `secrets: inherit`, so the called workflow cannot see ANTHROPIC_API_KEY and would refuse to measure on every release",
         );
       }
     }
 
     for (const j of jobs) {
       if (j.name === 'gates' || j.name === 'e2e') continue;
-      const publishes =
-        /npm publish|softprops\/action-gh-release|gh release (create|upload)|vsce publish/.test(
-          j.body,
-        );
-      if (!publishes) continue;
+      if (!PUBLISHES.test(j.body)) continue;
+      const needs = needsOf(j.body);
       for (const dep of ['gates', 'e2e']) {
-        if (!new RegExp(`^ {4}needs:.*\\b${dep}\\b`, 'm').test(j.body)) {
-          fail(
-            `.github/workflows/publish.yml's \`${j.name}\` job publishes or attaches release artefacts but does not declare \`needs: ${dep}\` — a tag could ship it from a tree that ${dep === 'gates' ? 'failed every check' : 'never built anything'}`,
-          );
-        }
+        if (needs.has(dep)) continue;
+        fail(
+          `.github/workflows/publish.yml's \`${j.name}\` job publishes or attaches release artefacts but does not declare \`needs: ${dep}\` — a tag could ship it from a tree that ${
+            dep === 'gates' ? 'failed every check' : 'never built anything'
+          }. It declares needs: [${[...needs].join(', ') || 'nothing'}], compared exactly, so \`${dep}-lite\` is not \`${dep}\``,
+        );
       }
+      // `needs:` orders jobs; it does not by itself stop one running after a failure, because a
+      // job-level `if:` overrides that. `if: always()` beside a correct `needs: [gates, e2e]`
+      // publishes when both FAILED, and the first version reported that clean.
+      const ifLine = j.body.match(/^ {4}if:[ \t]*(.+)$/m);
+      if (ifLine) {
+        fail(
+          `.github/workflows/publish.yml's \`${j.name}\` job publishes and carries a job-level \`if: ${ifLine[1].trim()}\`. A conditional overrides what \`needs:\` implies — \`if: always()\` publishes even when the gates failed — so a publishing job may not carry one. Put the condition on a step, where it cannot defeat the dependency`,
+        );
+      }
+    }
+
+    // A second workflow that publishes on a tag is covered by nothing above, and the first version
+    // read only this one hard-coded path.
+    for (const name of wfFiles) {
+      if (name === 'publish.yml') continue;
+      const other = read(path.join(wfDir, name));
+      if (other === null) continue;
+      for (const j of splitJobs(stripYamlComments(other))) {
+        if (!PUBLISHES.test(j.body)) continue;
+        if (needsOf(j.body).has('gates')) continue;
+        if (/uses:\s*\.\/\.github\/workflows\/publish\.yml/.test(j.body)) continue;
+        fail(
+          `.github/workflows/${name}'s \`${j.name}\` job publishes or attaches release artefacts, and it is not publish.yml — so none of the release gating applies to it. Either route it through publish.yml, or give it the same \`needs: [gates, e2e]\``,
+        );
+      }
+    }
+  }
+
+  // e2e.yml's own contract. Nothing read this file, so the branch that makes `require-measurement`
+  // mean anything could be deleted and every gate would still pass: the caller would keep asking
+  // for a measurement and the callee would keep ending green without one.
+  const e2eYml = read(path.join(wfDir, 'e2e.yml'));
+  if (e2eYml === null) {
+    fail(
+      '.github/workflows/e2e.yml is missing or unreadable, but publish.yml depends on it — the release gate cannot be verified',
+    );
+  } else {
+    const e2e = stripYamlComments(e2eYml);
+    if (!/^ {2}workflow_call:/m.test(e2e)) {
+      fail(
+        '.github/workflows/e2e.yml has no `workflow_call:` trigger, so publish.yml cannot call it and the release gate is broken',
+      );
+    }
+    // Anchored to the DECLARATION, not to the words appearing anywhere. A bare
+    // /require-measurement:/ was the first attempt and it was satisfied by prose inside a shell
+    // string — e2e.yml's own step summary echoes "called with `require-measurement: true`" — so
+    // deleting the real input left the check green. A check satisfied by text rather than by
+    // structure is the exact defect this invariant was being rewritten to close, reproduced inside
+    // the rewrite.
+    if (!/^ {6}require-measurement:[ \t]*$/m.test(e2e)) {
+      fail(
+        '.github/workflows/e2e.yml declares no `require-measurement` input (looked for the input declaration itself, not the words: prose in a shell string does not count), so the value publish.yml passes is ignored and a release would be published on a run that measured nothing',
+      );
+    }
+    if (!/inputs\.require-measurement/.test(e2e) || !/exit 1/.test(e2e)) {
+      fail(
+        '.github/workflows/e2e.yml declares `require-measurement` but never both READS `inputs.require-measurement` and fails (`exit 1`) on it — so an absent ANTHROPIC_API_KEY would end the release gate GREEN having measured nothing. That is the defect this release removes, relocated to the release path',
+      );
     }
   }
 }
@@ -2062,6 +2208,84 @@ if (fs.existsSync(packagedRoot)) {
         fail(
           `INV25: skills/${ENTRY}/'s description carries no distinctive word from ${JSON.stringify(phrase)} — a person typing that reaches the entry point on nothing but luck. Add the vocabulary people actually use to the description; this is the drift that appears when a description is rewritten for elegance.`,
         );
+      }
+    }
+  }
+}
+
+// ---- INV 27: the licence scanner covers every language the studio can build in ----------------
+//
+// 2026-08-27. An adversarial pass reported that `licence-scan.mjs` cannot see 28 dependency
+// ecosystems — Elixir, Scala, Clojure, Perl, R, Julia, Lua, Nim, Zig, OCaml, Erlang, Haskell and
+// more — and that a project built only in one of them reports `{"status":"clean"}` with exit 0.
+// Every word of that is true, and it is NOT a defect of this product: the studio cannot build in
+// any of them, because it has no language pack for them. A licence scanner covering languages the
+// product cannot produce is YAGNI in the strictest sense.
+//
+// What IS a defect is the two coming apart. The scanner's scope has no stated relationship to the
+// product's capability, so adding `skills/lang-elixir/` would silently create exactly the false
+// pass the pass described — a language the studio builds in and the licence gate cannot see.
+//
+// So the bound is derived from the product rather than enumerated: for every `lang-*` pack, at
+// least one dependency manifest the pack itself names must appear in the scanner's
+// MANIFEST_FILE_NAMES. Nothing here hardcodes a language list, which is the point — the check
+// grows with the roster instead of going stale behind it.
+//
+// The one-line version: the licence gate must be able to see every language the studio can write.
+{
+  const scanPath = path.join(hooksDir, 'licence-scan.mjs');
+  const scanSrc = read(scanPath);
+  if (scanSrc === null) {
+    fail(
+      'hooks/licence-scan.mjs is missing or unreadable, so the languages the studio can build in cannot be checked against the ecosystems its licence gate covers (INV27)',
+    );
+  } else {
+    const listMatch = scanSrc.match(/const MANIFEST_FILE_NAMES = \[([\s\S]*?)\];/);
+    if (!listMatch) {
+      fail(
+        'hooks/licence-scan.mjs no longer declares its manifests as `const MANIFEST_FILE_NAMES = [...]`, so INV27 cannot read them. Restore that shape or update this check — do not leave it reading nothing, which is a gate that passes because it measured nothing (INV27)',
+      );
+    } else {
+      // One quoted name per line, anchored. A bare /'([^']+)'/g was the first attempt and it was
+      // wrong in a way worth recording: the array region contains COMMENT prose, and an
+      // apostrophe in that prose ("any scanner's logic") pairs with the next real quote, shifting
+      // every subsequent pair. Measured: it extracted 24 names of which the last four were
+      // corrupted, so `Gemfile` and `composer.lock` were absent from the set and INV27 reported a
+      // covered language pack as uncovered — a false alarm, in the check written to prevent one.
+      const known = new Set([...listMatch[1].matchAll(/^\s*'([^'\n]+)',/gm)].map((m) => m[1]));
+      if (known.size === 0) {
+        fail(
+          'INV27 read MANIFEST_FILE_NAMES from hooks/licence-scan.mjs and extracted no filenames',
+        );
+      }
+      const langPacks = skillDirs.filter((d) => /^lang-/.test(d));
+      if (langPacks.length === 0) {
+        fail(
+          'INV27 found no `lang-*` skills, so it could not check the licence gate against any language. A check that reads nothing must not report its subject as fine (INV27)',
+        );
+      }
+      for (const pack of langPacks) {
+        const text = read(path.join(skillsDir, pack, 'SKILL.md'));
+        if (text === null) {
+          fail(
+            `INV27 could not read skills/${pack}/SKILL.md, so its dependency manifest is unknown (INV27)`,
+          );
+          continue;
+        }
+        // Any backticked token that looks like a filename. Compared against the scanner's own
+        // list, so a pack naming a manifest the scanner knows passes and one naming only
+        // manifests it does not know fails.
+        const named = new Set(
+          [...text.matchAll(/`([A-Za-z0-9_.+-]+\.[A-Za-z0-9_.+-]+)`/g)].map((m) => m[1]),
+        );
+        const covered = [...named].filter((n) => known.has(n));
+        if (covered.length === 0) {
+          fail(
+            `skills/${pack}/ is a language the studio can build in, and hooks/licence-scan.mjs recognises none of the dependency manifests it names (${
+              named.size ? [...named].slice(0, 6).join(', ') : 'it names none'
+            }). A project built in that language would reach the licence gate and be reported clean without a single dependency being examined. Add its manifest to MANIFEST_FILE_NAMES and give it a scanner — or an honest \`checked: false\` disclosure, which is what C++, Swift and .NET already get (INV27)`,
+          );
+        }
       }
     }
   }

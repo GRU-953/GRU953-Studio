@@ -1342,66 +1342,347 @@ function explainedNear(lines, i, re, radius = 2) {
 
 // ---- DC14: no hook may contain a network client ---------------------------------------------
 //
-// 2026-08-27. `docs/STABILITY.md` promises this for the whole life of 7.0.x, and until this
-// check existed the only thing standing behind that promise was a comment in this very file
-// saying "the plugin now makes NO outbound network call at all — so the property is finally
-// true", followed by "it is still not asserted as a gate here, because nothing checks it".
-// A promise in the stability contract with nothing checking it is the defect this repository
-// has spent two days on; the comment even named the fix ("a sweep for `fetch(`/`http` in the
-// hooks tree"), which is what this is.
+// `docs/STABILITY.md` promises for the whole life of 7.0.x that no hook carries a network client
+// of its own. Until 2026-08-27 the only thing behind that promise was a comment in this file
+// saying the property was "finally true" and, in its next sentence, that nothing checked it —
+// while naming the sweep that would.
 //
-// It is deliberately the NARROW property. "The plugin makes no network call" is false and was
-// removed from STABILITY.md the same day: three roles are instructed to use the host's own web
-// search, and `licence-scan.mjs` shells out to `cargo metadata` and `dart pub deps`, either of
-// which contacts a registry on a cold cache. Neither is a hook reaching the network under its
-// own steam, and neither is something a gate over this tree could honestly forbid. What IS
-// checkable is that no hook carries a client of its own — and that is the half a reader relies
-// on, because it is the half that would send something without being asked.
+// WHAT THIS CHECK IS FOR, stated plainly because the first version overclaimed. It catches the
+// ACCIDENT: a network client coming back the way `openrouter-models.mjs` did, and nobody noticing.
+// It is not, and cannot be, proof against a determined author — anyone with commit access can
+// reach the network through indirection no text search will see. Any regex over JavaScript is
+// defeatable in unbounded ways, so the promise this stands behind is worded as what is actually
+// checked, and no more.
 //
-// The v6 counter-example is real, not hypothetical: `openrouter-models.mjs` read a public
-// catalogue with Node's built-in `fetch`. It was deleted with the model integrations, and
-// nothing would have noticed it coming back.
+// The first version failed at exactly that job, which is why it was rewritten. Measured against
+// the real v6.1.0 `openrouter-models.mjs` — the one file its own header named as the counter-example
+// it existed to catch — it reported CLEAN. That file's client is `fetchImpl = globalThis.fetch`,
+// and the first pattern was `(?:^|[^\w.])fetch\s*\(`: the `.` in that character class deliberately
+// excluded member access, so the single most natural spelling anybody reaching for a client would
+// write was the one spelling it let through. A gate written for one historical bug, that does not
+// detect that bug, is the purest instance of this repository's own lesson: a green result proves
+// nothing until you have watched it go red on the real thing. It is now tested against the actual
+// file, recovered from the tag.
+//
+// Also missed by the first version, each reproduced by an adversarial pass and each a real working
+// client: `node:http2` (a genuine Node network module simply absent from the alternation), an
+// aliased `const F = fetch`, a call split across a newline, a backtick specifier, a computed
+// `require("node:" + "https")`, `await import()` of a concatenated specifier, and `new WebSocket`.
+//
+// And it CRIED WOLF: a `/* ... */` block whose body lines do not start with `*` was reported as a
+// network client, because the skip rule was a line-prefix heuristic. Its own error message and its
+// own pattern literal both contain the word, so a stricter rule applied to raw text would have
+// flagged this very file — the failure its own header warned about, in the check that warned.
+//
+// So it no longer reads raw text. `codeOnly()` blanks comments, string and template literals, and
+// regex literals, preserving line numbers, and the patterns run on what is left. That is what
+// makes an identifier-level rule safe: `lib.mjs`'s `/(?:curl|wget|fetch|http|https)/` literal,
+// `session-start.mjs`'s "Never fetch, pull, rebase or stash" message and this file's own text all
+// become invisible, while `globalThis.fetch` does not.
+//
+// It walks the hooks tree RECURSIVELY, because a client one directory down in `hooks/net/agent.mjs`
+// imported by a wired hook was invisible to a top-level-only scan. `test/` and `*.test.mjs` are
+// excluded: they are never wired into hooks.json — asserted by a test — and they necessarily write
+// every forbidden spelling into fixtures on purpose.
+
+// Classify every byte of a JavaScript source as code, comment, string or regex, so a pattern match
+// can be judged by WHERE it starts rather than by what the text looks like. A hand-rolled scanner
+// rather than a dependency, because this plugin ships Node's standard library and nothing else.
+//
+// A mask rather than a blank-out, and that distinction is the fix for the first attempt. Blanking
+// non-code erased module specifiers too — `import https from "node:https"` became
+// `import https from            ` — so the most basic case of all was missed while obfuscated ones
+// were caught. The two pattern families need different treatment and one blanked string cannot
+// serve both:
+//
+//   identifier patterns (`fetch`, `new WebSocket`)  must start in CODE, so prose, messages and
+//                                                   regex literals mentioning them are invisible
+//   import patterns (`from '...'`, `require('...')`) must also start in CODE — at the `from` or
+//                                                   `require` keyword — while the specifier they
+//                                                   read is allowed to be the string it must be
+//
+// So a documentation string containing "use require('https') carefully" does not fire, because the
+// `require` is inside a string; and a real import does, because the keyword is not.
+//
+// The one genuinely ambiguous character in JavaScript is `/`: division or the start of a regex. The
+// standard heuristic is used — a `/` begins a regex when the previous significant character cannot
+// end an expression — and it only has to hold for this repository's own hook sources, which the
+// suite pins by asserting the real tree stays clean.
+const MASK_CODE = 'c';
+function sourceMask(src) {
+  const mask = new Array(src.length).fill(MASK_CODE);
+  const set = (from, to, kind) => {
+    for (let k = from; k < to && k < src.length; k++) mask[k] = kind;
+  };
+  let i = 0;
+  let prevSignificant = '';
+  const n = src.length;
+  const CAN_END_EXPR = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$)]';
+  while (i < n) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (c === '/' && d === '/') {
+      const from = i;
+      while (i < n && src[i] !== '\n') i++;
+      set(from, i, 'm');
+      continue;
+    }
+    if (c === '/' && d === '*') {
+      const from = i;
+      i += 2;
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++;
+      i = Math.min(i + 2, n);
+      set(from, i, 'm');
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      const quote = c;
+      const from = i;
+      i++;
+      while (i < n) {
+        if (src[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (src[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      set(from, i, 's');
+      prevSignificant = 'x';
+      continue;
+    }
+    if (c === '/' && !CAN_END_EXPR.includes(prevSignificant)) {
+      const from = i;
+      i++;
+      let inClass = false;
+      while (i < n && src[i] !== '\n') {
+        if (src[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (src[i] === '[') inClass = true;
+        else if (src[i] === ']') inClass = false;
+        else if (src[i] === '/' && !inClass) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      while (i < n && /[a-z]/.test(src[i])) i++; // flags
+      set(from, i, 'r');
+      prevSignificant = 'x';
+      continue;
+    }
+    if (!/\s/.test(c)) prevSignificant = c;
+    i++;
+  }
+  return mask;
+}
+
 {
-  const NET_IMPORT =
-    /(?:^|[^\w.])fetch\s*\(|require\(\s*['"](?:node:)?(?:https?|net|dns|tls|dgram)['"]\s*\)|from\s+['"](?:node:)?(?:https?|net|dns|tls|dgram)['"]|import\s*\(\s*['"](?:node:)?(?:https?|net|dns|tls|dgram)['"]\s*\)/;
+  const NET = 'https?|http2|net|dns|tls|dgram';
+  const Q = '[\'"`]';
+  const PATTERNS = [
+    // `globalThis.fetch` was the miss that made the whole rewrite necessary: the first pattern
+    // excluded a preceding dot, so the single most natural spelling was the one it let through.
+    { re: new RegExp(String.raw`(?:^|[^\w$.])fetch\b`, 'g'), what: 'a reference to `fetch`' },
+    {
+      re: new RegExp(String.raw`\.\s*fetch\b`, 'g'),
+      what: 'a `.fetch` member access such as `globalThis.fetch`',
+    },
+    {
+      re: new RegExp(String.raw`\bfrom\s*${Q}(?:node:)?(?:${NET})${Q}`, 'g'),
+      what: 'an import of a network module',
+    },
+    {
+      re: new RegExp(
+        String.raw`\b(?:require|import)\s*\(\s*${Q}(?:node:)?(?:${NET})${Q}\s*\)`,
+        'g',
+      ),
+      what: 'a require/import of a network module',
+    },
+    // A specifier that is not a plain literal cannot be resolved by reading, so it is refused
+    // outright. A hook has no legitimate need for a computed module specifier; measured on the
+    // real tree there are none, so this costs nothing and closes the whole obfuscation family.
+    {
+      re: new RegExp(String.raw`\b(?:require|import)\s*\(\s*(?!${Q}[^'"\`]*${Q}\s*\))`, 'g'),
+      what: 'a module specifier that is not a plain string literal, so it cannot be checked by reading',
+    },
+    {
+      re: new RegExp(String.raw`\bcreateRequire\s*\(`, 'g'),
+      what: '`createRequire`, which can load a module this check cannot see',
+    },
+    {
+      re: new RegExp(String.raw`\bnew\s+(?:WebSocket|XMLHttpRequest|EventSource)\b`, 'g'),
+      what: 'a global network constructor',
+    },
+  ];
+
   const hooksDir = path.join(pluginRoot, 'hooks');
-  // The test suite lives in this directory and is NOT a hook: it is never wired into
-  // hooks.json and never runs as one, and it necessarily contains every forbidden spelling as
-  // fixture data — the tests for this very check write `fetch(...)` and `import https` into
-  // temporary files to prove it bites. The first version of DC14 flagged hooks.test.mjs on the
-  // real tree and took eight unrelated tests down with it, which is how a gate earns being
-  // switched off. Narrow by construction: `.test.mjs` cannot be a hook, and excluding it cannot
-  // hide a live client, because nothing ever executes it as one.
-  const entries = listDir(hooksDir).filter(
-    (d) => d.isFile() && d.name.endsWith('.mjs') && !d.name.endsWith('.test.mjs'),
-  );
-  if (entries.length === 0) {
+  const hookFiles = [];
+  (function collect(dir) {
+    for (const d of listDir(dir)) {
+      const full = path.join(dir, d.name);
+      if (d.isDirectory()) {
+        if (d.name === 'test') continue; // the suite and its fixtures, never wired as hooks
+        collect(full);
+        continue;
+      }
+      if (!d.name.endsWith('.mjs')) continue;
+      if (d.name.endsWith('.test.mjs')) continue;
+      hookFiles.push(full);
+    }
+  })(hooksDir);
+
+  if (hookFiles.length === 0) {
     fail(
-      'DC14 found no .mjs files under plugins/gru953-studio/hooks/, so the no-network-client property promised in docs/STABILITY.md could not be checked. A gate that reads nothing must never report the thing it reads as fine.',
+      'DC14 found no hook sources under plugins/gru953-studio/hooks/, so the no-network-client property promised in docs/STABILITY.md could not be checked. A gate that reads nothing must never report the thing it reads as fine.',
     );
   }
-  for (const d of entries) {
-    const full = path.join(hooksDir, d.name);
+  for (const full of hookFiles) {
+    const rel = path.relative(repoRoot, full);
     const text = read(full);
     if (text === null) {
       fail(
-        `DC14 could not read plugins/gru953-studio/hooks/${d.name}, so it cannot say whether that hook contains a network client (DC14)`,
+        `DC14 could not read ${rel}, so it cannot say whether that hook contains a network client (DC14)`,
       );
       continue;
     }
-    const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      // Comments are where this property gets DISCUSSED — including in this check's own header,
-      // which names `fetch(` twice. Skipping them is not a loophole: a comment cannot open a
-      // socket. Code hidden after `//` on a line is still code, so only leading-comment lines
-      // and block-comment bodies are skipped, which is what a hook's prose actually looks like.
-      const t = line.trim();
-      if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) continue;
-      if (!NET_IMPORT.test(line)) continue;
-      fail(
-        `plugins/gru953-studio/hooks/${d.name}:${i + 1} contains a network client (\`fetch\`, or an import of http/https/net/dns/tls/dgram). docs/STABILITY.md promises for the life of 7.0.x that no hook has one, and v6 shipped exactly this — openrouter-models.mjs fetched a public catalogue — so the promise needs a check rather than a comment. If a hook genuinely must reach the network, change the contract first, in the open (DC14)`,
-      );
+    const mask = sourceMask(text);
+    // Line number from a byte offset, computed once.
+    const lineStarts = [0];
+    for (let k = 0; k < text.length; k++) if (text[k] === '\n') lineStarts.push(k + 1);
+    const lineOf = (off) => {
+      let lo = 0;
+      let hi = lineStarts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lineStarts[mid] <= off) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + 1;
+    };
+    const reported = new Set();
+    for (const { re, what } of PATTERNS) {
+      re.lastIndex = 0;
+      for (let m = re.exec(text); m; m = re.exec(text)) {
+        // The match must START in code. `fetch` inside a message, a comment or a regex literal is
+        // not a client; the keyword of a real import is not inside a string.
+        let at = m.index;
+        while (at < m.index + m[0].length && /\s/.test(text[at])) at++;
+        if (mask[at] !== MASK_CODE) continue;
+        const line = lineOf(at);
+        if (reported.has(line)) continue;
+        reported.add(line);
+        fail(
+          `${rel}:${line} contains ${what}. docs/STABILITY.md promises for the life of 7.0.x that no hook carries a network client, and v6 shipped exactly this — openrouter-models.mjs read a public catalogue with \`globalThis.fetch\` — so the promise needs a check rather than a comment. If a hook genuinely must reach the network, change the contract first, in the open (DC14)`,
+        );
+      }
+    }
+  }
+}
+
+// ---- DC15: a file the product says is RENDERED must be written by something ------------------
+//
+// 2026-08-27. `micro-task-planning/SKILL.md` told the product's own agents that "`PROGRESS.md` and
+// `PLAN.md` are rendered from it [tasks.json], so it's auditable and resumable the same way".
+// `PROGRESS.md` is. `PLAN.md` is not, and never was: `task-ledger.mjs` contains exactly one
+// `writeFileSync` and `PLAN.md` appears nowhere in the file.
+//
+// It mattered in both directions on a Standard or Complex unattended run. `architect` is told the
+// file is generated, so it may not write it — and `builder` and `tester` are told, four bullets
+// later, to read task specifics FROM it. Either the run reads a file nobody wrote, or it keeps two
+// task lists with nothing holding them in step while the documentation asserts one is derived from
+// the other. This repository carries eight separate reproductions for failures of reading the old
+// markdown task table; a second, undeclared one is how a ninth would start.
+//
+// Three sibling claims here are TRUE — `PROGRESS.md` from `task-ledger.mjs`, `OBJECTIVE.md` from
+// `run-brief.mjs`, `QUALITY-GATE.md` from `dod.mjs` — which is what makes this worth having rather
+// than a special case: it passes on all three and failed only on the fourth.
+//
+// It looks for a hook that WRITES the file, not one that mentions it. `dashboard.mjs` reads
+// `PLAN.md` and renders it into HTML; that is a consumer, not a producer, and a check satisfied by
+// a mention is the mistake X116 is about.
+{
+  const RENDER_CLAIM =
+    /\b(?:is|are)\s+(?:RENDERED|rendered|GENERATED|generated)\b|\b(?:RENDERED|rendered|GENERATED|generated)\s+from\b/;
+  const hookSrcs = [];
+  (function collect(dir) {
+    for (const d of listDir(dir)) {
+      const full = path.join(dir, d.name);
+      if (d.isDirectory()) {
+        if (d.name === 'test') continue;
+        collect(full);
+        continue;
+      }
+      if (!d.name.endsWith('.mjs') || d.name.endsWith('.test.mjs')) continue;
+      const t = read(full);
+      if (t !== null) hookSrcs.push(t);
+    }
+  })(path.join(pluginRoot, 'hooks'));
+
+  if (hookSrcs.length === 0) {
+    fail(
+      'DC15 found no hook sources to check the RENDERED claims against, so it could not verify any of them. A check that reads nothing must never report its subject as fine.',
+    );
+  } else {
+    const writtenByAHook = (base) => {
+      const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`writeFileSync\\s*\\([^;]{0,300}['"\`]${esc}['"\`]`);
+      return hookSrcs.some((src) => re.test(src));
+    };
+    for (const dir of ['skills', 'agents', 'commands']) {
+      for (const file of walk(path.join(pluginRoot, dir))) {
+        if (!file.endsWith('.md')) continue;
+        const rel = path.relative(repoRoot, file);
+        const text = read(file);
+        if (text === null) continue;
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          // SAME LINE, not a window, and the first version got this wrong in the way this file
+          // spent the morning fixing elsewhere. With a ±1-line window it paired a NEIGHBOURING
+          // table row's "GENERATED from" with THIS row's filename, and reported five honest rows of
+          // dev-memory's file table — REQUIREMENTS.md, FOCUS.md, CONTENT.md, SESSION-LOG.md — as
+          // undelivered promises. An adjacent marker is not a claim about this line: the identical
+          // mistake DC11, DC12 and DC13 were rewritten for on the same day, in the check written
+          // after them.
+          //
+          // A markdown table row is one line and a claim is almost always written on one, so the
+          // cost of dropping the window is a rare wrapped sentence; the cost of keeping it was five
+          // false alarms on the first run, and a gate that fires on honest work gets switched off.
+          const line = lines[i];
+          const claim = line.match(RENDER_CLAIM);
+          if (!claim) continue;
+          // A line explaining that something is NOT rendered is the fix this check asks for, so it
+          // must not then be reported. Same shape as DC11 to DC13's exemptions.
+          if (/\bnot\b[^.]{0,60}\brender/i.test(line) || /\brender[^.]{0,60}\bnot\b/i.test(line))
+            continue;
+
+          // The SUBJECT is the filename nearest the claim, not any filename on the line. Same-line
+          // alone was still too loose: dev-memory's `OBJECTIVE.md` row is a long table cell that
+          // also mentions `REQUIREMENTS.md` further along, so a correct claim about the first was
+          // read as a false claim about the second. Nearest-wins is a distance rather than a list,
+          // which is the fourth time on this codebase that comparing a quantity has beaten
+          // enumerating cases.
+          const names = [...line.matchAll(/`([A-Z][A-Za-z-]*\.md)`/g)];
+          if (names.length === 0) continue;
+          let subject = names[0];
+          for (const n of names) {
+            if (Math.abs(n.index - claim.index) < Math.abs(subject.index - claim.index))
+              subject = n;
+          }
+          for (const m of [subject]) {
+            const base = m[1];
+            if (writtenByAHook(base)) continue;
+            fail(
+              `${rel}:${i + 1} says \`${base}\` is RENDERED, and no hook writes it — every hook was searched for a \`writeFileSync\` naming it. A file documented as generated that nothing generates is worse than an undocumented one: whoever was writing it by hand stops, and whoever reads it finds nothing. Either make a hook render it, or say who writes it (DC15)`,
+            );
+          }
+        }
+      }
     }
   }
 }

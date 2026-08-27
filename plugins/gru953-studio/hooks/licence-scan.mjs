@@ -291,7 +291,33 @@ function scanNodeFromLockfile(root, lockFilePath) {
       else if (verdict === null)
         findings.push({ package: name, licence: licence || 'unknown', verdict: 'needs-review' });
     }
-    return { ecosystem: 'npm', checked: true, findings };
+    // X354's cross-check, applied to the LOCKFILE path (2026-08-27). X354's own note records
+    // that "the npm path received exactly this cross-check on 2026-08-13" — but that guard is on
+    // the node_modules path. This one walks `packages` from the lockfile, and a lockfile carrying
+    // only the root entry `""` yields zero dependency entries and returned `checked: true`. So a
+    // stale or freshly-initialised package-lock.json beside a package.json declaring two
+    // dependencies read `{"status":"clean"}` with exit 0.
+    //
+    // The root entry is excluded from the count deliberately: it is the project itself, not a
+    // dependency, so counting it would make every project look examined.
+    const examined = Object.keys(packages).filter((k) => k !== '').length;
+    if (examined === 0) {
+      const declaredIn = toolListedNothingButSomethingIsDeclared(root, [
+        [
+          'package.json',
+          /"(?:dependencies|devDependencies|optionalDependencies|peerDependencies)"\s*:\s*\{\s*"/,
+        ],
+      ]);
+      if (declaredIn) {
+        return {
+          ecosystem: 'npm',
+          checked: false,
+          findings: [],
+          note: `${path.basename(lockFilePath)} lists no dependency entries, but ${declaredIn} declares dependencies — the lockfile is stale or was written for a different manifest. Run \`npm install\` and re-scan: "the lockfile listed nothing" is not the same as "there is nothing to check"`,
+        };
+      }
+    }
+    return { ecosystem: 'npm', checked: true, findings, packagesExamined: examined };
   } catch {
     return { ecosystem: 'npm', checked: false, findings: [], note: 'Failed to parse lockfile' };
   }
@@ -655,6 +681,10 @@ function scanDartFlutter(root) {
 }
 
 // ---- SPDX expression classifier (for Cargo, Maven, etc.) ----
+// Deep enough for any real SPDX expression and far short of the stack. The deepest genuine
+// expression anyone has published nests three or four levels; 64 is a ceiling, not a budget.
+const MAX_EXPR_DEPTH = 64;
+
 export function classifySpdxExpr(expr) {
   if (!expr) return null;
   const tokens = String(expr)
@@ -665,6 +695,8 @@ export function classifySpdxExpr(expr) {
     .filter(Boolean);
   if (!tokens.length) return null;
   let pos = 0;
+  let depth = 0;
+  let overflowed = false;
   const peek = () => tokens[pos];
   const AND = (a, b) =>
     a === false || b === false ? false : a === true && b === true ? true : null;
@@ -693,9 +725,29 @@ export function classifySpdxExpr(expr) {
   }
   function parseFactor() {
     if (peek() === '(') {
+      // 2026-08-27. Depth is bounded because this is recursive descent over attacker-shaped
+      // input: a licence field is free text in somebody else's manifest. 5,000 nested parentheses
+      // produced `RangeError: Maximum call stack size exceeded` and the gate died printing a
+      // stack trace instead of a verdict — and a gate that crashes has not said "blocked", it has
+      // said nothing, which is how a scan gets skipped. Refusing to classify is the honest answer
+      // to an expression too deep to be real.
+      if (++depth > MAX_EXPR_DEPTH) {
+        overflowed = true;
+        return null;
+      }
       pos++;
       const v = parseOr();
-      if (peek() === ')') pos++;
+      // An unbalanced expression is malformed, and malformed must never read as permissive. This
+      // was `if (peek() === ')') pos++;` — a missing close paren was silently tolerated, so `(MIT`
+      // consumed every token, satisfied the all-tokens-consumed check below, and classified as
+      // permissive. Found one probe after the dropped tail; they are the same mistake in
+      // different clothes, which is why both controls stay in the suite.
+      if (peek() !== ')') {
+        overflowed = true;
+        return null;
+      }
+      pos++;
+      depth--;
       return v;
     }
     const id = tokens[pos++];
@@ -708,6 +760,25 @@ export function classifySpdxExpr(expr) {
     return classifyId(id, withExc);
   }
   const result = parseOr();
+
+  // The WHOLE token stream must be consumed, and this is the serious half. `parseOr` stops at the
+  // first token it cannot use and returns the verdict for the PREFIX it understood, silently
+  // dropping the rest. So `(MIT) GPL-3.0-only` classified as `MIT` -> permissive, and the GPL
+  // identifier was never looked at.
+  //
+  // 2026-08-27, found by an adversarial pass over the same day's own commit. That commit moved
+  // this parser AHEAD of the whole-string copyleft veto in `isAllowed()` — correctly, so a real
+  // dual licence like `(GPL-2.0-only OR MIT)` stops being blocked — and in doing so made this
+  // dropped-tail bug REACHABLE for any string containing a flagged substring. Measured before and
+  // after: `(MIT) GPL-3.0-only` went from blocked to allowed. The commit message claimed
+  // "reordering cannot weaken the gate". It could, and it did, by this route.
+  //
+  // A licence field is free text written by strangers, so a malformed expression must never read
+  // as permissive. Unconsumed input means "I did not understand this", and the answer to that is
+  // `null` — needs a human look — never `true`. `null` then falls through to the whole-string
+  // veto, so a copyleft substring still blocks: the reorder and this check work together.
+  if (overflowed) return null;
+  if (pos !== tokens.length) return null;
   return result === undefined ? null : result;
 }
 
@@ -841,10 +912,21 @@ function scanPhp(root) {
       note: 'composer.lock has no "packages" array — the format is not what this scanner reads, so PHP is reported as not checked rather than as a pass',
     };
   }
-  const packages = [
-    ...lock.packages,
-    ...(Array.isArray(lock['packages-dev']) ? lock['packages-dev'] : []),
-  ];
+  // `packages-dev` gets the same treatment as `packages`, and this was wrong on the way in: it
+  // read `Array.isArray(...) ? ... : []`, which SILENTLY discarded a present-but-wrong-shaped
+  // value while the next line still reported `checked: true`. A composer.lock whose packages-dev
+  // is an object rather than an array therefore hid every dev dependency in it, GPL included, and
+  // the result said PHP had been checked. Absent is fine — plenty of lockfiles have no dev
+  // section. Present and in a shape this scanner cannot read is not.
+  if (lock['packages-dev'] !== undefined && !Array.isArray(lock['packages-dev'])) {
+    return {
+      ecosystem: 'php/composer',
+      checked: false,
+      findings: [],
+      note: 'composer.lock has a "packages-dev" key that is not an array, so its dev dependencies could not be read — refusing to report PHP as checked when part of the lockfile is in a shape this scanner does not understand',
+    };
+  }
+  const packages = [...lock.packages, ...(lock['packages-dev'] || [])];
   const findings = [];
   for (const pkg of packages) {
     const name = pkg && typeof pkg.name === 'string' ? pkg.name : '(unnamed package)';
@@ -865,6 +947,26 @@ function scanPhp(root) {
     if (verdict === false) findings.push({ package: name, licence: expr, verdict: 'blocked' });
     else if (verdict === null)
       findings.push({ package: name, licence: expr, verdict: 'needs-review' });
+  }
+  // X354's cross-check, which this scanner shipped without — found 2026-08-27 by an adversarial
+  // pass over the same commit that added the scanner. "The lockfile parsed and listed nothing" is
+  // not the same claim as "there is nothing to list", and only one of them is a pass. A
+  // composer.lock with an empty `packages` array beside a composer.json requiring two packages
+  // read `{"status":"clean"}` with exit 0 — the identical shape X354 fixed in three other
+  // ecosystems on 2026-08-25, reintroduced in a path written two days later. Narrow on purpose: a
+  // project that genuinely requires nothing still reads clean, so this cannot cry wolf.
+  if (packages.length === 0) {
+    const declaredIn = toolListedNothingButSomethingIsDeclared(root, [
+      ['composer.json', /"require(?:-dev)?"\s*:\s*\{\s*"/],
+    ]);
+    if (declaredIn) {
+      return {
+        ecosystem: 'php/composer',
+        checked: false,
+        findings: [],
+        note: `composer.lock listed no packages, but ${declaredIn} declares dependencies — the lockfile is stale, or was written for a different manifest. Run \`composer update\` and re-scan: "the lockfile listed nothing" is not the same as "there is nothing to check"`,
+      };
+    }
   }
   return { ecosystem: 'php/composer', checked: true, findings, packagesExamined: packages.length };
 }
@@ -1074,8 +1176,17 @@ function hasAnyManifest(dir, entries) {
   if (MANIFEST_FILE_NAMES.some((n) => names.includes(n))) return true;
   return names.some((n) => n.endsWith('.csproj') || n.endsWith('.sln'));
 }
+// 2026-08-27. The depth bound is kept — an unbounded walk over a large monorepo is a real cost,
+// and six levels reaches every layout anyone has built here. What was wrong is that hitting it was
+// SILENT: a project whose manifest sits at depth 7 reported `{"status":"clean"}` while the
+// byte-identical project at depth 6 was BLOCKED, and nothing in the output said the walk had
+// stopped early. A bound nobody is told about is indistinguishable from a clean tree.
+//
+// So the walk records whether it truncated and `main()` turns that into an explicit refusal. The
+// bound itself does not move: telling the caller is the fix, not searching further.
 export function findManifestDirs(root) {
   const found = [];
+  let truncatedAt = null;
   function walk(dir, depth) {
     const entries = dirEntries(dir);
     // A file path (not a directory) as root, or an unreadable one, yields
@@ -1084,7 +1195,15 @@ export function findManifestDirs(root) {
     if (entries.length > 0 || fs.existsSync(dir)) {
       if (hasAnyManifest(dir, entries)) found.push(dir);
     }
-    if (depth >= MAX_WALK_DEPTH) return;
+    if (depth >= MAX_WALK_DEPTH) {
+      // Only a truncation that could actually have hidden something counts: a directory we
+      // stopped at which still has sub-directories below it. Stopping at a leaf hides nothing,
+      // and reporting that would make the note fire on almost every project.
+      if (entries.some((e) => e.isDirectory() && !SKIP_DIR_NAMES.has(e.name))) {
+        truncatedAt = truncatedAt || path.relative(root, dir) || '.';
+      }
+      return;
+    }
     for (const e of entries) {
       if (!e.isDirectory()) continue;
       if (SKIP_DIR_NAMES.has(e.name)) continue;
@@ -1092,6 +1211,7 @@ export function findManifestDirs(root) {
     }
   }
   walk(root, 0);
+  findManifestDirs.truncatedAt = truncatedAt;
   return found;
 }
 
@@ -1208,6 +1328,30 @@ function main() {
   }
 
   if (results.length === 0) {
+    // "No recognised dependency manifests found" and "the walk stopped before it could look" are
+    // different statements, and only the first is a clean pass. If the walk hit MAX_WALK_DEPTH
+    // with sub-directories still below it, say so and refuse — a manifest at depth seven used to
+    // read exactly like a project with no dependencies at all.
+    if (findManifestDirs.truncatedAt) {
+      console.log(
+        JSON.stringify(
+          {
+            status: `INCOMPLETE — the directory walk stopped at its ${MAX_WALK_DEPTH}-level depth limit`,
+            reason:
+              `No dependency manifest was found, but the walk stopped at \`${findManifestDirs.truncatedAt}\` ` +
+              `with sub-directories still below it, so a manifest deeper than ${MAX_WALK_DEPTH} levels ` +
+              'would not have been seen. Scan that sub-tree directly by passing it as the root, or flatten it. ' +
+              '"I did not look" must never be reported as "there is nothing there".',
+            depthLimit: MAX_WALK_DEPTH,
+            truncatedAt: findManifestDirs.truncatedAt,
+            results: [],
+          },
+          null,
+          2,
+        ),
+      );
+      process.exit(1);
+    }
     console.log(
       JSON.stringify(
         { status: 'clean', reason: 'no recognised dependency manifests found', results: [] },
@@ -1257,7 +1401,23 @@ function main() {
     );
     process.exit(1);
   }
-  console.log(JSON.stringify({ status: 'clean', ...output }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        status: 'clean',
+        ...output,
+        // Stated even on a pass: manifests were found and checked, but the walk still stopped
+        // early, so this verdict covers what was reached and not the whole tree.
+        ...(findManifestDirs.truncatedAt
+          ? {
+              depthLimitNote: `the directory walk stopped at its ${MAX_WALK_DEPTH}-level limit at \`${findManifestDirs.truncatedAt}\`; any manifest deeper than that was not seen`,
+            }
+          : {}),
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 
