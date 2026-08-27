@@ -7297,6 +7297,37 @@ test('docs-consistency.mjs: DC13 catches every phrasing that stops a run, not ju
   }
 });
 
+// charter-check.mjs read clause HEADINGS and three guarantee phrases, and nothing read the clause
+// BODIES. 2026-08-27 (pass 2), measured: the interview clause's body rewritten to "Do NOT
+// interview me. Never ask questions. Assume whatever you like" reported
+// {"status":"clean","clauses":8,"guarantees":3}. The charter is the file this product's every
+// consent path cites, and it could be inverted sentence by sentence with every gate green.
+for (const [was, becomes] of [
+  ['Thoroughly interview me', 'Do NOT interview me'],
+  ['happens ONCE, at kick-off', 'happens before every task'],
+  ['It does not weaken or bypass any confirmation', 'It DOES weaken confirmations'],
+]) {
+  test(`charter-check.mjs: inverting "${was.slice(0, 34)}…" is caught`, () => {
+    const dir = mkTmp('gru-charter-inv-');
+    copyRepoTo(dir);
+    const f = path.join(dir, 'plugins', 'gru953-studio', 'skills', 'operating-charter', 'SKILL.md');
+    const before = fs.readFileSync(f, 'utf8');
+    assert.ok(before.includes(was), `precondition: the charter must currently say "${was}"`);
+    fs.writeFileSync(f, before.replace(was, becomes));
+    const r = runScript('charter-check.mjs', dir);
+    assert.notEqual(r.code, 0, 'a clause heading can survive while its body is inverted');
+    // A CRASH IS NOT A VERDICT. The first version of this verification was fooled by exactly
+    // that: the check referenced an undefined variable, the hook threw, and the non-zero exit
+    // looked like detection. So assert the named reason, not just the exit code.
+    assert.match(
+      JSON.stringify(r.json),
+      /no longer contains the sentence/,
+      'the refusal must name the missing sentence, not merely exit non-zero',
+    );
+    fs.rmSync(dir, RM_OPTS);
+  });
+}
+
 // DC13, 2026-08-27, Stage 1. The product's decision 1 is "one interview at kick-off, then
 // silent". An audit found FOURTEEN mid-build `AskUserQuestion` gates — one at each of eleven
 // stage boundaries, one per phase, one before every task, and more — every one citing the
