@@ -225,6 +225,25 @@ for (const [i, t] of tasks.entries()) {
     fail(`${where} has no id — a task that cannot be named cannot be depended on or resumed`);
     continue;
   }
+  // THE ID MUST BE TRACEABLE, and that is a shape, not a preference.
+  //
+  // 2026-08-27 (pass 2). `hooks/traceability-check.mjs` finds task ids with
+  // TASK_ID_RE = /\b[A-Za-z]{1,4}-?\d+.../ — letters then digits. This gate accepted ANY
+  // non-empty string, and `skills/micro-task-planning/SKILL.md` gave the format only as an
+  // example ("e.g. `T1`, `T2`"). So a perfectly sensible descriptive id like `add-expense-form`
+  // was written happily here, and then traceability-check reported the requirement it satisfies
+  // as "maps to no task and is not marked deferred" — a fabricated block on an honest project,
+  // with a message pointing at the wrong thing entirely.
+  //
+  // Caught here instead, where the id is written, with the reason named. Three files stating three
+  // different contracts for one field is the defect; this is the one that can say so early.
+  if (!/^[A-Za-z]{1,4}-?\d+(?:[.-]\d+)?$/.test(id)) {
+    fail(
+      `${where}: id ${JSON.stringify(id)} is not a traceable task id. It must be a short letter prefix followed by a number — \`T1\`, \`T12\`, \`API-3\`, \`T2.1\` — because hooks/traceability-check.mjs matches requirements to tasks by exactly that shape. A descriptive id is written happily by this gate and then reported by that one as a requirement mapping to NO task, which reads as a dropped requirement rather than as a naming problem.`,
+    );
+    continue;
+    continue;
+  }
   if (byId.has(id)) {
     fail(
       `duplicate task id ${JSON.stringify(id)} — two rows claiming one identity means a dependency on it is ambiguous`,

@@ -3228,6 +3228,36 @@ test('quality-gate.mjs: a failing row for a dimension outside the required list 
 // (5) An EMPTY ledger reported "every task is done and backed by recorded evidence", exit 0 —
 // because zero tasks are trivially all done. Vacuous truth is the commonest way a gate reports
 // safety it never measured.
+// THREE FILES STATED THREE CONTRACTS FOR ONE FIELD. 2026-08-27 (pass 2):
+// `skills/micro-task-planning/SKILL.md` gave the task-id format as an EXAMPLE ("e.g. `T1`, `T2`"),
+// this gate accepted any non-empty string, and `hooks/traceability-check.mjs` matched only
+// letters-then-digits. So a sensible descriptive id like `add-expense-form` was written happily
+// here and then surfaced from traceability-check as "requirement R1 maps to no task and is not
+// marked deferred" — which reads as a DROPPED REQUIREMENT rather than a naming problem, and would
+// have blocked a Standard-Tier build with a message pointing at the wrong thing entirely.
+//
+// Caught where the id is written, with the real reason named.
+test('task-ledger.mjs: a task id must be traceable, and says so where the id is written', () => {
+  const dir = mkTmp('gru-ledger-id-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  const withId = (id) => {
+    fs.writeFileSync(
+      path.join(dir, 'Dev-Memory', 'tasks.json'),
+      JSON.stringify({ schemaVersion: 1, tasks: [{ id, title: 'x', state: 'todo' }] }),
+    );
+    return runScript('task-ledger.mjs', dir);
+  };
+  for (const id of ['T1', 'T12', 'API-3', 'T2.1']) {
+    assert.equal(withId(id).code, 0, `${id} is the shape traceability-check matches`);
+  }
+  for (const id of ['add-expense-form', 'build-the-ui', 'the login page']) {
+    const r = withId(id);
+    assert.notEqual(r.code, 0, `${id} would later read as a dropped requirement`);
+    assert.match(JSON.stringify(r.json), /is not a traceable task id/, 'and the reason must be the real one');
+  }
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('task-ledger.mjs: an empty ledger is not a finished one', () => {
   const dir = mkTmp('gru-ledger-empty-');
   fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });

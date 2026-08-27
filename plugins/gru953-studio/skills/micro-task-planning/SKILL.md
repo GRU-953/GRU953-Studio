@@ -37,7 +37,9 @@ that was always implicitly needed between Design and Build.
 2. **Record, per micro-task:** a short id and name, its one acceptance
    criterion, the exact verification command that proves it, and its
    dependencies (which other micro-tasks, if any, must be `done` first). The
-   id (e.g. `T1`, `T2`) is what `REQUIREMENTS.md` traces to and `GRAPH.md`
+   id — which MUST be a short letter prefix followed by a number (`T1`, `T12`,
+   `API-3`, `T2.1`) and not a descriptive slug — is what `REQUIREMENTS.md` traces
+   to and `GRAPH.md`
    links from — give every task one.
 2b. **Subtasks, when a task has more than one provable part** (2026-07-19,
    feature request: "break work into the smallest unit of tasks with all
