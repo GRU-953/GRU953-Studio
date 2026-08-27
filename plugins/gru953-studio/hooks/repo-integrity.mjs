@@ -857,6 +857,38 @@ for (const s of skillDirs) {
 // reported success while silently skipping three mandatory gates. Guard the
 // reconciliation mechanically so the most safety-critical flow cannot drift again:
 // the publish protocol must name every mandatory check hook by filename.
+// 2026-08-27 (pass 2): this checked ONE file. Three others enumerate the same pre-flight list —
+// `commands/studio-publish.md`, which is what a person actually types, and
+// `agents/security-compliance-auditor.md`, which owns the gate — and `studio-publish.md` was
+// found omitting `dod.mjs` and `task-ledger.mjs` entirely. So the command a user runs to publish
+// verified the Definition of Done without ever measuring it: the defect this whole rebuild exists
+// to close, surviving in the entry point because the invariant guarding against it looked
+// somewhere else.
+const PUBLISH_PATH_FILES = [
+  ['skills', 'publish-github', 'SKILL.md'],
+  ['commands', 'studio-publish.md'],
+  ['agents', 'security-compliance-auditor.md'],
+];
+for (const parts of PUBLISH_PATH_FILES) {
+  const rel = parts.join('/');
+  const text = read(path.join(pluginRoot, ...parts));
+  if (text === null) {
+    fail(`${rel} is missing or unreadable — cannot verify the Publish gate (INV12)`);
+    continue;
+  }
+  for (const h of ['dod.mjs', 'quality-gate.mjs', 'task-ledger.mjs']) {
+    // INVOKED, not mentioned — X116's rule, and it bit immediately: the first version of this
+    // check used `includes(h)`, and the correction note explaining that `dod.mjs` had been
+    // MISSING from this list satisfied it. A file can discuss a hook at length while never
+    // telling anyone to run it, which is precisely the state being guarded against.
+    if (!new RegExp(`node[^\\n]{0,80}hooks/${h.replace('.', '\\.')}`).test(text)) {
+      fail(
+        `${rel} is on the Publish path and never tells anyone to RUN ${h} (a mention is not an invocation — X116). These three are the executed Definition of Done, its verification and the task ledger: a publish route that runs the verifier without the measurer grades a record nobody produced (INV12)`,
+      );
+    }
+  }
+}
+
 const publishSkill = read(path.join(pluginRoot, 'skills', 'publish-github', 'SKILL.md'));
 if (publishSkill === null) {
   fail('skills/publish-github/SKILL.md is missing or unreadable — cannot verify the Publish gate');

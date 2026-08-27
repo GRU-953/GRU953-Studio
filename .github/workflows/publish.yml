@@ -41,7 +41,7 @@ on:
 jobs:
   # 2026-08-26, finding X376. Until v7.0.0 this workflow had NO `needs:` anywhere and referenced
   # none of the plugin's own gates: pushing a `v*.*.*` tag published straight to npm with nothing
-  # checked. CI runs seven gates and a 500-plus-test suite on every push and pull request, and the
+  # checked. CI runs nine gate steps and a 650-plus-test suite on every push and pull request, and the
   # release path — the one that reaches other people's machines — ran none of them.
   #
   # This RE-RUNS them against the tagged tree rather than looking up CI's conclusion for the

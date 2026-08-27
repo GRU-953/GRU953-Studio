@@ -2535,6 +2535,51 @@ test('stall-check.mjs: an unanswered call is NOT reported when the run carried o
   fs.rmSync(dir, RM_OPTS);
 });
 
+// 2026-08-27 (pass 2). The test above was measured to pass with the suppression rule DELETED,
+// because its final record was timestamped `new Date()` — so the run was not idle at all, and
+// nothing would have been reported whatever that rule did. It asserted the right thing about a
+// fixture that could not distinguish it.
+//
+// The suppression rule is the reason this watchdog is usable: an unanswered call matters only if
+// the run did nothing afterwards, and reporting one that the run moved past is the false positive
+// that gets watchdogs switched off. So the fixture has to be IDLE and have carried on.
+test('stall-check.mjs: the suppression rule is what distinguishes moved-on from wedged', () => {
+  const dir = mkTmp('gru-stall-supp-');
+  const older = new Date(Date.now() - 120 * 60000).toISOString();
+  const old2 = new Date(Date.now() - 90 * 60000).toISOString();
+
+  // Idle, AND the run produced assistant activity after the unanswered call: not wedged.
+  const movedOn = writeTranscript(dir, 'moved.jsonl', [
+    { type: 'assistant', timestamp: older, message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Bash' }] } },
+    { type: 'assistant', timestamp: old2, message: { id: 'm2', content: [{ type: 'text', text: 'carried on' }] } },
+  ]);
+  // Asserted on `unansweredToolCalls`, NOT the exit code. Measured while writing this: both
+  // fixtures exit 2, because stall-check reports IDLENESS independently of any unanswered call —
+  // 90 minutes quiet is "needs attention" either way. So the exit code cannot distinguish them,
+  // and a test that asserted on it would be testing the clock. The suppression rule's entire
+  // effect is which calls appear in this field.
+  const a = runWithArgs('stall-check.mjs', [dir, '--transcript', movedOn]);
+  assert.equal(
+    (a.json.unansweredToolCalls || []).length,
+    0,
+    'the run moved past that call — reporting it is the false positive that switches watchdogs off',
+  );
+
+  // Idle, and NOTHING after the unanswered call: wedged. Same idleness, opposite verdict — which
+  // is what proves the suppression rule is doing the work rather than the clock.
+  const stuck = writeTranscript(dir, 'stuck.jsonl', [
+    { type: 'assistant', timestamp: old2, message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Bash' }] } },
+  ]);
+  const b = runWithArgs('stall-check.mjs', [dir, '--transcript', stuck]);
+  assert.equal(
+    (b.json.unansweredToolCalls || []).length,
+    1,
+    'an unanswered call with nothing after it is exactly what the watchdog is for',
+  );
+  assert.equal(b.code, 2);
+  fs.rmSync(dir, RM_OPTS);
+});
+
 test('stall-check.mjs: idle with nothing outstanding is reported as not-working, but not as wedged', () => {
   const dir = mkTmp('gru-stall-idle-');
   const f = writeTranscript(dir, 'tr.jsonl', [
@@ -3670,6 +3715,30 @@ test('quality-gate.mjs: a table older than its own evidence is STALE and refused
 });
 
 // dod.mjs's own weaknesses. Each of these was a way to keep the gate and lose the measurement.
+// 2026-08-27 (pass 2): measured deletable with the whole dod suite green — 26 tests passed with
+// this refusal removed. It is the check that stops `minPercent` being absent, a string, or a
+// nonsense number, i.e. the one that makes the floor a floor at all.
+test('dod.mjs: a coverage floor that is not a usable number is refused', () => {
+  //
+  // The command must genuinely WRITE the report, or this cannot isolate the floor check: the
+  // report is deleted before the command runs (see dod.mjs), so a command that writes nothing is
+  // refused for the missing report instead — measured, and it made the first version of this test
+  // pass with the floor check removed. The third time in one day that a test of mine passed for
+  // the wrong reason.
+  for (const minPercent of [undefined, '80', null, -1, 101, Number.NaN, true, {}]) {
+    const dir = mkTmp('gru-dod-floortype-');
+    const spec = { command: coverageCmd('c.json', 95), reportPath: 'c.json' };
+    if (minPercent !== undefined) spec.minPercent = minPercent;
+    writeDod(dir, { ...DOD_ALL_NA, coverage: spec });
+    assert.notEqual(
+      runScript('dod.mjs', dir).code,
+      0,
+      `minPercent ${JSON.stringify(minPercent)} cannot be compared against, so it is not a floor`,
+    );
+    fs.rmSync(dir, RM_OPTS);
+  }
+});
+
 test('dod.mjs: a coverage floor of 0 is refused — a check that cannot fail is not a check', () => {
   const dir = mkTmp('gru-dod-floor0-');
   writeDod(dir, {

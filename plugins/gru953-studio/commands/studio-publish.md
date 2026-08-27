@@ -22,11 +22,21 @@ Publish the current project's working app to a private GitHub repository.
    how clean its code is (2026-07-12 fix: this step used to be listed AFTER
    the checks below, contradicting `publish-github/SKILL.md`'s own Round 9
    fix, which reordered it to run first for the same reason).
-   Then run the security-compliance-auditor's seven blocking pre-flight
+   Then run the security-compliance-auditor's nine blocking pre-flight
    checks BEFORE asking to publish: secrets scan, dependency vulnerability
    scan, `node "${CLAUDE_PLUGIN_ROOT}/hooks/licence-scan.mjs" .`,
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/verify-progress.mjs" .`,
-   `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .`,
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/dod.mjs" .` — which EXECUTES the Definition
+   of Done and regenerates `QUALITY-GATE.md` from the real exit codes — then
+   `node "${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs" .` to verify that record,
+   and `node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .`,
+
+   (2026-08-27: this list omitted `dod.mjs` and `task-ledger.mjs`, so the command
+   a person actually types to publish ran the gate that VERIFIES the Definition of
+   Done without ever running the one that MEASURES it. That is the defect the
+   whole v7 rebuild exists to close, surviving in the entry point — the same
+   place, and the same reason, as the "auto-publish to GitHub" line found in
+   `commands/studio-start.md`: nothing automated exercises these files.)
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/traceability-check.mjs" .`, and
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/content-check.mjs" .`. Also run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/roster-check.mjs" "${CLAUDE_PLUGIN_ROOT}" .` via

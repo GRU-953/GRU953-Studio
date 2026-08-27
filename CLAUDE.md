@@ -72,8 +72,13 @@ canonical `skills/operating-charter/SKILL.md` for Claude hosts, and
 a Claude skill — and this gate compares them clause by clause so the two can
 never quietly say different things.
 
-The seven gates above are the ones CI itself runs and are mandatory on every
-commit. A GRU953-Studio project's own `Dev-Memory/` additionally carries eight
+The gates above are the ones CI itself runs and are mandatory on every commit —
+**nine steps**: the syntax check, the suite, `repo-integrity`, `roster-check`,
+`licence-scan`, `docs-consistency`, `charter-check`, `npm run lint` and
+`npm run format:check`. (Counted 2026-08-27: this said "seven", which predated
+lint and format:check being added to the block, and `publish.yml` had copied the
+same stale number. A count restated in prose is the commonest stale claim in this
+repository, which is what `docs-consistency.mjs` exists for.) A GRU953-Studio project's own `Dev-Memory/` additionally carries eight
 project-level gates (no-ops on this repo, since it has no `Dev-Memory/` of its
 own) that a project built *by* the plugin must pass before a phase checkpoint
 or Publish — run these too whenever you touch the skill/hook that documents
