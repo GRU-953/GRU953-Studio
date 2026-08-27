@@ -209,6 +209,19 @@ let maxAttempts = 3;
       }
       maxAttempts = cfg.maxAttemptsPerTask;
     }
+
+    // `interactive` — whether a person is at the keyboard (added 2026-08-28). Eleven clauses in
+    // the product say a thing happens "only when a person is present and has asked to be
+    // consulted", and until now that predicate was asked nowhere, recorded nowhere and checkable
+    // nowhere, so every one of them was decided by guess. Absent means FALSE, deliberately: an
+    // absent field must never mean "wait for someone", because waiting is what ends an unattended
+    // run. Validated rather than merely documented, so a typo is a caught error and not a silent
+    // reversion to interactive behaviour.
+    if (cfg && cfg.interactive !== undefined && typeof cfg.interactive !== 'boolean') {
+      problems.push(
+        `Dev-Memory/run.json declares interactive ${JSON.stringify(cfg.interactive)}, which is not true or false. Anything other than a boolean cannot be relied on to mean "nobody is here", and the whole point of the field is that its absence and its falsehood are both safe.`,
+      );
+    }
   }
 }
 

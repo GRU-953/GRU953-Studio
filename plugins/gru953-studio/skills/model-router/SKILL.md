@@ -88,11 +88,17 @@ menu, no confirmation, for the ordinary case. The **single exception** is
 described a "hard ceiling" — "a per-task spend threshold, seeded by `first-run`,
 adjustable by the user" — that neither `cost-guard/SKILL.md` nor `first-run/SKILL.md`
 actually defines anywhere; there is no numeric per-task threshold in this
-codebase. What's real is `cost-guard`'s own judgment-based rule: "pause to check
-with the user before any noticeably expensive step"): when a task looks
-unusually large or high-effort by that same judgment, the studio pauses and puts
-a plain-English choice to the user (proceed at this cost, or take the cheaper
-path). Everything that doesn't look unusually expensive runs automatically.
+codebase.): when a task looks unusually large or high-effort by that same
+judgment, the studio **takes the cheaper path and records the choice** — it does
+not stop. Everything else runs automatically.
+
+**Corrected 2026-08-28.** This paragraph said "the studio pauses and puts a
+plain-English choice to the user (proceed at this cost, or take the cheaper
+path)", citing as its authority `cost-guard`'s "pause to check with the user
+before any noticeably expensive step" — a sentence `cost-guard/SKILL.md` records
+deleting on 2026-08-27, for the reason that the steps it named are ordinary build
+events. This skill is loaded as a standing rule, so it was the highest-traffic
+copy of the retired instruction in the product.
 This is the one, narrow reconciliation with cost-guard's "confirm before
 expensive" default; it is not a per-task interruption, and it is not gated by
 any numeric threshold a user configures.

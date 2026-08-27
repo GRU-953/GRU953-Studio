@@ -281,6 +281,35 @@ Run each as `node "${CLAUDE_PLUGIN_ROOT}/hooks/<name>.mjs" .` and act on the ver
 - **`run-brief.mjs`** refuses an incomplete brief, and refuses a Tier that does not
   follow from its own three recorded answers. Run it while the person is still there: a
   gap costs one more question now, or an abandoned run later.
+### THE RUN IS NOT OVER WHILE THE LEDGER SAYS IT CAN CONTINUE
+
+**Before you finish, run `node "${CLAUDE_PLUGIN_ROOT}/hooks/task-ledger.mjs" .`. If it
+exits 0 and names a next task, TAKE THAT TASK. Do not end. A turn boundary is not the
+end of the job (added 2026-08-28).**
+
+This is the single most important sentence in this file for an unattended run, and it is
+here because its absence was measured. A Complex-Tier build on 2026-08-27 dispatched 14
+specialists, wrote 92 passing tests, completed 5 of 22 tasks — and then ENDED, reporting
+success, with `stop_reason: end_turn` and no error of any kind. Its final message was
+"The domain is done — 92 tests green. Now the terminal interface, the largest task, tests
+first." It announced the next task and stopped. At that moment `task-ledger.mjs` exited
+0 and named `T6`.
+
+Nothing was broken. Nothing was blocked. Nothing asked a human. The run simply treated
+the end of a turn as the end of the work, so `dod.json` was never written, the Definition
+of Done never ran, and nothing was committed — five separate assertion failures with one
+cause.
+
+A Tiny brief hides this completely: few enough tasks to finish inside one turn-group. It
+is why the end-to-end test must be run at Complex Tier and why a passing Tiny run proves
+nothing about it.
+
+So, concretely, the loop is: take the next runnable task, verify it, record it, **re-run
+the ledger, and go again**. Stop only when the ledger reports everything `done`, or exits
+2 — nothing runnable while work remains — and then report which tasks are
+`blocked-on-defect` and which are `blocked-on-human`. If you find yourself writing "now
+the next task is X", the next thing you do is X, not a summary.
+
 - **`task-ledger.mjs`** exits **0** when work can continue, **1** when the ledger is
   invalid, and **2** when the ledger is valid but nothing is runnable. Two is not a
   failure — it means the run needs a person, and it names which tasks and why. Ask it
@@ -419,7 +448,8 @@ later" (safe, thanks to Dev-Memory). Delegate the actual repair to `fixer`.
 Never leave something silently broken or half-finished without saying so.
 
 **Unattended, this is the LAST move, not the first (2026-08-27).** Park the task
-as `blocked-on-defect` in `Dev-Memory/tasks.json` and take the next runnable one.
+as `blocked-on-defect` in `Dev-Memory/tasks.json`, with a `blockedReason` saying what
+is blocking it — the ledger is INVALID without one — and take the next runnable one.
 `hooks/task-ledger.mjs` is built for exactly this: it reports `canContinue: true`
 while anything remains runnable, and exit **2** only when nothing is and work
 remains. Reach the full Stuck Protocol on that exit 2 — so the run stops **once,

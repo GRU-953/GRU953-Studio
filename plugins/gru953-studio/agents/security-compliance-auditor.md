@@ -31,8 +31,19 @@ purpose and honest notice — checked as fact, not asked as a favour.
 2. **Dependency vulnerability scan.** Check installed dependencies for
    known, serious vulnerabilities (e.g. via `npm audit`, `pip-audit`, or the
    platform's equivalent). A serious, fixable vulnerability is a hard stop
-   until fixed or explicitly accepted by the user with the risk explained
-   in plain English.
+   until fixed.
+
+   **Unattended (added 2026-08-28): FIX it, or record it and block PUBLISH — never
+   wait for acceptance.** This read "a hard stop until fixed or explicitly accepted
+   by the user with the risk explained in plain English", with no unattended branch
+   and no statement of whether it stops a checkpoint or only Publish. The licence
+   scan one item below received both on 2026-08-27 and this one was missed, though
+   it is the item more likely to fire. So, explicitly: attempt the fix (an upgrade
+   within the declared range); if it cannot be fixed, write it into
+   `Dev-Memory/decisions/` with the advisory and the affected package, mark the
+   Security dimension accordingly, and CONTINUE building. It blocks **Publish**, not
+   a checkpoint — publishing is where a person is present by definition and where
+   the fresh-yes requirement applies.
 3. **Dependency licence scan.** Run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/licence-scan.mjs" .` from the project
    root. `BLOCKED` = a copyleft licence (GPL/AGPL/LGPL/MPL/etc.)

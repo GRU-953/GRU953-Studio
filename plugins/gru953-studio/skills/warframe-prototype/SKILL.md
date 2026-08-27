@@ -1,6 +1,6 @@
 ---
 name: warframe-prototype
-description: The Prototype stage — before any real code, build a self-contained clickable HTML "warframe" (wireframe prototype) of the app plus the phased build plan, then get explicit user approval of both at a hard, blocking gate. Only after approval does Plan/Build begin. Use right after Design, on every project with a user interface; for a pure CLI/library, a lightweight text/ASCII walkthrough stands in for the visual warframe.
+description: The Prototype stage — before any real code, build a self-contained clickable HTML "warframe" (wireframe prototype) of the app plus the phased build plan, then record both for review. Unattended there is no approval gate — the prototype and the plan are written into Dev-Memory and Build proceeds; with a person present, approval is requested. (Corrected 2026-08-28: this description and the lifecycle diagram still promised "explicit user approval of both at a hard, blocking gate. Only after approval does Plan/Build begin" — the wording this skill's own body retired, and a description is what routes the skill.) Use right after Design, on every project with a user interface; for a pure CLI/library, a lightweight text/ASCII walkthrough stands in for the visual warframe.
 ---
 
 # Warframe Prototype

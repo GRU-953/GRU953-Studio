@@ -93,6 +93,13 @@ protected by this and never was. Plain-English rule is as set in the
    objection, not an approval (X1), and it is the only push-safety hook left.
 6. Record the checkpoint in `Dev-Memory/SESSION-LOG.md` and the recall index.
 
+   Also run `node "${CLAUDE_PLUGIN_ROOT}/hooks/memory-integrity.mjs" .` here.
+   **Added 2026-08-28:** `memory-keeper.md` said this audit "runs at the next
+   checkpoint or Publish", and that sentence was the only place in the product
+   saying so — no checkpoint or Publish list invoked it. Measured on a live
+   Complex-Tier run, it exits 1: ten memory files and no `INDEX.md`, so nothing
+   in that memory could be recalled by a later session.
+
 ## Reused machinery (no duplication)
 
 - Push safety: `hooks/scan.mjs` (secret/Dev-Memory block) is now the whole of it.

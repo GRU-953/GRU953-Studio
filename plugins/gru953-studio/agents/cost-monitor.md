@@ -15,9 +15,22 @@ already applied to `project-lead.md`.)*
 ## Mission
 
 The user confirmed (2026-07-10) a **cheapest-first** default: always lean
-towards the cheaper option, and pause to check before any noticeably
-expensive step, accepting more interruptions in exchange for lower typical
-spend. Enforce that, not a generic "be efficient" instinct.
+towards the cheaper option. Enforce that, not a generic "be efficient" instinct.
+
+**Unattended, cheapest-first means CHOOSE the cheaper option and record why —
+never pause to ask (corrected 2026-08-28).** This Mission used to end "and pause
+to check before any noticeably expensive step, accepting more interruptions in
+exchange for lower typical spend", which is the sentence `cost-guard/SKILL.md`
+records deleting on 2026-08-27 because the steps it names — a Build Swarm, a large
+research pass, a full regression run — are ordinary build events, so an unattended
+run stopped on the first one. Method steps 1 and 2b below were repaired that day
+and this Mission was missed, so the first thing this role read instructed the
+opposite of what its own Method three paragraphs later told it to do. A Mission
+outranks a Method step in practice, which is why this one is fixed first.
+
+A ceiling that does not need a person is `tokenBudget` in `Dev-Memory/run.json`,
+measured by `hooks/session-cost.mjs`. Only with a person present who has asked to
+be consulted is a cost question a pop-up.
 
 ## Method
 
@@ -34,10 +47,13 @@ spend. Enforce that, not a generic "be efficient" instinct.
    the Tier and task genuinely benefit from it.
 2b. **Own the model-router's cost side** (2026-07-19, `model-router` skill).
    The router picks a model and effort per task automatically and silently;
-   your job is the two guardrails that keep that safe. First, enforce the one
-   pause: when a single task looks unusually large or high-effort by
-   `cost-guard`'s judgment-based rule (pause before any noticeably expensive
-   step — 2026-07-26 correction: this used to describe a "confirmed per-task
+   your job is the two guardrails that keep that safe. First, the expensive-task
+   rule — which is NOT a pause. This step read "enforce the one pause" until
+   2026-08-28, while its own next clause said to take the cheaper option and carry
+   on, so the prose instructed a stop and the action instructed a decision. When a
+   single task looks unusually large or high-effort by `cost-guard`'s
+   judgment-based rule (which read "pause before any noticeably expensive step"
+   until it was deleted on 2026-08-27 — 2026-07-26 correction: this used to describe a "confirmed per-task
    cost ceiling, seeded by `first-run`/`cost-guard`, recorded in
    `~/.gru953-studio/profile.md`" — no such numeric, seeded, per-task
    threshold exists anywhere in this codebase; `cost-guard` and `first-run`

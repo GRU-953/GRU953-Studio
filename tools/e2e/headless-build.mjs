@@ -567,6 +567,46 @@ if (pkg && pkg.scripts && pkg.scripts.test) {
 }
 
 // ---- it committed its work --------------------------------------------------------------------
+// THE ONE THAT EXPLAINS THE OTHERS. Added 2026-08-28 after a Complex-Tier run failed five
+// assertions with a single cause: it ended while its own ledger still named a next task.
+//
+// Measured: 22 tasks, 5 done, 17 todo; `task-ledger.mjs` exiting 0 and naming `T6`;
+// `stop_reason: "end_turn"`, `terminal_reason: "completed"`, `api_error_status: null`, no
+// permission denials, 14 specialists dispatched and 92 tests passing. Nothing was broken,
+// blocked, throttled or waiting on a human. The run treated the end of a turn as the end of
+// the work — so `dod.json` was never written, the Definition of Done never ran, and nothing
+// was committed. Reporting those three as separate failures buries the cause under its
+// symptoms, and a reader fixes the symptoms.
+//
+// So this is asserted FIRST and states the cause in one line. It is the assertion a Tiny
+// brief can never fail, because few enough tasks fit inside one turn-group — which is why
+// the release requires a Complex run and why a green Tiny run proves nothing about it.
+{
+  const ledger = path.join(work, 'Dev-Memory', 'tasks.json');
+  if (fs.existsSync(ledger)) {
+    const tl = spawnSync(
+      'node',
+      [path.join(REPO, 'plugins', 'gru953-studio', 'hooks', 'task-ledger.mjs'), work],
+      { encoding: 'utf8' },
+    );
+    let unfinished = null;
+    try {
+      const j = JSON.parse(tl.stdout || '{}');
+      const next = typeof j.next === 'string' ? j.next : j.next && j.next.id;
+      if (tl.status === 0 && next) unfinished = next;
+    } catch {
+      /* an unreadable ledger is covered by the ledger-validity assertion below */
+    }
+    check(
+      'the run did not stop while its own ledger still had runnable work',
+      unfinished === null,
+      unfinished === null
+        ? ''
+        : `the session ended normally, but task-ledger.mjs exits 0 and names \`${unfinished}\` as the next runnable task — the run treated a turn boundary as the end of the job. Every later failure here (no dod.json, no evidence, no commits) follows from this one`,
+    );
+  }
+}
+
 const log = spawnSync('git', ['log', '--oneline'], { cwd: work, encoding: 'utf8' });
 const commits = String(log.stdout || '')
   .trim()

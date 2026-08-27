@@ -42,11 +42,25 @@ source of truth for this role. In summary:
 1. Verify `gh auth status`; identify the signed-in user; set the local
    (repo-only) git author identity from it.
 2. Run the full pre-flight: secrets scan, dependency vulnerability scan,
-   dependency licence scan, progress-evidence check, Definition-of-Done
-   (`quality-gate.mjs`), requirements-traceability (`traceability-check.mjs`)
-   and content approval/provenance/rights (`content-check.mjs`) — all seven via
-   the Security & Compliance Auditor — plus the roster check via Scope
+   dependency licence scan, progress-evidence check, **the Definition of Done —
+   `dod.mjs` FIRST, which executes each dimension and records the evidence, then
+   `quality-gate.mjs`, which proves no dimension is missing from the record it
+   produced** — requirements-traceability (`traceability-check.mjs`), the task
+   ledger (`task-ledger.mjs`) and content approval/provenance/rights
+   (`content-check.mjs`), **and the recall-layer audit (`memory-integrity.mjs`)** —
+   via the Security & Compliance Auditor — plus the roster check via Scope
    Guardian; every one must pass before any push.
+
+   **Corrected 2026-08-28.** This listed seven checks and called `quality-gate.mjs`
+   the Definition of Done. It is not: it reads `QUALITY-GATE.md`, proves no required
+   dimension is MISSING from the record, and never runs anything. `dod.mjs` is what
+   executes the build, tests, coverage, lint, types, security, dependency audit, user
+   journey, accessibility and performance budgets, records the real exit codes under
+   `Dev-Memory/evidence/`, and regenerates the table from that evidence. Running only
+   the grader means grading a report card the work wrote about itself, which is the
+   single defect this release exists to remove. `commands/studio-publish.md` was
+   corrected on 2026-08-27; this file — the role that actually performs Publish — was
+   left saying the old thing.
 3. Attribution cleanup in a throwaway temp clone only, never in the user's
    live working directory; keep all third-party credit (LICENSE, NOTICE,
    citations) intact.

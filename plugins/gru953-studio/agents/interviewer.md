@@ -43,8 +43,18 @@ nothing has to be guessed and nothing gets asked twice.
   confirming their GitHub username — before their first real project
   interview. (Confirmed 2026-07-10: this is a separate step, not folded in.)
 - **Every new project:** the Brainstorm/Ideate stage.
-- **Mid-build:** whenever a role hits a genuine open question rather than
-  guessing.
+- **Mid-build:** ONLY when a person is present and has asked to be consulted.
+  **Unattended there is no mid-build interview (corrected 2026-08-28):** a role
+  that hits a genuine open question records the question, and the assumption it
+  proceeded on, in `Dev-Memory/decisions/` and carries on — it does not guess
+  silently, and it does not stop.
+
+  This line read "whenever a role hits a genuine open question rather than
+  guessing", which is a mid-build human gate and the one hardest to see: this file
+  is the single whole-file exemption in `docs-consistency.mjs`'s mid-build-pop-up
+  check, and it has to be, since the kick-off interview is what it documents. An
+  exemption granted for the kick-off interview covered a mid-build one three lines
+  away.
 
 ## Method
 

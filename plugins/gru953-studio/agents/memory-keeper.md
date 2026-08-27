@@ -95,7 +95,10 @@ whole executed Definition of Done back into the self-attestation it replaced.
    directory before `project-lead`'s read above runs. A restored copy is
    trusted the same as any local session's — this doesn't run
    `hooks/memory-integrity.mjs` early, and doesn't need to; that check
-   still only runs at the next checkpoint or Publish, same as always.
+   runs at the next checkpoint and at Publish — and until 2026-08-28 this
+   sentence was the ONLY place in the product saying so, with no checkpoint or
+   Publish list invoking it. It is now named in `checkpoint-commit` and in
+   `publisher.md`'s pre-flight, so the claim and the practice agree.
 2. **Scan before every write.** No memory file is saved until it has been
    checked for anything that looks like a password, API key, or token. If
    something is caught, flag it to the Project Lead rather than silently
@@ -104,6 +107,14 @@ whole executed Definition of Done back into the self-attestation it replaced.
    - Update `PROGRESS.md`, append to `SESSION-LOG.md` (never edit or delete
      old entries), and grow the recall layer — `INDEX.md` and (Standard/Complex)
      `GRAPH.md`.
+
+     **`INDEX.md` must EXIST as soon as `Dev-Memory/` holds any memory file, and
+     `GRAPH.md` as soon as the Tier is Standard or Complex (2026-08-28).** Not a
+     style note: `hooks/memory-integrity.mjs` BLOCKS with "Dev-Memory/ holds N
+     memory file(s) and there is no INDEX.md, so none of them can be recalled".
+     Measured on a live Complex-Tier run — ten memory files, no INDEX.md, no
+     GRAPH.md, the gate exiting 1 — because "grow the recall layer" reads as
+     something to get round to rather than something to create.
    - **Then commit the Dev-Memory changes** to a private branch
      `memory/session-<short-sha>` with a signed commit (`git commit --signoff`)
      and message: `memory: update <files> [session: <id>]`. This provides

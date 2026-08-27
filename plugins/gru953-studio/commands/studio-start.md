@@ -11,7 +11,17 @@ pipeline exactly.
   IDEA: $ARGUMENTS
 
 - First, check whether the user has completed first-run onboarding.
-  If not, run the `first-run` skill which includes:
+  If not, run the `first-run` skill.
+
+  **Unattended, first-run is SKIPPED entirely (added 2026-08-28).** Its four pop-up
+  questions and its guided demo cannot be answered or watched by anybody, and this
+  file is the documented entry point — so an unattended first-ever run stopped on
+  the welcome screen, before the brief was read. Instead: take the defaults
+  `first-run` itself documents, record them in `Dev-Memory/decisions/`, and go
+  straight to the kick-off interview for the real project. `first-run`'s own body
+  was given an unattended branch on 2026-08-27 and this summary of it was not.
+
+  With a person present, `first-run` includes:
   1. Welcome screen (30 seconds)
   2. Guided first-run setup (4 questions via pop-up MCQs)
   3. Guided demo project: build a Tiny "Hello World" CLI and auto-test it.

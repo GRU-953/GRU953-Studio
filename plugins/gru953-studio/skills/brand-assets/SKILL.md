@@ -96,7 +96,12 @@ The full guard earns its cost when a build carries a brand the user does not own
 
 - Does not give legal advice, and does not interpret a licence beyond quoting it. Where
   terms are unclear the answer is the user's, not the studio's.
-- Does not remove or rewrite anything it finds. It reports and blocks; the user decides.
+- Does not remove or rewrite anything it finds. It reports and blocks. **Unattended,
+  "blocks" means the finding is written into `Dev-Memory/decisions/` and the asset is
+  NOT used — the build continues without it (added 2026-08-28).** This read "it reports
+  and blocks; the user decides", which unattended is a decision nobody makes: the run
+  waited. Not using a questionable asset is always available, and it is the safe answer
+  to a rights question, so it is the unattended one.
 - Does not claim to detect a redrawn or re-typeset mark, and says so in every verdict.
 - Does not treat a filename as evidence of rights.
 - Does not copy a mark anywhere in order to compare it. Comparison is by content

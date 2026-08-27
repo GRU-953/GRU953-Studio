@@ -565,13 +565,64 @@ if (isGuardedPath(abs) === 'quality tooling configuration') {
   const LEVEL = { off: 0, 0: 0, none: 0, warn: 1, warning: 1, 1: 1, error: 2, 2: 2, err: 2 };
 
   // Rule → level, in every spelling: quoted or bare key, scalar or array value, word or number.
+  //
+  // TWO discriminators, both added 2026-08-28 after this function was measured DENYING ordinary
+  // edits — and one of them a tightening:
+  //
+  //   printWidth: 100 -> 80    denied: "the rule `printWidth` (was warn)"
+  //   tabWidth:   2   -> 4     denied: "the rule `tabWidth` (was error)"
+  //
+  // The numeric alternation `0|1|2` matched the LEADING DIGIT of `100`, recording printWidth as
+  // severity 1; `80` begins with 8 so nothing matched, the key vanished from the new map, and a
+  // vanished rule counts as a decrease. Every Prettier or tsconfig numeric option is exposed to
+  // that, which on a TypeScript project is every project — a hard blocker on an unattended build,
+  // in the guard whose own header says a check that fires on ordinary work gets switched off.
+  //
+  //   1. A numeric level must be the COMPLETE value: `(?![\d.])` so `100` is not `1`.
+  //   2. The key must plausibly BE a lint rule — kebab-case, or scoped like
+  //      `@typescript-eslint/no-explicit-any` — or else sit inside a `rules` block. A camelCase
+  //      single word at the top level of a config file is an option, not a rule.
+  //
+  // `semi` is deliberately covered by rule 2's second half: it is both a real ESLint rule and a
+  // Prettier option, and only its position tells them apart.
   const ruleLevels = (text) => {
     const out = new Map();
+    // The regions where a bare single-word key IS a rule name: inside a `rules` mapping.
+    const ruleRegions = [];
+    for (const m of text.matchAll(/["']?rules["']?\s*:\s*\{/g)) {
+      let depth = 1;
+      let i = m.index + m[0].length;
+      for (; i < text.length && depth > 0; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') depth--;
+      }
+      ruleRegions.push([m.index, i]);
+    }
+    const inRuleRegion = (at) => ruleRegions.some(([a, b]) => at >= a && at <= b);
+    const looksLikeRuleName = (k) => k.includes('-') || k.includes('/');
+
     const re =
-      /["']?([\w@/-]+)["']?\s*:\s*(?:\[\s*)?["']?(off|none|warn|warning|error|err|0|1|2)["']?/g;
+      /["']?([\w@/-]+)["']?\s*:\s*(?:\[\s*)?["']?(off|none|warn|warning|error|err|0|1|2)["']?(?![\w.])/g;
     for (const m of text.matchAll(re)) {
+      const key = m[1];
+      if (!looksLikeRuleName(key) && !inRuleRegion(m.index)) continue;
       const lvl = LEVEL[m[2].toLowerCase()];
-      if (lvl !== undefined) out.set(m[1], lvl);
+      if (lvl === undefined) continue;
+      // MAX per rule, not last-occurrence-wins. A config may carry several blocks — ESLint flat
+      // config is an array, and `overrides` does the same in the legacy shape — so the same rule
+      // appears at different levels for different folders. Collapsing them last-wins meant that
+      // ADDING a block was read as lowering every rule the new block mentions: measured, adding
+      // `{ files: ["test/**"], rules: { "no-console": "off" } }` beside an existing
+      // `"no-console": "error"` was DENIED (2026-08-28), and that is the ordinary edit the
+      // TypeScript brief needs.
+      //
+      // The trade is stated rather than hidden: with MAX, narrowing a rule for one folder while
+      // it stays strict elsewhere is allowed. That is a real hole, and it is the smaller of the
+      // two — this guard exists to stop an agent told "make the build pass" from disabling the
+      // thing measuring it, and disabling a rule for one directory while leaving it on for the
+      // rest does not achieve that. Refusing the edit outright does stop honest work, every time.
+      const prev = out.get(key);
+      out.set(key, prev === undefined ? lvl : Math.max(prev, lvl));
     }
     return out;
   };
@@ -595,7 +646,15 @@ if (isGuardedPath(abs) === 'quality tooling configuration') {
     const re = new RegExp(`["']?(${keys})["']?\\s*[:=]\\s*\\[([^\\]]*)\\]`, 'gi');
     for (const m of text.matchAll(re)) {
       const entries = [...m[2].matchAll(/["']([^"']+)["']/g)].map((e) => e[1]);
-      out.set(m[1].toLowerCase(), entries);
+      // UNION across occurrences, not last-wins. A config may carry several blocks each with its
+      // own `files:` list — that is what ESLint flat config IS — and taking the last one meant
+      // adding a block made every glob in the earlier blocks look LOST. Measured 2026-08-28:
+      // adding `{ files: ["test/**"], rules: {...} }` beside an existing `{ files: ["src/**"] }`
+      // was denied as "the `files` list has lost src/**", which is the ordinary edit a second
+      // folder needs and a hard blocker on an unattended TypeScript build.
+      const key = m[1].toLowerCase();
+      const prev = out.get(key);
+      out.set(key, prev === undefined ? entries : [...new Set([...prev, ...entries])]);
     }
     return out;
   };

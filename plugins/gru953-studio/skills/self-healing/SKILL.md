@@ -42,10 +42,18 @@ skill only ever touches local Build/Test/Fix work, never the Publish gate.
    quickly resolved, it is never quiet about *what* happened.
 3. **A hard ceiling: 2 quiet attempts, then park — and only then escalate.** If
    the same failure is still present after 2 attempts, stop self-healing.
-   **Unattended, park the task as `blocked-on-defect` and take the next runnable
+   **Unattended, park the task as `blocked-on-defect` — recording `blockedReason`,
+   which `task-ledger.mjs` REQUIRES and without which the whole ledger is invalid — and
+   take the next runnable
    task (2026-08-27)** — `Dev-Memory/tasks.json` records the attempts and
    `hooks/task-ledger.mjs` enforces the ceiling as data rather than as this
-   agent's memory. The full Stuck Protocol is for when the ledger reports nothing
+   agent's memory.
+
+   **INCREMENT `attempts` on the task in `Dev-Memory/tasks.json` before each retry
+   (added 2026-08-28).** Nothing said to, so the field stayed absent, the ceiling
+   never fired, and the counting fell back to the memory of the agent being asked to
+   keep trying — which is the one party that should not hold the counter, and exactly
+   what moving it into data was for. A task with no `attempts` has no ceiling. The full Stuck Protocol is for when the ledger reports nothing
    runnable at all (its exit 2). With a person present, invoke the full Stuck
    Protocol exactly as already defined — tell the
    user what currently works, what's blocking, and the options. The
@@ -115,9 +123,16 @@ work already uses).
 - **builder** and **tester** hand a verification failure to `fixer` for
   up to 2 quiet attempts before invoking the full Stuck Protocol.
 - **devops-engineer** builds (b) as part of its existing reliability work.
-- **project-lead** still runs the Stuck Protocol exactly as before once
-  the quiet-attempt ceiling is reached — nothing about that escalation
-  path changes.
+- **project-lead** runs the Stuck Protocol when the LEDGER reports nothing
+  runnable at all (`task-ledger.mjs` exit 2) — not when a single task reaches its
+  quiet-attempt ceiling. **Corrected 2026-08-28:** this said "still runs the Stuck
+  Protocol exactly as before once the quiet-attempt ceiling is reached — nothing
+  about that escalation path changes", which is the pre-fix behaviour step 3 above
+  was rewritten on 2026-08-27 to remove. One task exhausting its attempts parks as
+  `blocked-on-defect` and the run continues with anything whose dependencies are
+  satisfied; the Protocol is for when there is genuinely nothing left to do. Step 3
+  was fixed and these two summary sections were left describing the old rule, in the
+  same file.
 
 ## What this does not do
 

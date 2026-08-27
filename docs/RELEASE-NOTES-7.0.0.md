@@ -110,14 +110,23 @@ network call" — which an earlier draft did — was not true.
 
 ## Honesty about what is not proven
 
-- **The unattended build is verified at Tiny tier: 18 of 18 assertions in 71 minutes,
-  21 dispatches across 8 specialists, nothing pushed.** Standard and Complex tier runs
-  use the briefs committed at `tools/e2e/briefs/`, and the wall-clock is hours rather
-  than minutes. **Before publishing this release, replace this paragraph with what the
-  three runs actually returned** — `docs/RELEASING-7.0.0.md` carries the commands and
-  the exit-code meanings. Writing "verified at all three sizes" before the runs have
-  finished is precisely the class of claim this release exists to remove, and an earlier
-  draft of this file did exactly that.
+- **Tiny tier is green: 18 of 18 assertions in 71 minutes, 21 dispatches across 8
+  specialists, nothing pushed.**
+- **Complex tier is NOT green, and the reason is worth stating.** A run on 2026-08-27
+  dispatched 14 specialists, wrote 92 passing tests, completed 5 of its 22 tasks — and
+  then ended, reporting success, with no error of any kind. Its own task ledger was
+  valid and naming the next task. It treated the end of a turn as the end of the job,
+  so the Definition of Done never ran and nothing was committed: 13 of 18 assertions.
+  The instruction it was missing is now in the coordinator and in `project-lead`, and
+  the harness now names that cause instead of reporting its five symptoms. **Re-run it
+  and replace this bullet with the result before publishing** —
+  `docs/RELEASING-7.0.0.md` carries the command.
+- Standard tier has not been run.
+
+  This is stated as it stands rather than smoothed over. A Tiny brief has few enough
+  tasks to finish inside one turn-group and can never fail that way, which is exactly
+  why one fixture was never enough.
+
 - `actionlint` is not wired into CI. Every other action reference in this repository is
   pinned to a full-length SHA, and adding it meant introducing the only mutable one.
   The reason and the remedy are in `CLAUDE.md`.

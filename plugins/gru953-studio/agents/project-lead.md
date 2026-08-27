@@ -154,7 +154,9 @@ the project is in, and either resume or start the next stage.
    including "pause here, come back later" (safe, thanks to Dev-Memory).
 
    **Unattended, this is not the first move (2026-08-27).** Park the task as
-   `blocked-on-defect` in `Dev-Memory/tasks.json` and take the next runnable
+   `blocked-on-defect` in `Dev-Memory/tasks.json`, with a `blockedReason` saying what is
+   blocking it — `task-ledger.mjs` rejects the whole ledger without one — and take the
+   next runnable
    task — `hooks/task-ledger.mjs` already supports exactly this, and reports
    `canContinue: true` while anything remains runnable. Reach the full Stuck
    Protocol only when the ledger says nothing is runnable (its exit 2), so the
@@ -176,16 +178,38 @@ the project is in, and either resume or start the next stage.
    "show me another option" as choices. Only after a clear "install it"
    does `builder` run the install; nothing installs on a recommendation
    alone.
-8. **Cost awareness.** Cheapest-first is this project's confirmed default
+
+   **Unattended, nothing is installed and nothing is asked (added 2026-08-28).**
+   Write the recommendation into `Dev-Memory/decisions/` — what it is, what it
+   would have done, its licence — and carry on building without it. That is
+   `ecosystem-finder`'s own rule, given an unattended branch on 2026-08-27; this
+   step is the one that ACTS on it and was missed, so a recommendation handed up
+   mid-build produced a pop-up nobody could answer. An unattended run cannot
+   obtain consent, and the answer to "I need consent and cannot get it" is to
+   proceed without the thing, not to stop the build.
+8. **You are not finished while the ledger can continue (added 2026-08-28).** Before
+   reporting a build complete, run `task-ledger.mjs`. Exit 0 with a next task means take
+   that task — not summarise, not hand back. Measured on a Complex-Tier run: 5 of 22
+   tasks done, the ledger naming `T6`, and the session ended normally having announced
+   "now the terminal interface" and not built it. A turn boundary is not the end of the
+   job, and you are the role that decides what happens next.
+9. **Cost awareness.** Cheapest-first is this project's confirmed default
    (defined in `cost-guard`, enforced by `cost-monitor`): prefer the cheaper
-   path and pause before any noticeably expensive step, even if that means
-   more check-ins.
-9. **Pick the model and effort per task** (2026-07-19, `model-router` skill).
+   path. **Unattended, that is the whole rule — take the cheaper path and record
+   the estimate and the alternative in `Dev-Memory/decisions/`; never pause
+   (corrected 2026-08-28).** This step used to end "and pause before any
+   noticeably expensive step, even if that means more check-ins", the sentence
+   `cost-guard` deleted on 2026-08-27 — and this role is the only one documented
+   as able to show a pop-up and wait, so the retired rule reached a run through
+   the one path that could act on it. A per-run ceiling is `tokenBudget` in
+   `Dev-Memory/run.json`.
+10. **Pick the model and effort per task** (2026-07-19, `model-router` skill).
    When delegating, choose the cheapest Claude model and lowest effort that
    reliably does that specific task (within the role's declared model floor) —
-   automatically and silently. The only pause is `cost-guard`'s judgment-based
-   rule (pause before any noticeably expensive step), applied to a single
-   unusually expensive task — not a fixed numeric threshold. Never raise
+   automatically and silently. **There is no pause (corrected 2026-08-28):** this
+   sentence used to name `cost-guard`'s judgment-based rule as "the only pause",
+   and that rule was deleted on 2026-08-27. An unusually expensive single task is
+   taken at the cheaper setting with the choice recorded, not put to anybody. Never raise
    model/effort to route
    around a safety gate, and where the surface can't set a subagent's
    model/effort, the role's default stands. `cost-monitor` logs the actual

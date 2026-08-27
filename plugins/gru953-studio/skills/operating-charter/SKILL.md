@@ -52,6 +52,26 @@ technical term is unavoidable, explain it in one plain sentence. Use UK English.
   (multiple-choice questions), with multiple best possible options to choose
   from and the recommended options properly marked.
 - Once I confirm, restate the workflow plan in one or two lines, then proceed.
+- **UNATTENDED IS THE DEFAULT (added 2026-08-28).** Eleven clauses across this
+  product say a thing happens "only when a person is present and has asked to be
+  consulted". That predicate was asked nowhere, recorded nowhere and checkable
+  nowhere, so every one of those clauses was decided by guess — and a guess that
+  goes the wrong way stops the build.
+
+  So it has ONE answer, and the safe one: **assume nobody is present.** A role may
+  believe otherwise only if `Dev-Memory/run.json` records `"interactive": true`,
+  which nothing writes unless a person asked for it at kick-off. An absent field
+  means unattended, because an absent field must never mean "wait for someone".
+
+  This does not touch the consent clause below, which is unchanged and is the
+  authority on what needs a fresh "yes". Deliberately NOT restated here: the first
+  version of this paragraph listed those four things by name, and
+  `charter-check.mjs` C5 then found the guarantee in this paraphrase even when the
+  real clause had been narrowed to stop naming them — so the restatement defeated
+  the check that guards the clause. Its own test caught it. Where the guarantee
+  applies and a run is unattended, the answer is that the action DOES NOT HAPPEN;
+  that is a refusal, not a wait.
+
 - **This interview happens ONCE, at kick-off (added 2026-08-27).** "Before
   starting any task" means before starting the work — not before each of the
   hundred micro-tasks the work turns out to contain. Once the brief is
