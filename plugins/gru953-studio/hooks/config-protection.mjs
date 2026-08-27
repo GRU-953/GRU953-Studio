@@ -489,44 +489,147 @@ if (isGuardedPath(abs) === 'quality tooling configuration') {
 
   const problems = [];
 
-  // A strictness flag turned off. Enumerated per ecosystem rather than guessed.
-  const STRICTNESS =
-    /["']?(strict|strictNullChecks|strictFunctionTypes|noImplicitAny|noImplicitThis|noUnusedLocals|noUnusedParameters|noFallthroughCasesInSwitch|alwaysStrict|checkJs|declaration)["']?\s*[:=]\s*(?:false|0|"false"|'false')/gi;
-  const offBefore = new Set([...before.matchAll(STRICTNESS)].map((m) => m[1].toLowerCase()));
-  for (const m of after.matchAll(STRICTNESS)) {
-    const flag = m[1].toLowerCase();
-    if (!offBefore.has(flag)) problems.push(`\`${m[1]}\` is switched off`);
+  // 2026-08-27, SECOND PASS. The first version of these detectors matched the PRESENCE of
+  // specific bad values, and an adversarial pass defeated it eleven times out of eleven — every
+  // strong spelling of the attack walked through while the weak one was refused, so the guard
+  // mostly taught which spelling to use. Proven end to end with real eslint: the allowed edit
+  // `eqeqeq: 'error'` → `eqeqeq: ['warn']` took it from exit 1 to exit 0.
+  //
+  // The misses were: unquoted keys (the default in an ESLint v9 flat config, which is
+  // JavaScript); the array form `["error"]`, which is the only spelling that can carry options;
+  // numeric levels inside an array; a strictness line DELETED rather than negated; a whole rules
+  // block emptied; `export default []`; an include list NARROWED; an exclude list widened to
+  // `**/*.ts`; `select = []`; `disable-all: true`.
+  //
+  // So these are now DIRECTIONAL comparisons of measurable quantities, and absence counts as a
+  // decrease. What is still not enumerable — a rule moved into a preset, a second config file
+  // that overrides this one, a rename — is caught by a different layer instead: dod.mjs records
+  // the hash of every tooling config it ran against, so a config that changed between a failing
+  // run and a passing one is visible in the evidence. That comparison comes from hashes rather
+  // than from spelling, which is why it exists.
+  const LEVEL = { off: 0, 0: 0, none: 0, warn: 1, warning: 1, 1: 1, error: 2, 2: 2, err: 2 };
+
+  // Rule → level, in every spelling: quoted or bare key, scalar or array value, word or number.
+  const ruleLevels = (text) => {
+    const out = new Map();
+    const re =
+      /["']?([\w@/-]+)["']?\s*:\s*(?:\[\s*)?["']?(off|none|warn|warning|error|err|0|1|2)["']?/g;
+    for (const m of text.matchAll(re)) {
+      const lvl = LEVEL[m[2].toLowerCase()];
+      if (lvl !== undefined) out.set(m[1], lvl);
+    }
+    return out;
+  };
+  // Strictness flags, recorded as on/off/absent so a DELETION is a decrease too.
+  const STRICT_KEYS =
+    /^(strict|strictNullChecks|strictFunctionTypes|strictBindCallApply|strictPropertyInitialization|noImplicitAny|noImplicitThis|noImplicitReturns|noUnusedLocals|noUnusedParameters|noFallthroughCasesInSwitch|alwaysStrict|useUnknownInCatchVariables|exactOptionalPropertyTypes|noUncheckedIndexedAccess)$/i;
+  const strictFlags = (text) => {
+    const out = new Map();
+    for (const m of text.matchAll(/["']?([A-Za-z]+)["']?\s*[:=]\s*(true|false)/g)) {
+      // Keyed lower-case so `strict` and `Strict` are one flag; the ORIGINAL spelling is kept
+      // alongside, because a refusal that renames the author's identifier reads as though it
+      // were about some other setting.
+      if (STRICT_KEYS.test(m[1]))
+        out.set(m[1].toLowerCase(), { on: m[2].toLowerCase() === 'true', as: m[1] });
+    }
+    return out;
+  };
+  // A bracketed list following a named key, as its entries. Used for scope, both directions.
+  const listUnder = (text, keys) => {
+    const out = new Map();
+    const re = new RegExp(`["']?(${keys})["']?\\s*[:=]\\s*\\[([^\\]]*)\\]`, 'gi');
+    for (const m of text.matchAll(re)) {
+      const entries = [...m[2].matchAll(/["']([^"']+)["']/g)].map((e) => e[1]);
+      out.set(m[1].toLowerCase(), entries);
+    }
+    return out;
+  };
+  // A glob broad enough to silence a whole tree, or a first-party source root.
+  const isBroad = (g) =>
+    /^\*\*?$/.test(g) ||
+    /^\*\*\/\*(\.\w+)?$/.test(g) ||
+    /^\*\.\w+$/.test(g) ||
+    /^(src|lib|app|source|packages)(\/\*\*?)?\/?$/i.test(g);
+
+  // (1) a rule relaxed, or removed outright
+  const rb = ruleLevels(before);
+  const ra = ruleLevels(after);
+  for (const [rule, was] of rb) {
+    const NAMES = ['off', 'warn', 'error'];
+    if (!ra.has(rule)) {
+      problems.push(`the rule \`${rule}\` (was ${NAMES[was]}) has been removed`);
+    } else if (ra.get(rule) < was) {
+      problems.push(`the rule \`${rule}\` is relaxed from ${NAMES[was]} to ${NAMES[ra.get(rule)]}`);
+    }
   }
 
-  // A suppression directive introduced into the CONFIG file itself.
+  // (2) a strictness flag turned off, or deleted — deletion restores the compiler's lax default
+  const sb = strictFlags(before);
+  const sa = strictFlags(after);
+  for (const [flag, was] of sb) {
+    if (!was.on) continue;
+    const name = (sa.get(flag) || was).as;
+    if (!sa.has(flag))
+      problems.push(`\`${name}\` was on and has been removed, which restores the lax default`);
+    else if (sa.get(flag).on === false) problems.push(`\`${name}\` is switched off`);
+  }
+
+  // (3) scope. An inclusion list that SHRINKS, or an exclusion list that gains a broad glob,
+  // both stop a tool looking at code it was looking at before — the same attack as turning a
+  // check off, and the cheaper one.
+  const INCLUDE = 'include|files|select|enable|extends|include_patterns';
+  const EXCLUDE = 'exclude|ignore|ignores|ignorePatterns|skip|disable|exclude_patterns';
+  const ib = listUnder(before, INCLUDE);
+  const ia = listUnder(after, INCLUDE);
+  for (const [key, wasList] of ib) {
+    const nowList = ia.get(key);
+    if (nowList === undefined) {
+      problems.push(
+        `the \`${key}\` list has been removed, so what the tool looks at is no longer stated`,
+      );
+      continue;
+    }
+    const lost = wasList.filter((e) => !nowList.includes(e));
+    if (nowList.length === 0 && wasList.length > 0) {
+      problems.push(`the \`${key}\` list is now empty, so the tool checks nothing`);
+    } else if (lost.length) {
+      problems.push(
+        `the \`${key}\` list loses ${lost.map((e) => `\`${e}\``).join(', ')}, so that code stops being checked`,
+      );
+    }
+  }
+  const eb = listUnder(before, EXCLUDE);
+  const ea = listUnder(after, EXCLUDE);
+  for (const [key, nowList] of ea) {
+    const wasList = eb.get(key) || [];
+    for (const entry of nowList) {
+      if (!wasList.includes(entry) && isBroad(entry))
+        problems.push(
+          `\`${key}\` gains \`${entry}\`, which is broad enough to stop the tool checking the project`,
+        );
+    }
+  }
+
+  // (4) a whole-tool kill switch
+  for (const [re, what] of [
+    [/disable[-_]all\s*[:=]\s*true/i, 'disable-all: true'],
+    [/\ball\s*[:=]\s*false/i, 'all: false'],
+    [/^\s*(?:select|enable|rules)\s*[:=]\s*(?:\[\s*\]|\{\s*\})/im, 'an emptied rule set'],
+  ]) {
+    if (re.test(after) && !re.test(before))
+      problems.push(`${what} is introduced, which disables the tool wholesale`);
+  }
+
+  // (5) a suppression directive introduced. Counted on NON-COMMENT-LOOKING occurrences only: the
+  // first version counted every substring anywhere in the file, so a rule NAMED after a
+  // suppression, or a sentence explaining one, read as adding one.
   for (const [re, what] of [
     [/@ts-nocheck/g, 'a @ts-nocheck suppression'],
-    [/eslint-disable(?!-next-line\s+no-undef)/g, 'an eslint-disable directive'],
-    [/\bnoqa\b/g, 'a noqa suppression'],
+    [/eslint-disable(?![\w-])/g, 'an eslint-disable directive'],
   ]) {
     const b = (before.match(re) || []).length;
     const a = (after.match(re) || []).length;
     if (a > b) problems.push(`${what} is added (${b} → ${a})`);
-  }
-
-  // A rule that was error-level and is now off or warn. Paired by name, so adding a NEW rule as
-  // "off" — a legitimate way to record a rule you have considered and do not want — is allowed.
-  const RULE = /["']([\w@/-]+)["']\s*:\s*["']?(off|warn|error|0|1|2)["']?/g;
-  const rank = { off: 0, 0: 0, warn: 1, 1: 1, error: 2, 2: 2 };
-  const levels = (text) => {
-    const out = new Map();
-    for (const m of text.matchAll(RULE)) out.set(m[1], rank[m[2].toLowerCase()]);
-    return out;
-  };
-  const lb = levels(before);
-  const la = levels(after);
-  for (const [rule, wasLevel] of lb) {
-    if (!la.has(rule)) continue;
-    if (la.get(rule) < wasLevel) {
-      problems.push(
-        `the rule \`${rule}\` is relaxed from ${['off', 'warn', 'error'][wasLevel]} to ${['off', 'warn', 'error'][la.get(rule)]}`,
-      );
-    }
   }
 
   if (problems.length === 0) stepAside();

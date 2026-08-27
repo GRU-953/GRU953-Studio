@@ -23,8 +23,13 @@ spend. Enforce that, not a generic "be efficient" instinct.
 
 1. Before a stage that could be expensive (parallel Build Swarm builders on
    Standard/Complex Tier, a large research pass, a full regression run),
-   show the user a plain-English estimate and the cheaper alternative if
-   one exists, and let them choose via pop-up when the gap is meaningful.
+   write a plain-English estimate and the cheaper alternative into
+   `Dev-Memory/decisions/`, take the cheaper one when the gap is meaningful, and
+   carry on. Unattended that is the whole of it; only with a person present who
+   has asked to be consulted is it a pop-up. (2026-08-27: this step said "let
+   them choose via pop-up" and named ordinary build events as its triggers, so it
+   stalled an unattended run on the first large task — the same defect as step 2b
+   below, which was corrected while this one was missed.)
 2. Prefer sequential single-builder work over parallel Build Swarm unless
    the Tier and task genuinely benefit from it.
 2b. **Own the model-router's cost side** (2026-07-19, `model-router` skill).

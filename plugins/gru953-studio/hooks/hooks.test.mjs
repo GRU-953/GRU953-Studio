@@ -2959,6 +2959,133 @@ test('config-protection.mjs: resolves a relative path against the tool call’s 
   }
 }
 
+// ---- pass 1 over Stage 1, 2026-08-27: the fixes were defeated 11 times out of 11 -------------
+// An adversarial pass attacked the tooling-config arm added hours earlier and got through every
+// time. Proven end to end with real eslint: the allowed edit `eqeqeq: 'error'` -> `eqeqeq:
+// ['warn']` took it from exit 1 to exit 0 — the gate then reports green having measured nothing.
+//
+// Every miss was a SPELLING the detector did not know: unquoted keys (the default in an ESLint v9
+// flat config, which is JavaScript), the array form (the only spelling that can carry options),
+// numeric levels, a line DELETED rather than negated, an emptied rules block, a narrowed include
+// list, a widened exclude list, a whole-tool kill switch.
+//
+// AND ALL TWELVE OF THE ORIGINAL TESTS USED THE ONE SPELLING THAT WAS COVERED, so the suite was
+// green over exactly the case that worked. That is why these are here.
+{
+  const propose = (filename, before, after) => {
+    const dir = mkTmp('gru-cfgw2-');
+    fs.writeFileSync(path.join(dir, filename), before);
+    const input = JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: filename, content: after },
+      cwd: dir,
+    });
+    const r = spawnSync(NODE, [path.join(HERE, 'config-protection.mjs')], { input, encoding: 'utf8' });
+    fs.rmSync(dir, RM_OPTS);
+    return (r.stdout || '').trim();
+  };
+
+  for (const [label, file, before, after, expect] of [
+    ['an unquoted rule key relaxed', 'eslint.config.mjs',
+      "export default [{rules:{eqeqeq: 'error'}}]", "export default [{rules:{eqeqeq: 'off'}}]", /eqeqeq/],
+    ['the array form relaxed', 'eslint.config.mjs',
+      'export default [{rules:{"eqeqeq": ["error"]}}]', 'export default [{rules:{"eqeqeq": ["warn"]}}]', /eqeqeq/],
+    ['an unquoted key in array form', 'eslint.config.mjs',
+      "export default [{rules:{eqeqeq: ['error']}}]", "export default [{rules:{eqeqeq: ['warn']}}]", /eqeqeq/],
+    ['a numeric level inside an array', '.eslintrc.json',
+      '{"rules":{"no-console":[2,{}]}}', '{"rules":{"no-console":[0,{}]}}', /no-console/],
+    ['a strictness line DELETED rather than negated', 'tsconfig.json',
+      '{"compilerOptions":{"strict":true,"target":"es2022"}}', '{"compilerOptions":{"target":"es2022"}}',
+      /has been removed, which restores the lax default/],
+    ['the whole config emptied', 'tsconfig.json',
+      '{"compilerOptions":{"strict":true},"include":["src"]}', '{}', /removed/],
+    ['the rules block emptied', 'eslint.config.mjs',
+      'export default [{rules:{"no-console":"error","eqeqeq":"error"}}]', 'export default []', /removed/],
+    ['an include list NARROWED', 'tsconfig.json',
+      '{"include":["src","test"],"compilerOptions":{"strict":true}}',
+      '{"include":["src"],"compilerOptions":{"strict":true}}', /loses .*test/],
+    ['an exclude list widened to the whole tree', 'tsconfig.json',
+      '{"exclude":["node_modules"],"compilerOptions":{"strict":true}}',
+      '{"exclude":["node_modules","**/*.ts"],"compilerOptions":{"strict":true}}', /broad enough/],
+    ['a select list emptied', 'ruff.toml', 'select = ["E","F","B"]\n', 'select = []\n', /checks nothing/],
+    ['a whole-tool kill switch', '.golangci.yml',
+      'linters:\n  enable:\n    - govet\n', 'linters:\n  disable-all: true\n', /disables the tool wholesale/],
+  ]) {
+    test(`config-protection.mjs: REFUSES ${label}`, () => {
+      const out = propose(file, before, after);
+      assert.notEqual(out, '', `${label} makes the gate that check feeds measure nothing`);
+      assert.match(out, /WEAKENS/);
+      assert.match(out, expect);
+    });
+  }
+
+  // The controls that keep it usable. A build configures its own tooling.
+  for (const [label, file, before, after] of [
+    ['adding an include path', 'tsconfig.json',
+      '{"include":["src"],"compilerOptions":{"strict":true}}',
+      '{"include":["src","scripts"],"compilerOptions":{"strict":true}}'],
+    ['adding a narrow ignore', 'eslint.config.mjs',
+      'export default [{ignores:["node_modules"],rules:{"a":"error"}}]',
+      'export default [{ignores:["node_modules","dist"],rules:{"a":"error"}}]'],
+    ['declaring a new rule as off — a considered decision', 'eslint.config.mjs',
+      'export default [{rules:{"a":"error"}}]', 'export default [{rules:{"a":"error","b":"off"}}]'],
+    ['tightening a rule', 'eslint.config.mjs',
+      'export default [{rules:{"a":"warn"}}]', 'export default [{rules:{"a":"error"}}]'],
+    ['a strictness flag that was already false', 'tsconfig.json',
+      '{"compilerOptions":{"strict":false}}', '{"compilerOptions":{"strict":false,"target":"es2022"}}'],
+    ['turning a strictness flag ON', 'tsconfig.json',
+      '{"compilerOptions":{"strict":false}}', '{"compilerOptions":{"strict":true}}'],
+    ['a non-severity option', '.prettierrc', '{"semi":true}', '{"semi":true,"printWidth":100}'],
+  ]) {
+    test(`config-protection.mjs: ALLOWS ${label}`, () => {
+      assert.equal(propose(file, before, after), '', `${label} is ordinary work`);
+    });
+  }
+
+  test('config-protection.mjs: the refusal names the flag as the author spelled it', () => {
+    const out = propose('tsconfig.json',
+      '{"compilerOptions":{"noImplicitAny":true}}', '{"compilerOptions":{"noImplicitAny":false}}');
+    assert.match(out, /noImplicitAny/, 'lower-casing the identifier reads as a different setting');
+  });
+}
+
+// THE LAYER SPELLING CANNOT EVADE. The enumeration above is one layer; the space of weakenings is
+// not enumerable (a rule can move into a preset, a second config can override the first, a key can
+// be renamed), which is why dod.mjs records the hash of every config it measured against and
+// compares it with the previous run. The signature is not "the config changed" — a build
+// configures its own tooling — it is a config that changed while the verdict IMPROVED.
+test('dod.mjs: a dimension that starts passing while its config changed is refused, stickily', () => {
+  const dir = mkTmp('gru-dod-fp-');
+  fs.writeFileSync(path.join(dir, 'eslint.config.mjs'), 'export default [{rules:{"eqeqeq":"error"}}]\n');
+  const dod = (exitCode) =>
+    writeDod(dir, { ...DOD_ALL_NA, lint: { command: [process.execPath, '-e', `process.exit(${exitCode})`] } });
+
+  dod(1);
+  assert.notEqual(runScript('dod.mjs', dir).code, 0, 'precondition: lint fails');
+  const ev = JSON.parse(fs.readFileSync(path.join(dir, 'Dev-Memory', 'evidence', 'lint.json'), 'utf8'));
+  assert.ok(ev.configFingerprint && ev.configFingerprint['eslint.config.mjs'], 'the config it measured against is recorded');
+
+  fs.writeFileSync(path.join(dir, 'eslint.config.mjs'), 'export default []\n');
+  dod(0);
+  const r = runScript('dod.mjs', dir);
+  assert.notEqual(r.code, 0, 'passing where it failed, with the config changed in between, is the signature');
+  assert.match(JSON.stringify(r.json), /shape of a gate made to pass by weakening/);
+
+  // STICKY: the first version of this check overwrote its own evidence, so simply running the
+  // gate again cleared it. A check an agent can dismiss by repeating the command is not a check.
+  assert.notEqual(runScript('dod.mjs', dir).code, 0, 're-running must not clear it');
+  assert.notEqual(runScript('dod.mjs', dir).code, 0, 'nor must running it twice more');
+
+  // AND THE LEGAL MOVE WORKS, because a refusal without one is a deadlock.
+  fs.mkdirSync(path.join(dir, 'Dev-Memory', 'decisions'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Dev-Memory', 'decisions', 'lint.md'),
+    '# Lint scope\n\nWe narrowed eslint.config.mjs deliberately: the generated client is not ours to lint.\n',
+  );
+  assert.equal(runScript('dod.mjs', dir).code, 0, 'a decision naming the file clears it');
+  fs.rmSync(dir, RM_OPTS);
+});
+
 // scan.mjs told the author to end the offending line with a comment marker, and then admitted in
 // its own text that "a JSON file has no comments, so there is nowhere in one to put it". A project
 // needing a token-shaped string in a .json fixture — a recorded OAuth response, an API test vector
@@ -3001,6 +3128,34 @@ test('config-protection.mjs: resolves a relative path against the tool call’s 
       '',
       'a bare string is NOT a comment in a file that has comments — the parity is only for formats that do not',
     );
+  });
+
+  // The parity rule was keyed off "no known comment character", which is NOT the set of
+  // comment-less formats. Measured: it also admitted .pem, .key, .tfstate, any unrecognised
+  // extension, a file with no extension, and a notebook cell — precisely the files where a real
+  // credential is most likely to be sitting. Narrowed to an allow-list.
+  test('scan.mjs: the data marker does NOT work in an unknown or credential-shaped format', () => {
+    for (const f of ['data/x.xyz', 'data/leak.pem', 'data/leak.key', 'data/state.tfstate', 'data/noext']) {
+      assert.notEqual(
+        write(f, `${TOKEN} "scan-allow: known test fixture"\n`),
+        '',
+        `${f} has no established comment syntax, which is not the same as having none — an unknown format must not inherit the exemption`,
+      );
+    }
+  });
+
+  test('scan.mjs: a notebook cell does not inherit the comment-less exemption either', () => {
+    const dir = mkTmp('gru-scannb-');
+    fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dev-Memory', 'FOCUS.md'), '**Objective:** t\n');
+    const input = JSON.stringify({
+      tool_name: 'NotebookEdit',
+      tool_input: { notebook_path: 'nb.ipynb', content: `k = "${TOKEN}"  "scan-allow: known test fixture"` },
+      cwd: dir,
+    });
+    const r = spawnSync(NODE, [path.join(HERE, 'scan.mjs')], { input, encoding: 'utf8' });
+    assert.notEqual((r.stdout || '').trim(), '');
+    fs.rmSync(dir, RM_OPTS);
   });
 
   test('scan.mjs: a real secret in a real source file is still refused', () => {
@@ -6810,6 +6965,66 @@ test('docs-consistency.mjs: DC11 refuses a command that instructs a task state t
     `expected DC11 to name the file and the dead state, got: ${JSON.stringify(r.json && r.json.problems)}`,
   );
   fs.rmSync(dir, RM_OPTS);
+});
+
+// content-check.mjs refused EVERY way of recording a not-yet-supplied asset: `approved` failed on
+// the missing file, `pending` failed on approval. v7 has no media provider — a brief is written
+// and the OWNER supplies the file — and both media-content-specialist and content-director tell
+// the run to "record a placeholder and keep going". So the protocol instructed something the gate
+// forbade, and an unattended build had no legal move at the Content stage.
+test('content-check.mjs: a deferred asset is the legal move, and cannot ship an unapproved file', () => {
+  const dir = mkTmp('gru-cc-def-');
+  fs.mkdirSync(path.join(dir, 'Dev-Memory'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dev-Memory', 'FOCUS.md'), '**Objective:** t\n');
+  const row = (approved) =>
+    fs.writeFileSync(
+      path.join(dir, 'Dev-Memory', 'CONTENT.md'),
+      '# Content\n\n| Asset | Path | Medium | Source | Approved | Rights | Alt/Caption |\n' +
+        '| :-- | :-- | :-- | :-- | :-- | :-- | :-- |\n' +
+        `| hero.png | assets/hero.png | image | brief in CONTENT.md — owner-supplied | ${approved} | owner-supplied | A person adding an expense |\n`,
+    );
+  const asset = path.join(dir, 'assets', 'hero.png');
+
+  row('deferred');
+  assert.equal(runScript('content-check.mjs', dir).code, 0, 'specified and awaited, file absent: the legal move');
+
+  fs.writeFileSync(asset, 'x');
+  assert.notEqual(
+    runScript('content-check.mjs', dir).code,
+    0,
+    'a deferred asset whose file EXISTS has been supplied, and a supplied asset needs a real approval — otherwise "deferred" becomes a way past approval',
+  );
+
+  row('approved');
+  assert.equal(runScript('content-check.mjs', dir).code, 0, 'supplied and approved still passes');
+  fs.rmSync(asset);
+  assert.notEqual(runScript('content-check.mjs', dir).code, 0, 'and an absent "approved" asset is still refused');
+  fs.rmSync(dir, RM_OPTS);
+});
+
+// DC13's trigger was CASE-SENSITIVE and blind to the bare word "pop-up" — the phrasing six of
+// the thirteen original defect lines actually used, one of them capitalised. So it would have
+// missed nearly half of what it was written for. Widening it exposed seven real survivors of the
+// Stage 1 rewrites, including ux-designer's blocking gate and cost-monitor's step 1.
+test('docs-consistency.mjs: DC13 catches every phrasing that stops a run, not just the tool name', () => {
+  for (const text of [
+    'Before each task, show the user an `AskUserQuestion` pop-up to approve it.',
+    'Before each task, show a pop-up so the user can approve it.',
+    'Before each task, run a Pop-up MCQ for approval.',
+    'Before each task, ask the user to approve and wait for the answer.',
+    'Before each task there is a hard, blocking approval gate.',
+  ]) {
+    const dir = mkTmp('gru-dc13w-');
+    copyRepoTo(dir);
+    fs.appendFileSync(
+      path.join(dir, 'plugins', 'gru953-studio', 'skills', 'micro-task-planning', 'SKILL.md'),
+      `\n${text}\n`,
+    );
+    const r = runDocsConsistency(dir);
+    assert.notEqual(r.status, 0, `not caught: ${text}`);
+    fs.rmSync(dir, RM_OPTS);
+  }
 });
 
 // DC13, 2026-08-27, Stage 1. The product's decision 1 is "one interview at kick-off, then

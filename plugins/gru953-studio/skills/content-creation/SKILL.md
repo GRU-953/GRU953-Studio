@@ -61,7 +61,21 @@ needs, in which languages, which media) and records every asset in
 
 | Asset | Path | Medium | Source | Approved | Rights | Alt/Caption |
 | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| welcome_hero.png | assets/img/welcome_hero.png | image | brief in CONTENT.md — owner-supplied | approved | owner-supplied, rights held by owner | Family using the app |
+| welcome_hero.png | assets/img/welcome_hero.png | image | brief in CONTENT.md — owner-supplied | deferred | owner-supplied, rights held by owner | Family using the app |
+| onboarding hero (supplied) | assets/img/onboarding.png | image | brief in CONTENT.md — owner-supplied | approved | owner-supplied, rights held by owner | A person adding an expense |
+
+**The `deferred` approval status (2026-08-27).** v7 has no media provider: a brief is
+written and the OWNER supplies the file. Record such an asset with its approval as
+**`deferred`** — the rights note and the alt-text are still required, because they
+describe the brief, and the file must be ABSENT. `hooks/content-check.mjs` accepts
+exactly that, and refuses `deferred` on an asset whose file IS present, because a
+supplied asset needs a real approval like any other.
+
+Before this state existed the gate refused every way of recording a
+not-yet-supplied asset — `approved` failed on the missing file, `pending` failed on
+approval — so this skill instructed the run to "record a placeholder and keep
+going" while the gate forbade it, and an unattended build had no legal move at the
+Content stage.
 | onboarding copy | | text | Claude (bn+en) | approved | original | — |
 
 **The `Path` column** (added 2026-08-15, finding X121). It records where the asset actually is,

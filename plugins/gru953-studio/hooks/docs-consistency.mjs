@@ -1172,7 +1172,14 @@ function explainedNear(lines, i, re, radius = 2) {
 // This cannot know intent, only whether the context was stated. That is the point: stating it is
 // the discipline, and an unqualified pop-up is the shape the fourteen defects had.
 {
-  const ASK = /AskUserQuestion|pop-up MCQ|pop-up \(MCQ\)/;
+  // WHAT COUNTS AS INSTRUCTING A STOP. Widened 2026-08-27 (second pass) after measurement: the
+  // first trigger was `/AskUserQuestion|pop-up MCQ|pop-up \(MCQ\)/` — CASE-SENSITIVE, and blind
+  // to the bare word "pop-up". Six of the thirteen real defect lines this check was written for
+  // used exactly that bare phrasing, and one was capitalised, so it would have missed nearly half
+  // of them. Worse, an instruction can stop a run without naming the tool at all — "ask the user
+  // and wait" is the same defect in plainer words — so those shapes are triggers too.
+  const ASK =
+    /AskUserQuestion|pop-?up|\bMCQ\b|blocking (?:approval|gate)|ask the (?:user|owner)|wait for (?:the |their )?(?:answer|approval|reply)/i;
   // DISTINCTIVE PHRASES ONLY. The first version of this list carried bare common words —
   // `never`, `recorded`, `cannot`, `push`, `setup`, `confirmation` — and they appear near almost
   // any prose in this repository, so the check exempted everything: measured, it reported ZERO
@@ -1180,50 +1187,78 @@ function explainedNear(lines, i, re, radius = 2) {
   // exemption swallowed the input is the defect this whole file is about, written into a new
   // check on the day the old ones were fixed. Every entry below must be a phrase somebody would
   // only write when they actually mean one of the three legitimate contexts.
-  const LEGITIMATE = new RegExp(
+  // TWO WAYS to be legitimate, because one list of words cannot express it.
+  //
+  // (a) A DISTINCTIVE PHRASE that only appears when somebody means one of the three permitted
+  //     contexts. The first version used bare common words — `never`, `recorded`, `cannot`,
+  //     `push`, `setup` — and exempted everything: measured, ZERO hits on the reintroduced
+  //     defect. The second version still carried bare `publish`, `onboarding` and `the
+  //     interview`, and a later pass measured `publish` alone pre-exempting 11% of every line in
+  //     the tree.
+  const STRONG = new RegExp(
     [
-      // explicitly scoped to a person actually being there
       'a person is present',
       'asked to be consulted',
-      'unattended',
       'if a human is',
-      // the kick-off interview — decision 1's one permitted interview
+      'with somebody at the',
       'kick-off',
       'first-run',
-      'the interview',
+      'kick-off interview',
       'one-off setup',
-      'onboarding',
-      // outward-facing or irreversible: these keep their fresh-yes requirement
-      'publish',
+      'publish/push',
       'going public',
       'irreversible',
       'propose it upstream',
-      'contribution',
       'install it',
       'spending money',
       'pulling a model',
       'cost approval',
-      // notes about the TOOL rather than instructions to use it
       'cannot call',
       'cannot pause',
       'same restriction',
       'needs the main conversation',
-      'session state',
       'and relays',
       'only ever comes from',
       'only ever a fresh',
+      'Publish stage',
+      'before Publish',
+      'the Publish gate',
+      'publish protocol',
     ].join('|'),
     'i',
   );
+  // (b) An UNATTENDED SCOPING, which is a conjunction rather than a word: the window must say it
+  //     is about the unattended case AND say what happens instead. "unattended" alone is too
+  //     common in this tree to carry the exemption on its own.
+  const SCOPED = (w) =>
+    /unattended|headless/i.test(w) &&
+    /record|continue|carry on|skip|default|never a pop-?up|no pop-?up|proceed|stop/i.test(w);
+  // (c) A DATED CORRECTION NOTE. This repository records why something changed, in place, and
+  //     those notes necessarily quote the instruction they retired. Recognised by the date or by
+  //     the retiring phrase — the same discipline DC11 and DC12 already use.
+  const HISTORICAL =
+    /20\d\d-\d\d-\d\d|used to|this said|before this|no longer|the same defect|was removed|removes a|corrected|never be acted|freeform entry|collected nowhere|puts its pop-up|met four blocking/i;
+  const LEGITIMATE = { test: (w) => STRONG.test(w) || SCOPED(w) || HISTORICAL.test(w) };
+
+  // (d) TWO WHOLE-FILE exemptions, both structural rather than verbal:
+  //     * a command carrying `disable-model-invocation: true` cannot fire on its own — a person
+  //       typed it, so asking them something is the entire point;
+  //     * `agents/interviewer.md`, whose single job IS the kick-off interview.
+  //     And frontmatter `description:` lines, which describe a skill rather than instruct a run.
+  const fileExempt = (rel, text) =>
+    /disable-model-invocation:\s*true/.test(text) || /agents\/interviewer\.md$/.test(rel);
+
   for (const dir of ['skills', 'agents', 'commands']) {
     for (const file of walk(path.join(pluginRoot, dir))) {
       if (!file.endsWith('.md')) continue;
       const rel = path.relative(repoRoot, file);
       const text = read(file);
       if (text === null) continue;
+      if (fileExempt(rel, text)) continue;
       const lines = text.split(/\r?\n/);
       for (const [i, line] of lines.entries()) {
         if (!ASK.test(line)) continue;
+        if (/^\s*description:/.test(line)) continue; // frontmatter describes, it does not instruct
         if (explainedNear(lines, i, LEGITIMATE)) continue;
         fail(
           `${rel}:${i + 1} instructs a pop-up (\`AskUserQuestion\`) without saying which context it belongs to. An unattended run cannot answer one: it stops there, and this product's decision 1 is one interview at kick-off then silent — fourteen gates like this were found on 2026-08-27, every one citing the charter as authority. Say the context on or near the line: the kick-off interview, a publish/push path, or "only when a person is present and has asked to be consulted" — and otherwise record the decision in Dev-Memory/decisions/ and carry on (DC13)`,

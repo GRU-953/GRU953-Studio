@@ -117,6 +117,41 @@ export function stepAside() {
 // `test/repro/X37-invalid-permission-decision.mjs` asserts the general invariant
 // (no hook may emit a permissionDecision outside the documented set), so this
 // class cannot recur if the platform later renames or adds a value.
+/**
+ * Emit `permissionDecision: 'ask'`.
+ *
+ * MEASURED 2026-08-27 — what this actually does in a HEADLESS run, which nobody had established.
+ * This was item 1 of the rebuild plan's Phase 0 and stayed open the whole project, because the
+ * measurement needed a working nested `claude -p` and that appeared to be impossible. (It was
+ * not: the blocker was `ANTHROPIC_BASE_URL` being set, which makes the CLI expect an API key.)
+ *
+ * METHOD, so this is reproducible rather than asserted: a throwaway plugin with one PreToolUse
+ * hook that emits `ask` for exactly one marked harmless command and stands aside otherwise, plus
+ * a log so "the hook never fired" can be told from "it fired and was ignored" — two answers that
+ * look identical from outside. The instrument was proven to bite standalone first. Then
+ * `claude -p` was run against it with the end-to-end harness's own flags, and again under
+ * `--permission-mode acceptEdits` and `--permission-mode bypassPermissions`.
+ *
+ * RESULT — identical under all three:
+ *   * the hook fires;
+ *   * the tool call is NOT executed;
+ *   * the tool result comes back with `is_error: true` and this function's `reason` as its whole
+ *     content;
+ *   * the session then CONTINUES and completes normally (`subtype: "success"`), with the model
+ *     told what happened.
+ *
+ * So `ask` is honoured as a REFUSAL WITH AN EXPLANATION, and it does not hang an unattended run.
+ * Three things follow, and the plan said several findings must not be designed around until they
+ * were known:
+ *   1. `ask` genuinely blocks. A finding that assumed it silently passes headlessly is wrong.
+ *   2. It does not stall. A finding that assumed an unattended run hangs here is also wrong.
+ *   3. **`--permission-mode bypassPermissions` does NOT bypass it.** A caller cannot switch these
+ *      guards off with a flag. That is the strongest of the three and was pure conjecture before.
+ *
+ * Consequence for every caller of this function: `reason` is the ONLY thing the run learns. It is
+ * not a prompt a person reads — it is the model's entire account of why its action failed and its
+ * only guide to what to do instead. Write it as such.
+ */
 export function escalate(reason) {
   process.stdout.write(
     JSON.stringify({

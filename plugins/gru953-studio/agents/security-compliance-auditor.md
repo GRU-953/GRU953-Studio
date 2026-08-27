@@ -36,7 +36,9 @@ purpose and honest notice — checked as fact, not asked as a favour.
 3. **Dependency licence scan.** Run
    `node "${CLAUDE_PLUGIN_ROOT}/hooks/licence-scan.mjs" .` from the project
    root. `BLOCKED` = a copyleft licence (GPL/AGPL/LGPL/MPL/etc.)
-   was found — stop and either replace the dependency or ask the user.
+   was found — stop and replace the dependency. Unattended, record the finding in
+   `Dev-Memory/decisions/` and park the task; a copyleft licence is a real BLOCKED
+   and does not clear itself, but it is one task, not the run.
    `NEEDS HUMAN REVIEW` or `INCOMPLETE` = also stop until resolved; only a
    `clean` result clears this gate. This closes the gap that let earlier
    tools risk shipping copyleft dependency code that conflicts with the

@@ -78,7 +78,9 @@ does and does not cover (2026-08-23, X182).** `checkpoint-commit`'s step 3 state
 that "the user enables per-phase backup once, at the phased-plan/warframe
 approval — see `warframe-prototype`", and until this paragraph existed **this
 skill never mentioned backup at all**, so the consent that skill relies on was
-collected nowhere. Ask it as its own option in this pop-up, in these terms:
+collected nowhere. Unattended, record backup as OFF — it means pushing, and an
+unattended run never pushes. With a person present, ask it as its own option in
+this pop-up, in these terms:
 
 - **What it does:** at the end of each stage, the app's code is committed and
   pushed to a **private** `development` branch on the user's own GitHub. Nothing

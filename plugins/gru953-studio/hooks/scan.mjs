@@ -502,11 +502,44 @@ const isScanAllowed = (ln, file) => {
   // nothing an author could not also assert in a string. What it does is make the claim
   // DELIBERATE and visible on the line it excuses, and a quoted string does that identically in
   // a format that has only strings.
-  if (sigils.length === 0) {
+  if (COMMENTLESS_FORMATS.has(formatOf(file))) {
     if (text.includes(`"${body}"`) || text.includes(`'${body}'`)) return true;
   }
   return false;
 };
+
+/**
+ * The formats that genuinely have no line-comment syntax and so may carry the marker as data.
+ *
+ * NARROWED 2026-08-27, and this is the correction that matters. The first version of the parity
+ * rule keyed off `COMMENT_SIGILS(file).length === 0` — "no known comment character" — which is
+ * not the same set at all. Measured: it also admitted `.pem`, `.key`, `.tfstate`, any unrecognised
+ * extension, a file with no extension, and a notebook cell. An unknown format is precisely where
+ * a real credential is most likely to be sitting, so the widest possible reading of "comment-less"
+ * was granted to exactly the files that least deserved it.
+ *
+ * An ALLOW-LIST instead of an absence test: a format is here because somebody established it has
+ * no comments, not because this file failed to recognise it.
+ */
+const COMMENTLESS_FORMATS = new Set([
+  'json',
+  'csv',
+  'tsv',
+  'md',
+  'markdown',
+  'html',
+  'htm',
+  'xml',
+  'svg',
+]);
+function formatOf(file) {
+  if (file === AUTHORED_TEXT) return '';
+  const base = String(file || '')
+    .toLowerCase()
+    .split(/[/\\]/)
+    .pop();
+  return (base.match(/\.([a-z0-9]+)$/) || [, ''])[1];
+}
 
 function main() {
   // 2026-07-31 maintenance fix (F1): readStdin() now throws StdinReadFailure

@@ -161,7 +161,11 @@ memory changes:
    following this instruction ran a file that is not there. There is no review
    script now, and adding one would recreate what X91 disproved: a file a hook
    can read is a file an agent can write, so it never evidenced human intent.
-   Ask the owner and wait for the answer.
+   Ask the owner and wait for the answer — this is cloud persistence, which is a
+   PUSH, so it keeps its fresh-yes requirement like every other push. Unattended,
+   therefore, cloud persistence is simply not enabled: record that in
+   `Dev-Memory/decisions/` and carry on locally. An unattended run never pushes,
+   so there is nothing here for it to ask about.
 
 This per-session branch is separate from `memory/cloud-persist` (which holds
 the whole Dev-Memory folder as one restorable snapshot — see "One named

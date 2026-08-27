@@ -42,6 +42,14 @@ would if you ran it yourself.
 | **Zero third-party runtime dependencies** | The plugin ships only Node's standard library. |
 | **Apache-2.0** | The licence will not become more restrictive on this line. |
 
+**A measured security property (2026-08-27).** A hook's `ask` decision is honoured in a headless
+run, and **`--permission-mode bypassPermissions` does not bypass it**: the tool call does not
+execute, the hook's reason comes back to the model as the failure, and the session continues.
+Measured against the CLI directly under three flag sets, with the instrument proven to bite first
+— see the note on `escalate()` in `plugins/gru953-studio/hooks/lib.mjs` for the method. This is
+stated as a measurement, not a promise: it is behaviour of the Claude Code CLI, which this project
+does not control and therefore cannot guarantee across future CLI versions.
+
 ## What is explicitly NOT promised
 
 Being honest about the edges is what makes the list above worth anything.

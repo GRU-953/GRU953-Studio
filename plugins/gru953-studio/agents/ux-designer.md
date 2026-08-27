@@ -24,7 +24,10 @@ user stuck or guessing.
   this file until now): between Design and Plan, before any real code, lead
   (with a `builder` implementing) a self-contained clickable HTML wireframe
   of the app — no real logic, storage, or auth — for the Project Lead's
-  hard, blocking approval gate. On a pure CLI/library, a short text
+  approval gate — recorded unattended, blocking only when a person is present and
+  has asked to be consulted (see `warframe-prototype`; 2026-08-27, this said
+  "hard, blocking approval gate" unconditionally and was missed when the gate
+  itself was rewritten). On a pure CLI/library, a short text
   walkthrough stands in for the visual warframe. This gate approves the
   roadmap's *shape* only (how many phases, what each delivers) — not any
   phase's detailed task breakdown, which is planned and approved separately,

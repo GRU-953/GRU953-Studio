@@ -39,8 +39,10 @@ further change, without re-running the whole lifecycle from scratch.
    of the rule is in the `checkpoint-commit` skill's "Two branches, always"
    section — it organises where work sits and loosens no gate.
 3. Treat the request the same way the Business/Interviewer stage would: a
-   small brief, confirmed via pop-up if there's any ambiguity, then handed
-   to the builder as a normal task.
+   small brief. Unattended, resolve ambiguity from the recorded brief and
+   `Dev-Memory`, record the reading you took in `Dev-Memory/decisions/`, and carry
+   on; only with a person present who has asked to be consulted is it confirmed
+   via pop-up. Then hand it to the builder as a normal task.
 4. Apply the same Tier-appropriate reviewer/tester/security gates as any
    other Build task before it ships again — a maintenance change is not
    exempt from review just because it's small.

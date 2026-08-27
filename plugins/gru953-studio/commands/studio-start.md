@@ -49,8 +49,10 @@ pipeline exactly.
   five), then continue per the studio skill's Step 2. `Dev-Memory/tasks.json` is
   the source of truth; `PROGRESS.md` and its "▶ RESUME HERE" line are rendered
   from it, for people. Do not restart stages or tasks already done.
-- If no `Dev-Memory/` folder exists and no idea was given, ask the user in
-  one friendly plain-English sentence to describe their app idea (remind
-  them they can type it between square brackets).
+- If no `Dev-Memory/` folder exists and no idea was given, this is kick-off with
+  nothing to build from: ask the user in one friendly plain-English sentence to
+  describe their app idea (remind them they can type it between square brackets).
+  Unattended there is nothing to ask — a run with no idea and no `IDEA.md` has
+  nothing to do, so say that plainly and stop rather than waiting.
 - Speak plain, simple UK English throughout, exactly as the studio skill
   instructs.

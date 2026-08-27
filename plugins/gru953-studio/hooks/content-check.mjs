@@ -38,6 +38,24 @@ import { stripBom, isDirectory, deEmphasise, parseTables, classifyStudioRoot } f
 // of that three-way sync.
 const PLACEHOLDER_RE = /^(|[-—–]+|tbd|todo|none|n\/?a|\.\.\.|pending|placeholder)$/i;
 const APPROVED_RE = /^\s*(approved|yes|pass(ed)?|ok|done|signed[ -]?off|human|final)\b/i;
+// A DEFERRED asset: specified but not yet supplied. Added 2026-08-27.
+//
+// v7 has no media provider — `media-content-specialist` writes a precise asset brief plus a
+// step-by-step guide and the OWNER supplies the file. Both that role and `content-director` tell
+// the run to "record a placeholder against the brief and keep going", because a missing
+// decorative image must never block working software.
+//
+// This gate refused every way of doing that. Measured: recorded as `approved` it failed on the
+// absent file; recorded as `pending` it failed on approval. So the protocol instructed something
+// the gate forbade, and an unattended run had no legal move at the Content stage.
+//
+// `deferred` is that move. It is deliberately NOT a weaker approval — it is a different claim,
+// and it carries its own obligations, checked below: the rights note and the alt-text are still
+// required (they describe the brief, and an accessibility text nobody drafted is one that gets
+// skipped), and the file must be ABSENT, because a deferred asset that is present is simply an
+// unapproved one.
+const DEFERRED_RE =
+  /^\s*(deferred|awaiting[ -]owner|not[ -]yet[ -]supplied|placeholder|to[ -]supply)\b/i;
 // Found 2026-07-19: matching FOR media by English keyword silently skipped
 // the alt-text/caption requirement for any non-English Medium value (e.g.
 // Bangla "ছবি" for "image") — a real accessibility gap given this project's
@@ -354,9 +372,10 @@ function main() {
     // "**approved**" or "**yes**" still failed APPROVED_RE/TEXT_ONLY_RE as-is
     // and was wrongly BLOCKED. Same fix, one layer deeper (verify-progress.mjs
     // already de-emphasises its status VALUE the same way).
-    if (idx.approved === -1 || !APPROVED_RE.test(deEmphasise(approved)))
+    const deferred = idx.approved !== -1 && DEFERRED_RE.test(deEmphasise(approved));
+    if (idx.approved === -1 || !(APPROVED_RE.test(deEmphasise(approved)) || deferred))
       problems.push(
-        `content "${name}": not approved (status "${approved || '(none)'}") — every shipped asset needs a recorded approval.`,
+        `content "${name}": not approved (status "${approved || '(none)'}") — every shipped asset needs a recorded approval, or the status "deferred" if it is specified and awaiting the owner.`,
       );
     if (idx.source === -1 || ph(source))
       problems.push(
@@ -395,9 +414,18 @@ function main() {
           problems.push(
             `content "${name}": path "${assetPath}" resolves outside the project, which a content register may not do (finding X121).`,
           );
+        } else if (deferred) {
+          // The inverse obligation: a DEFERRED asset must be absent. One that is present has
+          // been supplied, and a supplied asset needs a real approval like any other — otherwise
+          // "deferred" would become a way to ship an unapproved file.
+          if (fs.existsSync(resolved)) {
+            problems.push(
+              `content "${name}": marked deferred, but a file exists at "${assetPath}". A supplied asset needs a real approval — "deferred" is for one that has been specified and is still awaited, not a way past approval.`,
+            );
+          }
         } else if (!fs.existsSync(resolved)) {
           problems.push(
-            `content "${name}": recorded at "${assetPath}", but no file exists there — an asset that is approved, attributed and licensed but absent is not shippable (finding X121).`,
+            `content "${name}": recorded at "${assetPath}", but no file exists there — an asset that is approved, attributed and licensed but absent is not shippable (finding X121). If it is specified and awaiting the owner, record its approval as "deferred" instead.`,
           );
         }
       }

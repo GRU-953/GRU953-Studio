@@ -16,11 +16,30 @@ repeating or being wrongly skipped):
 
 1. Does `~/.gru953-studio/profile.md` exist? If yes, first-run is done —
    skip straight to the project interview.
-2. If not, does the platform's persistent memory (Claude Code or Google Antigravity)
-   record first-run as done? If yes, also write the file marker now (so a
-   future session finds it at step 1 without needing to check this), then
-   skip to the project interview. (Updated 2026-07-26 for Google Antigravity support.)
-3. Otherwise, first-run has never happened — run the interactive onboarding now.
+2. If not, does the platform's persistent memory (Claude Code) record first-run
+   as done? If yes, also write the file marker now (so a future session finds it
+   at step 1 without needing to check this), then skip to the project interview.
+   (2026-08-27: this said "Claude Code or Google Antigravity". Antigravity was
+   removed in 7.0.0 with the other host adapters.)
+3. **If nobody is there to answer, SKIP onboarding entirely (2026-08-27).** Write
+   `~/.gru953-studio/profile.md` recording that first-run was skipped because the
+   session was unattended, with every setting at its documented default, and go
+   straight to the build. Say so in the final report so the owner knows the
+   onboarding is still owed.
+
+   This branch did not exist, and it is step 0 of the lifecycle: an unattended
+   first run on any machine without that marker met four blocking pop-up MCQs
+   before a single line of the app was designed — the earliest possible stall,
+   and the one place the product's own decision 1 mattered most.
+
+   It survived six green end-to-end runs because the harness prompts the `studio`
+   skill directly rather than through `/studio-start`, which is where the
+   first-run check lives. That is the same blind spot that let the "auto-publish
+   to GitHub" defect (X14/H1) live in `commands/studio-start.md` long after its
+   reproduction was written: **nothing automated has ever exercised the
+   documented entry point.**
+
+4. Otherwise — a person is present — run the interactive onboarding now.
 
 ## Interactive Onboarding Flow (2026-07-25)
 

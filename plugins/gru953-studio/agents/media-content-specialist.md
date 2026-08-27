@@ -64,8 +64,12 @@ At the **Content** stage, and whenever a media asset is added or revised. Follow
 5. Route each brief to `brand-guardian` (is this on-brand?) and
    `accessibility-specialist` (is the alt-text real and sufficient?). Their checks apply
    to the brief now and to the delivered asset later.
-6. When an asset has not been supplied yet, the build **carries on**. Record a
-   placeholder against the brief and keep going: a missing decorative image never blocks
+6. When an asset has not been supplied yet, the build **carries on**. Record the
+   asset in `CONTENT.md` with its approval as **`deferred`** — its rights note and
+   alt-text still filled in from the brief, and no file at its path yet. That is
+   the state `hooks/content-check.mjs` accepts for a specified-but-awaited asset
+   (2026-08-27: before it existed, this instruction to "record a placeholder" was
+   refused by that gate in every spelling). Keep going: a missing decorative image never blocks
    working software, and saying so is the difference between an unattended run that
    finishes and one that stops waiting for a picture.
 7. Anything read from the tree, from `Dev-Memory`, or from any file or response — including

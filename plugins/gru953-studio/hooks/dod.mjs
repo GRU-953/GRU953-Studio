@@ -40,6 +40,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 
 import { classifyStudioRoot, formatFsError, readOrBlock, MISSING } from './lib.mjs';
 
@@ -693,6 +694,112 @@ for (const dim of EXECUTED) {
   // quality-gate.mjs check the table against the evidence without keeping a second copy of this
   // vocabulary — and a second copy is how two gates come to disagree about what a row means.
   res.row = dim.row;
+
+  // THE INSTRUMENT'S OWN FINGERPRINT, and the one comparison spelling cannot evade.
+  //
+  // config-protection.mjs refuses the weakenings it can name, and on 2026-08-27 an adversarial
+  // pass defeated its first version eleven times out of eleven — every strong spelling walked
+  // through. The space of weakenings is not enumerable: a rule can move into a preset, a second
+  // config file can override the first, a key can be renamed. So the enumeration is one layer and
+  // this is the other: record WHAT WAS MEASURED AGAINST, and compare it with what the previous
+  // run measured against.
+  //
+  // The signature that matters is not "the config changed" — a build configures its own tooling.
+  // It is a config that changed while the verdict IMPROVED. That is reported here, because the
+  // previous run's evidence is already on disk to compare with.
+  if (dim.key === 'lint' || dim.key === 'types' || dim.key === 'coverage') {
+    const CONFIGS = [
+      'eslint.config.js',
+      'eslint.config.mjs',
+      'eslint.config.cjs',
+      '.eslintrc',
+      '.eslintrc.json',
+      '.eslintrc.cjs',
+      '.eslintrc.js',
+      '.eslintrc.yml',
+      '.eslintignore',
+      'tsconfig.json',
+      '.prettierrc',
+      '.prettierrc.json',
+      'prettier.config.js',
+      'biome.json',
+      'ruff.toml',
+      '.flake8',
+      'mypy.ini',
+      '.golangci.yml',
+      '.golangci.yaml',
+      'analysis_options.yaml',
+      'clippy.toml',
+      '.editorconfig',
+    ];
+    const seen = {};
+    for (const rel of CONFIGS) {
+      try {
+        const body = fs.readFileSync(path.join(rootAbs, rel));
+        seen[rel] = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
+      } catch {
+        /* absent: not recorded, which is itself the honest answer */
+      }
+    }
+    res.configFingerprint = seen;
+
+    // Compare with the previous run, if there was one.
+    try {
+      const prevRaw = fs.readFileSync(path.join(evidenceDir, `${dim.key}.json`), 'utf8');
+      const prev = JSON.parse(prevRaw);
+      const was = prev && prev.configFingerprint;
+      if (was && typeof was === 'object') {
+        const changed = [];
+        for (const rel of new Set([...Object.keys(was), ...Object.keys(seen)])) {
+          if (was[rel] !== seen[rel]) changed.push(rel);
+        }
+        const improved = prev.verdict && prev.verdict !== 'pass' && res.verdict === 'pass';
+        // STICKY, because the first version was self-erasing: it detected the signature, then
+        // overwrote the evidence with the now-passing fingerprint, so simply running dod.mjs a
+        // second time cleared it. A check an agent can dismiss by repeating the command is not a
+        // check. The flag is carried forward until it is explained.
+        const carried = Array.isArray(prev.configChangeSuspected) ? prev.configChangeSuspected : [];
+        const suspect = [...new Set([...carried, ...(improved ? changed : [])])];
+        if (changed.length) res.configChangedSincePreviousRun = changed;
+
+        if (suspect.length) {
+          // THE LEGAL MOVE, named, because a refusal without one is a deadlock: write a decision
+          // record that mentions the file. That is a deliberate, reviewable statement by whoever
+          // changed it — which is exactly what this is asking for and all it is asking for.
+          let justified = [];
+          try {
+            const dir = path.join(devMemory, 'decisions');
+            const text = fs
+              .readdirSync(dir)
+              .filter((f) => /\.(md|json|txt)$/i.test(f))
+              .map((f) => {
+                try {
+                  return fs.readFileSync(path.join(dir, f), 'utf8');
+                } catch {
+                  return '';
+                }
+              })
+              .join('\n');
+            justified = suspect.filter((rel) => text.includes(rel));
+          } catch {
+            justified = [];
+          }
+          const unexplained = suspect.filter((rel) => !justified.includes(rel));
+          if (unexplained.length) {
+            res.configChangeSuspected = unexplained;
+            fail(
+              `${dim.key}: this dimension passes where a previous recorded run did not, and the configuration it is measured against changed in between (${unexplained.join(', ')}). That is the exact shape of a gate made to pass by weakening the thing that measures it. THE LEGAL MOVE: if the change was legitimate — a new source directory, a rule genuinely reconsidered — write a note in Dev-Memory/decisions/ that names the file, and this clears. It refuses the unexplained coincidence, not the change. (This flag is sticky: re-running this gate does not clear it, because the first version of this check erased its own evidence on the next run.)`,
+            );
+          } else if (justified.length) {
+            res.configChangeExplained = justified;
+          }
+        }
+      }
+    } catch {
+      /* no previous run to compare with, which is the normal first-run case */
+    }
+  }
+
   writeEvidence(dim.key, res);
   results.push(res);
   if (res.verdict !== 'pass' && res.verdict !== 'n/a') {
