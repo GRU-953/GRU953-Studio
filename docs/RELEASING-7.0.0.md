@@ -155,6 +155,27 @@ Verified badge on GitHub, and `CONTRIBUTING.md` will then be stating a rule this
 release did not follow — so change that file in the same commit rather than leaving
 the two disagreeing.
 
+## The release notes are written, and one paragraph is deliberately unfinished
+
+`publish.yml` creates a DRAFT release to hold the installers and declines to write the
+notes — by design, so a human writes them. They are written:
+[docs/RELEASE-NOTES-7.0.0.md](RELEASE-NOTES-7.0.0.md). Paste that file into the draft.
+
+Every number in it was cross-checked against the tree, and the 6.1.0 column was measured
+from the `v6.1.0` tag rather than remembered. Two things must be updated before you
+publish:
+
+1. **The three-Tier paragraph.** It currently states only what has actually been
+   measured — the Tiny run — and says so. Replace it with what the Standard and Complex
+   runs returned once the step above has run. Do not write "verified at all three sizes"
+   until three runs have returned 0.
+2. **The Numbers table**, if the re-measure step above changed the test count or the
+   standing context load.
+
+Leaving that paragraph honest-but-incomplete is deliberate. An earlier draft claimed all
+three tiers were verified while two of the runs had not happened, which is the exact
+defect this release removes.
+
 ## Before the tag: the three-Tier proof (2026-08-28)
 
 The owner's decision is that all three Tiers are proven unattended, not just the fast
