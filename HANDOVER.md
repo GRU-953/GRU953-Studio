@@ -17,16 +17,16 @@ unstarted — that defect is fixed, and **the fix has not yet been verified by a
 because the attempt to verify it hit a session limit. That single re-run is what stands
 between this and a release anyone can defend.
 
-| | |
-| :-- | :-- |
-| Branch | `v7-lts-rebuild` (37 commits ahead of `development`) |
-| Suite | 737 tests, 737 passing |
-| Gates | all nine green, plus `actionlint` clean locally |
-| Roles / skills / hooks / commands | 36 / 34 / 24 / 10 |
-| Tiny Tier unattended build | **green**, 18/18 |
-| Complex Tier | defect found, fixed, **unverified** |
-| Standard Tier | **not run** |
-| Pushed to npm / tagged | **no** |
+|                                   |                                                      |
+| :-------------------------------- | :--------------------------------------------------- |
+| Branch                            | `v7-lts-rebuild` (37 commits ahead of `development`) |
+| Suite                             | 737 tests, 737 passing                               |
+| Gates                             | all nine green, plus `actionlint` clean locally      |
+| Roles / skills / hooks / commands | 36 / 34 / 24 / 10                                    |
+| Tiny Tier unattended build        | **green**, 18/18                                     |
+| Complex Tier                      | defect found, fixed, **unverified**                  |
+| Standard Tier                     | **not run**                                          |
+| Pushed to npm / tagged            | **no**                                               |
 
 ---
 
@@ -98,15 +98,15 @@ assertion failures with one cause.
 
 **Nothing was broken, blocked, throttled or waiting on a human.** Two wrong diagnoses were
 published before the evidence settled it: first that the run had been rate-limited (the
-`429`/`529` strings were in the *app's own source* — it was building a service — and
+`429`/`529` strings were in the _app's own source_ — it was building a service — and
 `api_error_status` was null on all fourteen result rows), and second that the harness
 should have reported "could not measure" (it should not: the session completed normally, so
 exit 1 was correct by the harness's own definition).
 
 **The fix** is in `skills/studio/SKILL.md`, as its own section "THE RUN IS NOT OVER WHILE
 THE LEDGER SAYS IT CAN CONTINUE", and in `agents/project-lead.md` as a numbered step. The
-operative sentence: *if you find yourself writing "now the next task is X", the next thing
-you do is X, not a summary.* `tools/e2e/headless-build.mjs` now asserts that cause first,
+operative sentence: _if you find yourself writing "now the next task is X", the next thing
+you do is X, not a summary._ `tools/e2e/headless-build.mjs` now asserts that cause first,
 verified against the failed run's preserved tree — it reports `next runnable task is T6`.
 
 A Tiny brief has few enough tasks to fit inside one turn-group and could never fail this
@@ -142,6 +142,35 @@ them.
 
 ---
 
+## 4a. Repository topology — checked 2026-08-28, and it changes the merge path
+
+Worth knowing before you merge anything, because section 5 was written without it:
+
+|                         |                                                                              |
+| :---------------------- | :--------------------------------------------------------------------------- |
+| `origin/main`           | the default branch                                                           |
+| `origin/development`    | **146 commits ahead of `main`**                                              |
+| `origin/v7-lts-rebuild` | 38 commits ahead of `development` — this work                                |
+| **PR #55**              | `development` → `main`, **already open**, all checks passing                 |
+| **PR #56**              | `add-claude-github-actions-*` → `main`, open, **CI failing** (Static checks) |
+
+So the release path is `v7-lts-rebuild` → `development` → **PR #55** → `main`. Merging
+into `development` updates PR #55 rather than needing a new one, and PR #55 is where the
+release reaches `main`.
+
+**No workflow run exists for `v7-lts-rebuild`** — confirmed with `gh run list --branch
+v7-lts-rebuild` (empty). `ci.yml` triggers only on push or PR to `main`/`development`, so
+CI has genuinely never seen this work. A PR to `development` is what gets it, and a recent
+CI run on `development` took **8m2s**, so the verdict is cheap.
+
+**PR #56 does not conflict with the new gates — checked, not assumed.** It adds
+`.github/workflows/claude.yml` and `claude-code-review.yml`, and this release extended
+INV24 to scan _every_ workflow for publishing jobs and added a test that `bash -n`s every
+`run:` block in every workflow. Both files were fetched and examined: no publishing
+spellings, and zero `run:` keys, so INV24 will not flag them and the parse test's per-file
+equality holds at 0 == 0 with the ≥55 floor unaffected. Its own CI failure predates this
+work and is in `Static checks` on a tree that never contained these gates.
+
 ## 5. Remaining engineering work, in order
 
 1. **The two runs in section 2.** Everything else waits on these.
@@ -152,7 +181,9 @@ them.
    ```bash
    gh pr create --base development --head v7-lts-rebuild --title "v7.0.0 LTS" --body-file docs/RELEASE-NOTES-7.0.0.md
    ```
-3. **Merge to `development`** once `ci-ok` is green on all six jobs.
+3. **Merge to `development`** once `ci-ok` is green on all six jobs. That updates the
+   already-open **PR #55** (`development` → `main`) rather than needing a new one — see
+   section 4a.
 4. **Sign and push the tag** (`git tag -s v7.0.0 …`), which starts `publish.yml`: nine
    gates against the tagged tree, then the `e2e` gate, then a pause for one approval click,
    then npm publish by Trusted Publishing and a draft GitHub release.
@@ -163,7 +194,7 @@ them.
 7. **Remove the two dead environments** (`publish-npm-antigravity`,
    `publish-vscode-marketplace`) and the `VSCE_PAT` secret.
 8. **Post-tag only:** update the Homebrew formula and the winget manifests. Both need a
-   sha256 of the *published* tarball, so they cannot be done earlier.
+   sha256 of the _published_ tarball, so they cannot be done earlier.
 
 ---
 
@@ -197,7 +228,7 @@ Each of these was measured, and most cost real time to find.
   signed in.
 - **`--plugin-dir` must point at the plugin directory itself** — the one holding
   `.claude-plugin/` — never its parent. With the parent, the init event registers the plugin
-  and loads *none* of its contents, so a run measures a plain Claude session that builds the
+  and loads _none_ of its contents, so a run measures a plain Claude session that builds the
   app unaided and passes. The harness now refuses to grade that (`cannotMeasure`).
 - **`task-ledger.mjs` exits 2 legitimately**: `0` continue, `1` the ledger is invalid, `2`
   valid but nothing runnable. A bare `&&` chain reads a legitimate 2 as failure.
@@ -231,7 +262,7 @@ Each of these was measured, and most cost real time to find.
    `docs/INSTALL-VERIFY.md` now state exactly what that install does and does not give you,
    which is true under either answer. Recorded in `docs/RELEASING-7.0.0.md`.
 2. **`actionlint` in CI.** Nothing validates the workflow files themselves, and that gap is
-   real — a stray `"` made the nightly fail on every run for a day. It is *not* wired into
+   real — a stray `"` made the nightly fail on every run for a day. It is _not_ wired into
    CI because every other `uses:` in `.github/workflows/` is pinned to a full-length SHA,
    and adding it means either a mutable `docker://rhysd/actionlint:TAG` or a digest that has
    to be looked up online. To wire it up, resolve the digest and pin it like the other five.
